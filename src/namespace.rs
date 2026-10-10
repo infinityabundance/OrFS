@@ -31,7 +31,9 @@ use crate::directory::{
     DENTRY_ADD_MAGIC, DENTRY_REMOVE_MAGIC, HARDLINK_ADD_MAGIC, HARDLINK_REMOVE_MAGIC,
 };
 use crate::error::{OrfsError, Result};
-use crate::extent::{DataExtentPayload, DataZeroRangePayload, FileResizePayload, ReadPiece};
+use crate::extent::{
+    DataExtentPayload, DataZeroRangePayload, ExtentKind, FileResizePayload, ReadPiece,
+};
 use crate::index::{Index, ROOT_INODE};
 use crate::inode::{
     validate_xattr_name, Inode, InodeCreatePayload, InodeMetadataPayload, InodeSetattrPayload,
@@ -953,6 +955,58 @@ impl Namespace {
     pub fn sync(&mut self) -> Result<()> {
         self.volume.sync()
     }
+
+    /// Resolve `SEEK_DATA`/`SEEK_HOLE` against the current logical extent map.
+    ///
+    /// Returns the absolute file offset of the next data (or hole) region at or
+    /// after `offset`, or `None` when POSIX requires `ENXIO` (no data at or after
+    /// `offset`, or `offset` beyond EOF).
+    pub fn seek_data_hole(
+        &self,
+        inode: u64,
+        root: u64,
+        offset: u64,
+        hole: bool,
+    ) -> Result<Option<u64>> {
+        let view = self.view(root)?;
+        let ino = view.inode(inode).ok_or(OrfsError::NotFound)?;
+        if !ino.is_file() {
+            return Err(if ino.is_dir() {
+                OrfsError::IsADirectory
+            } else {
+                OrfsError::InvalidArgument("not a regular file".into())
+            });
+        }
+        let size = ino.extents.size();
+        if hole {
+            if offset > size {
+                return Ok(None);
+            }
+            for e in ino.extents.extents() {
+                if e.end() <= offset {
+                    continue;
+                }
+                if matches!(e.kind, ExtentKind::Zero) {
+                    return Ok(Some(e.start.max(offset)));
+                }
+            }
+            // Past the last mapped extent, and at/before EOF, is a hole.
+            Ok(Some(size))
+        } else {
+            if offset >= size {
+                return Ok(None);
+            }
+            for e in ino.extents.extents() {
+                if e.end() <= offset {
+                    continue;
+                }
+                if matches!(e.kind, ExtentKind::Data { .. }) {
+                    return Ok(Some(e.start.max(offset)));
+                }
+            }
+            Ok(None)
+        }
+    }
 }
 
 fn adjust_parent_nlink_for_swap(
@@ -1076,11 +1130,22 @@ impl Plan {
 /// transactions.
 #[allow(clippy::too_many_arguments)]
 pub trait OrfsCore {
+    /// The live committed root offset (the view selector for reads).
+    fn root(&self) -> u64;
+    /// The sole parent directory of `inode`, if it has one (the root has none).
+    fn parent_of(&self, inode: u64) -> Option<u64>;
     fn lookup(&self, parent: u64, name: &[u8], root: u64) -> Result<u64>;
     fn getattr(&self, inode: u64, root: u64) -> Result<InodeStat>;
     fn setattr(&mut self, inode: u64, attrs: &SetAttr) -> Result<()>;
     fn read_at(&self, inode: u64, root: u64, offset: u64, length: u32) -> Result<Vec<u8>>;
     fn write_at(&mut self, inode: u64, offset: u64, data: &[u8]) -> Result<u32>;
+    /// Append an explicit zero range (hole punch / zero range).
+    fn zero_range(&mut self, inode: u64, offset: u64, len: u64) -> Result<()>;
+    /// Resolve `SEEK_DATA`/`SEEK_HOLE` (`None` means POSIX `ENXIO`).
+    fn seek_data_hole(&self, inode: u64, root: u64, offset: u64, hole: bool)
+        -> Result<Option<u64>>;
+    /// Flush the authoritative log (durability hook).
+    fn sync(&mut self) -> Result<()>;
     fn create(&mut self, parent: u64, name: &[u8], mode: u32, uid: u32, gid: u32) -> Result<u64>;
     fn mkdir(&mut self, parent: u64, name: &[u8], mode: u32, uid: u32, gid: u32) -> Result<u64>;
     fn unlink(&mut self, parent: u64, name: &[u8]) -> Result<()>;
@@ -1111,6 +1176,16 @@ pub trait OrfsCore {
 }
 
 impl OrfsCore for Namespace {
+    fn root(&self) -> u64 {
+        Namespace::root(self)
+    }
+    fn parent_of(&self, inode: u64) -> Option<u64> {
+        if inode == ROOT_INODE {
+            Some(ROOT_INODE)
+        } else {
+            self.index.parent_of(inode)
+        }
+    }
     fn lookup(&self, parent: u64, name: &[u8], root: u64) -> Result<u64> {
         Namespace::lookup(self, parent, name, root)
     }
@@ -1125,6 +1200,21 @@ impl OrfsCore for Namespace {
     }
     fn write_at(&mut self, inode: u64, offset: u64, data: &[u8]) -> Result<u32> {
         Namespace::write_at(self, inode, offset, data)
+    }
+    fn zero_range(&mut self, inode: u64, offset: u64, len: u64) -> Result<()> {
+        Namespace::zero_range(self, inode, offset, len)
+    }
+    fn seek_data_hole(
+        &self,
+        inode: u64,
+        root: u64,
+        offset: u64,
+        hole: bool,
+    ) -> Result<Option<u64>> {
+        Namespace::seek_data_hole(self, inode, root, offset, hole)
+    }
+    fn sync(&mut self) -> Result<()> {
+        Namespace::sync(self)
     }
     fn create(&mut self, parent: u64, name: &[u8], mode: u32, uid: u32, gid: u32) -> Result<u64> {
         Namespace::create(self, parent, name, mode, uid, gid)

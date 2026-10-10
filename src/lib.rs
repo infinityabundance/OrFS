@@ -31,6 +31,7 @@ pub mod directory;
 pub mod error;
 pub mod extent;
 pub mod failpoints;
+pub mod fuse;
 pub mod index;
 pub mod inode;
 pub mod log;

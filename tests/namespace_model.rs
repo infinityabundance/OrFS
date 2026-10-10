@@ -153,6 +153,10 @@ impl Model {
         if self.kinds.get(&inode) != Some(&Kind::File) {
             return Err(());
         }
+        // A zero-length write succeeds but never changes the file (POSIX).
+        if data.is_empty() {
+            return Ok(());
+        }
         let c = self.content.entry(inode).or_default();
         let end = offset as usize + data.len();
         if c.len() < end {

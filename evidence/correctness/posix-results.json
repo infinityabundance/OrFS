@@ -1,0 +1,145 @@
+{
+  "cache_profile": "write-through",
+  "generated_by": "tests/fuse_integration.rs",
+  "mounted": true,
+  "mountpoint": "/mnt/1tb_kingston/OrFS/target/fuse-it/it-2616-1791662939432481936/mnt",
+  "notes": [
+    "readdirplus is negotiated (FUSE_DO_READDIRPLUS) and exercised by ordinary readdir(3) calls",
+    "POSIX record locks and flock are delegated to the kernel (ENOSYS); see docs/FUSE-SEMANTICS.md",
+    "SEEK_DATA/SEEK_HOLE and fallocate are byte-granular on OrFS, so they are asserted semantically rather than compared to the reference filesystem"
+  ],
+  "operations": [
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "create_write_read",
+      "orfs": "ok:content=hello world size=11 isfile=true",
+      "reference": "ok:content=hello world size=11 isfile=true"
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "mkdir_readdir",
+      "orfs": "ok:[\"a\", \"b\", \"c\", \"zz\"]",
+      "reference": "ok:[\"a\", \"b\", \"c\", \"zz\"]"
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "append_and_seek",
+      "orfs": "ok:\"AAccBB\"",
+      "reference": "ok:\"AAccBB\""
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "sparse",
+      "orfs": "ok:size=101 zeros=true last=Some(88)",
+      "reference": "ok:size=101 zeros=true last=Some(88)"
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "truncate",
+      "orfs": "ok:short=[48, 49, 50, 51] grown=[48, 49, 50, 51, 0, 0, 0, 0]",
+      "reference": "ok:short=[48, 49, 50, 51] grown=[48, 49, 50, 51, 0, 0, 0, 0]"
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "rename",
+      "orfs": "ok:old_gone=true content=\"payload\"",
+      "reference": "ok:old_gone=true content=\"payload\""
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "hardlink",
+      "orfs": "ok:n_before=2 n_after=1 content=\"shared\"",
+      "reference": "ok:n_before=2 n_after=1 content=\"shared\""
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "symlink",
+      "orfs": "ok:target=\"abc\" islink=true size=3",
+      "reference": "ok:target=\"abc\" islink=true size=3"
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "unlink_while_open",
+      "orfs": "ok:via_handle=\"live-handle\" reopen=Err(\"NotFound\")",
+      "reference": "ok:via_handle=\"live-handle\" reopen=Err(\"NotFound\")"
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "xattr",
+      "orfs": "ok:got=value listed=[\"user.k\"] after=true",
+      "reference": "ok:got=value listed=[\"user.k\"] after=true"
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "fsync",
+      "orfs": "ok:dir_sync=true content=\"durable\"",
+      "reference": "ok:dir_sync=true content=\"durable\""
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "statfs",
+      "orfs": "ok:blocks>0=true bsize>0=true",
+      "reference": "ok:blocks>0=true bsize>0=true"
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "rmdir_nonempty",
+      "orfs": "ok:Err(\"DirectoryNotEmpty\")",
+      "reference": "ok:Err(\"DirectoryNotEmpty\")"
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "unlink_dir",
+      "orfs": "ok:Err(\"IsADirectory\")",
+      "reference": "ok:Err(\"IsADirectory\")"
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "perm_mode",
+      "orfs": "ok:640",
+      "reference": "ok:640"
+    },
+    {
+      "kind": "semantic",
+      "matched": true,
+      "name": "seek_data_hole",
+      "orfs": "ok:data0=0 hole1=1 data1=50 hole_end=51 data_end=Err(\"Uncategorized\")",
+      "reference": "data0=0 data1=50 hole_end=51"
+    },
+    {
+      "kind": "semantic",
+      "matched": true,
+      "name": "fallocate",
+      "orfs": "ok:len=128 hole_zero=true head_ok=true",
+      "reference": "hole_zero=true head_ok=true"
+    },
+    {
+      "kind": "semantic",
+      "matched": true,
+      "name": "copy_file_range",
+      "orfs": "ok:copied=4 dst=\"....2345..\"",
+      "reference": "copied=4 dst=....2345.."
+    }
+  ],
+  "summary": {
+    "failed": 0,
+    "passed": 18,
+    "total": 18
+  },
+  "transport": "fuse (traditional /dev/fuse)"
+}

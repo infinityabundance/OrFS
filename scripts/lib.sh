@@ -68,7 +68,18 @@ docker_run() {
 # docker_run_kmount: for tests that must actually mount FUSE. Adds only the
 # device access, capabilities, and (where required) unconfined AppArmor profile
 # that the FUSE mount tests demonstrably need. Never used by default.
+#
+# Because the container runs as the (non-root) host uid, mounting goes through
+# the setuid `fusermount3` helper. `fusermount3` resolves the invoking uid with
+# `getpwuid`; minimal images ship no entry for that uid, so we bind a generated
+# `/etc/passwd` (root + the current uid) read-only. Without it, mounting fails
+# with "fusermount3: could not determine username".
 docker_run_kmount() {
+    ORFS_KMOUNT_PASSWD="$ORFS_PROJECT_DIR/target/.kmount-passwd"
+    if [ ! -f "$ORFS_KMOUNT_PASSWD" ]; then
+        printf 'root:x:0:0:root:/root:/bin/sh\norfs:x:%s:%s:OrFS:/tmp:/bin/sh\n' \
+            "$(id -u)" "$(id -g)" > "$ORFS_KMOUNT_PASSWD"
+    fi
     exec docker run --rm \
         --memory="$ORFS_MEM_LIMIT" \
         --memory-swap="$ORFS_MEMSWAP_LIMIT" \
@@ -80,6 +91,7 @@ docker_run_kmount() {
         --security-opt seccomp=unconfined \
         --ulimit core=0 \
         -v "$ORFS_PARENT_DIR":"$ORFS_PARENT_DIR" \
+        -v "$ORFS_KMOUNT_PASSWD:/etc/passwd:ro" \
         -w "$ORFS_PROJECT_DIR" \
         -u "$(id -u):$(id -g)" \
         -e HOME=/tmp \

@@ -7,8 +7,11 @@
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::time::Duration;
 
 use clap::{Parser, Subcommand};
+use orfs::commit::DurabilityMode;
+use orfs::fuse::{self, BackingIo, MountOptions, StatfsMode};
 use orfs::log::{scan_log, OpenMode, TailInfo, DEFAULT_SEGMENT_SIZE};
 use orfs::record::record_type_name;
 use orfs::segment::{segment_file_name, SegmentExtent};
@@ -62,6 +65,36 @@ enum Command {
         /// Durability profile: ordered | sync | batched.
         #[arg(long, default_value = "ordered")]
         durability: String,
+        /// Bypass the kernel page cache (`FOPEN_DIRECT_IO`).
+        #[arg(long)]
+        direct_io: bool,
+        /// Kernel readahead in KiB (0 keeps the kernel default).
+        #[arg(long, default_value_t = 128)]
+        readahead_kb: u32,
+        /// Maximum size of a single kernel write, in KiB.
+        #[arg(long, default_value_t = 128)]
+        max_write_kb: u32,
+        /// Attribute cache TTL in milliseconds.
+        #[arg(long, default_value_t = 1000)]
+        attr_ttl_ms: u64,
+        /// Directory-entry cache TTL in milliseconds.
+        #[arg(long, default_value_t = 1000)]
+        entry_ttl_ms: u64,
+        /// Delegate permission checks to the kernel (`default_permissions`).
+        #[arg(long)]
+        default_permissions: bool,
+        /// Allow access by other users (`allow_other`).
+        #[arg(long)]
+        allow_other: bool,
+        /// Unmount automatically when the daemon exits.
+        #[arg(long)]
+        auto_unmount: bool,
+        /// Mount read-only.
+        #[arg(long)]
+        read_only: bool,
+        /// `statfs` accounting: physical-safe | plenum.
+        #[arg(long, default_value = "physical-safe")]
+        statfs: String,
     },
 
     /// Unmount a mounted OrFS volume.
@@ -212,8 +245,40 @@ fn run(cli: &Cli) -> Result<()> {
             backing,
             segment_size,
         } => init(backing, *segment_size, cli.json),
-        Command::Mount { .. } => phase("mount", "Phase 4 (traditional FUSE)"),
-        Command::Unmount { .. } => phase("unmount", "Phase 4 (traditional FUSE)"),
+        Command::Mount {
+            backing,
+            mountpoint,
+            transport,
+            backing_io,
+            durability,
+            direct_io,
+            readahead_kb,
+            max_write_kb,
+            attr_ttl_ms,
+            entry_ttl_ms,
+            default_permissions,
+            allow_other,
+            auto_unmount,
+            read_only,
+            statfs,
+        } => mount_cmd(MountArgs {
+            backing,
+            mountpoint,
+            transport,
+            backing_io,
+            durability,
+            direct_io: *direct_io,
+            readahead_kb: *readahead_kb,
+            max_write_kb: *max_write_kb,
+            attr_ttl_ms: *attr_ttl_ms,
+            entry_ttl_ms: *entry_ttl_ms,
+            default_permissions: *default_permissions,
+            allow_other: *allow_other,
+            auto_unmount: *auto_unmount,
+            read_only: *read_only,
+            statfs,
+        }),
+        Command::Unmount { mountpoint } => unmount_cmd(mountpoint, cli.json),
         Command::Inspect { backing } => inspect(backing, cli.json),
         Command::Stat { .. } => phase("stat", "Phase 5 (backing io_uring)"),
         Command::Verify { backing, deep } => verify(backing, *deep, cli.json),
@@ -239,6 +304,111 @@ fn run(cli: &Cli) -> Result<()> {
 fn phase(what: &str, phase: &'static str) -> Result<()> {
     let _ = what;
     Err(OrfsError::Unimplemented(phase))
+}
+
+// ---------------------------------------------------------------------------
+// mount / unmount
+// ---------------------------------------------------------------------------
+
+/// Parsed arguments for `orfs mount`.
+struct MountArgs<'a> {
+    backing: &'a PathBuf,
+    mountpoint: &'a PathBuf,
+    transport: &'a str,
+    backing_io: &'a str,
+    durability: &'a str,
+    direct_io: bool,
+    readahead_kb: u32,
+    max_write_kb: u32,
+    attr_ttl_ms: u64,
+    entry_ttl_ms: u64,
+    default_permissions: bool,
+    allow_other: bool,
+    auto_unmount: bool,
+    read_only: bool,
+    statfs: &'a str,
+}
+
+fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
+    match args.transport {
+        "fuse" => {}
+        "fuse-uring" => {
+            return Err(OrfsError::Unimplemented(
+                "Phase 5 (FUSE-over-io_uring transport)",
+            ))
+        }
+        other => {
+            return Err(OrfsError::InvalidArgument(format!(
+                "unknown transport {other:?} (expected fuse|fuse-uring)"
+            )))
+        }
+    }
+    let backing_io = BackingIo::parse(args.backing_io)?;
+    let durability = DurabilityMode::parse(args.durability)?;
+    let statfs = match args.statfs {
+        "physical-safe" | "physical" => StatfsMode::PhysicalSafe,
+        "plenum" | "logical-plenum" => StatfsMode::LogicalPlenum,
+        other => {
+            return Err(OrfsError::InvalidArgument(format!(
+                "unknown statfs mode {other:?} (expected physical-safe|plenum)"
+            )))
+        }
+    };
+
+    if backing_io == BackingIo::Uring {
+        // Honest fallback: the io_uring backing ring is Phase 5. The mount still
+        // works, backed by synchronous positional I/O.
+        eprintln!(
+            "orfs: warning: backing io_uring is not wired in this build (Phase 5); \
+             using synchronous backing I/O"
+        );
+    }
+    if !args.mountpoint.is_dir() {
+        return Err(OrfsError::InvalidArgument(format!(
+            "mount point {} is not an existing directory",
+            args.mountpoint.display()
+        )));
+    }
+
+    let opts = MountOptions {
+        durability,
+        read_only: args.read_only,
+        backing_io,
+        direct_io: args.direct_io,
+        readahead_kb: args.readahead_kb,
+        max_write_kb: args.max_write_kb,
+        attr_ttl: Duration::from_millis(args.attr_ttl_ms),
+        entry_ttl: Duration::from_millis(args.entry_ttl_ms),
+        default_permissions: args.default_permissions,
+        allow_other: args.allow_other,
+        auto_unmount: args.auto_unmount,
+        statfs,
+    };
+
+    eprintln!(
+        "orfs: mounting {} at {} (durability={durability:?}, backing_io={:?}, \
+         direct_io={}, readahead_kb={}); press Ctrl-C or run `orfs unmount {}`",
+        args.backing.display(),
+        args.mountpoint.display(),
+        BackingIo::Sync,
+        opts.direct_io,
+        opts.readahead_kb,
+        args.mountpoint.display(),
+    );
+    fuse::run(args.backing, args.mountpoint, &opts)
+}
+
+fn unmount_cmd(mountpoint: &Path, json: bool) -> Result<()> {
+    fuse::unmount(mountpoint)?;
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({ "unmounted": mountpoint.display().to_string() })
+        );
+    } else {
+        println!("unmounted {}", mountpoint.display());
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

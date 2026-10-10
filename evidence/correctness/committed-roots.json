@@ -1,0 +1,189 @@
+{
+  "committed_digest_blake3": "9c45311d2e224f0f430e50f1eb3c5dcefdce35d518ec83ba1ad6e65160beb658",
+  "format_version": 1,
+  "generator": "tests/log_model.rs",
+  "genesis": {
+    "is_transaction_boundary": true,
+    "last_record_type": "VOLUME_GENESIS",
+    "records_upto": 1,
+    "root": 100
+  },
+  "invariants": {
+    "committed_root_equals_last_boundary": true,
+    "every_root_is_a_transaction_boundary": true,
+    "no_root_points_into_a_record": true,
+    "roots_monotonic_increasing": true
+  },
+  "roots": [
+    {
+      "index": 0,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 5,
+      "root": 491
+    },
+    {
+      "index": 1,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 9,
+      "root": 956
+    },
+    {
+      "index": 2,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 13,
+      "root": 1495
+    },
+    {
+      "index": 3,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 17,
+      "root": 2108
+    },
+    {
+      "index": 4,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 21,
+      "root": 2795
+    },
+    {
+      "index": 5,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 25,
+      "root": 3156
+    },
+    {
+      "index": 6,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 29,
+      "root": 3591
+    },
+    {
+      "index": 7,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 33,
+      "root": 4100
+    },
+    {
+      "index": 8,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 37,
+      "root": 4683
+    },
+    {
+      "index": 9,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 41,
+      "root": 5340
+    },
+    {
+      "index": 10,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 45,
+      "root": 5671
+    },
+    {
+      "index": 11,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 49,
+      "root": 6076
+    },
+    {
+      "index": 12,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 53,
+      "root": 6555
+    },
+    {
+      "index": 13,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 57,
+      "root": 7108
+    },
+    {
+      "index": 14,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 61,
+      "root": 7735
+    },
+    {
+      "index": 15,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 65,
+      "root": 8236
+    },
+    {
+      "index": 16,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 69,
+      "root": 8611
+    },
+    {
+      "index": 17,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 73,
+      "root": 9060
+    },
+    {
+      "index": 18,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 77,
+      "root": 9583
+    },
+    {
+      "index": 19,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 81,
+      "root": 10180
+    },
+    {
+      "index": 20,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 85,
+      "root": 10851
+    },
+    {
+      "index": 21,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 89,
+      "root": 11196
+    },
+    {
+      "index": 22,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 93,
+      "root": 11615
+    },
+    {
+      "index": 23,
+      "is_transaction_boundary": true,
+      "last_record_type": "TX_COMMIT",
+      "records_upto": 97,
+      "root": 12108
+    }
+  ],
+  "schema": "orfs.evidence.committed-roots.v1",
+  "segment_size": 1024
+}

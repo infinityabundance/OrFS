@@ -1,0 +1,1049 @@
+//! The authoritative append-only logical log (§4, §5.4, §21, §23).
+//!
+//! # Model
+//!
+//! `or.log` is a **canonical logical byte stream**: the concatenation, in order,
+//! of every *committed* record. A **root** `R` is the committed end offset — a
+//! position in that stream, never a content hash (§2, I2). A root is only ever
+//! published when a complete, valid `TX_COMMIT` (or the `VOLUME_GENESIS` record)
+//! has been appended, so every root sits exactly on a transaction boundary
+//! (§5.4, §23).
+//!
+//! Physically the stream is realized as immutable [`Segment`]s. Records never
+//! straddle segments. When a segment ends with a torn or abandoned tail the
+//! segment is **retained** and the writer continues in a fresh segment whose id
+//! equals the current committed root, so the canonical stream stays contiguous
+//! while no committed byte is rewritten (§4, I1).
+//!
+//! # Writes
+//!
+//! Appends are **reserve-then-write**: [`Log::reserve`] selects a segment and
+//! returns the exact physical/logical position, and [`Log::write_reserved`]
+//! writes the bytes there. [`Log::append`] wraps both for a whole record.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use crate::error::{OrfsError, Result};
+use crate::record::{Record, RecordHeader, RecordType, TypeClass, HEADER_LEN, MAX_PAYLOAD_LEN};
+use crate::segment::{
+    discover_segment_ids, fsync_dir, segment_file_name, ReadAt, Segment, SegmentExtent,
+    SegmentLocator,
+};
+
+/// Default segment size policy: 64 MiB per segment file.
+pub const DEFAULT_SEGMENT_SIZE: u64 = 64 * 1024 * 1024;
+
+/// How a log is opened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenMode {
+    /// Read-only: the log is scanned and validated but never modified.
+    ReadOnly,
+    /// Read-write: a recoverable tail is quarantined and a writer is prepared.
+    ReadWrite,
+}
+
+/// The kind of physical tail a scan found beyond the committed root.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TailKind {
+    /// A record whose framing did not validate (torn write).
+    TornRecord,
+    /// Well-framed records that were never published by a `TX_COMMIT`.
+    Uncommitted,
+}
+
+/// Description of an abandoned physical tail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct TailInfo {
+    pub kind: TailKind,
+    /// The segment id containing the start of the tail.
+    pub segment_id: u64,
+    /// The committed boundary: the tail begins here.
+    pub boundary_offset: u64,
+    /// Physical end of the log (last segment id + its physical length).
+    pub physical_end: u64,
+    /// Number of physical bytes beyond the committed boundary.
+    pub abandoned_bytes: u64,
+}
+
+/// Aggregate record statistics for a log.
+#[derive(Debug, Clone, Default)]
+pub struct LogStats {
+    /// Number of well-framed records scanned (including an uncommitted tail).
+    pub record_count: u64,
+    /// Number of committed transactions (excluding genesis).
+    pub transaction_count: u64,
+    /// Total canonical bytes (sum of segment valid lengths).
+    pub bytes: u64,
+    /// Committed bytes (== the current root).
+    pub committed_bytes: u64,
+    /// Record counts by raw type code.
+    pub by_type: BTreeMap<u16, u64>,
+}
+
+/// The result of scanning the physical segments.
+#[derive(Debug, Clone)]
+pub struct LogScan {
+    /// Canonical extents (valid framed bytes per segment), in order.
+    pub extents: Vec<SegmentExtent>,
+    /// The committed root / committed end offset.
+    pub committed_end_offset: u64,
+    /// Number of records within the committed prefix.
+    pub committed_record_count: u64,
+    /// Every committed transaction boundary (ascending).
+    pub boundaries: Vec<u64>,
+    /// Record statistics.
+    pub stats: LogStats,
+    /// Physical end offset (last segment id + physical length).
+    pub physical_end: u64,
+    /// An abandoned tail, if any.
+    pub tail: Option<TailInfo>,
+}
+
+enum FrameOutcome {
+    Complete(Record),
+    Incomplete,
+}
+
+fn read_frame(reader: &ReadAt, phys: u64, physical_len: u64) -> Result<FrameOutcome> {
+    let avail = physical_len
+        .checked_sub(phys)
+        .ok_or_else(|| OrfsError::Corrupt("segment offset beyond physical length".to_string()))?;
+    if avail < HEADER_LEN as u64 {
+        return Ok(FrameOutcome::Incomplete);
+    }
+    let mut header_bytes = [0u8; HEADER_LEN];
+    reader.read_exact_at(phys, &mut header_bytes)?;
+    let header = match RecordHeader::decode(&header_bytes) {
+        Ok(h) => h,
+        Err(crate::record::DecodeError::Compatibility(m)) => {
+            return Err(OrfsError::Compatibility(m))
+        }
+        Err(_) => return Ok(FrameOutcome::Incomplete),
+    };
+    // Reject an unknown *mandatory* type before allocating any payload.
+    if let Err(crate::record::DecodeError::Compatibility(m)) = header.classify_type() {
+        return Err(OrfsError::Compatibility(m));
+    }
+    let total = match header.total_len() {
+        Ok(t) => t,
+        Err(crate::record::DecodeError::Compatibility(m)) => {
+            return Err(OrfsError::Compatibility(m))
+        }
+        Err(_) => return Ok(FrameOutcome::Incomplete),
+    };
+    if total > avail {
+        return Ok(FrameOutcome::Incomplete);
+    }
+    let total_usize = usize::try_from(total)
+        .map_err(|_| OrfsError::Corrupt("record length overflow".to_string()))?;
+    let mut buf = vec![0u8; total_usize];
+    reader.read_exact_at(phys, &mut buf)?;
+    match Record::decode(&buf) {
+        Ok((record, _)) => Ok(FrameOutcome::Complete(record)),
+        Err(crate::record::DecodeError::Compatibility(m)) => Err(OrfsError::Compatibility(m)),
+        Err(_) => Ok(FrameOutcome::Incomplete),
+    }
+}
+
+/// The transaction state machine used to locate the committed root while
+/// scanning and to validate transaction structure.
+#[derive(Debug, Default)]
+struct TxMachine {
+    started: bool,
+    open_tx: Option<u64>,
+    next_sequence: u64,
+    record_index: u64,
+    committed_end_offset: u64,
+    committed_record_count: u64,
+    transaction_count: u64,
+    boundaries: Vec<u64>,
+}
+
+impl TxMachine {
+    fn accept(&mut self, record: &Record, end: u64) -> Result<()> {
+        if record.header.sequence_number != self.next_sequence {
+            return Err(OrfsError::Corrupt(format!(
+                "record sequence number {} != expected {}",
+                record.header.sequence_number, self.next_sequence
+            )));
+        }
+        let class = record.header.classify_type().map_err(OrfsError::from)?;
+        if !self.started {
+            if class != TypeClass::Known(RecordType::VolumeGenesis) {
+                return Err(OrfsError::Corrupt(
+                    "first record is not VOLUME_GENESIS".to_string(),
+                ));
+            }
+            self.started = true;
+            self.committed_end_offset = end;
+            self.committed_record_count = self.record_index + 1;
+            self.boundaries.push(end);
+        } else {
+            match class {
+                TypeClass::Known(RecordType::VolumeGenesis) => {
+                    return Err(OrfsError::Corrupt("duplicate VOLUME_GENESIS".to_string()));
+                }
+                TypeClass::Known(RecordType::TxBegin) => {
+                    if self.open_tx.is_some() {
+                        return Err(OrfsError::Corrupt("nested TX_BEGIN".to_string()));
+                    }
+                    if record.header.transaction_id == 0 {
+                        return Err(OrfsError::Corrupt(
+                            "TX_BEGIN with zero transaction id".to_string(),
+                        ));
+                    }
+                    self.open_tx = Some(record.header.transaction_id);
+                }
+                TypeClass::Known(RecordType::TxCommit) => {
+                    let tx = self.open_tx.ok_or_else(|| {
+                        OrfsError::Corrupt("TX_COMMIT without TX_BEGIN".to_string())
+                    })?;
+                    if record.header.transaction_id != tx {
+                        return Err(OrfsError::Corrupt(
+                            "TX_COMMIT transaction id mismatch".to_string(),
+                        ));
+                    }
+                    self.open_tx = None;
+                    self.transaction_count += 1;
+                    self.committed_end_offset = end;
+                    self.committed_record_count = self.record_index + 1;
+                    self.boundaries.push(end);
+                }
+                TypeClass::Known(RecordType::TxAbort) => {
+                    let tx = self.open_tx.ok_or_else(|| {
+                        OrfsError::Corrupt("TX_ABORT without TX_BEGIN".to_string())
+                    })?;
+                    if record.header.transaction_id != tx {
+                        return Err(OrfsError::Corrupt(
+                            "TX_ABORT transaction id mismatch".to_string(),
+                        ));
+                    }
+                    self.open_tx = None;
+                }
+                TypeClass::Known(_) => {
+                    if self.open_tx.is_none() {
+                        return Err(OrfsError::Corrupt(
+                            "record outside a transaction".to_string(),
+                        ));
+                    }
+                }
+                TypeClass::OptionalUnknown(_) => {
+                    if self.open_tx.is_none() {
+                        return Err(OrfsError::Corrupt(
+                            "optional record outside a transaction".to_string(),
+                        ));
+                    }
+                }
+            }
+        }
+        self.next_sequence += 1;
+        self.record_index += 1;
+        Ok(())
+    }
+}
+
+/// Scan the segments in `dir` without modifying anything.
+///
+/// This validates framing, transaction structure, and sequence continuity, and
+/// locates both the committed root and any abandoned physical tail.
+pub fn scan_log(dir: &Path) -> Result<LogScan> {
+    let ids = discover_segment_ids(dir)?;
+    if ids.is_empty() {
+        return Err(OrfsError::Corrupt(format!(
+            "log directory {} contains no segments",
+            dir.display()
+        )));
+    }
+    let mut machine = TxMachine::default();
+    let mut extents: Vec<SegmentExtent> = Vec::with_capacity(ids.len());
+    let mut by_type: BTreeMap<u16, u64> = BTreeMap::new();
+    let mut tail: Option<TailInfo> = None;
+    let mut total_valid: u64 = 0;
+    let mut physical_end: u64 = 0;
+
+    for (i, &id) in ids.iter().enumerate() {
+        let is_last = i + 1 == ids.len();
+        let reader = ReadAt::open(dir, id)?;
+        let physical_len = reader.len()?;
+        physical_end = id.checked_add(physical_len).ok_or(OrfsError::Overflow {
+            what: "segment physical end",
+        })?;
+        let mut off: u64 = 0;
+        let mut stopped = false;
+        while off < physical_len {
+            match read_frame(&reader, off, physical_len)? {
+                FrameOutcome::Complete(record) => {
+                    let total = record.header.total_len().map_err(OrfsError::from)?;
+                    let end = off.checked_add(total).ok_or(OrfsError::Overflow {
+                        what: "record end offset",
+                    })?;
+                    if let Err(e) = machine.accept(&record, id + end) {
+                        // A structural fault in a non-final segment, or before
+                        // the genesis, is corruption; in the final segment it
+                        // terminates the uncommitted tail.
+                        if is_last && machine.started {
+                            stopped = true;
+                            break;
+                        }
+                        return Err(e);
+                    }
+                    *by_type.entry(record.header.record_type_code).or_insert(0) += 1;
+                    off = end;
+                }
+                FrameOutcome::Incomplete => {
+                    if is_last {
+                        tail = Some(TailInfo {
+                            kind: TailKind::TornRecord,
+                            segment_id: id,
+                            boundary_offset: id + off,
+                            physical_end: id + physical_len,
+                            abandoned_bytes: physical_len - off,
+                        });
+                        stopped = true;
+                        break;
+                    }
+                    return Err(OrfsError::Corrupt(format!(
+                        "torn record in non-final segment {id} at physical offset {off}"
+                    )));
+                }
+            }
+        }
+        extents.push(SegmentExtent { id, valid_len: off });
+        total_valid = total_valid.checked_add(off).ok_or(OrfsError::Overflow {
+            what: "log canonical length",
+        })?;
+        if stopped {
+            break;
+        }
+    }
+
+    let committed_end_offset = machine.committed_end_offset;
+    if physical_end > committed_end_offset && tail.is_none() {
+        let segment_id = extents
+            .iter()
+            .rev()
+            .find(|e| e.id <= committed_end_offset)
+            .map(|e| e.id)
+            .unwrap_or(0);
+        tail = Some(TailInfo {
+            kind: TailKind::Uncommitted,
+            segment_id,
+            boundary_offset: committed_end_offset,
+            physical_end,
+            abandoned_bytes: physical_end - committed_end_offset,
+        });
+    }
+
+    let stats = LogStats {
+        record_count: machine.record_index,
+        transaction_count: machine.transaction_count,
+        bytes: total_valid,
+        committed_bytes: committed_end_offset,
+        by_type,
+    };
+    Ok(LogScan {
+        extents,
+        committed_end_offset,
+        committed_record_count: machine.committed_record_count,
+        boundaries: machine.boundaries,
+        stats,
+        physical_end,
+        tail,
+    })
+}
+
+/// An append reservation: an exact position in the logical/physical stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AppendReservation {
+    /// The logical byte offset of the reservation.
+    pub logical_offset: u64,
+    /// The segment the reservation lives in.
+    pub segment_id: u64,
+    /// The physical offset within that segment.
+    pub physical_offset: u64,
+    /// The reserved length in bytes.
+    pub len: u64,
+}
+
+#[derive(Debug)]
+struct Writer {
+    seg: Segment,
+    id: u64,
+    /// Canonical bytes written so far.
+    valid: u64,
+    /// Bytes reserved but not yet written.
+    pending: u64,
+}
+
+/// Truncate validated extents to the committed prefix.
+fn truncate_extents(extents: &[SegmentExtent], committed: u64) -> Vec<SegmentExtent> {
+    let mut out = Vec::new();
+    for e in extents {
+        if e.id >= committed {
+            break;
+        }
+        let end = e.end();
+        if end <= committed {
+            out.push(*e);
+        } else {
+            out.push(SegmentExtent {
+                id: e.id,
+                valid_len: committed - e.id,
+            });
+            break;
+        }
+    }
+    out
+}
+
+/// Move a segment file into `dir/quarantine/`, retaining every byte.
+fn quarantine_segment(dir: &Path, id: u64) -> Result<()> {
+    let name = segment_file_name(id)?;
+    let src = dir.join(&name);
+    if !src.exists() {
+        return Ok(());
+    }
+    let qdir = dir.join("quarantine");
+    std::fs::create_dir_all(&qdir)?;
+    let mut dst = qdir.join(&name);
+    let mut n = 0u32;
+    while dst.exists() {
+        n += 1;
+        dst = qdir.join(format!("{name}.{n}"));
+    }
+    std::fs::rename(&src, &dst)?;
+    Ok(())
+}
+
+/// Quarantine every canonical segment at or beyond the committed root.
+fn quarantine_after(dir: &Path, extents: &[SegmentExtent], committed: u64) -> Result<()> {
+    let ids: Vec<u64> = extents
+        .iter()
+        .filter(|e| e.id >= committed)
+        .map(|e| e.id)
+        .collect();
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let qdir = dir.join("quarantine");
+    std::fs::create_dir_all(&qdir)?;
+    for id in ids {
+        quarantine_segment(dir, id)?;
+    }
+    fsync_dir(&qdir)?;
+    fsync_dir(dir)?;
+    Ok(())
+}
+
+/// A read-only iterator over validated canonical records.
+pub struct RecordReader {
+    reader: Option<(u64, ReadAt)>,
+    dir: PathBuf,
+    extents: Vec<SegmentExtent>,
+    end: u64,
+    offset: u64,
+}
+
+impl RecordReader {
+    /// Iterate the canonical records in `[0, end)`.
+    pub fn new(dir: &Path, extents: &[SegmentExtent], end: u64) -> RecordReader {
+        RecordReader {
+            reader: None,
+            dir: dir.to_path_buf(),
+            extents: extents.to_vec(),
+            end,
+            offset: 0,
+        }
+    }
+
+    fn locate(&self, offset: u64) -> Option<(u64, u64, u64)> {
+        let idx = self.extents.partition_point(|e| e.id <= offset);
+        if idx == 0 {
+            return None;
+        }
+        let e = self.extents[idx - 1];
+        if offset < e.end() {
+            Some((e.id, offset - e.id, e.valid_len))
+        } else {
+            None
+        }
+    }
+
+    fn read_next(&mut self) -> Result<Record> {
+        let (sid, phys, valid) = self.locate(self.offset).ok_or_else(|| {
+            OrfsError::Corrupt(format!("no segment covers offset {}", self.offset))
+        })?;
+        if self.reader.as_ref().map(|(id, _)| *id) != Some(sid) {
+            self.reader = Some((sid, ReadAt::open(&self.dir, sid)?));
+        }
+        let reader = &self.reader.as_ref().expect("reader opened").1;
+        let avail = valid
+            .checked_sub(phys)
+            .ok_or_else(|| OrfsError::Corrupt("record offset beyond segment extent".to_string()))?
+            .min(self.end - self.offset);
+        if avail < HEADER_LEN as u64 {
+            return Err(OrfsError::Corrupt(format!(
+                "truncated record within committed region at offset {}",
+                self.offset
+            )));
+        }
+        let mut header_bytes = [0u8; HEADER_LEN];
+        reader.read_exact_at(phys, &mut header_bytes)?;
+        let header = RecordHeader::decode(&header_bytes).map_err(OrfsError::from)?;
+        header.classify_type().map_err(OrfsError::from)?;
+        let total = header.total_len().map_err(OrfsError::from)?;
+        if total > avail {
+            return Err(OrfsError::Corrupt(format!(
+                "record at offset {} crosses the committed root",
+                self.offset
+            )));
+        }
+        let total_usize = usize::try_from(total)
+            .map_err(|_| OrfsError::Corrupt("record length overflow".to_string()))?;
+        let mut buf = vec![0u8; total_usize];
+        reader.read_exact_at(phys, &mut buf)?;
+        let (record, _) = Record::decode(&buf).map_err(OrfsError::from)?;
+        Ok(record)
+    }
+}
+
+impl Iterator for RecordReader {
+    type Item = Result<Record>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.offset >= self.end {
+            return None;
+        }
+        match self.read_next() {
+            Ok(record) => {
+                let total = match record.header.total_len() {
+                    Ok(t) => t,
+                    Err(e) => return Some(Err(OrfsError::from(e))),
+                };
+                self.offset += total;
+                Some(Ok(record))
+            }
+            Err(e) => {
+                // Stop iteration after reporting the fault.
+                self.offset = self.end;
+                Some(Err(e))
+            }
+        }
+    }
+}
+
+/// The authoritative append-only log.
+pub struct Log {
+    dir: PathBuf,
+    segment_size: u64,
+    locator: SegmentLocator,
+    committed_end_offset: u64,
+    committed_record_count: u64,
+    boundaries: Vec<u64>,
+    next_sequence_number: u64,
+    open_tx: Option<u64>,
+    writer: Option<Writer>,
+    stats: LogStats,
+    tail: Option<TailInfo>,
+}
+
+impl Log {
+    /// Create a brand-new empty log (one empty segment with id 0).
+    ///
+    /// The caller is expected to append [`RecordType::VolumeGenesis`]
+    /// immediately; the log is not a valid volume until it does.
+    pub fn create(dir: &Path, segment_size: u64) -> Result<Log> {
+        if segment_size == 0 {
+            return Err(OrfsError::InvalidArgument(
+                "segment size must be non-zero".to_string(),
+            ));
+        }
+        std::fs::create_dir_all(dir)?;
+        if !discover_segment_ids(dir)?.is_empty() {
+            return Err(OrfsError::AlreadyExists);
+        }
+        let seg = Segment::create(dir, 0)?;
+        fsync_dir(dir)?;
+        let mut locator = SegmentLocator::default();
+        locator.push(SegmentExtent {
+            id: 0,
+            valid_len: 0,
+        });
+        Ok(Log {
+            dir: dir.to_path_buf(),
+            segment_size,
+            locator,
+            committed_end_offset: 0,
+            committed_record_count: 0,
+            boundaries: Vec::new(),
+            next_sequence_number: 0,
+            open_tx: None,
+            writer: Some(Writer {
+                seg,
+                id: 0,
+                valid: 0,
+                pending: 0,
+            }),
+            stats: LogStats::default(),
+            tail: None,
+        })
+    }
+
+    /// Open an existing log.
+    ///
+    /// In [`OpenMode::ReadWrite`] a recoverable tail is quarantined first and a
+    /// writer is prepared at the committed root. In [`OpenMode::ReadOnly`] the
+    /// on-disk bytes are never touched.
+    pub fn open(dir: &Path, segment_size: u64, mode: OpenMode) -> Result<Log> {
+        let scan = scan_log(dir)?;
+        let committed = scan.committed_end_offset;
+        let mut locator = SegmentLocator::from_extents(scan.extents.clone())?;
+        let mut writer = None;
+
+        if mode == OpenMode::ReadWrite {
+            if scan.physical_end > committed {
+                // Retain the abandoned tail, then continue in a fresh segment.
+                quarantine_after(dir, &scan.extents, committed)?;
+                locator = SegmentLocator::from_extents(truncate_extents(&scan.extents, committed))?;
+                let seg = Segment::create(dir, committed)?;
+                locator.push(SegmentExtent {
+                    id: committed,
+                    valid_len: 0,
+                });
+                writer = Some(Writer {
+                    seg,
+                    id: committed,
+                    valid: 0,
+                    pending: 0,
+                });
+                fsync_dir(dir)?;
+            } else {
+                let last = locator
+                    .extents()
+                    .last()
+                    .copied()
+                    .ok_or_else(|| OrfsError::Corrupt("empty log".to_string()))?;
+                let seg = Segment::open(dir, last.id)?;
+                if seg.len() != last.valid_len {
+                    return Err(OrfsError::Corrupt(format!(
+                        "segment {} length {} disagrees with canonical valid length {}",
+                        last.id,
+                        seg.len(),
+                        last.valid_len
+                    )));
+                }
+                writer = Some(Writer {
+                    seg,
+                    id: last.id,
+                    valid: last.valid_len,
+                    pending: 0,
+                });
+            }
+        }
+
+        Ok(Log {
+            dir: dir.to_path_buf(),
+            segment_size,
+            locator,
+            committed_end_offset: committed,
+            committed_record_count: scan.committed_record_count,
+            boundaries: scan.boundaries,
+            next_sequence_number: scan.committed_record_count,
+            open_tx: None,
+            writer,
+            stats: scan.stats,
+            tail: scan.tail,
+        })
+    }
+
+    /// The log's directory.
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
+    /// The committed root `R` (committed end offset).
+    pub fn committed_end_offset(&self) -> u64 {
+        self.committed_end_offset
+    }
+
+    /// Segment size policy in bytes.
+    pub fn segment_size(&self) -> u64 {
+        self.segment_size
+    }
+
+    /// Number of records within the committed prefix.
+    pub fn committed_record_count(&self) -> u64 {
+        self.committed_record_count
+    }
+
+    /// Total number of well-framed records scanned (including any tail).
+    pub fn record_count(&self) -> u64 {
+        self.stats.record_count
+    }
+
+    /// Number of committed transactions (excluding genesis).
+    pub fn transaction_count(&self) -> u64 {
+        self.stats.transaction_count
+    }
+
+    /// Total canonical bytes (sum of segment valid lengths).
+    pub fn canonical_bytes(&self) -> u64 {
+        self.stats.bytes
+    }
+
+    /// Record counts by raw type code.
+    pub fn record_counts_by_type(&self) -> &BTreeMap<u16, u64> {
+        &self.stats.by_type
+    }
+
+    /// Canonical extents.
+    pub fn extents(&self) -> &[SegmentExtent] {
+        self.locator.extents()
+    }
+
+    /// Committed transaction boundaries (ascending).
+    pub fn boundaries(&self) -> &[u64] {
+        &self.boundaries
+    }
+
+    /// The abandoned tail found at open time, if any.
+    pub fn tail(&self) -> Option<TailInfo> {
+        self.tail
+    }
+
+    /// Whether `offset` is a committed transaction boundary.
+    pub fn is_boundary(&self, offset: u64) -> bool {
+        offset == 0 || self.boundaries.binary_search(&offset).is_ok()
+    }
+
+    /// The current append frontier (logical offset of the next byte).
+    pub fn append_end_offset(&self) -> u64 {
+        match &self.writer {
+            Some(w) => w.id + w.valid + w.pending,
+            None => self.committed_end_offset,
+        }
+    }
+
+    /// Reserve `len` bytes for an append, rolling over if required.
+    pub fn reserve(&mut self, len: u64) -> Result<AppendReservation> {
+        if len == 0 {
+            return Err(OrfsError::InvalidArgument(
+                "cannot reserve zero bytes".to_string(),
+            ));
+        }
+        let w = self
+            .writer
+            .as_ref()
+            .ok_or_else(|| OrfsError::ReadOnly("log opened read-only".to_string()))?;
+        if w.pending == 0 && w.valid > 0 && w.valid.saturating_add(len) > self.segment_size {
+            self.rollover()?;
+        }
+        let w = self.writer.as_ref().expect("writer present");
+        let physical_offset = w.valid.checked_add(w.pending).ok_or(OrfsError::Overflow {
+            what: "append physical offset",
+        })?;
+        let logical_offset =
+            w.id.checked_add(physical_offset)
+                .ok_or(OrfsError::Overflow {
+                    what: "append logical offset",
+                })?;
+        let seg_id = w.id;
+        let pending = w.pending.checked_add(len).ok_or(OrfsError::Overflow {
+            what: "pending reservation bytes",
+        })?;
+        self.writer.as_mut().expect("writer present").pending = pending;
+        Ok(AppendReservation {
+            logical_offset,
+            segment_id: seg_id,
+            physical_offset,
+            len,
+        })
+    }
+
+    /// Write the bytes for a reservation. Reservations must be written in FIFO
+    /// order.
+    pub fn write_reserved(&mut self, res: &AppendReservation, bytes: &[u8]) -> Result<()> {
+        if bytes.len() as u64 != res.len {
+            return Err(OrfsError::InvalidArgument(format!(
+                "reservation length {} disagrees with {} bytes",
+                res.len,
+                bytes.len()
+            )));
+        }
+        let w = self
+            .writer
+            .as_mut()
+            .ok_or_else(|| OrfsError::ReadOnly("log opened read-only".to_string()))?;
+        if w.id != res.segment_id || w.valid != res.physical_offset {
+            return Err(OrfsError::Corrupt(
+                "append reservation written out of order".to_string(),
+            ));
+        }
+        w.seg.write_at(res.physical_offset, bytes)?;
+        w.valid = w.valid.checked_add(res.len).ok_or(OrfsError::Overflow {
+            what: "segment valid length",
+        })?;
+        w.pending -= res.len;
+        let valid = w.valid;
+        self.locator.set_last_valid_len(valid);
+        Ok(())
+    }
+
+    /// Append a complete record, assigning its sequence number and enforcing
+    /// transaction structure. Returns the record's logical offset.
+    pub fn append(&mut self, mut record: Record) -> Result<u64> {
+        self.prepare_record(&mut record)?;
+        let bytes = record.encode()?;
+        let res = self.reserve(bytes.len() as u64)?;
+        self.write_reserved(&res, &bytes)?;
+        let end = res
+            .logical_offset
+            .checked_add(res.len)
+            .ok_or(OrfsError::Overflow {
+                what: "record end offset",
+            })?;
+        self.finish_record(&record, res.logical_offset, end)?;
+        Ok(res.logical_offset)
+    }
+
+    fn prepare_record(&mut self, record: &mut Record) -> Result<()> {
+        let class = record.header.classify_type().map_err(OrfsError::from)?;
+        let known = match class {
+            TypeClass::Known(t) => Some(t),
+            TypeClass::OptionalUnknown(_) => None,
+        };
+        match known {
+            Some(RecordType::VolumeGenesis) => {
+                if self.append_end_offset() != 0 || self.open_tx.is_some() {
+                    return Err(OrfsError::InvalidArgument(
+                        "VOLUME_GENESIS must be the first record".to_string(),
+                    ));
+                }
+            }
+            Some(RecordType::TxBegin) => {
+                if self.open_tx.is_some() {
+                    return Err(OrfsError::InvalidArgument(
+                        "nested TX_BEGIN is not permitted".to_string(),
+                    ));
+                }
+                if record.header.transaction_id == 0 {
+                    return Err(OrfsError::InvalidArgument(
+                        "transaction id must be non-zero".to_string(),
+                    ));
+                }
+            }
+            Some(RecordType::TxCommit) | Some(RecordType::TxAbort) => match self.open_tx {
+                Some(tx) if tx == record.header.transaction_id => {}
+                _ => {
+                    return Err(OrfsError::InvalidArgument(
+                        "commit/abort without a matching open transaction".to_string(),
+                    ))
+                }
+            },
+            Some(_) => match self.open_tx {
+                Some(tx) if tx == record.header.transaction_id => {}
+                _ => {
+                    return Err(OrfsError::InvalidArgument(
+                        "mutation record outside a matching transaction".to_string(),
+                    ))
+                }
+            },
+            None => {
+                if let Some(tx) = self.open_tx {
+                    if record.header.transaction_id != tx {
+                        return Err(OrfsError::InvalidArgument(
+                            "optional record transaction id mismatch".to_string(),
+                        ));
+                    }
+                } else {
+                    return Err(OrfsError::InvalidArgument(
+                        "optional record outside a transaction".to_string(),
+                    ));
+                }
+            }
+        }
+        record.header.payload_length = record.payload.len() as u64;
+        if record.header.payload_length > MAX_PAYLOAD_LEN {
+            return Err(OrfsError::InvalidArgument(
+                "payload exceeds the format limit".to_string(),
+            ));
+        }
+        record.header.sequence_number = self.next_sequence_number;
+        record.header = record.header.with_recomputed_check();
+        Ok(())
+    }
+
+    fn finish_record(&mut self, record: &Record, start: u64, end: u64) -> Result<()> {
+        let class = record.header.classify_type().map_err(OrfsError::from)?;
+        if let TypeClass::Known(t) = class {
+            match t {
+                RecordType::VolumeGenesis => {
+                    self.committed_end_offset = end;
+                    self.committed_record_count = self.next_sequence_number + 1;
+                    self.boundaries.push(end);
+                }
+                RecordType::TxBegin => {
+                    self.open_tx = Some(record.header.transaction_id);
+                }
+                RecordType::TxCommit => {
+                    self.open_tx = None;
+                    self.stats.transaction_count += 1;
+                    self.committed_end_offset = end;
+                    self.committed_record_count = self.next_sequence_number + 1;
+                    self.boundaries.push(end);
+                }
+                RecordType::TxAbort => {
+                    self.open_tx = None;
+                }
+                _ => {}
+            }
+        }
+        self.stats.record_count += 1;
+        self.stats.bytes += end - start;
+        self.stats.committed_bytes = self.committed_end_offset;
+        *self
+            .stats
+            .by_type
+            .entry(record.header.record_type_code)
+            .or_insert(0) += 1;
+        self.next_sequence_number += 1;
+        Ok(())
+    }
+
+    /// Begin a transaction.
+    pub fn begin(&mut self, tx_id: u64) -> Result<u64> {
+        let rec = Record::new(RecordType::TxBegin, 0, tx_id, 0, 0, 0, Vec::new())?;
+        self.append(rec)
+    }
+
+    /// Commit the open transaction, publishing a new root. Returns the root.
+    pub fn commit(&mut self) -> Result<u64> {
+        let tx = self
+            .open_tx
+            .ok_or_else(|| OrfsError::InvalidArgument("no open transaction".to_string()))?;
+        let rec = Record::new(RecordType::TxCommit, 0, tx, 0, 0, 0, Vec::new())?;
+        self.append(rec)?;
+        Ok(self.committed_end_offset)
+    }
+
+    /// Abort the open transaction. The committed root does not advance.
+    pub fn abort(&mut self) -> Result<()> {
+        let tx = self
+            .open_tx
+            .ok_or_else(|| OrfsError::InvalidArgument("no open transaction".to_string()))?;
+        let rec = Record::new(RecordType::TxAbort, 0, tx, 0, 0, 0, Vec::new())?;
+        self.append(rec)?;
+        Ok(())
+    }
+
+    fn rollover(&mut self) -> Result<()> {
+        let w = self
+            .writer
+            .take()
+            .ok_or_else(|| OrfsError::ReadOnly("log opened read-only".to_string()))?;
+        if w.pending != 0 {
+            self.writer = Some(w);
+            return Err(OrfsError::Corrupt(
+                "segment rollover with outstanding reservations".to_string(),
+            ));
+        }
+        w.seg.sync()?;
+        let next_id =
+            w.id.checked_add(w.valid)
+                .ok_or(OrfsError::Overflow { what: "segment id" })?;
+        let name = segment_file_name(next_id)?;
+        if self.dir.join(&name).exists() {
+            quarantine_segment(&self.dir, next_id)?;
+        }
+        let seg = Segment::create(&self.dir, next_id)?;
+        self.locator.push(SegmentExtent {
+            id: next_id,
+            valid_len: 0,
+        });
+        self.writer = Some(Writer {
+            seg,
+            id: next_id,
+            valid: 0,
+            pending: 0,
+        });
+        fsync_dir(&self.dir)?;
+        Ok(())
+    }
+
+    /// Flush and fsync the current segment (durability hook).
+    pub fn sync(&mut self) -> Result<()> {
+        if let Some(w) = &self.writer {
+            w.seg.sync()?;
+        }
+        Ok(())
+    }
+
+    /// Replay validated records from the start of the log up to `end`.
+    ///
+    /// `end` must be a committed transaction boundary and must not exceed the
+    /// committed root.
+    pub fn replay_upto(&self, end: u64) -> Result<Vec<Record>> {
+        if end > self.committed_end_offset {
+            return Err(OrfsError::InvalidArgument(format!(
+                "replay end {end} exceeds the committed root {}",
+                self.committed_end_offset
+            )));
+        }
+        if end != 0 && !self.is_boundary(end) {
+            return Err(OrfsError::InvalidArgument(format!(
+                "replay end {end} is not a committed transaction boundary"
+            )));
+        }
+        let mut reader = self.records_upto(end);
+        let mut out = Vec::new();
+        for r in &mut reader {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    /// A validated record iterator over `[0, end)`.
+    pub fn records_upto(&self, end: u64) -> RecordReader {
+        RecordReader::new(&self.dir, self.locator.extents(), end)
+    }
+
+    /// Read the exact committed canonical bytes `[0, R)`.
+    pub fn read_committed_bytes(&self) -> Result<Vec<u8>> {
+        let mut out = Vec::new();
+        let mut remaining = self.committed_end_offset;
+        for e in self.locator.extents() {
+            if remaining == 0 {
+                break;
+            }
+            let take = e.valid_len.min(remaining);
+            if take > 0 {
+                let reader = ReadAt::open(&self.dir, e.id)?;
+                let mut buf = vec![0u8; take as usize];
+                reader.read_exact_at(0, &mut buf)?;
+                out.extend_from_slice(&buf);
+            }
+            remaining -= take;
+            if take < e.valid_len {
+                break;
+            }
+        }
+        if remaining != 0 {
+            return Err(OrfsError::Corrupt(
+                "committed root extends beyond the canonical bytes".to_string(),
+            ));
+        }
+        Ok(out)
+    }
+
+    /// A BLAKE3 digest (lowercase hex) of the committed canonical bytes.
+    ///
+    /// This is *evidence*, not identity: a root is a position, never a hash
+    /// (§2, I2).
+    pub fn committed_digest_hex(&self) -> Result<String> {
+        Ok(blake3::hash(&self.read_committed_bytes()?)
+            .to_hex()
+            .to_string())
+    }
+}

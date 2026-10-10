@@ -27,6 +27,10 @@
 
 pub mod capabilities;
 pub mod error;
+pub mod log;
+pub mod record;
+pub mod segment;
+pub mod volume;
 
 pub use error::{FsError, OrfsError, Result};
 

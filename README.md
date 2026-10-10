@@ -20,15 +20,18 @@ as an independent, version-pinned dependency). FUSE is the Linux interface.
 
 ## Status
 
-This repository is being built in ordered phases (see `docs/ORFS-SPEC.md`).
-The CLI is honest: a command that is part of the design but not yet wired
-rejects the request with its owning phase rather than pretending to work.
-`orfs doctor` is fully real today.
+This repository is being built in ordered phases (see `docs/ORFS-SPEC.md` and
+`docs/PROGRESS.md`). The CLI is honest: a command that is part of the design
+but not yet wired rejects the request with its owning phase rather than
+pretending to work.
+
+Working today: `orfs doctor`, `orfs init`, `orfs inspect [--json]`,
+`orfs verify [--deep]`, and `orfs recover`.
 
 | Phase | Area | State |
 |---|---|---|
-| 0 | Environment, pinned container workflow, evidence foundation | in progress |
-| 1 | Authoritative append-only log | — |
+| 0 | Environment, pinned container workflow, evidence foundation | complete |
+| 1 | Authoritative append-only log | complete |
 | 2 | Transactions and durability | — |
 | 3 | Namespace and extents | — |
 | 4 | Traditional FUSE | — |
@@ -66,7 +69,7 @@ benches/    benchmarks
 docs/       normative specifications (see docs/ORFS-SPEC.md)
 evidence/   machine-readable, reproducible evidence
 scripts/    pinned-container execution
-research/   the originating OrFS specification design documents
+research/   originating design documents (local-only; gitignored, not published)
 ```
 
 ## License

@@ -1,0 +1,508 @@
+//! Volume identity and initialisation (§4).
+//!
+//! A volume directory contains:
+//!
+//! ```text
+//! backup/
+//! ├── volume.meta         fixed-size, checksummed volume identity
+//! ├── or.log/             immutable authoritative segments
+//! ├── index/              rebuildable namespace index snapshots
+//! └── .or_bloom/          concealed acceleration structures (EKBLOOM &c.)
+//!     ├── ekbloom/ trigram/ suffix/ image/ directory/ manifests/
+//! ```
+//!
+//! `volume.meta` carries the volume UUID, format version, creation time, and the
+//! segment-size policy. The authoritative content lives in `or.log`; the other
+//! directories are rebuildable and never authoritative.
+
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use crate::error::{OrfsError, Result};
+use crate::log::{scan_log, Log, OpenMode};
+use crate::record::{
+    get_u16, get_u32, get_u64, put_u16, put_u32, put_u64, Record, RecordType, TypeClass,
+};
+use crate::segment::fsync_dir;
+
+/// `volume.meta` magic. Little-endian bytes on disk spell `ORFV`.
+pub const VOLUME_MAGIC: u32 = 0x5646_524F;
+
+/// Fixed `volume.meta` length in bytes.
+pub const VOLUME_META_LEN: usize = 44;
+
+/// Length of the genesis payload (UUID + segment size).
+pub const GENESIS_PAYLOAD_LEN: usize = 24;
+
+/// The concealed acceleration subdirectories created by `orfs init`.
+pub const BLOOM_SUBDIRS: [&str; 6] = [
+    "ekbloom",
+    "trigram",
+    "suffix",
+    "image",
+    "directory",
+    "manifests",
+];
+
+/// Fixed-size volume identity record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VolumeMeta {
+    pub magic: u32,
+    pub format_version: u16,
+    /// Reserved for future use; written as zero.
+    pub reserved: u16,
+    pub uuid: [u8; 16],
+    pub created_at_unix_secs: u64,
+    pub segment_size: u64,
+    pub meta_check: u32,
+}
+
+impl VolumeMeta {
+    /// Serialize to exactly [`VOLUME_META_LEN`] bytes.
+    pub fn encode(&self) -> [u8; VOLUME_META_LEN] {
+        let mut b = [0u8; VOLUME_META_LEN];
+        put_u32(&mut b, 0, self.magic);
+        put_u16(&mut b, 4, self.format_version);
+        put_u16(&mut b, 6, self.reserved);
+        b[8..24].copy_from_slice(&self.uuid);
+        put_u64(&mut b, 24, self.created_at_unix_secs);
+        put_u64(&mut b, 32, self.segment_size);
+        let check = crc32c::crc32c(&b[..40]);
+        put_u32(&mut b, 40, check);
+        b
+    }
+
+    /// Decode and validate.
+    pub fn decode(buf: &[u8]) -> Result<VolumeMeta> {
+        if buf.len() < VOLUME_META_LEN {
+            return Err(OrfsError::Corrupt(format!(
+                "volume.meta is {} bytes, expected {VOLUME_META_LEN}",
+                buf.len()
+            )));
+        }
+        let stored = get_u32(buf, 40);
+        let computed = crc32c::crc32c(&buf[..40]);
+        if stored != computed {
+            return Err(OrfsError::Corrupt(
+                "volume.meta checksum mismatch".to_string(),
+            ));
+        }
+        let magic = get_u32(buf, 0);
+        if magic != VOLUME_MAGIC {
+            return Err(OrfsError::Corrupt(format!(
+                "volume.meta bad magic 0x{magic:08X}"
+            )));
+        }
+        let format_version = get_u16(buf, 4);
+        if format_version != crate::FORMAT_VERSION {
+            return Err(OrfsError::Compatibility(format!(
+                "volume format version {format_version} (this build supports {})",
+                crate::FORMAT_VERSION
+            )));
+        }
+        let mut uuid = [0u8; 16];
+        uuid.copy_from_slice(&buf[8..24]);
+        let segment_size = get_u64(buf, 32);
+        if segment_size == 0 {
+            return Err(OrfsError::Corrupt(
+                "volume.meta has a zero segment size".to_string(),
+            ));
+        }
+        Ok(VolumeMeta {
+            magic,
+            format_version,
+            reserved: get_u16(buf, 6),
+            uuid,
+            created_at_unix_secs: get_u64(buf, 24),
+            segment_size,
+            meta_check: stored,
+        })
+    }
+
+    /// Canonical UUID string (`8-4-4-4-12`).
+    pub fn uuid_string(&self) -> String {
+        uuid_string(&self.uuid)
+    }
+}
+
+fn uuid_string(b: &[u8; 16]) -> String {
+    let mut s = String::with_capacity(36);
+    for (i, byte) in b.iter().enumerate() {
+        if matches!(i, 4 | 6 | 8 | 10) {
+            s.push('-');
+        }
+        s.push_str(&format!("{byte:02x}"));
+    }
+    s
+}
+
+fn finalize_uuid(mut b: [u8; 16]) -> [u8; 16] {
+    // Set RFC 4122 version 4 and variant bits.
+    b[6] = (b[6] & 0x0F) | 0x40;
+    b[8] = (b[8] & 0x3F) | 0x80;
+    b
+}
+
+fn random_uuid() -> [u8; 16] {
+    let mut b = [0u8; 16];
+    if let Ok(mut f) = File::open("/dev/urandom") {
+        if f.read_exact(&mut b).is_ok() {
+            return finalize_uuid(b);
+        }
+    }
+    // Deterministic-from-entropy fallback; never used when /dev/urandom exists.
+    let mut hasher = blake3::Hasher::new();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    hasher.update(&nanos.to_le_bytes());
+    hasher.update(&std::process::id().to_le_bytes());
+    hasher.update(b"orfs-volume-uuid");
+    let out = hasher.finalize();
+    b.copy_from_slice(&out.as_bytes()[..16]);
+    finalize_uuid(b)
+}
+
+fn now_unix_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// The genesis payload: the volume UUID followed by the segment-size policy.
+pub fn genesis_payload(uuid: &[u8; 16], segment_size: u64) -> Vec<u8> {
+    let mut v = Vec::with_capacity(GENESIS_PAYLOAD_LEN);
+    v.extend_from_slice(uuid);
+    v.extend_from_slice(&segment_size.to_le_bytes());
+    v
+}
+
+/// Parse a genesis payload.
+pub fn parse_genesis_payload(payload: &[u8]) -> Result<([u8; 16], u64)> {
+    if payload.len() != GENESIS_PAYLOAD_LEN {
+        return Err(OrfsError::Corrupt(format!(
+            "genesis payload is {} bytes, expected {GENESIS_PAYLOAD_LEN}",
+            payload.len()
+        )));
+    }
+    let mut uuid = [0u8; 16];
+    uuid.copy_from_slice(&payload[..16]);
+    Ok((uuid, get_u64(payload, 16)))
+}
+
+/// An opened volume: identity plus the authoritative log.
+pub struct Volume {
+    pub root_dir: PathBuf,
+    pub meta: VolumeMeta,
+    pub log: Log,
+}
+
+impl Volume {
+    /// `volume.meta` path for a volume directory.
+    pub fn meta_path(dir: &Path) -> PathBuf {
+        dir.join("volume.meta")
+    }
+
+    /// `or.log` directory for a volume directory.
+    pub fn log_dir(dir: &Path) -> PathBuf {
+        dir.join("or.log")
+    }
+
+    /// Read and validate the volume identity.
+    pub fn read_meta(dir: &Path) -> Result<VolumeMeta> {
+        let bytes = std::fs::read(Self::meta_path(dir))?;
+        VolumeMeta::decode(&bytes)
+    }
+
+    /// Initialize a new volume with a fresh UUID and a genesis record.
+    pub fn init(dir: &Path, segment_size: u64) -> Result<Volume> {
+        Self::init_with_uuid(dir, segment_size, random_uuid(), now_unix_secs())
+    }
+
+    /// Initialize a new volume with an explicit identity. Used by tests and
+    /// evidence generation to produce reproducible volumes.
+    pub fn init_with_uuid(
+        dir: &Path,
+        segment_size: u64,
+        uuid: [u8; 16],
+        created_at_unix_secs: u64,
+    ) -> Result<Volume> {
+        if segment_size == 0 {
+            return Err(OrfsError::InvalidArgument(
+                "segment size must be non-zero".to_string(),
+            ));
+        }
+        let meta_path = Self::meta_path(dir);
+        if meta_path.exists() {
+            return Err(OrfsError::AlreadyExists);
+        }
+        let log_dir = Self::log_dir(dir);
+        std::fs::create_dir_all(&log_dir)?;
+        std::fs::create_dir_all(dir.join("index"))?;
+        let bloom = dir.join(".or_bloom");
+        for sub in BLOOM_SUBDIRS {
+            std::fs::create_dir_all(bloom.join(sub))?;
+        }
+
+        // Authoritative content first: a crash before volume.meta leaves an
+        // orphan log that is not a volume, never a volume without a log.
+        let mut log = Log::create(&log_dir, segment_size)?;
+        let genesis = Record::new(
+            RecordType::VolumeGenesis,
+            0,
+            0,
+            0,
+            0,
+            0,
+            genesis_payload(&uuid, segment_size),
+        )?;
+        log.append(genesis)?;
+        log.sync()?;
+
+        let meta = VolumeMeta {
+            magic: VOLUME_MAGIC,
+            format_version: crate::FORMAT_VERSION,
+            reserved: 0,
+            uuid,
+            created_at_unix_secs,
+            segment_size,
+            meta_check: 0,
+        };
+        write_meta(dir, &meta)?;
+        fsync_dir(dir)?;
+
+        Ok(Volume {
+            root_dir: dir.to_path_buf(),
+            meta,
+            log,
+        })
+    }
+
+    /// Open an existing volume.
+    pub fn open(dir: &Path, mode: OpenMode) -> Result<Volume> {
+        let meta = Self::read_meta(dir)?;
+        let log = Log::open(&Self::log_dir(dir), meta.segment_size, mode)?;
+        Ok(Volume {
+            root_dir: dir.to_path_buf(),
+            meta,
+            log,
+        })
+    }
+
+    /// Flush and fsync the authoritative log.
+    pub fn sync(&mut self) -> Result<()> {
+        self.log.sync()
+    }
+
+    /// Verify the volume's authoritative structure. `deep` additionally
+    /// revalidates every committed record.
+    pub fn verify(&self, deep: bool) -> Result<VerifyReport> {
+        let mut checks = Vec::new();
+        checks.push(VerifyCheck::ok(
+            "volume_meta",
+            format!(
+                "uuid={} segment_size={} created_at={}",
+                self.meta.uuid_string(),
+                self.meta.segment_size,
+                self.meta.created_at_unix_secs
+            ),
+        ));
+
+        let root = self.log.committed_end_offset();
+        let records = self.log.replay_upto(root)?;
+        let first = records
+            .first()
+            .ok_or_else(|| OrfsError::Corrupt("no committed records".to_string()))?;
+        let genesis_ok = matches!(
+            first.header.classify_type().map_err(OrfsError::from)?,
+            TypeClass::Known(RecordType::VolumeGenesis)
+        );
+        checks.push(VerifyCheck {
+            name: "volume_genesis".to_string(),
+            ok: genesis_ok,
+            detail: if genesis_ok {
+                "first committed record is VOLUME_GENESIS".to_string()
+            } else {
+                "first committed record is not VOLUME_GENESIS".to_string()
+            },
+        });
+        if genesis_ok {
+            let (uuid, segment_size) = parse_genesis_payload(&first.payload)?;
+            let ok = uuid == self.meta.uuid && segment_size == self.meta.segment_size;
+            checks.push(VerifyCheck {
+                name: "genesis_matches_meta".to_string(),
+                ok,
+                detail: format!(
+                    "genesis uuid={} segment_size={segment_size}",
+                    uuid_string(&uuid)
+                ),
+            });
+        }
+
+        checks.push(VerifyCheck {
+            name: "committed_root_is_boundary".to_string(),
+            ok: self.log.is_boundary(root),
+            detail: format!("root R={root}"),
+        });
+
+        let contiguous = self.log.extents().windows(2).all(|w| w[0].end() == w[1].id);
+        checks.push(VerifyCheck {
+            name: "segment_continuity".to_string(),
+            ok: contiguous,
+            detail: format!("{} segment(s)", self.log.extents().len()),
+        });
+
+        checks.push(match self.log.tail() {
+            Some(t) => VerifyCheck::ok(
+                "tail",
+                format!(
+                    "{:?} tail at offset {} ({} bytes retained, not canonical)",
+                    t.kind, t.boundary_offset, t.abandoned_bytes
+                ),
+            ),
+            None => VerifyCheck::ok("tail", "no torn or uncommitted tail".to_string()),
+        });
+
+        if deep {
+            checks.push(VerifyCheck::ok(
+                "deep_replay_checksums",
+                format!("{} committed records, CRC32C verified", records.len()),
+            ));
+            let mut offset = 0u64;
+            let mut prev_ok = true;
+            let mut prev_detail = "all previous_inode_offset values point backward".to_string();
+            for r in &records {
+                if r.header.previous_inode_offset != 0 && r.header.previous_inode_offset >= offset {
+                    prev_ok = false;
+                    prev_detail = format!(
+                        "record at offset {offset} has forward previous_inode_offset {}",
+                        r.header.previous_inode_offset
+                    );
+                    break;
+                }
+                offset = offset
+                    .checked_add(r.header.total_len().map_err(OrfsError::from)?)
+                    .ok_or(OrfsError::Overflow {
+                        what: "verify offset",
+                    })?;
+            }
+            checks.push(VerifyCheck {
+                name: "previous_inode_offsets_backward".to_string(),
+                ok: prev_ok,
+                detail: prev_detail,
+            });
+            checks.push(VerifyCheck {
+                name: "committed_record_count".to_string(),
+                ok: records.len() as u64 == self.log.committed_record_count(),
+                detail: format!(
+                    "{} records (log reports {})",
+                    records.len(),
+                    self.log.committed_record_count()
+                ),
+            });
+        }
+
+        let ok = checks.iter().all(|c| c.ok);
+        Ok(VerifyReport { checks, ok })
+    }
+}
+
+fn write_meta(dir: &Path, meta: &VolumeMeta) -> Result<()> {
+    let path = Volume::meta_path(dir);
+    let tmp = dir.join("volume.meta.tmp");
+    {
+        let mut f = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&tmp)?;
+        f.write_all(&meta.encode())?;
+        f.sync_all()?;
+    }
+    std::fs::rename(&tmp, &path)?;
+    fsync_dir(dir)?;
+    Ok(())
+}
+
+/// A single verification check.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct VerifyCheck {
+    pub name: String,
+    pub ok: bool,
+    pub detail: String,
+}
+
+impl VerifyCheck {
+    fn ok(name: &str, detail: String) -> VerifyCheck {
+        VerifyCheck {
+            name: name.to_string(),
+            ok: true,
+            detail,
+        }
+    }
+}
+
+/// The outcome of verifying a volume.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct VerifyReport {
+    pub ok: bool,
+    pub checks: Vec<VerifyCheck>,
+}
+
+/// Convenience: scan a volume's log directory read-only (no open).
+pub fn scan_volume_log(dir: &Path) -> Result<crate::log::LogScan> {
+    scan_log(&Volume::log_dir(dir))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn meta_round_trips() {
+        let meta = VolumeMeta {
+            magic: VOLUME_MAGIC,
+            format_version: crate::FORMAT_VERSION,
+            reserved: 0,
+            uuid: finalize_uuid([7u8; 16]),
+            created_at_unix_secs: 1_700_000_000,
+            segment_size: 4096,
+            meta_check: 0,
+        };
+        let bytes = meta.encode();
+        assert_eq!(bytes.len(), VOLUME_META_LEN);
+        let decoded = VolumeMeta::decode(&bytes).unwrap();
+        assert_eq!(decoded.uuid, meta.uuid);
+        assert_eq!(decoded.segment_size, 4096);
+        assert_eq!(decoded.created_at_unix_secs, 1_700_000_000);
+    }
+
+    #[test]
+    fn meta_corruption_is_detected() {
+        let meta = VolumeMeta {
+            magic: VOLUME_MAGIC,
+            format_version: crate::FORMAT_VERSION,
+            reserved: 0,
+            uuid: [1u8; 16],
+            created_at_unix_secs: 1,
+            segment_size: 4096,
+            meta_check: 0,
+        };
+        let mut bytes = meta.encode();
+        bytes[10] ^= 0xFF;
+        assert!(VolumeMeta::decode(&bytes).is_err());
+    }
+
+    #[test]
+    fn uuid_string_is_canonical_shape() {
+        let s = uuid_string(&finalize_uuid([0u8; 16]));
+        assert_eq!(s.len(), 36);
+        assert_eq!(s.matches('-').count(), 4);
+        // Version nibble is 4.
+        assert_eq!(&s[14..15], "4");
+    }
+}

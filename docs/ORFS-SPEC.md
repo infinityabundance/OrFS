@@ -19,11 +19,13 @@ The originating, authoritative design specification is:
 > **`research/OrFS.md`** — *OrFS — Non-Withdrawal, Concealed-Expansion Filesystem* (v0.2, proposed engineering specification).
 
 That document is the source of truth for intent, invariants, on-disk concepts,
-transport profiles, courts, and acceptance criteria. The documents under
-`docs/` (including this index) are **implementation-facing subordinate
-specifications**: they may refine or operationalise `research/OrFS.md`, but where
-they conflict, `research/OrFS.md` governs. `research/` is read-only reference
-material and is never modified by the implementation.
+transport profiles, courts, and acceptance criteria. It is **local-only**: the
+`research/` directory is gitignored and is not published with this repository.
+The documents under `docs/` (including this index) are **implementation-facing
+subordinate specifications**: they may refine or operationalise
+`research/OrFS.md`, but where they conflict, `research/OrFS.md` governs.
+`research/` is read-only reference material and is never modified by the
+implementation.
 
 ---
 
@@ -82,8 +84,8 @@ phase.
 
 | Phase | Area | State |
 |---|---|---|
-| 0 | Environment, pinned container workflow, capability probe, EKBLOOM wiring, evidence foundation | **complete** (this phase) |
-| 1 | Authoritative append-only log (Plane A) | planned |
+| 0 | Environment, pinned container workflow, capability probe, EKBLOOM wiring, evidence foundation | **complete** |
+| 1 | Authoritative append-only log (Plane A) | **complete** |
 | 2 | Transactions and durability (Plane A) | planned |
 | 3 | Namespace and extents (Plane B) | planned |
 | 4 | Traditional FUSE transport (Plane D) | planned |
@@ -124,8 +126,9 @@ Normative implementation documents to be produced. Status is marked honestly.
 | Document | Subject | Status |
 |---|---|---|
 | `docs/ORFS-SPEC.md` | This master index (laws, objective, planes, phases, doc map) | **exists** |
-| `docs/ON_DISK.md` | Physical layout, segments, record envelope, format versioning | planned (Phase 1) |
-| `docs/LOG-INVARIANTS.md` | Authoritative log invariants, replay, root-by-position identity | planned (Phase 1) |
+| `docs/ON_DISK.md` | Physical layout, segments, record envelope, format versioning | **exists** (Phase 1) |
+| `docs/LOG-INVARIANTS.md` | Authoritative log invariants, replay, root-by-position identity | **exists** (Phase 1) |
+| `docs/PROGRESS.md` | Honest per-phase status and delivered artifacts | **exists** |
 | `docs/TRANSACTIONS.md` | Transaction framing, ordering, atomicity, durability modes | planned (Phase 2) |
 | `docs/FUSE-SEMANTICS.md` | POSIX/FUSE operation semantics, handles, cache modes, permissions | planned (Phase 4) |
 | `docs/IO_URING.md` | Backing `io_uring` rings (writer/read/bloom), backpressure, fallback | planned (Phase 5) |

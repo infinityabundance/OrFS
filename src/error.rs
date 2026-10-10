@@ -70,6 +70,13 @@ pub enum OrfsError {
     #[error("unsupported: {0}")]
     Unsupported(String),
 
+    /// A record or volume on disk was framed for a format this build cannot
+    /// safely interpret (for example an unknown *mandatory* record type, or a
+    /// newer record format version). This is a controlled compatibility
+    /// failure: mounting must not proceed on a guess.
+    #[error("incompatible on-disk format: {0}")]
+    Compatibility(String),
+
     /// A read or write range lies outside the object.
     #[error("out of bounds: offset {offset} length {length} (object limit {limit})")]
     OutOfBounds {
@@ -105,6 +112,7 @@ impl OrfsError {
             OrfsError::NoSpace(_) => libc::ENOSPC,
             OrfsError::Corrupt(_) => libc::EIO,
             OrfsError::Unsupported(_) => libc::EOPNOTSUPP,
+            OrfsError::Compatibility(_) => libc::EPROTONOSUPPORT,
             OrfsError::OutOfBounds { .. } => libc::EINVAL,
             OrfsError::ReadOnly(_) => libc::EROFS,
             OrfsError::Overflow { .. } => libc::EIO,

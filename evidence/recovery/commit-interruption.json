@@ -1,0 +1,233 @@
+{
+  "all_children_crashed": true,
+  "all_verdicts_ok": true,
+  "baseline_root": 1429,
+  "baseline_transactions": 3,
+  "evidence_kind": "process-crash (NOT power-loss)",
+  "failpoints": [
+    {
+      "baseline_root": 1429,
+      "crashed_by_sigabrt": true,
+      "failpoint": "before_reservation",
+      "recovered_root": 1429,
+      "recovered_root_advanced": false,
+      "scan_committed_root": 1429,
+      "scan_physical_end": 1429,
+      "scan_tail_abandoned_bytes": null,
+      "scan_tail_kind": null,
+      "verdicts": {
+        "committed_physical_bytes_unchanged": true,
+        "next_transaction_does_not_reuse_failed_bytes": true,
+        "next_transaction_succeeds": true,
+        "no_committed_record_rewritten": true,
+        "no_uncommitted_record_exposed": true,
+        "previously_committed_roots_still_valid": true,
+        "recovered_root_is_transaction_boundary": true
+      }
+    },
+    {
+      "baseline_root": 1429,
+      "crashed_by_sigabrt": true,
+      "failpoint": "after_reservation",
+      "recovered_root": 1429,
+      "recovered_root_advanced": false,
+      "scan_committed_root": 1429,
+      "scan_physical_end": 1429,
+      "scan_tail_abandoned_bytes": null,
+      "scan_tail_kind": null,
+      "verdicts": {
+        "committed_physical_bytes_unchanged": true,
+        "next_transaction_does_not_reuse_failed_bytes": true,
+        "next_transaction_succeeds": true,
+        "no_committed_record_rewritten": true,
+        "no_uncommitted_record_exposed": true,
+        "previously_committed_roots_still_valid": true,
+        "recovered_root_is_transaction_boundary": true
+      }
+    },
+    {
+      "baseline_root": 1429,
+      "crashed_by_sigabrt": true,
+      "failpoint": "during_record_write",
+      "recovered_root": 1429,
+      "recovered_root_advanced": false,
+      "scan_committed_root": 1429,
+      "scan_physical_end": 1481,
+      "scan_tail_abandoned_bytes": 52,
+      "scan_tail_kind": "TornRecord",
+      "verdicts": {
+        "committed_physical_bytes_unchanged": true,
+        "next_transaction_does_not_reuse_failed_bytes": true,
+        "next_transaction_succeeds": true,
+        "no_committed_record_rewritten": true,
+        "no_uncommitted_record_exposed": true,
+        "previously_committed_roots_still_valid": true,
+        "recovered_root_is_transaction_boundary": true
+      }
+    },
+    {
+      "baseline_root": 1429,
+      "crashed_by_sigabrt": true,
+      "failpoint": "after_partial_record_write",
+      "recovered_root": 1429,
+      "recovered_root_advanced": false,
+      "scan_committed_root": 1429,
+      "scan_physical_end": 1673,
+      "scan_tail_abandoned_bytes": 244,
+      "scan_tail_kind": "Uncommitted",
+      "verdicts": {
+        "committed_physical_bytes_unchanged": true,
+        "next_transaction_does_not_reuse_failed_bytes": true,
+        "next_transaction_succeeds": true,
+        "no_committed_record_rewritten": true,
+        "no_uncommitted_record_exposed": true,
+        "previously_committed_roots_still_valid": true,
+        "recovered_root_is_transaction_boundary": true
+      }
+    },
+    {
+      "baseline_root": 1429,
+      "crashed_by_sigabrt": true,
+      "failpoint": "before_commit",
+      "recovered_root": 1429,
+      "recovered_root_advanced": false,
+      "scan_committed_root": 1429,
+      "scan_physical_end": 1797,
+      "scan_tail_abandoned_bytes": 368,
+      "scan_tail_kind": "Uncommitted",
+      "verdicts": {
+        "committed_physical_bytes_unchanged": true,
+        "next_transaction_does_not_reuse_failed_bytes": true,
+        "next_transaction_succeeds": true,
+        "no_committed_record_rewritten": true,
+        "no_uncommitted_record_exposed": true,
+        "previously_committed_roots_still_valid": true,
+        "recovered_root_is_transaction_boundary": true
+      }
+    },
+    {
+      "baseline_root": 1429,
+      "crashed_by_sigabrt": true,
+      "failpoint": "during_commit_record_write",
+      "recovered_root": 1429,
+      "recovered_root_advanced": false,
+      "scan_committed_root": 1429,
+      "scan_physical_end": 1871,
+      "scan_tail_abandoned_bytes": 74,
+      "scan_tail_kind": "TornRecord",
+      "verdicts": {
+        "committed_physical_bytes_unchanged": true,
+        "next_transaction_does_not_reuse_failed_bytes": true,
+        "next_transaction_succeeds": true,
+        "no_committed_record_rewritten": true,
+        "no_uncommitted_record_exposed": true,
+        "previously_committed_roots_still_valid": true,
+        "recovered_root_is_transaction_boundary": true
+      }
+    },
+    {
+      "baseline_root": 1429,
+      "crashed_by_sigabrt": true,
+      "failpoint": "after_commit_completion",
+      "recovered_root": 1945,
+      "recovered_root_advanced": true,
+      "scan_committed_root": 1945,
+      "scan_physical_end": 1945,
+      "scan_tail_abandoned_bytes": null,
+      "scan_tail_kind": null,
+      "verdicts": {
+        "committed_physical_bytes_unchanged": true,
+        "next_transaction_does_not_reuse_failed_bytes": true,
+        "next_transaction_succeeds": true,
+        "no_committed_record_rewritten": true,
+        "no_uncommitted_record_exposed": true,
+        "previously_committed_roots_still_valid": true,
+        "recovered_root_is_transaction_boundary": true
+      }
+    },
+    {
+      "baseline_root": 1429,
+      "crashed_by_sigabrt": true,
+      "failpoint": "before_publication",
+      "recovered_root": 1945,
+      "recovered_root_advanced": true,
+      "scan_committed_root": 1945,
+      "scan_physical_end": 1945,
+      "scan_tail_abandoned_bytes": null,
+      "scan_tail_kind": null,
+      "verdicts": {
+        "committed_physical_bytes_unchanged": true,
+        "next_transaction_does_not_reuse_failed_bytes": true,
+        "next_transaction_succeeds": true,
+        "no_committed_record_rewritten": true,
+        "no_uncommitted_record_exposed": true,
+        "previously_committed_roots_still_valid": true,
+        "recovered_root_is_transaction_boundary": true
+      }
+    },
+    {
+      "baseline_root": 1429,
+      "crashed_by_sigabrt": true,
+      "failpoint": "after_publication_before_sync",
+      "recovered_root": 1945,
+      "recovered_root_advanced": true,
+      "scan_committed_root": 1945,
+      "scan_physical_end": 1945,
+      "scan_tail_abandoned_bytes": null,
+      "scan_tail_kind": null,
+      "verdicts": {
+        "committed_physical_bytes_unchanged": true,
+        "next_transaction_does_not_reuse_failed_bytes": true,
+        "next_transaction_succeeds": true,
+        "no_committed_record_rewritten": true,
+        "no_uncommitted_record_exposed": true,
+        "previously_committed_roots_still_valid": true,
+        "recovered_root_is_transaction_boundary": true
+      }
+    },
+    {
+      "baseline_root": 1429,
+      "crashed_by_sigabrt": true,
+      "failpoint": "during_segment_rollover",
+      "recovered_root": 1945,
+      "recovered_root_advanced": true,
+      "scan_committed_root": 1945,
+      "scan_physical_end": 1945,
+      "scan_tail_abandoned_bytes": null,
+      "scan_tail_kind": null,
+      "verdicts": {
+        "committed_physical_bytes_unchanged": true,
+        "next_transaction_does_not_reuse_failed_bytes": true,
+        "next_transaction_succeeds": true,
+        "no_committed_record_rewritten": true,
+        "no_uncommitted_record_exposed": true,
+        "previously_committed_roots_still_valid": true,
+        "recovered_root_is_transaction_boundary": true
+      }
+    },
+    {
+      "baseline_root": 1429,
+      "crashed_by_sigabrt": true,
+      "failpoint": "during_directory_sync",
+      "recovered_root": 1945,
+      "recovered_root_advanced": true,
+      "scan_committed_root": 1945,
+      "scan_physical_end": 1945,
+      "scan_tail_abandoned_bytes": null,
+      "scan_tail_kind": null,
+      "verdicts": {
+        "committed_physical_bytes_unchanged": true,
+        "next_transaction_does_not_reuse_failed_bytes": true,
+        "next_transaction_succeeds": true,
+        "no_committed_record_rewritten": true,
+        "no_uncommitted_record_exposed": true,
+        "previously_committed_roots_still_valid": true,
+        "recovered_root_is_transaction_boundary": true
+      }
+    }
+  ],
+  "generator": "tests/crash_recovery.rs",
+  "method": "child process terminated with SIGABRT at each failpoint, then an independent reopen",
+  "schema": "orfs.evidence.commit-interruption.v1",
+  "segment_size": 1024
+}

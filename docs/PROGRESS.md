@@ -83,8 +83,68 @@ and are reproducible because the evidence volume uses a fixed UUID.
 * Physical quota/capacity policy (I8 mechanics beyond checked arithmetic).
 * FUSE mounting, concealed manifestation, and EKBLOOM acceleration.
 
-## Phase 2 — Transactions and durability (next)
+## Phase 2 — Transactions, commit sequencer, durability, fault injection
 
-Planned: full transaction framing/ordering, durability profiles
-(`sync`/`ordered`/`batched`), and crash-injection recovery courts. See the top
-risk noted in the Phase 1 report.
+**Complete** (see also `docs/TRANSACTIONS.md`).
+
+### Delivered
+
+* `src/transaction.rs` — the transaction model: explicit states (`PREPARED`,
+  `RESERVED`, `SUBMITTED`, `DATA_COMPLETED`, `COMMIT_COMPLETED`, `PUBLISHED`,
+  `DURABLE`, `FAILED`) with an enforced forward-only transition relation; typed,
+  CRC32C-checked payload codecs for `TX_BEGIN` (28 B), `TX_COMMIT` (72 B, with a
+  BLAKE3 bracket checksum and commit sequence number), and `TX_ABORT`
+  (variable-length, with a reason); and a `TransactionBuilder` that validates all
+  arguments before anything is reserved.
+* `src/commit.rs` — the single authoritative commit sequencer:
+  validate → build → reserve → write data → wait for completions → write/validate
+  `TX_COMMIT` (read back from the backing store) → publish the in-memory root →
+  reply per durability mode. The root is published **only** after `TX_COMMIT` is
+  fully written and validated, so no reader can observe a partial transaction.
+* Durability profiles with documented acknowledgment contracts:
+  `sync` (ack after `fsync`; `DURABLE`), `ordered` (ordered + published; no
+  commit-time `fsync`; `PUBLISHED`), `batched` (coalesced sync points with an
+  explicit contract). No profile claims power-loss durability
+  (`claims_power_loss_durability()` is always `false`).
+* `src/failpoints.rs` — a reusable failpoint system behind the `failpoints`
+  Cargo feature (compile-time no-op by default), with thread-local runtime
+  control via environment variables or `configure`/`configure_one`/`clear`, and
+  `error`/`abort` actions, at all ten required injection points plus directory
+  synchronization.
+* `tests/transaction_model.rs` — builder/codec validation, the state machine,
+  bracket verification, durability contracts, rollover, all failpoints
+  in-process (terminate → drop → reopen → verify), and randomized
+  transaction/failpoint sequences (proptest).
+* `tests/crash_recovery.rs` — **process-crash** tests: a child process is killed
+  with `SIGABRT` at each failpoint and the volume is reopened in an independent
+  step; every recovery invariant is checked and recorded as evidence.
+* `tests/support/mod.rs` — shared recovery-verdict helpers.
+
+### Tests (inside the container)
+
+* `cargo test`: 32 unit + 9 `transaction_model` + 10 `log_model` + 4 `smoke`
+  = **55 passing**.
+* `cargo test --features failpoints`: 33 unit + 11 `transaction_model`
+  + 2 `crash_recovery` + 10 `log_model` + 4 `smoke` = **60 passing**.
+* `cargo fmt -p orfs --all --check` and
+  `cargo clippy --all-targets -- -D warnings` pass (also with `--features
+  failpoints`).
+
+### Evidence
+
+* `evidence/recovery/commit-interruption.json` — for every failpoint: the
+  recovered root, the pre-recovery scan root/physical end/tail, and the seven
+  recovery verdicts (process-crash, explicitly *not* power-loss).
+* `evidence/recovery/torn-write.json` — the torn/tail-producing failpoints with
+  their retained-tail detail and verdicts.
+
+Both are regenerated from actual runs by `tests/crash_recovery.rs`
+(`--features failpoints`); nothing is fabricated.
+
+### Explicitly not implemented in Phase 2
+
+* `io_uring` submission/completion ordering (Ring W); the commit path uses
+  synchronous `pwrite`/`fsync`.
+* Power-loss (device-cache) fault modelling and evidence — the crash court is
+  process-only and says so.
+* Multi-writer batch coalescing beyond a single sequencer.

@@ -92,6 +92,11 @@ pub enum OrfsError {
     /// Checked integer arithmetic overflowed while decoding an untrusted value.
     #[error("integer overflow while decoding {what}")]
     Overflow { what: &'static str },
+
+    /// A fault-injection failpoint fired (only reachable in `failpoints` builds).
+    /// The write path must be discarded; see `docs/TRANSACTIONS.md`.
+    #[error("injected failpoint: {0}")]
+    Failpoint(&'static str),
 }
 
 impl OrfsError {
@@ -116,6 +121,7 @@ impl OrfsError {
             OrfsError::OutOfBounds { .. } => libc::EINVAL,
             OrfsError::ReadOnly(_) => libc::EROFS,
             OrfsError::Overflow { .. } => libc::EIO,
+            OrfsError::Failpoint(_) => libc::EIO,
         }
     }
 }

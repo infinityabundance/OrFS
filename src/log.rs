@@ -25,6 +25,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::error::{OrfsError, Result};
+use crate::failpoints::{self, Failpoint};
 use crate::record::{Record, RecordHeader, RecordType, TypeClass, HEADER_LEN, MAX_PAYLOAD_LEN};
 use crate::segment::{
     discover_segment_ids, fsync_dir, segment_file_name, ReadAt, Segment, SegmentExtent,
@@ -875,24 +876,37 @@ impl Log {
         Ok(())
     }
 
+    /// After writing a reserved record's bytes, update the log's structural
+    /// bookkeeping and publish a root if the record is one that publishes (§5.4).
+    ///
+    /// This is the append path used by [`Log::append`]. The commit sequencer
+    /// ([`crate::commit`]) instead calls [`Log::record_written`] and
+    /// [`Log::publish_root_at`] separately so that in-memory publication happens
+    /// strictly after the `TX_COMMIT` bytes are written and validated.
     fn finish_record(&mut self, record: &Record, start: u64, end: u64) -> Result<()> {
+        self.record_written(record, start, end)?;
+        if record
+            .known_type()
+            .map(|t| t.publishes_root())
+            .unwrap_or(false)
+        {
+            self.publish_root_at(end)?;
+        }
+        Ok(())
+    }
+
+    /// Update statistics, the sequence counter, and open-transaction state after
+    /// a record's bytes have been written. Does **not** publish a root.
+    pub(crate) fn record_written(&mut self, record: &Record, start: u64, end: u64) -> Result<()> {
         let class = record.header.classify_type().map_err(OrfsError::from)?;
         if let TypeClass::Known(t) = class {
             match t {
-                RecordType::VolumeGenesis => {
-                    self.committed_end_offset = end;
-                    self.committed_record_count = self.next_sequence_number + 1;
-                    self.boundaries.push(end);
-                }
                 RecordType::TxBegin => {
                     self.open_tx = Some(record.header.transaction_id);
                 }
                 RecordType::TxCommit => {
                     self.open_tx = None;
                     self.stats.transaction_count += 1;
-                    self.committed_end_offset = end;
-                    self.committed_record_count = self.next_sequence_number + 1;
-                    self.boundaries.push(end);
                 }
                 RecordType::TxAbort => {
                     self.open_tx = None;
@@ -901,15 +915,92 @@ impl Log {
             }
         }
         self.stats.record_count += 1;
-        self.stats.bytes += end - start;
-        self.stats.committed_bytes = self.committed_end_offset;
+        self.stats.bytes =
+            self.stats
+                .bytes
+                .checked_add(end - start)
+                .ok_or(OrfsError::Overflow {
+                    what: "log canonical byte count",
+                })?;
         *self
             .stats
             .by_type
             .entry(record.header.record_type_code)
             .or_insert(0) += 1;
-        self.next_sequence_number += 1;
+        self.next_sequence_number =
+            self.next_sequence_number
+                .checked_add(1)
+                .ok_or(OrfsError::Overflow {
+                    what: "record sequence number",
+                })?;
         Ok(())
+    }
+
+    /// Publish a new committed root. `end` must be strictly greater than the
+    /// current root (a root never moves backward) and must be the end offset of
+    /// a complete record that publishes a root.
+    pub(crate) fn publish_root_at(&mut self, end: u64) -> Result<()> {
+        if end <= self.committed_end_offset {
+            return Err(OrfsError::Corrupt(format!(
+                "attempt to publish non-advancing root {end} (current {})",
+                self.committed_end_offset
+            )));
+        }
+        self.committed_end_offset = end;
+        self.committed_record_count = self.next_sequence_number;
+        self.boundaries.push(end);
+        self.stats.committed_bytes = end;
+        Ok(())
+    }
+
+    /// The sequence number the next record will receive.
+    pub(crate) fn next_sequence_number(&self) -> u64 {
+        self.next_sequence_number
+    }
+
+    /// The transaction id of the currently open transaction, if any.
+    pub(crate) fn open_transaction(&self) -> Option<u64> {
+        self.open_tx
+    }
+
+    /// Write a prefix of a reserved record's bytes at its reserved position
+    /// **without** advancing the writer's valid length or pending count.
+    ///
+    /// Used only to model a torn write for fault injection; the caller must
+    /// either complete the reservation with [`Log::write_reserved`] or discard
+    /// the log.
+    pub(crate) fn write_partial_reserved(
+        &mut self,
+        res: &AppendReservation,
+        prefix: &[u8],
+    ) -> Result<()> {
+        if prefix.len() as u64 > res.len {
+            return Err(OrfsError::InvalidArgument(
+                "partial write longer than the reservation".into(),
+            ));
+        }
+        let w = self
+            .writer
+            .as_ref()
+            .ok_or_else(|| OrfsError::ReadOnly("log opened read-only".into()))?;
+        if w.id != res.segment_id || w.valid != res.physical_offset {
+            return Err(OrfsError::Corrupt(
+                "partial reservation write out of order".into(),
+            ));
+        }
+        w.seg.write_at(res.physical_offset, prefix)?;
+        Ok(())
+    }
+
+    /// Read back the bytes at a reservation's physical position.
+    ///
+    /// Used by the commit sequencer to validate the `TX_COMMIT` record from the
+    /// backing store (not merely from the in-memory buffer) before publishing.
+    pub(crate) fn read_back(&self, res: &AppendReservation) -> Result<Vec<u8>> {
+        let reader = ReadAt::open(&self.dir, res.segment_id)?;
+        let mut buf = vec![0u8; res.len as usize];
+        reader.read_exact_at(res.physical_offset, &mut buf)?;
+        Ok(buf)
     }
 
     /// Begin a transaction.
@@ -939,6 +1030,7 @@ impl Log {
     }
 
     fn rollover(&mut self) -> Result<()> {
+        failpoints::check(Failpoint::DuringSegmentRollover)?;
         let w = self
             .writer
             .take()

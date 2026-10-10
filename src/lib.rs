@@ -26,10 +26,13 @@
 //! machine is never reimplemented here.
 
 pub mod capabilities;
+pub mod commit;
 pub mod error;
+pub mod failpoints;
 pub mod log;
 pub mod record;
 pub mod segment;
+pub mod transaction;
 pub mod volume;
 
 pub use error::{FsError, OrfsError, Result};

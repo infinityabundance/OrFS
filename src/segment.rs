@@ -313,6 +313,7 @@ impl SegmentLocator {
 
 /// Fsync a directory so that newly created/renamed entries are durable.
 pub(crate) fn fsync_dir(dir: &Path) -> Result<()> {
+    crate::failpoints::check(crate::failpoints::Failpoint::DuringDirectorySync)?;
     match File::open(dir) {
         Ok(f) => {
             f.sync_all()?;

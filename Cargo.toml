@@ -15,6 +15,12 @@ path = "src/lib.rs"
 name = "orfs"
 path = "src/main.rs"
 
+[features]
+# Fault-injection failpoints (research §34). Off by default: production builds
+# contain a compile-time no-op at every injection site.
+default = []
+failpoints = []
+
 [dependencies]
 # --- Kernel / transport interfaces (version-pinned per directive) ---
 fuser = { version = "=0.18.0", default-features = false }

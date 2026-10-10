@@ -5,6 +5,7 @@
 //! phase, rather than silently pretending to work. `doctor` is fully real: it
 //! reports the actual kernel and container capabilities OrFS depends on.
 
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
@@ -15,8 +16,10 @@ use orfs::fuse::{self, BackingIo, MountOptions, StatfsMode};
 use orfs::log::{scan_log, OpenMode, TailInfo, DEFAULT_SEGMENT_SIZE};
 use orfs::manifestation::{ManifestationConfig, ManifestationProfile, ManifestationStatus};
 use orfs::namespace::SnapshotRootPayload;
+use orfs::query::QueryRequest;
 use orfs::record::{record_type_name, RecordType};
 use orfs::segment::{segment_file_name, SegmentExtent};
+use orfs::trigram::TrigramConfig;
 use orfs::volume::Volume;
 use orfs::{checkpoint, OrfsError, Result};
 
@@ -188,14 +191,23 @@ enum Command {
 
     /// Search file contents through the typed query API.
     Query {
-        /// Path to search (inside a mount, or a backing object).
+        /// Path to search: a backing volume, or any path inside one.
         path: PathBuf,
         /// Literal byte pattern to find.
         #[arg(long)]
         pattern: String,
-        /// Maximum number of matches to report.
+        /// Interpret `--pattern` as a hex string (for binary patterns).
+        #[arg(long)]
+        hex: bool,
+        /// Maximum number of matches to report (0 = unlimited).
         #[arg(long, default_value_t = 0)]
         limit: u64,
+        /// Build/refresh the concealed trigram index before querying.
+        #[arg(long)]
+        build: bool,
+        /// Do not recurse into subdirectories.
+        #[arg(long)]
+        no_recurse: bool,
     },
 
     /// Run the benchmark harness.
@@ -344,7 +356,14 @@ fn run(cli: &Cli) -> Result<()> {
             let profile = ManifestationProfile::parse(profile, *depth, *interval, *region_bytes)?;
             manifest_cmd(backing, None, profile, cli.json)
         }
-        Command::Query { .. } => phase("query", "Phase 9 (concealed query structures)"),
+        Command::Query {
+            path,
+            pattern,
+            hex,
+            limit,
+            build,
+            no_recurse,
+        } => query_cmd(path, pattern, *hex, *limit, *build, *no_recurse, cli.json),
         Command::Bench { .. } => phase("bench", "Phase 12 (performance court)"),
     }
 }
@@ -414,6 +433,169 @@ fn stat_cmd(path: &Path, json: bool) -> Result<()> {
         }
         None => println!("  backing capacity:       unavailable"),
     }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// query (typed query API, research §11.1, §12)
+// ---------------------------------------------------------------------------
+
+/// Walk up from `path` to the volume root (the directory containing
+/// `volume.meta`), returning the root and the in-volume path components.
+fn resolve_volume_path(path: &Path) -> Result<(PathBuf, Vec<Vec<u8>>)> {
+    let mut cur = path.to_path_buf();
+    let mut comps: Vec<Vec<u8>> = Vec::new();
+    loop {
+        if cur.join("volume.meta").exists() {
+            comps.reverse();
+            return Ok((cur, comps));
+        }
+        let name = cur.file_name().map(|n| n.as_bytes().to_vec());
+        let parent = cur.parent().map(|p| p.to_path_buf());
+        match (name, parent) {
+            (Some(name), Some(parent)) if parent != cur => {
+                comps.push(name);
+                cur = parent;
+            }
+            _ => break,
+        }
+    }
+    Err(OrfsError::InvalidArgument(format!(
+        "{} is not inside an OrFS volume (no volume.meta ancestor)",
+        path.display()
+    )))
+}
+
+fn decode_hex(s: &str) -> Result<Vec<u8>> {
+    let cleaned: String = s
+        .trim()
+        .strip_prefix("0x")
+        .unwrap_or(s.trim())
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    if cleaned.len() % 2 != 0 {
+        return Err(OrfsError::InvalidArgument(
+            "hex pattern must have an even number of digits".into(),
+        ));
+    }
+    let mut out = Vec::with_capacity(cleaned.len() / 2);
+    let bytes = cleaned.as_bytes();
+    for pair in bytes.chunks(2) {
+        let hi = (pair[0] as char)
+            .to_digit(16)
+            .ok_or_else(|| OrfsError::InvalidArgument("invalid hex digit".into()))?;
+        let lo = (pair[1] as char)
+            .to_digit(16)
+            .ok_or_else(|| OrfsError::InvalidArgument("invalid hex digit".into()))?;
+        out.push(((hi << 4) | lo) as u8);
+    }
+    Ok(out)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn query_cmd(
+    path: &Path,
+    pattern: &str,
+    hex_pattern: bool,
+    limit: u64,
+    build: bool,
+    no_recurse: bool,
+    json: bool,
+) -> Result<()> {
+    let pattern = if hex_pattern {
+        decode_hex(pattern)?
+    } else {
+        pattern.as_bytes().to_vec()
+    };
+    if pattern.is_empty() {
+        return Err(OrfsError::InvalidArgument(
+            "query pattern must be non-empty".into(),
+        ));
+    }
+    let (backing, comps) = resolve_volume_path(path)?;
+    let mut ns =
+        orfs::namespace::Namespace::open(&backing, OpenMode::ReadOnly, DurabilityMode::Ordered)?;
+    let root = ns.root();
+    let mut inode = ns.root_inode();
+    for comp in &comps {
+        inode = ns.lookup(inode, comp, root)?;
+    }
+
+    // Generation: either build/refresh the concealed index synchronously, or
+    // simply attach the recovered state. A query never *requires* an index.
+    let index_note = if build {
+        ns.enable_trigram(TrigramConfig {
+            synchronous: true,
+            ..Default::default()
+        })?;
+        let is_file = ns
+            .getattr(inode, root)
+            .map(|st| st.kind == orfs::inode::InodeType::File)
+            .unwrap_or(false);
+        let outcomes = ns.index_trigram_eligible(if is_file { Some(inode) } else { None })?;
+        let published = outcomes.iter().filter(|o| o.status == "published").count();
+        Some(format!(
+            "indexed {published}/{} object(s) synchronously",
+            outcomes.len()
+        ))
+    } else {
+        let recovered = ns.attach_trigram()?;
+        Some(format!(
+            "attached {recovered} committed trigram generation(s)"
+        ))
+    };
+
+    let request = QueryRequest {
+        inode,
+        root,
+        pattern,
+        limit: if limit == 0 { None } else { Some(limit) },
+        recursive: !no_recurse,
+        credential: Default::default(),
+    };
+    let result = ns.query(request)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+        return Ok(());
+    }
+    println!(
+        "orfs query {}: {} match(es) for pattern 0x{}",
+        path.display(),
+        result.matches.len(),
+        result.pattern_hex
+    );
+    if let Some(note) = index_note {
+        println!("  {note}");
+    }
+    for m in &result.matches {
+        println!(
+            "    inode {} v{} at offset {}",
+            m.inode, m.inode_version, m.offset
+        );
+    }
+    println!(
+        "  files: {} considered ({} indexed, {} scanned, {} unreadable); \
+         candidates {} ({} false); content read {} bytes{}{}",
+        result.stats.files_considered,
+        result.stats.files_indexed,
+        result.stats.files_scanned,
+        result.stats.files_skipped_unreadable,
+        result.stats.indexed_candidates,
+        result.stats.false_candidates,
+        result.stats.content_bytes_read,
+        if result.stats.limit_reached {
+            "; limit reached"
+        } else {
+            ""
+        },
+        if result.stats.canceled {
+            "; canceled"
+        } else {
+            ""
+        },
+    );
     Ok(())
 }
 

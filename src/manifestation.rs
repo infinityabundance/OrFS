@@ -1834,37 +1834,42 @@ fn worker_loop(inner: Arc<EngineInner>) {
 }
 
 // ---------------------------------------------------------------------------
-// Canonical little-endian codecs (private to this module)
+// Canonical little-endian codecs (shared with the other concealed-structure
+// modules; see `src/trigram.rs`)
 // ---------------------------------------------------------------------------
 
-struct Enc(Vec<u8>);
+pub(crate) struct Enc(Vec<u8>);
 
 impl Enc {
-    fn new() -> Enc {
+    pub(crate) fn new() -> Enc {
         Enc(Vec::new())
     }
 
-    fn u8(&mut self, v: u8) {
+    pub(crate) fn into_vec(self) -> Vec<u8> {
+        self.0
+    }
+
+    pub(crate) fn u8(&mut self, v: u8) {
         self.0.push(v);
     }
 
-    fn u16(&mut self, v: u16) {
+    pub(crate) fn u16(&mut self, v: u16) {
         self.0.extend_from_slice(&v.to_le_bytes());
     }
 
-    fn u32(&mut self, v: u32) {
+    pub(crate) fn u32(&mut self, v: u32) {
         self.0.extend_from_slice(&v.to_le_bytes());
     }
 
-    fn u64(&mut self, v: u64) {
+    pub(crate) fn u64(&mut self, v: u64) {
         self.0.extend_from_slice(&v.to_le_bytes());
     }
 
-    fn arr(&mut self, b: &[u8]) {
+    pub(crate) fn arr(&mut self, b: &[u8]) {
         self.0.extend_from_slice(b);
     }
 
-    fn str(&mut self, s: &str) {
+    pub(crate) fn str(&mut self, s: &str) {
         self.u32(s.len() as u32);
         self.arr(s.as_bytes());
     }
@@ -1900,21 +1905,21 @@ impl Enc {
     }
 }
 
-struct Dec<'a> {
+pub(crate) struct Dec<'a> {
     b: &'a [u8],
     pos: usize,
 }
 
 impl<'a> Dec<'a> {
-    fn new(b: &'a [u8]) -> Dec<'a> {
+    pub(crate) fn new(b: &'a [u8]) -> Dec<'a> {
         Dec { b, pos: 0 }
     }
 
-    fn remaining(&self) -> usize {
+    pub(crate) fn remaining(&self) -> usize {
         self.b.len().saturating_sub(self.pos)
     }
 
-    fn take(&mut self, n: usize) -> Result<&'a [u8]> {
+    pub(crate) fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let end = self.pos.checked_add(n).ok_or(OrfsError::Overflow {
             what: "manifest decode",
         })?;
@@ -1928,49 +1933,49 @@ impl<'a> Dec<'a> {
         Ok(s)
     }
 
-    fn u8(&mut self) -> Result<u8> {
+    pub(crate) fn u8(&mut self) -> Result<u8> {
         Ok(self.take(1)?[0])
     }
 
-    fn u16(&mut self) -> Result<u16> {
+    pub(crate) fn u16(&mut self) -> Result<u16> {
         let s = self.take(2)?;
         Ok(u16::from_le_bytes([s[0], s[1]]))
     }
 
-    fn u32(&mut self) -> Result<u32> {
+    pub(crate) fn u32(&mut self) -> Result<u32> {
         let s = self.take(4)?;
         Ok(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
     }
 
-    fn u64(&mut self) -> Result<u64> {
+    pub(crate) fn u64(&mut self) -> Result<u64> {
         let s = self.take(8)?;
         Ok(u64::from_le_bytes([
             s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7],
         ]))
     }
 
-    fn arr16(&mut self) -> Result<[u8; 16]> {
+    pub(crate) fn arr16(&mut self) -> Result<[u8; 16]> {
         let s = self.take(16)?;
         let mut a = [0u8; 16];
         a.copy_from_slice(s);
         Ok(a)
     }
 
-    fn arr32(&mut self) -> Result<[u8; 32]> {
+    pub(crate) fn arr32(&mut self) -> Result<[u8; 32]> {
         let s = self.take(32)?;
         let mut a = [0u8; 32];
         a.copy_from_slice(s);
         Ok(a)
     }
 
-    fn string(&mut self) -> Result<String> {
+    pub(crate) fn string(&mut self) -> Result<String> {
         let len = self.u32()? as usize;
         let bytes = self.take(len)?;
         String::from_utf8(bytes.to_vec())
             .map_err(|_| OrfsError::Corrupt("manifest string is not UTF-8".into()))
     }
 
-    fn opt_u16(&mut self) -> Result<Option<u16>> {
+    pub(crate) fn opt_u16(&mut self) -> Result<Option<u16>> {
         Ok(if self.u8()? != 0 {
             Some(self.u16()?)
         } else {
@@ -1978,7 +1983,7 @@ impl<'a> Dec<'a> {
         })
     }
 
-    fn opt_u32(&mut self) -> Result<Option<u32>> {
+    pub(crate) fn opt_u32(&mut self) -> Result<Option<u32>> {
         Ok(if self.u8()? != 0 {
             Some(self.u32()?)
         } else {
@@ -1986,7 +1991,7 @@ impl<'a> Dec<'a> {
         })
     }
 
-    fn opt_arr16(&mut self) -> Result<Option<[u8; 16]>> {
+    pub(crate) fn opt_arr16(&mut self) -> Result<Option<[u8; 16]>> {
         Ok(if self.u8()? != 0 {
             Some(self.arr16()?)
         } else {

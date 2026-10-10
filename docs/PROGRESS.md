@@ -624,3 +624,78 @@ bytes a read returns.
 
 * The optional trigram/suffix/image/directory families and query surfaces
   (research §11, §12) are Phase 9; they are accounted for but not built.
+
+## Phase 9 — Concealed query structures and the typed query API
+
+**Complete** (see also `docs/QUERY.md`). Implements research §11.1, §11.2,
+§11.3, §12. The query plane is Plane C: disposable, rebuildable, and never
+changes what a query returns.
+
+### Delivered
+
+* `src/trigram.rs` — a **positional trigram index** (research §11.1): trigram
+  key → posting list of positions, with the source inode version, source logical
+  size, posting encoding, and verification metadata (§11.1's required
+  components). It is a version-qualified manifested structure under
+  `.or_bloom/trigram/`, built asynchronously by a bounded worker pool that reuses
+  the Phase-7 job/worker/publication discipline (backpressure, cancellation,
+  supersession, `HEAD`-advertised immutable self-validating manifests). Each
+  manifest also carries a **compact presence sketch** (~1 KiB, no false
+  negatives) so a provably-absent pattern skips a file without loading its
+  payload — the positional index alone is source-sized, so this is what makes
+  the index a net win.
+* `src/query.rs` — the **typed query API** (research §12): a `QueryRequest`
+  (`inode`, `root`, `pattern`, `limit`, recursion, credential) and result types
+  with streaming match positions, result limits, cancellation, pinned
+  consistent inode versions, permission enforcement (the same POSIX rule as
+  mounted reads), automatic full-scan fallback, and asynchronous index
+  generation (`query` works before the index exists; `orfs query --build` may
+  trigger generation). **Every candidate is verified against the actual logical
+  file content** before it is reported, so the index can never produce a false
+  match.
+* `src/suffix.rs` — a **suffix automaton** (research §11.2) with `contains`
+  (`O(m)`), `count` (`O(m)`), and `match_positions` (`O(m + k)`), a documented
+  memory estimate, and tests proving brute-force parity. Existence vs
+  enumeration costs are distinguished explicitly.
+* `src/image.rs` — content-based **image recognition**, dimension and
+  colour-semantics parsing, and multiresolution **geometry** (research §11.3)
+  for PNG/GIF/BMP/JPEG (plus WebP/TIFF signatures). See §"Explicitly not
+  implemented" for the pixel-surface pyramid.
+* CLI — `orfs query <path> --pattern <bytes> [--hex] [--limit N] [--build]
+  [--no-recurse] [--json]`, wired to the library API.
+* `src/stats.rs` already accounts the `trigram`/`suffix`/`image` families under
+  `M_indexes`; no change was needed.
+
+### Tests (inside the container)
+
+* `cargo test`: 83 unit + 8 `ekbloom_read` + 2 `fuse_integration` + 10 `log_model`
+  + 8 `manifestation` + 7 `namespace_model` + 9 `query` (new) + 4 `smoke`
+  + 1 `snapshot_fuse` + 10 `snapshot_model` + 9 `transaction_model`
+  + 7 `uring_integration` = **158 passing**.
+* `tests/query.rs` proves parity (indexed vs full scan) over many patterns
+  including no-match, overlapping, binary, and multi-match; stale-version
+  rejection; corruption fallback; cancellation; limits; streaming order;
+  permission enforcement; and the false-candidate verification invariant.
+* `cargo fmt -p orfs --check` and `cargo clippy --all-targets -- -D warnings`
+  pass.
+* `sh scripts/container-fuse-test.sh` and `sh scripts/container-uring-test.sh`
+  pass (io_uring engaged; 7/7 integration tests).
+
+### Evidence
+
+* `evidence/correctness/query-parity.json` — per-pattern indexed-vs-scan match
+  parity with per-path statistics (candidates, false candidates, bytes read).
+* `evidence/performance/search-latency.json` — indexed vs full-scan search
+  latency, construction cost (elapsed, payload bytes, postings), and
+  suffix-automaton metrics (states, transitions, build/query timings).
+
+### Explicitly not implemented in Phase 9
+
+* The **image pixel-surface pyramid** (decoded, downsampled surfaces under
+  `.or_bloom/image/`). Recognition, dimensions, colour semantics, and level
+  geometry are implemented; materialising surfaces requires a PNG codec
+  (zlib/DEFLATE + filter/colour/interlace handling) that cannot be added to this
+  offline, single-crate/minimal-dependency build. This is documented precisely
+  in `src/image.rs` and `docs/QUERY.md` §9.1 and is not faked.
+* The suffix automaton is measured but not wired into the query plane (the
+  trigram index is); this is stated, not implied.

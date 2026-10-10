@@ -285,6 +285,42 @@ impl Inode {
     }
 }
 
+// ---------------------------------------------------------------------------
+// POSIX access checks (research §12: the query interface uses the *same*
+// permission checks and inode-version rules as ordinary reads)
+// ---------------------------------------------------------------------------
+
+/// POSIX permission classification: owner, group, or other.
+pub fn perm_class(uid: u32, gid: u32, st: &InodeStat) -> u32 {
+    if uid == st.uid {
+        6
+    } else if gid == st.gid {
+        3
+    } else {
+        0
+    }
+}
+
+/// Check `mask` (bit 2 = read, bit 1 = write, bit 0 = execute) against `st`.
+///
+/// This is the single authoritative POSIX access rule for the whole crate: both
+/// the FUSE transport (`src/fuse.rs`) and the query API (`src/query.rs`) call it,
+/// so a mounted read and a search can never disagree about who may read a file.
+pub fn has_permission(uid: u32, gid: u32, st: &InodeStat, mask: u32) -> bool {
+    let perm = st.mode & 0o777;
+    if uid == 0 {
+        // Root bypasses read/write; execute needs at least one x bit set on a
+        // regular file, and is always allowed on directories.
+        if mask & 0o1 != 0 && st.kind == InodeType::File {
+            return perm & 0o111 != 0;
+        }
+        return true;
+    }
+    let shift = perm_class(uid, gid, st);
+    let class = (perm >> shift) & 0o7;
+    (class & mask) == mask
+}
+
 /// The POSIX `stat`-like view of an inode, returned by `getattr`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct InodeStat {

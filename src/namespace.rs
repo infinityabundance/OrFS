@@ -49,6 +49,10 @@ use crate::manifestation::{
 use crate::readpath::{PlannedRead, ReadPlanner, ReadPlannerConfig, ReadQuery};
 use crate::record::{RecordType, FOOTER_LEN, HEADER_LEN};
 use crate::transaction::{Transaction, TransactionBuilder, TX_BEGIN_PAYLOAD_LEN};
+use crate::trigram::{
+    TrigramBuildOutcome, TrigramConfig, TrigramEngine, TrigramEngineReport, TrigramJob,
+    TrigramState, TrigramStore, MIN_PATTERN,
+};
 use crate::volume::Volume;
 
 /// Encoded length of a `TX_BEGIN` record (`header + payload + footer`).
@@ -255,6 +259,10 @@ pub struct Namespace {
     /// The certified read planner over manifested structures (Phase 8), when
     /// manifestation is enabled.
     read_planner: Option<Arc<ReadPlanner>>,
+    /// The published trigram index state (Phase 9), when the query plane is on.
+    trigram: Option<Arc<TrigramState>>,
+    /// The background trigram build engine, when the query plane is on.
+    trigram_engine: Option<Arc<TrigramEngine>>,
 }
 
 impl Namespace {
@@ -295,6 +303,8 @@ impl Namespace {
             manifestation: None,
             manifestation_engine: None,
             read_planner: None,
+            trigram: None,
+            trigram_engine: None,
         })
     }
 
@@ -415,6 +425,46 @@ impl Namespace {
         self.read_planner.as_ref()
     }
 
+    // -- concealed query structures (Plane C; research §11.1, §12) ----------
+
+    /// Enable the concealed trigram-index query plane: recover the committed
+    /// trigram generations and start a bounded background build engine. Nothing
+    /// here touches authoritative history; a fault cannot alter the logical view.
+    pub fn enable_trigram(&mut self, cfg: TrigramConfig) -> Result<TrigramEngineReport> {
+        let store = TrigramStore::new(&self.volume.root_dir);
+        let (engine, report) = TrigramEngine::start(store, self.volume.meta.uuid, cfg)?;
+        self.trigram = Some(engine.state());
+        self.trigram_engine = Some(engine);
+        Ok(report)
+    }
+
+    /// Whether the trigram query plane is enabled.
+    pub fn trigram_enabled(&self) -> bool {
+        self.trigram_engine.is_some()
+    }
+
+    /// Attach the recovered trigram state for read-only queries, without starting
+    /// a build engine. Returns the number of committed generations recovered.
+    /// A query can use the attached state immediately; `None`/zero simply means
+    /// the query falls back to an authoritative full scan.
+    pub fn attach_trigram(&mut self) -> Result<u64> {
+        let store = TrigramStore::new(&self.volume.root_dir);
+        let state = TrigramState::recover(store, self.volume.meta.uuid)?;
+        let count = state.generation_count();
+        self.trigram = Some(state);
+        Ok(count)
+    }
+
+    /// The published trigram state, when the query plane is enabled.
+    pub fn trigram_state(&self) -> Option<Arc<TrigramState>> {
+        self.trigram.clone()
+    }
+
+    /// The background trigram build engine, when enabled.
+    pub fn trigram_engine(&self) -> Option<Arc<TrigramEngine>> {
+        self.trigram_engine.clone()
+    }
+
     /// Manifest the eligible object(s) at the current committed root.
     ///
     /// A call is synchronous: it builds and publishes on the calling thread and
@@ -471,6 +521,16 @@ impl Namespace {
         } else {
             Ok(Cow::Owned(Index::from_log(&self.volume.log, root)?))
         }
+    }
+
+    /// The index view at `root` (the query engine's discovery surface).
+    pub(crate) fn search_view(&self, root: u64) -> Result<Cow<'_, Index>> {
+        self.view(root)
+    }
+
+    /// A single inode from the view at `root`, cloned so the view may be dropped.
+    pub(crate) fn search_inode(&self, inode: u64, root: u64) -> Result<Option<Inode>> {
+        Ok(self.view(root)?.inode(inode).cloned())
     }
 
     // -- reads -------------------------------------------------------------
@@ -640,6 +700,11 @@ impl Namespace {
         if let Some(engine) = self.manifestation_engine.clone() {
             self.enqueue_manifestations(&engine, &touched);
         }
+        // Optional background trigram indexing (research §11.1): also only after
+        // a successful authoritative commit, and only if the query plane is on.
+        if let Some(engine) = self.trigram_engine.clone() {
+            self.enqueue_trigram_builds(&engine, &touched);
+        }
         Ok(outcome)
     }
 
@@ -682,6 +747,88 @@ impl Namespace {
                 let _ = engine.submit(spec);
             }
         }
+    }
+
+    /// Enqueue (or synchronously build) trigram indexes for the regular-file
+    /// inodes a transaction touched. Authority is only ever *read* here.
+    fn enqueue_trigram_builds(&self, engine: &Arc<TrigramEngine>, touched: &[u64]) {
+        let root = self.index.root();
+        for &inode in touched {
+            let Some(ino) = self.index.inode(inode) else {
+                continue;
+            };
+            if !ino.is_file() {
+                continue;
+            }
+            let version = ino.current_version();
+            // Record the newest committed version even if this job is dropped, so
+            // a stale in-flight build is superseded (research §10.3, §11.1).
+            engine.note_committed_version(inode, version);
+            let min = MIN_PATTERN as u64;
+            if ino.size < min || ino.size > engine.config().max_source_bytes {
+                continue;
+            }
+            let source = match self.read_extent(inode, root, 0, ino.size) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            let spec = TrigramJob {
+                inode,
+                inode_version: version,
+                root,
+                source,
+            };
+            if engine.config().synchronous {
+                let _ = engine.publish_now(spec);
+            } else {
+                // Backpressure: a full queue drops the optional build.
+                let _ = engine.submit(spec);
+            }
+        }
+    }
+
+    /// Build trigram indexes synchronously for the eligible object(s) at the
+    /// current committed root. With `only = None` every non-trivial regular file
+    /// is indexed; with `Some(inode)` exactly that inode is attempted.
+    ///
+    /// This is the explicit "generation" entry point — a query never needs it
+    /// (it falls back to a full scan), but it lets a caller populate the
+    /// concealed structure ahead of time. Authority is only ever read.
+    pub fn index_trigram_eligible(&self, only: Option<u64>) -> Result<Vec<TrigramBuildOutcome>> {
+        let engine = self.trigram_engine.clone().ok_or_else(|| {
+            OrfsError::InvalidArgument("the trigram query plane is not enabled".into())
+        })?;
+        let root = self.index.root();
+        let ids: Vec<u64> = match only {
+            Some(i) => vec![i],
+            None => self.index.inode_ids().collect(),
+        };
+        let min = MIN_PATTERN as u64;
+        let mut out = Vec::new();
+        for inode in ids {
+            let Some(ino) = self.index.inode(inode) else {
+                continue;
+            };
+            if !ino.is_file() {
+                continue;
+            }
+            if only.is_none() && ino.size < min {
+                continue;
+            }
+            let version = ino.current_version();
+            engine.note_committed_version(inode, version);
+            if ino.size > engine.config().max_source_bytes {
+                continue;
+            }
+            let source = self.read_extent(inode, root, 0, ino.size)?;
+            out.push(engine.publish_now(TrigramJob {
+                inode,
+                inode_version: version,
+                root,
+                source,
+            }));
+        }
+        Ok(out)
     }
 
     /// Begin a plan for the next transaction.

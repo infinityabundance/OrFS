@@ -44,7 +44,7 @@ use parking_lot::Mutex;
 
 use crate::commit::DurabilityMode;
 use crate::error::{OrfsError, Result};
-use crate::inode::{InodeStat, InodeType, Timespec};
+use crate::inode::{has_permission, InodeStat, InodeType, Timespec};
 use crate::log::OpenMode;
 use crate::manifestation::ManifestationProfile;
 use crate::namespace::{Namespace, OrfsCore, RenameMode, SetAttr};
@@ -544,33 +544,6 @@ fn file_attr(st: &InodeStat) -> FileAttr {
         blksize: BLOCK_SIZE,
         flags: 0,
     }
-}
-
-/// POSIX permission classification: owner, group, or other.
-fn perm_class(uid: u32, gid: u32, st: &InodeStat) -> u32 {
-    if uid == st.uid {
-        6
-    } else if gid == st.gid {
-        3
-    } else {
-        0
-    }
-}
-
-/// Check `mask` (bit 2 = read, bit 1 = write, bit 0 = execute) against `st`.
-fn has_permission(uid: u32, gid: u32, st: &InodeStat, mask: u32) -> bool {
-    let perm = st.mode & 0o777;
-    if uid == 0 {
-        // Root bypasses read/write; execute needs at least one x bit set on a
-        // regular file, and is always allowed on directories.
-        if mask & 0o1 != 0 && st.kind == InodeType::File {
-            return perm & 0o111 != 0;
-        }
-        return true;
-    }
-    let shift = perm_class(uid, gid, st);
-    let class = (perm >> shift) & 0o7;
-    (class & mask) == mask
 }
 
 // ---------------------------------------------------------------------------

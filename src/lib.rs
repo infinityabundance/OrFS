@@ -34,22 +34,29 @@ pub mod error;
 pub mod extent;
 pub mod failpoints;
 pub mod fuse;
+pub mod image;
 pub mod index;
 pub mod inode;
 pub mod log;
 pub mod manifestation;
 pub mod namespace;
+pub mod query;
 pub mod readpath;
 pub mod record;
 pub mod segment;
 pub mod snapshot;
 pub mod stats;
+pub mod suffix;
 pub mod transaction;
+pub mod trigram;
 pub mod uring;
 pub mod volume;
 
 pub use error::{FsError, OrfsError, Result};
 pub use namespace::{Namespace, OrfsCore, RenameMode, SetAttr};
+pub use query::{
+    Credential, MatchFlow, QueryEngine, QueryMatch, QueryRequest, QueryResult, QueryStats,
+};
 pub use snapshot::{HistoricalRoot, Snapshot};
 
 /// Crate version, surfaced by the CLI and evidence receipts.

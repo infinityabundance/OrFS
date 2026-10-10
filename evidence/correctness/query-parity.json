@@ -1,0 +1,218 @@
+{
+  "all_identical": true,
+  "cases": [
+    {
+      "identical": true,
+      "indexed": {
+        "false_candidates": 0,
+        "files_indexed": 12,
+        "files_scanned": 0,
+        "impossible_by_index": 6,
+        "indexed_candidates": 24,
+        "verified_matches": 24
+      },
+      "indexed_content_bytes_read": 8258,
+      "matches": 24,
+      "pattern_hex": "616263",
+      "pattern_len": 3,
+      "scan": {
+        "content_bytes_read": 8308,
+        "files_scanned": 12
+      }
+    },
+    {
+      "identical": true,
+      "indexed": {
+        "false_candidates": 10,
+        "files_indexed": 12,
+        "files_scanned": 0,
+        "impossible_by_index": 8,
+        "indexed_candidates": 14,
+        "verified_matches": 4
+      },
+      "indexed_content_bytes_read": 8240,
+      "matches": 4,
+      "pattern_hex": "61626364",
+      "pattern_len": 4,
+      "scan": {
+        "content_bytes_read": 8308,
+        "files_scanned": 12
+      }
+    },
+    {
+      "identical": true,
+      "indexed": {
+        "false_candidates": 10,
+        "files_indexed": 10,
+        "files_scanned": 0,
+        "impossible_by_index": 4,
+        "indexed_candidates": 16,
+        "verified_matches": 6
+      },
+      "indexed_content_bytes_read": 8258,
+      "matches": 6,
+      "pattern_hex": "616263616263",
+      "pattern_len": 6,
+      "scan": {
+        "content_bytes_read": 8300,
+        "files_scanned": 10
+      }
+    },
+    {
+      "identical": true,
+      "indexed": {
+        "false_candidates": 16,
+        "files_indexed": 12,
+        "files_scanned": 0,
+        "impossible_by_index": 8,
+        "indexed_candidates": 22,
+        "verified_matches": 4
+      },
+      "indexed_content_bytes_read": 8220,
+      "matches": 4,
+      "pattern_hex": "61616161",
+      "pattern_len": 4,
+      "scan": {
+        "content_bytes_read": 8308,
+        "files_scanned": 12
+      }
+    },
+    {
+      "identical": true,
+      "indexed": {
+        "false_candidates": 0,
+        "files_indexed": 12,
+        "files_scanned": 0,
+        "impossible_by_index": 10,
+        "indexed_candidates": 14,
+        "verified_matches": 14
+      },
+      "indexed_content_bytes_read": 8192,
+      "matches": 14,
+      "pattern_hex": "676665",
+      "pattern_len": 3,
+      "scan": {
+        "content_bytes_read": 8308,
+        "files_scanned": 12
+      }
+    },
+    {
+      "identical": true,
+      "indexed": {
+        "false_candidates": 0,
+        "files_indexed": 4,
+        "files_scanned": 0,
+        "impossible_by_index": 4,
+        "indexed_candidates": 0,
+        "verified_matches": 0
+      },
+      "indexed_content_bytes_read": 0,
+      "matches": 0,
+      "pattern_hex": "6e6f742070726573656e742068657265",
+      "pattern_len": 16,
+      "scan": {
+        "content_bytes_read": 8240,
+        "files_scanned": 4
+      }
+    },
+    {
+      "identical": true,
+      "indexed": {
+        "false_candidates": 0,
+        "files_indexed": 0,
+        "files_scanned": 12,
+        "impossible_by_index": 0,
+        "indexed_candidates": 0,
+        "verified_matches": 988
+      },
+      "indexed_content_bytes_read": 8308,
+      "matches": 988,
+      "pattern_hex": "61",
+      "pattern_len": 1,
+      "scan": {
+        "content_bytes_read": 8308,
+        "files_scanned": 12
+      }
+    },
+    {
+      "identical": true,
+      "indexed": {
+        "false_candidates": 0,
+        "files_indexed": 0,
+        "files_scanned": 12,
+        "impossible_by_index": 0,
+        "indexed_candidates": 0,
+        "verified_matches": 122
+      },
+      "indexed_content_bytes_read": 8308,
+      "matches": 122,
+      "pattern_hex": "6162",
+      "pattern_len": 2,
+      "scan": {
+        "content_bytes_read": 8308,
+        "files_scanned": 12
+      }
+    },
+    {
+      "identical": true,
+      "indexed": {
+        "false_candidates": 0,
+        "files_indexed": 12,
+        "files_scanned": 0,
+        "impossible_by_index": 10,
+        "indexed_candidates": 4,
+        "verified_matches": 4
+      },
+      "indexed_content_bytes_read": 14,
+      "matches": 4,
+      "pattern_hex": "000102",
+      "pattern_len": 3,
+      "scan": {
+        "content_bytes_read": 8308,
+        "files_scanned": 12
+      }
+    },
+    {
+      "identical": true,
+      "indexed": {
+        "false_candidates": 0,
+        "files_indexed": 12,
+        "files_scanned": 0,
+        "impossible_by_index": 12,
+        "indexed_candidates": 0,
+        "verified_matches": 0
+      },
+      "indexed_content_bytes_read": 0,
+      "matches": 0,
+      "pattern_hex": "fffefd00",
+      "pattern_len": 4,
+      "scan": {
+        "content_bytes_read": 8308,
+        "files_scanned": 12
+      }
+    },
+    {
+      "identical": true,
+      "indexed": {
+        "false_candidates": 0,
+        "files_indexed": 8,
+        "files_scanned": 0,
+        "impossible_by_index": 8,
+        "indexed_candidates": 0,
+        "verified_matches": 0
+      },
+      "indexed_content_bytes_read": 0,
+      "matches": 0,
+      "pattern_hex": "616263206e6f7065",
+      "pattern_len": 8,
+      "scan": {
+        "content_bytes_read": 8286,
+        "files_scanned": 8
+      }
+    }
+  ],
+  "pattern_count": 11,
+  "pinned_root": 20557,
+  "schema": "orfs.query.v1",
+  "title": "indexed vs full-scan byte-identical match parity"
+}

@@ -248,5 +248,7 @@ physical figures with the on-disk totals match).
   documented in `docs/EKBLOOM-INTEGRATION.md`. Phase 7 builds, publishes,
   recovers, and accounts for generations; it does not itself serve reads from
   them, and no Phase 7 code changes the bytes any read returns.
-* The optional trigram/suffix/image/directory families (research §11) are
-  accounted for but not yet built (Phase 9).
+* The optional trigram/suffix/image families (research §11) and the typed
+  query API (§12) are Phase 9, delivered in `src/trigram.rs`, `src/query.rs`,
+  `src/suffix.rs`, and `src/image.rs`, and documented in `docs/QUERY.md`. They
+  are accounted for here (under `M_indexes`) but are not built by this phase.

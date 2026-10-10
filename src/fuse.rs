@@ -46,6 +46,7 @@ use crate::commit::DurabilityMode;
 use crate::error::{OrfsError, Result};
 use crate::inode::{InodeStat, InodeType, Timespec};
 use crate::log::OpenMode;
+use crate::manifestation::ManifestationProfile;
 use crate::namespace::{Namespace, OrfsCore, RenameMode, SetAttr};
 use crate::snapshot::Snapshot;
 
@@ -131,6 +132,13 @@ pub struct MountOptions {
     pub auto_unmount: bool,
     /// How `statfs` accounts capacity.
     pub statfs: StatfsMode,
+    /// Enable concealed manifestation for eligible objects with this profile
+    /// (`None` disables the plane entirely; the default).
+    pub manifest: Option<ManifestationProfile>,
+    /// Wait for the optional manifestation before acknowledging a write.
+    pub manifest_sync: bool,
+    /// Manifestation worker threads (`0` selects the CPU count).
+    pub manifest_workers: usize,
 }
 
 impl Default for MountOptions {
@@ -148,6 +156,9 @@ impl Default for MountOptions {
             allow_other: false,
             auto_unmount: false,
             statfs: StatfsMode::PhysicalSafe,
+            manifest: None,
+            manifest_sync: false,
+            manifest_workers: 0,
         }
     }
 }
@@ -1801,6 +1812,25 @@ fn build_core(
     } else {
         crate::uring::UringReport::disabled()
     };
+    if let Some(profile) = opts.manifest {
+        let cfg = crate::manifestation::ManifestationConfig {
+            workers: opts.manifest_workers,
+            synchronous: opts.manifest_sync,
+            profile,
+            ..Default::default()
+        };
+        let rep = core.enable_manifestation(cfg)?;
+        eprintln!(
+            "orfs: manifestation enabled (profile {}, backend {}, {} worker(s), queue {}; \
+             recovered {} generation(s), {} rejected)",
+            rep.profile,
+            rep.backend,
+            rep.workers,
+            rep.queue_capacity,
+            rep.recovered_generations,
+            rep.recovered_rejected,
+        );
+    }
     Ok((core, report))
 }
 

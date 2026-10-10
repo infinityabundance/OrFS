@@ -503,6 +503,11 @@ impl Index {
         self.inodes.get(&id)
     }
 
+    /// Every live inode id (used by physical accounting and manifestation).
+    pub fn inode_ids(&self) -> impl Iterator<Item = u64> + '_ {
+        self.inodes.keys().copied()
+    }
+
     /// The latest authoritative record offset for an inode (0 if unknown).
     pub fn latest_offset(&self, id: u64) -> u64 {
         self.inodes

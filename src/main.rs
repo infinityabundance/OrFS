@@ -13,6 +13,7 @@ use clap::{Parser, Subcommand};
 use orfs::commit::DurabilityMode;
 use orfs::fuse::{self, BackingIo, MountOptions, StatfsMode};
 use orfs::log::{scan_log, OpenMode, TailInfo, DEFAULT_SEGMENT_SIZE};
+use orfs::manifestation::{ManifestationConfig, ManifestationProfile, ManifestationStatus};
 use orfs::namespace::SnapshotRootPayload;
 use orfs::record::{record_type_name, RecordType};
 use orfs::segment::{segment_file_name, SegmentExtent};
@@ -96,6 +97,15 @@ enum Command {
         /// `statfs` accounting: physical-safe | plenum.
         #[arg(long, default_value = "physical-safe")]
         statfs: String,
+        /// Enable concealed manifestation for eligible objects (profile name).
+        #[arg(long)]
+        manifest: Option<String>,
+        /// Wait for the optional manifestation before acknowledging a write.
+        #[arg(long)]
+        manifest_sync: bool,
+        /// Manifestation worker threads (0 selects the CPU count).
+        #[arg(long, default_value_t = 0)]
+        manifest_workers: usize,
     },
 
     /// Unmount a mounted OrFS volume.
@@ -137,10 +147,13 @@ enum Command {
         cmd: SnapshotCommand,
     },
 
-    /// Manifest EKBLOOM acceleration structures for an object.
+    /// Manifest EKBLOOM acceleration structures for an eligible object.
     Manifest {
-        /// File to manifest (usually a path inside the backing store).
-        file: PathBuf,
+        /// Backing directory (an OrFS volume).
+        backing: PathBuf,
+        /// Manifest only this inode (default: every eligible regular file).
+        #[arg(long)]
+        inode: Option<u64>,
         /// Manifestation profile: root|sparse|dense|full|bloom4|bloom8|regional|path4|max-speed.
         #[arg(long, default_value = "bloom4")]
         profile: String,
@@ -162,6 +175,15 @@ enum Command {
         /// Manifestation profile to grow toward.
         #[arg(long, default_value = "max-speed")]
         profile: String,
+        /// Bloom depth for depth-bearing profiles.
+        #[arg(long)]
+        depth: Option<u16>,
+        /// Checkpoint interval for sparse/dense profiles.
+        #[arg(long)]
+        interval: Option<u32>,
+        /// Region size in bytes for the regional profile.
+        #[arg(long)]
+        region_bytes: Option<u32>,
     },
 
     /// Search file contents through the typed query API.
@@ -262,6 +284,9 @@ fn run(cli: &Cli) -> Result<()> {
             auto_unmount,
             read_only,
             statfs,
+            manifest,
+            manifest_sync,
+            manifest_workers,
         } => mount_cmd(MountArgs {
             backing,
             mountpoint,
@@ -278,10 +303,13 @@ fn run(cli: &Cli) -> Result<()> {
             auto_unmount: *auto_unmount,
             read_only: *read_only,
             statfs,
+            manifest: manifest.as_deref(),
+            manifest_sync: *manifest_sync,
+            manifest_workers: *manifest_workers,
         }),
         Command::Unmount { mountpoint } => unmount_cmd(mountpoint, cli.json),
         Command::Inspect { backing } => inspect(backing, cli.json),
-        Command::Stat { .. } => phase("stat", "Phase 5 (backing io_uring)"),
+        Command::Stat { path } => stat_cmd(path, cli.json),
         Command::Verify { backing, deep } => verify(backing, *deep, cli.json),
         Command::Recover { backing } => recover(backing, cli.json),
         Command::Snapshot { cmd } => match cmd {
@@ -295,8 +323,27 @@ fn run(cli: &Cli) -> Result<()> {
                 mountpoint,
             } => snapshot_mount_cmd(backing, *root, mountpoint),
         },
-        Command::Manifest { .. } => phase("manifest", "Phase 8 (EKBLOOM integration)"),
-        Command::Grow { .. } => phase("grow", "Phase 7 (concealed manifestation)"),
+        Command::Manifest {
+            backing,
+            inode,
+            profile,
+            depth,
+            interval,
+            region_bytes,
+        } => {
+            let profile = ManifestationProfile::parse(profile, *depth, *interval, *region_bytes)?;
+            manifest_cmd(backing, *inode, profile, cli.json)
+        }
+        Command::Grow {
+            backing,
+            profile,
+            depth,
+            interval,
+            region_bytes,
+        } => {
+            let profile = ManifestationProfile::parse(profile, *depth, *interval, *region_bytes)?;
+            manifest_cmd(backing, None, profile, cli.json)
+        }
         Command::Query { .. } => phase("query", "Phase 9 (concealed query structures)"),
         Command::Bench { .. } => phase("bench", "Phase 12 (performance court)"),
     }
@@ -305,6 +352,164 @@ fn run(cli: &Cli) -> Result<()> {
 fn phase(what: &str, phase: &'static str) -> Result<()> {
     let _ = what;
     Err(OrfsError::Unimplemented(phase))
+}
+
+// ---------------------------------------------------------------------------
+// stat (physical accounting, research §33)
+// ---------------------------------------------------------------------------
+
+fn stat_cmd(path: &Path, json: bool) -> Result<()> {
+    let acc = orfs::stats::account_path(path)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&acc).unwrap());
+        return Ok(());
+    }
+    println!("OrFS physical accounting for {}", path.display());
+    if let Some(uuid) = &acc.uuid {
+        println!("  volume uuid:            {uuid}");
+    }
+    println!("  committed root:         {}", acc.committed_root);
+    println!("  logical live bytes:     {}", acc.logical_live_bytes);
+    println!("  logical files:          {}", acc.logical_file_count);
+    println!("  logical directories:    {}", acc.logical_directory_count);
+    println!("  logical symlinks:       {}", acc.logical_symlink_count);
+    println!("  authoritative history:  {} bytes (M_log)", acc.m_log);
+    println!(
+        "    canonical:            {} bytes",
+        acc.authoritative_canonical_bytes
+    );
+    println!(
+        "    uncommitted tail:     {} bytes",
+        acc.uncommitted_tail_bytes
+    );
+    println!(
+        "  EKBLOOM manifested:     {} bytes (M_ekbloom)",
+        acc.m_ekbloom
+    );
+    println!(
+        "  indexes/search:         {} bytes (M_indexes)",
+        acc.m_indexes
+    );
+    println!(
+        "  replay accelerators:    {} bytes (M_checkpoints; embedded in or.log)",
+        acc.m_checkpoints
+    );
+    println!(
+        "  other:                  {} bytes (M_other; manifests + metadata)",
+        acc.m_other
+    );
+    println!("  total physical:         {} bytes (M_total)", acc.m_total);
+    println!(
+        "  physical overhead:      {} bytes over live logical",
+        acc.physical_overhead_bytes
+    );
+    println!(
+        "  manifested generations: {} across {} inode(s)",
+        acc.manifested_generations, acc.manifested_inodes
+    );
+    match acc.capacity {
+        Some(c) => {
+            println!("  backing total:          {} bytes", c.total_bytes);
+            println!("  backing available:      {} bytes", c.available_bytes);
+        }
+        None => println!("  backing capacity:       unavailable"),
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// manifest / grow (concealed manifestation, research §9, §10)
+// ---------------------------------------------------------------------------
+
+fn manifest_cmd(
+    backing: &Path,
+    inode: Option<u64>,
+    profile: ManifestationProfile,
+    json: bool,
+) -> Result<()> {
+    let mut ns =
+        orfs::namespace::Namespace::open(backing, OpenMode::ReadOnly, DurabilityMode::Ordered)?;
+    let cfg = ManifestationConfig {
+        profile,
+        synchronous: true,
+        ..Default::default()
+    };
+    let report = ns.enable_manifestation(cfg)?;
+    let outcomes = ns.manifest_eligible(inode, profile)?;
+    let manifests: Vec<serde_json::Value> = ns
+        .manifestation_state()
+        .map(|s| s.published().iter().map(|m| m.to_json()).collect())
+        .unwrap_or_default();
+    let published = outcomes
+        .iter()
+        .filter(|o| o.status == ManifestationStatus::Published)
+        .count();
+    let failed = outcomes
+        .iter()
+        .filter(|o| o.status == ManifestationStatus::Failed)
+        .count();
+
+    if json {
+        let out = serde_json::json!({
+            "schema": "orfs.manifest.v1",
+            "volume": backing.display().to_string(),
+            "profile": report.profile,
+            "backend": report.backend,
+            "ekbloom_version": report.ekbloom_version,
+            "workers": report.workers,
+            "recovered_generations": report.recovered_generations,
+            "recovered_rejected": report.recovered_rejected,
+            "attempted": outcomes.len(),
+            "published": published,
+            "failed": failed,
+            "outcomes": outcomes.iter().map(|o| serde_json::json!({
+                "inode": o.inode,
+                "inode_version": o.inode_version,
+                "status": o.status.name(),
+                "generation": o.generation,
+                "physical_bytes": o.physical_bytes,
+                "profile": o.profile,
+                "detail": o.detail,
+            })).collect::<Vec<_>>(),
+            "manifests": manifests,
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
+    println!(
+        "manifested {} (profile {})",
+        backing.display(),
+        report.profile
+    );
+    println!(
+        "  backend:                {} (EKBLOOM {})",
+        report.backend, report.ekbloom_version
+    );
+    println!("  workers:                {}", report.workers);
+    println!(
+        "  recovered generations:  {} ({} rejected)",
+        report.recovered_generations, report.recovered_rejected
+    );
+    println!("  attempted:              {}", outcomes.len());
+    for o in &outcomes {
+        let gen = match o.generation {
+            Some(g) => format!("gen {g}, "),
+            None => String::new(),
+        };
+        let tail = if o.physical_bytes > 0 {
+            format!("{} bytes", o.physical_bytes)
+        } else {
+            o.detail.clone().unwrap_or_default()
+        };
+        println!(
+            "    inode {} v{} -> {status} ({gen}{tail})",
+            o.inode,
+            o.inode_version,
+            status = o.status.name()
+        );
+    }
+    println!("  published:              {published} ({failed} failed)");
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -328,6 +533,9 @@ struct MountArgs<'a> {
     auto_unmount: bool,
     read_only: bool,
     statfs: &'a str,
+    manifest: Option<&'a str>,
+    manifest_sync: bool,
+    manifest_workers: usize,
 }
 
 fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
@@ -354,6 +562,10 @@ fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
                 "unknown statfs mode {other:?} (expected physical-safe|plenum)"
             )))
         }
+    };
+    let manifest = match args.manifest {
+        Some(p) => Some(ManifestationProfile::parse(p, None, None, None)?),
+        None => None,
     };
 
     if backing_io == BackingIo::Uring {
@@ -387,6 +599,9 @@ fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
         allow_other: args.allow_other,
         auto_unmount: args.auto_unmount,
         statfs,
+        manifest,
+        manifest_sync: args.manifest_sync,
+        manifest_workers: args.manifest_workers,
     };
 
     eprintln!(

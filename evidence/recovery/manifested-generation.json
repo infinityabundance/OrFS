@@ -1,0 +1,130 @@
+{
+  "all_ok": true,
+  "cancellation": {
+    "canceled_leaves_no_committed_generation": "verified",
+    "evidence_test": "cancel_mid_construction_leaves_no_committed_generation"
+  },
+  "generator": "tests/manifestation.rs",
+  "manifests": [
+    {
+      "backend": "ekbloom",
+      "certification": {
+        "method": "structural",
+        "state": "built"
+      },
+      "components": [
+        {
+          "bytes": 11,
+          "kind": "core",
+          "name": "core"
+        },
+        {
+          "bytes": 12,
+          "kind": "checkpoint",
+          "name": "checkpoint[0] K=64"
+        }
+      ],
+      "concealed_bytes": 421,
+      "ekbloom_format": "0.3",
+      "ekbloom_object_id": "483bf8b0f3e6f79750a46f6c6e62bff2",
+      "ekbloom_version": "0.3.0",
+      "generation": 1,
+      "inode": 4,
+      "inode_version": 3,
+      "logical_range": [
+        0,
+        11
+      ],
+      "manifest_blake3": "b14c58fe343f325855769ee03bf31c838e38950b19141634aa85f2f9aff8059b",
+      "parameters": {
+        "depth": null,
+        "interval": 64,
+        "region_bytes": null
+      },
+      "payload": ".or_bloom/ekbloom/4-v3-r7070-g1.ekb",
+      "payload_blake3": "b5bfccbfb9ebd8e30b52b32aaf35ed28f17a84921f5e34e019a152555ca28848",
+      "physical_bytes": 432,
+      "physical_range": [
+        0,
+        432
+      ],
+      "profile": "sparse(K=64)",
+      "profile_kind": 1,
+      "root": 7070,
+      "schema": 1,
+      "source_bytes": 11,
+      "visible_bytes": 11,
+      "volume_uuid": "4f724653071140228033445566778899"
+    },
+    {
+      "backend": "ekbloom",
+      "certification": {
+        "method": "structural",
+        "state": "built"
+      },
+      "components": [
+        {
+          "bytes": 4096,
+          "kind": "core",
+          "name": "core"
+        },
+        {
+          "bytes": 780,
+          "kind": "checkpoint",
+          "name": "checkpoint[0] K=64"
+        }
+      ],
+      "concealed_bytes": 1184,
+      "ekbloom_format": "0.3",
+      "ekbloom_object_id": "5dc3a27e04ab25d562537b89bc15a7f0",
+      "ekbloom_version": "0.3.0",
+      "generation": 2,
+      "inode": 2,
+      "inode_version": 3,
+      "logical_range": [
+        0,
+        4096
+      ],
+      "manifest_blake3": "4811f02bddb1ddb497e85aa2a637ab6980bebbfa586b2aef4a4ebfcc07d832fc",
+      "parameters": {
+        "depth": null,
+        "interval": 64,
+        "region_bytes": null
+      },
+      "payload": ".or_bloom/ekbloom/2-v3-r7070-g2.ekb",
+      "payload_blake3": "4e5a8be6ef4bde6ae046e8ddd0181f936ec81777c104e9095ccbc38b1c13736e",
+      "physical_bytes": 5280,
+      "physical_range": [
+        0,
+        5280
+      ],
+      "profile": "sparse(K=64)",
+      "profile_kind": 1,
+      "root": 7070,
+      "schema": 1,
+      "source_bytes": 4096,
+      "visible_bytes": 4096,
+      "volume_uuid": "4f724653071140228033445566778899"
+    }
+  ],
+  "publication": {
+    "attempted": 2,
+    "ekbloom_version": "0.3.0",
+    "head_used": true,
+    "published": 2,
+    "recovered": 2,
+    "rejected": 0
+  },
+  "recovery": {
+    "evidence_test": "recovery_selects_newest_valid_and_ignores_torn",
+    "newest_valid_selected": "verified",
+    "tampered_payload_rejected": "verified",
+    "torn_head_fallback": "verified",
+    "torn_manifest_ignored": "verified"
+  },
+  "schema": "orfs.manifested-generation.v1",
+  "version_qualification": {
+    "evidence_test": "generations_are_version_qualified",
+    "exact_compatibility_required": "verified"
+  }
+}

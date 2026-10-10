@@ -1,0 +1,46 @@
+{
+  "accounting": {
+    "authoritative_canonical_bytes": 7070,
+    "bloom_subdir_bytes": {
+      "directory": 0,
+      "ekbloom": 5712,
+      "image": 0,
+      "manifests": 784,
+      "suffix": 0,
+      "trigram": 0
+    },
+    "bloom_total_bytes": 6496,
+    "capacity": {
+      "available_bytes": 16467562496,
+      "block_size": 4096,
+      "total_bytes": 26944671744
+    },
+    "committed_root": 7070,
+    "generation_manifest_bytes": 784,
+    "index_bytes": 0,
+    "logical_directory_count": 2,
+    "logical_file_count": 2,
+    "logical_inode_count": 5,
+    "logical_live_bytes": 4107,
+    "logical_symlink_count": 1,
+    "m_checkpoints": 0,
+    "m_ekbloom": 5712,
+    "m_indexes": 0,
+    "m_log": 7070,
+    "m_other": 828,
+    "m_total": 13610,
+    "manifested_bytes": 5712,
+    "manifested_generations": 2,
+    "manifested_inodes": 2,
+    "physical_overhead_bytes": 9503,
+    "uncommitted_tail_bytes": 0,
+    "uuid": "4f724653-0711-4022-8033-445566778899",
+    "volume": "/tmp/.tmpWet2cM"
+  },
+  "ekbloom_bytes_match": true,
+  "generator": "tests/manifestation.rs",
+  "model": "logical bytes/counts vs physical categories M_log, M_ekbloom, M_indexes, M_checkpoints, M_other; M_total equals the measured on-disk total",
+  "on_disk_total_bytes": 13610,
+  "schema": "orfs.manifestation-accounting.v1",
+  "totals_match": true
+}

@@ -466,3 +466,91 @@ orfs snapshot mount   <backing> <root> <mnt>      # read-only FUSE
   is a separate optional feature and is not faked. Snapshot mounts are read-only;
   branching history is not implemented. Checkpoints are single-record (an index
   larger than the record payload limit is refused, not truncated).
+
+## Phase 7 — Concealed manifestation engine and physical accounting
+
+**Complete** (see also `docs/MANIFESTATION.md`). Implements research §2 (I5, I6,
+I8), §4, §9, §10, §16, §33. This is Plane C: the concealed operational body.
+
+### Delivered
+
+* `src/manifestation.rs` — the manifestation engine.
+  * **Generation identity.** `GenerationManifest` records volume identity, inode
+    identity, inode version, authoritative root, EKBLOOM version + format,
+    profile, logical range, physical range, construction parameters,
+    certification state, integrity (BLAKE3 over the payload **and** a
+    self-digest over the canonical fields), physical size, and per-component
+    accounting. `usable_for(inode, version, root)` enforces **exact**
+    compatibility (I6); a mismatched version is refused, never used.
+  * **Job queue + bounded worker pool.** CPU workers construct; `io_uring` never
+    does. The queue is bounded and `submit` returns `QueueFull` under
+    backpressure — the authoritative commit is never blocked or failed.
+  * **Cancellation/supersession.** A newer inode version cancels and supersedes
+    older pending jobs; a worker refuses to publish if the inode advanced
+    (research §10.3). A cancelled mid-construction job leaves **no** committed
+    generation (the partial payload is discarded).
+  * **Publication protocol.** payload → manifest (`tmp` + fsync + rename + fsync
+    dir) → advertise (`manifests/HEAD`). Recovery selects the newest **valid**
+    committed generation per inode; a torn manifest or torn `HEAD` is skipped
+    and never invalidates an earlier commit.
+  * **Retention/rebuild.** Committed generations are never removed by the engine;
+    `sweep_orphans` reclaims only payloads referenced by no committed manifest.
+    Dropping all of `.or_bloom/` and rebuilding yields byte-identical **logical**
+    reads.
+  * **Real construction.** The production builder is `EkbloomBuilder`, which
+    consumes the EKBLOOM crate unchanged (`create` + `write_body`); EKBLOOM's
+    state machinery is not reimplemented and no EKBLOOM source is copied.
+* `src/stats.rs` — physical accounting separating logical from physical: logical
+  live bytes/counts, `M_log`, `M_ekbloom`, `M_indexes`, `M_checkpoints`
+  (embedded in `or.log`), `M_other`, `M_total`, uncommitted tail bytes, and the
+  real backing capacity. The five categories partition the backing directory, so
+  `M_total` equals the measured on-disk total exactly. Capacity is never reported
+  as unlimited.
+* `src/namespace.rs` — manifestation is wired to the commit path: after a
+  successful authoritative commit + version publication, jobs are enqueued for
+  the regular-file inodes the transaction touched. The foreground never waits
+  unless `ManifestationConfig::synchronous` is set. `enable_manifestation` /
+  `enable_manifestation_with_builder` start the engine and recover the published
+  set; `manifest_eligible` builds/publishes synchronously for the CLI. The
+  derived `user.orfs.manifested_bytes` / `user.orfs.ekbloom_profile` xattrs now
+  report the version-qualified manifested accounting (a `Snapshot` reports
+  `0`/`none`).
+* `src/fuse.rs` — `MountOptions` gains `manifest`, `manifest_sync`, and
+  `manifest_workers`; `build_core` enables the plane when requested (default:
+  disabled, so no existing behaviour changes). `--manifest <profile>`,
+  `--manifest-sync`, `--manifest-workers` are exposed on `orfs mount`.
+* `src/main.rs` — real `orfs stat <path> [--json]`, `orfs manifest <backing>
+  [--inode N] --profile <p> [--depth/--interval/--region-bytes] [--json]`, and
+  `orfs grow <backing> --profile <p> [--json]`.
+* CLI is honest for a fresh volume: `manifest`/`grow` report `attempted: 0` when
+  there are no eligible objects.
+
+### Tests (inside the container)
+
+* `cargo test`: 69 unit + 10 `log_model` + **8 `manifestation`**
+  + 7 `namespace_model` + 4 `smoke` + 1 `snapshot_fuse` + 10 `snapshot_model`
+  + 9 `transaction_model` + 7 `uring_integration` + 1 `fuse_integration`
+  (skips without a mount) = **126 passing**.
+* `cargo fmt -p orfs --check` and `cargo clippy --all-targets -- -D warnings`
+  pass.
+* `sh scripts/container-fuse-test.sh`: the real FUSE court still passes (18/18
+  POSIX operations) and the snapshot read-only mount court passes.
+* `sh scripts/container-uring-test.sh`: io_uring engaged, 7/7 integration tests
+  pass, benchmark run.
+
+### Evidence
+
+* `evidence/recovery/manifested-generation.json` — publication / cancellation /
+  recovery / version-qualification verdicts and the committed generation
+  manifests.
+* `evidence/performance/manifestation-accounting.json` — logical vs physical
+  figures with the on-disk totals match.
+
+### Explicitly not implemented in Phase 7
+
+* The **read path** that selects and consumes a manifested structure (research
+  §10.2) is Phase 8. Phase 7 builds, publishes, recovers, and accounts for
+  generations; it does not yet serve reads from them, so no returned byte
+  changes.
+* The optional trigram/suffix/image/directory families (research §11) are
+  accounted for but not yet built (Phase 9).

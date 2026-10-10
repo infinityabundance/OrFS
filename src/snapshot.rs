@@ -278,7 +278,9 @@ impl Snapshot {
     /// the root.
     pub fn getxattr(&self, inode: u64, name: &[u8]) -> Result<Vec<u8>> {
         let ino = self.index.inode(inode).ok_or(OrfsError::NotFound)?;
-        if let Some(v) = derived_xattr(ino, name) {
+        // A snapshot is a historical namespace view; it does not carry the live
+        // volume's manifested structures, so it reports the honest `0`/`none`.
+        if let Some(v) = derived_xattr(ino, name, None) {
             return Ok(v);
         }
         ino.xattrs.get(name).cloned().ok_or(OrfsError::NoData)

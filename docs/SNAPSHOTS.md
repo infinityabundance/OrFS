@@ -174,14 +174,17 @@ historically by a snapshot):
 | `user.orfs.current_root` | record offset of the inode's latest version | a **reference** |
 | `user.orfs.version` | monotonic inode version | |
 | `user.orfs.history_available` | `1` | historical bytes are retained |
-| `user.orfs.manifested_bytes` | `0` | Plane C is empty today (honest) |
-| `user.orfs.ekbloom_profile` | `none` | nothing manifested yet (honest) |
+| `user.orfs.manifested_bytes` | physical bytes of the inode's manifested structure for its **current** version (`0` if none) | version-qualified accounting (Phase 7) |
+| `user.orfs.ekbloom_profile` | the recorded profile, or `none` | Phase 7 |
 
 The root values are **references**, not contents: a root number alone does not
-contain the filesystem history. `user.orfs.manifested_bytes` and
-`user.orfs.ekbloom_profile` are `0`/`none` until Phase 7/8 manifest acceleration;
-they are not fabricated. Values obey the ordinary extended-attribute size and
-access rules (they are computed, not stored).
+contain the filesystem history. Since Phase 7, `user.orfs.manifested_bytes` and
+`user.orfs.ekbloom_profile` report the concealed-plane accounting for the inode's
+current version (`0`/`none` when nothing is manifested, or on any version
+mismatch); a historical [`Snapshot`] reports `0`/`none` because it does not carry
+the live volume's manifested structures. Values obey the ordinary
+extended-attribute size and access rules (they are computed, not stored). See
+`docs/MANIFESTATION.md` §9.
 
 ## 8. Invariants exercised by tests
 

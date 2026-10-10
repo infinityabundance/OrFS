@@ -23,6 +23,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::commit::{CommitOutcome, CommitSequencer, DurabilityMode};
@@ -41,6 +42,10 @@ use crate::inode::{
     XattrRemovePayload, XattrSetPayload,
 };
 use crate::log::OpenMode;
+use crate::manifestation::{
+    JobSpec, ManifestSummary, ManifestationBuilder, ManifestationConfig, ManifestationEngine,
+    ManifestationEngineReport, ManifestationOutcome, ManifestationProfile, ManifestationState,
+};
 use crate::record::{RecordType, FOOTER_LEN, HEADER_LEN};
 use crate::transaction::{Transaction, TransactionBuilder, TX_BEGIN_PAYLOAD_LEN};
 use crate::volume::Volume;
@@ -242,6 +247,10 @@ pub struct Namespace {
     durability: DurabilityMode,
     /// How the index was reconstructed at open time (checkpoint-aware recovery).
     mount_report: Option<crate::checkpoint::MountReport>,
+    /// The published manifested-generation state, when manifestation is enabled.
+    manifestation: Option<Arc<ManifestationState>>,
+    /// The background manifestation engine, when enabled.
+    manifestation_engine: Option<Arc<ManifestationEngine>>,
 }
 
 impl Namespace {
@@ -279,6 +288,8 @@ impl Namespace {
             index,
             durability,
             mount_report: Some(mount_report),
+            manifestation: None,
+            manifestation_engine: None,
         })
     }
 
@@ -340,6 +351,99 @@ impl Namespace {
             &self.snapshot_path(),
             self.volume.log.committed_end_offset(),
         )
+    }
+
+    // -- concealed manifestation (Plane C; research §9, §10, §33) ----------
+
+    /// Enable concealed manifestation with the production EKBLOOM builder.
+    ///
+    /// This recovers the published generation set and starts a bounded worker
+    /// pool. Nothing here touches authoritative history; a fault in this plane
+    /// cannot alter the logical view.
+    pub fn enable_manifestation(
+        &mut self,
+        cfg: ManifestationConfig,
+    ) -> Result<ManifestationEngineReport> {
+        let builder = Arc::new(crate::manifestation::EkbloomBuilder::new());
+        self.enable_manifestation_with_builder(cfg, builder)
+    }
+
+    /// Enable manifestation with a caller-supplied construction backend (used by
+    /// tests to inject deterministic or gated builders).
+    pub fn enable_manifestation_with_builder(
+        &mut self,
+        cfg: ManifestationConfig,
+        builder: Arc<dyn ManifestationBuilder>,
+    ) -> Result<ManifestationEngineReport> {
+        let store = crate::manifestation::GenerationStore::new(&self.volume.root_dir);
+        let (engine, report) =
+            ManifestationEngine::start(store, self.volume.meta.uuid, builder, cfg)?;
+        self.manifestation = Some(engine.state());
+        self.manifestation_engine = Some(engine);
+        Ok(report)
+    }
+
+    /// Whether the manifestation plane is enabled.
+    pub fn manifestation_enabled(&self) -> bool {
+        self.manifestation_engine.is_some()
+    }
+
+    /// The published-generation state, when enabled.
+    pub fn manifestation_state(&self) -> Option<Arc<ManifestationState>> {
+        self.manifestation.clone()
+    }
+
+    /// The background engine, when enabled.
+    pub fn manifestation_engine(&self) -> Option<Arc<ManifestationEngine>> {
+        self.manifestation_engine.clone()
+    }
+
+    /// Manifest the eligible object(s) at the current committed root.
+    ///
+    /// A call is synchronous: it builds and publishes on the calling thread and
+    /// returns the outcome per object. With `only = None` every non-empty
+    /// regular file is manifested; with `Some(inode)` exactly that inode is
+    /// attempted (even if empty). Authority is only ever *read* here.
+    pub fn manifest_eligible(
+        &self,
+        only: Option<u64>,
+        profile: ManifestationProfile,
+    ) -> Result<Vec<ManifestationOutcome>> {
+        let engine = self.manifestation_engine.clone().ok_or_else(|| {
+            OrfsError::InvalidArgument("manifestation is not enabled on this namespace".into())
+        })?;
+        let root = self.index.root();
+        let ids: Vec<u64> = match only {
+            Some(i) => vec![i],
+            None => self.index.inode_ids().collect(),
+        };
+        let mut out = Vec::new();
+        for inode in ids {
+            let Some(ino) = self.index.inode(inode) else {
+                continue;
+            };
+            if !ino.is_file() {
+                continue;
+            }
+            if only.is_none() && ino.size == 0 {
+                continue;
+            }
+            let version = ino.current_version();
+            engine.note_committed_version(inode, version);
+            if ino.size > u32::MAX as u64 {
+                continue;
+            }
+            let source = self.read_at(inode, root, 0, ino.size as u32)?;
+            let spec = JobSpec {
+                inode,
+                inode_version: version,
+                root,
+                profile,
+                source,
+            };
+            out.push(engine.publish_now(spec));
+        }
+        Ok(out)
     }
 
     // -- views -------------------------------------------------------------
@@ -424,7 +528,11 @@ impl Namespace {
     pub fn getxattr(&self, inode: u64, name: &[u8], root: u64) -> Result<Vec<u8>> {
         let view = self.view(root)?;
         let ino = view.inode(inode).ok_or(OrfsError::NotFound)?;
-        if let Some(v) = derived_xattr(ino, name) {
+        let summary = self
+            .manifestation
+            .as_ref()
+            .and_then(|s| s.summary(inode, ino.current_version()));
+        if let Some(v) = derived_xattr(ino, name, summary.as_ref()) {
             return Ok(v);
         }
         ino.xattrs.get(name).cloned().ok_or(OrfsError::NoData)
@@ -449,6 +557,7 @@ impl Namespace {
     /// exactly the records just committed.
     fn commit_plan(&mut self, plan: Plan) -> Result<CommitOutcome> {
         let planned_begin = plan.begin;
+        let touched: Vec<u64> = plan.touched.keys().copied().collect();
         let tx = plan.build()?;
         let outcome = {
             let mut seq = CommitSequencer::new(&mut self.volume, self.durability);
@@ -457,7 +566,55 @@ impl Namespace {
         debug_assert_eq!(outcome.begin_offset, planned_begin);
         self.index
             .apply_range(&self.volume.log, outcome.begin_offset, outcome.root)?;
+        // Optional background manifestation (research §10.3): only after a
+        // successful authoritative commit + version publication. The foreground
+        // write never waits unless the caller explicitly opted in. A failure or a
+        // full queue here is dropped — it can never affect authoritative history.
+        if let Some(engine) = self.manifestation_engine.clone() {
+            self.enqueue_manifestations(&engine, &touched);
+        }
         Ok(outcome)
+    }
+
+    /// Enqueue (or synchronously build) manifestation jobs for the regular-file
+    /// inodes a transaction touched. Authority is only ever *read* here.
+    fn enqueue_manifestations(&self, engine: &Arc<ManifestationEngine>, touched: &[u64]) {
+        let root = self.index.root();
+        for &inode in touched {
+            let Some(ino) = self.index.inode(inode) else {
+                continue;
+            };
+            if !ino.is_file() {
+                continue;
+            }
+            let version = ino.current_version();
+            // Always record the newest committed version so a stale in-flight job
+            // is superseded (research §10.3), even if this job is dropped.
+            engine.note_committed_version(inode, version);
+            if ino.size == 0
+                || ino.size > engine.config().max_source_bytes
+                || ino.size > u32::MAX as u64
+            {
+                continue;
+            }
+            let source = match self.read_at(inode, root, 0, ino.size as u32) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            let spec = JobSpec {
+                inode,
+                inode_version: version,
+                root,
+                profile: engine.config().profile,
+                source,
+            };
+            if engine.config().synchronous {
+                let _ = engine.publish_now(spec);
+            } else {
+                // Backpressure: a full queue drops the optional construction.
+                let _ = engine.submit(spec);
+            }
+        }
     }
 
     /// Begin a plan for the next transaction.
@@ -1126,7 +1283,11 @@ pub(crate) const DERIVED_XATTRS: [&str; 6] = [
     "user.orfs.ekbloom_profile",
 ];
 
-pub(crate) fn derived_xattr(inode: &Inode, name: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn derived_xattr(
+    inode: &Inode,
+    name: &[u8],
+    manifested: Option<&ManifestSummary>,
+) -> Option<Vec<u8>> {
     let value = match name {
         b"user.orfs.creation_root" => inode
             .versions
@@ -1137,10 +1298,15 @@ pub(crate) fn derived_xattr(inode: &Inode, name: &[u8]) -> Option<Vec<u8>> {
         b"user.orfs.current_root" => inode.latest_record_offset.to_string(),
         b"user.orfs.version" => inode.current_version().to_string(),
         b"user.orfs.history_available" => "1".to_string(),
-        // No acceleration structure is manifested in Plane C yet, so the honest
-        // reported size is zero and the profile is `none` (research §10, §33).
-        b"user.orfs.manifested_bytes" => "0".to_string(),
-        b"user.orfs.ekbloom_profile" => "none".to_string(),
+        // Physical accounting of the manifested structure for *this* inode
+        // version. Zero and `none` are the honest reports when nothing is
+        // manifested (research §10, §33); a version mismatch reports `none` (I6).
+        b"user.orfs.manifested_bytes" => manifested
+            .map(|m| m.physical_bytes.to_string())
+            .unwrap_or_else(|| "0".to_string()),
+        b"user.orfs.ekbloom_profile" => manifested
+            .map(|m| m.profile.clone())
+            .unwrap_or_else(|| "none".to_string()),
         _ => return None,
     };
     Some(value.into_bytes())

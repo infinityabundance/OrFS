@@ -244,8 +244,9 @@ physical figures with the on-disk totals match).
 ## 12. Explicitly out of scope for Phase 7
 
 * The **read path** that selects and consumes a manifested structure (§10.2
-  fastest compatible path) is Phase 8. Phase 7 builds, publishes, recovers, and
-  accounts for generations; it does not yet serve reads from them. Nothing in
-  Phase 7 changes the bytes any read returns.
+  fastest compatible path) is Phase 8, delivered in `src/readpath.rs` and
+  documented in `docs/EKBLOOM-INTEGRATION.md`. Phase 7 builds, publishes,
+  recovers, and accounts for generations; it does not itself serve reads from
+  them, and no Phase 7 code changes the bytes any read returns.
 * The optional trigram/suffix/image/directory families (research §11) are
   accounted for but not yet built (Phase 9).

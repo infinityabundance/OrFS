@@ -718,3 +718,93 @@ fn fuse_posix_conformance() {
     let _ = fs::remove_dir_all(&scratch);
     result.expect("unmount");
 }
+
+/// Phase 8: a mounted read is served by the measured EKBLOOM read planner when a
+/// compatible certified structure exists, and the visible contents are identical
+/// with or without it.
+#[test]
+fn fuse_manifested_reads_match_visible_contents() {
+    let required = std::env::var("ORFS_FUSE_TEST").as_deref() == Ok("1");
+
+    let scratch = unique_scratch("manifest-it");
+    let backing = scratch.join("backing");
+    let mnt = scratch.join("mnt");
+    fs::create_dir_all(&mnt).expect("mnt");
+
+    // SAFETY: `geteuid`/`getegid` are pure queries.
+    let (uid, gid) = unsafe { (libc::geteuid(), libc::getegid()) };
+    {
+        let mut ns = match Namespace::init(&backing, DEFAULT_SEGMENT_SIZE, DurabilityMode::Ordered)
+        {
+            Ok(ns) => ns,
+            Err(e) => {
+                if required {
+                    panic!("failed to initialise backing volume: {e}");
+                }
+                eprintln!("fuse_manifested: skipped (init failed: {e})");
+                return;
+            }
+        };
+        ns.setattr(
+            orfs::index::ROOT_INODE,
+            &SetAttr {
+                uid: Some(uid),
+                gid: Some(gid),
+                ..Default::default()
+            },
+        )
+        .expect("chown root inode");
+        ns.sync().expect("sync");
+    }
+
+    let opts = MountOptions {
+        durability: DurabilityMode::Ordered,
+        statfs: StatfsMode::PhysicalSafe,
+        manifest: Some(orfs::manifestation::ManifestationProfile::Path { depth: 4 }),
+        manifest_sync: true,
+        manifest_workers: 1,
+        ..Default::default()
+    };
+
+    let mount = match fuse::spawn(&backing, &mnt, &opts) {
+        Ok(m) => m,
+        Err(e) => {
+            if required {
+                panic!("FUSE mount failed under ORFS_FUSE_TEST=1: {e}");
+            }
+            eprintln!("fuse_manifested: skipped — FUSE mount unavailable: {e}");
+            return;
+        }
+    };
+
+    // Write a file through the mount; synchronous manifestation builds a
+    // concealed payload for it.
+    let data: Vec<u8> = (0..20_000).map(|i| ((i * 97 + 11) % 251) as u8).collect();
+    let f = mnt.join("manifested.bin");
+    fs::write(&f, &data).expect("write through mount");
+
+    // Whole-file and positional reads must return exactly the visible contents.
+    let whole = fs::read(&f).expect("read back");
+    assert_eq!(whole, data, "manifested read changed the visible contents");
+    {
+        use std::os::unix::fs::FileExt;
+        let file = File::open(&f).expect("open");
+        let mut buf = [0u8; 100];
+        file.read_exact_at(&mut buf, 12_345).expect("pread");
+        assert_eq!(&buf[..], &data[12_345..12_445]);
+    }
+
+    // A concealed EKBLOOM payload was built (a completed structure exists).
+    let payload_dir = backing.join(".or_bloom").join("ekbloom");
+    let count = fs::read_dir(&payload_dir)
+        .map(|it| it.filter_map(Result::ok).count())
+        .unwrap_or(0);
+    assert!(
+        count >= 1,
+        "no concealed EKBLOOM payload was built for the object"
+    );
+
+    let result = mount.unmount();
+    let _ = fs::remove_dir_all(&scratch);
+    result.expect("unmount");
+}

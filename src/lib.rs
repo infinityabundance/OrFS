@@ -39,6 +39,7 @@ pub mod inode;
 pub mod log;
 pub mod manifestation;
 pub mod namespace;
+pub mod readpath;
 pub mod record;
 pub mod segment;
 pub mod snapshot;

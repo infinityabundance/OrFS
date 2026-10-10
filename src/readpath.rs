@@ -1,0 +1,1281 @@
+//! The planned, certified, measured read path over EKBLOOM manifested
+//! structures (research §10.2 read selection, §16, §20 Ring R).
+//!
+//! A read request follows exactly the research ordering:
+//!
+//! ```text
+//! logical inode -> committed inode version -> extent selection
+//!   -> available certified manifestation -> fastest compatible path -> bytes
+//! ```
+//!
+//! # What this module does and does not do
+//!
+//! OrFS's job (research §10) is to **store, generate, publish, select, and
+//! safely access** EKBLOOM structures. EKBLOOM's job is to produce exact outputs
+//! and certified operational transitions. This module therefore never
+//! reimplements EKBLOOM's state machine: it only *drives* EKBLOOM's public
+//! primitives ([`ekbloom::machine_by_id`], [`ekbloom::PathBloom`],
+//! [`ekbloom::History`], [`ekbloom::CheckpointSet`],
+//! [`ekbloom::bloom_global::GlobalBloom`], [`ekbloom::bloom_region::RegionTable`],
+//! [`ekbloom::verify`]) and chooses between them by measurement.
+//!
+//! # Candidate paths
+//!
+//! For a compatible, certified generation the planner considers, per request:
+//!
+//! 1. **exact/path table** — a certified [`ekbloom::PathBloom`] (exact by
+//!    construction),
+//! 2. **full manifested state projection** — [`ekbloom::History`] state per
+//!    position plus one machine reveal,
+//! 3. **restart checkpoints** — [`ekbloom::CheckpointSet::restore`] plus bounded
+//!    machine replay,
+//! 4. **`D`-step transition bloom** — a universal [`GlobalBloom`] or a regional
+//!    [`RegionTable`] stepped `D` symbols at a time,
+//! 5. **the ordinary logical extent read** — the authoritative path
+//!    ([`crate::namespace::Namespace::read_extent`]), always available.
+//!
+//! # Compatibility and certification on EVERY read
+//!
+//! Each read re-derives the object's committed version and root and requires
+//! **exact** equality with the generation identity
+//! ([`GenerationManifest::usable_for`](crate::manifestation::GenerationManifest::usable_for)),
+//! plus the exact EKBLOOM engine version and full logical-extent coverage. A
+//! structure that is absent, incomplete, corrupt, wrong-version, or
+//! uncertified-for-domain is rejected and an alternative is used; the ultimate
+//! alternative is the authoritative extent read. A manifested structure can
+//! therefore never change the bytes a read returns.
+//!
+//! # Certification
+//!
+//! Certification is grounded in EKBLOOM's own exactness notions:
+//!
+//! * a body is loaded only after its payload BLAKE3 matches the committed
+//!   manifest, [`ekbloom::reader::open_bytes`] accepts it, and its object
+//!   identity/logical length/machine id agree with the manifest;
+//! * [`ekbloom::verify`] recomputes core hash, authoritative decode, every
+//!   history/checkpoint/bloom against the object's own positions, and the
+//!   certificate receipts — a structure is **certified** iff its own check
+//!   passes;
+//! * a [`ekbloom::PathBloom`] is additionally certified only when EKBLOOM marks
+//!   its shell `Certification::Certified`; history and checkpoints are exact by
+//!   construction and certified by their passing check;
+//! * a universal/regional `D`-step bloom is certified only when EKBLOOM's
+//!   re-derived verdict is `Certification::Certified` (the **bloom key
+//!   sufficiency law**). An `Unverified` bloom is **verified-on-use**: the
+//!   planner compares it against the authoritative read and rejects it on any
+//!   disagreement.
+//!
+//! # Selection by measurement
+//!
+//! The planner keeps an exponential-moving-average latency model per
+//! (path, size class). The first request for a given generation and size class
+//! *calibrates*: every applicable candidate is executed once and timed, and the
+//! fastest is used. Subsequent requests pick the cheapest applicable candidate
+//! under the measured model. Selection is therefore justified by measurement,
+//! never by "pick the largest structure".
+
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
+use std::time::Instant;
+
+use parking_lot::{Mutex, RwLock};
+
+use ekbloom::bloom::{BloomKind, Certification, Outcome};
+use ekbloom::bloom_global::GlobalBloom;
+use ekbloom::bloom_path::PathBloom;
+use ekbloom::bloom_region::RegionTable;
+use ekbloom::checkpoint::CheckpointSet;
+use ekbloom::{machine_by_id, EkbloomBody, Snapshot as EkSnapshot, VerificationReport};
+
+use crate::error::{OrfsError, Result};
+use crate::manifestation::{GenerationManifest, ManifestationState, EKBLOOM_VERSION};
+
+/// The schema label of the read-path measurement surface.
+pub const READPATH_SCHEMA: &str = "orfs.readpath.v1";
+
+// ---------------------------------------------------------------------------
+// Public request / result types
+// ---------------------------------------------------------------------------
+
+/// The kind of path that produced (or was asked to produce) a read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ReadPathKind {
+    /// The ordinary authoritative logical extent read.
+    LogicalExtent,
+    /// A certified exact path bloom.
+    PathBloom,
+    /// A universal or regional `D`-step transition bloom.
+    TransitionBloom,
+    /// The full manifested state projection.
+    History,
+    /// A sparse/complete restart checkpoint.
+    Checkpoint,
+}
+
+impl ReadPathKind {
+    /// Stable human-readable name used in evidence and diagnostics.
+    pub const fn name(self) -> &'static str {
+        match self {
+            ReadPathKind::LogicalExtent => "logical-extent",
+            ReadPathKind::PathBloom => "path-bloom",
+            ReadPathKind::TransitionBloom => "transition-bloom",
+            ReadPathKind::History => "history",
+            ReadPathKind::Checkpoint => "checkpoint",
+        }
+    }
+
+    /// Deterministic tie-break priority (lower is preferred on an equal cost).
+    const fn priority(self) -> u8 {
+        match self {
+            ReadPathKind::PathBloom => 0,
+            ReadPathKind::History => 1,
+            ReadPathKind::Checkpoint => 2,
+            ReadPathKind::TransitionBloom => 3,
+            ReadPathKind::LogicalExtent => 4,
+        }
+    }
+}
+
+/// A size class used to key the measured cost model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SizeClass {
+    /// Zero-length request.
+    Empty,
+    /// A single byte.
+    Byte,
+    /// `2..=4096` bytes.
+    Small,
+    /// `4097..=65536` bytes.
+    Medium,
+    /// More than `65536` bytes.
+    Large,
+}
+
+impl SizeClass {
+    /// Stable name used in evidence.
+    pub const fn name(self) -> &'static str {
+        match self {
+            SizeClass::Empty => "empty",
+            SizeClass::Byte => "byte",
+            SizeClass::Small => "small(<=4K)",
+            SizeClass::Medium => "medium(<=64K)",
+            SizeClass::Large => "large(>64K)",
+        }
+    }
+
+    /// A representative effective length, used to seed the prior cost model.
+    const fn representative_len(self) -> u64 {
+        match self {
+            SizeClass::Empty => 0,
+            SizeClass::Byte => 1,
+            SizeClass::Small => 2048,
+            SizeClass::Medium => 16_384,
+            SizeClass::Large => 262_144,
+        }
+    }
+}
+
+/// Classify an effective read length.
+pub fn classify_length(len: u64) -> SizeClass {
+    match len {
+        0 => SizeClass::Empty,
+        1 => SizeClass::Byte,
+        2..=4096 => SizeClass::Small,
+        4097..=65_536 => SizeClass::Medium,
+        _ => SizeClass::Large,
+    }
+}
+
+/// A fully-specified logical read request, with the identity a compatible
+/// manifested structure must match exactly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReadQuery {
+    /// Inode identity.
+    pub inode: u64,
+    /// The inode's current committed version (I6).
+    pub inode_version: u64,
+    /// The authoritative committed root the read is evaluated at.
+    pub root: u64,
+    /// The inode's logical length in bytes.
+    pub logical_len: u64,
+    /// Logical byte offset.
+    pub offset: u64,
+    /// Requested length (clamped to the object by the authoritative read).
+    pub length: u64,
+}
+
+/// The outcome of a planned read: the bytes plus the path that produced them.
+#[derive(Debug, Clone)]
+pub struct PlannedRead {
+    /// The returned logical bytes (byte-identical to the authoritative read).
+    pub bytes: Vec<u8>,
+    /// The path that produced the bytes.
+    pub path: ReadPathKind,
+    /// The generation used, when a manifested structure served the read.
+    pub generation: Option<u64>,
+    /// The recorded profile of the generation, when applicable.
+    pub profile: Option<String>,
+    /// Whether the path was used without a per-read verification fallback.
+    pub certified: bool,
+    /// Why the authoritative path was used, when it was.
+    pub fallback_reason: Option<String>,
+}
+
+impl PlannedRead {
+    /// Construct an authoritative-path result. Public within the crate so the
+    /// namespace can report the fallback path.
+    pub(crate) fn fallback(bytes: Vec<u8>, reason: Option<String>) -> PlannedRead {
+        PlannedRead {
+            bytes,
+            path: ReadPathKind::LogicalExtent,
+            generation: None,
+            profile: None,
+            certified: false,
+            fallback_reason: reason,
+        }
+    }
+}
+
+/// A measured per-(path, size-class) cost sample surface for evidence.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PathMeasurement {
+    /// The path.
+    pub path: ReadPathKind,
+    /// The size class.
+    pub class: SizeClass,
+    /// The measured EWMA latency in nanoseconds.
+    pub ewma_ns: f64,
+    /// The number of recorded samples.
+    pub samples: u64,
+}
+
+/// A directly measured latency for one candidate path (evidence surface).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PathLatency {
+    /// The path.
+    pub path: ReadPathKind,
+    /// Whether the path was certified (usable without per-read verification).
+    pub certified: bool,
+    /// The number of successful timed iterations.
+    pub iterations: u32,
+    /// The minimum observed latency in nanoseconds.
+    pub min_ns: u128,
+    /// The mean observed latency in nanoseconds.
+    pub mean_ns: f64,
+}
+
+/// The explicit equivalence verdict for one candidate path's bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PathVerdict {
+    /// The path.
+    pub path: ReadPathKind,
+    /// Whether the path was certified.
+    pub certified: bool,
+    /// Whether the path's bytes equal the authoritative extent read.
+    pub equivalent: bool,
+}
+
+/// Planner configuration.
+#[derive(Debug, Clone)]
+pub struct ReadPlannerConfig {
+    /// Refuse to materialise a payload larger than this (bytes). Beyond it the
+    /// authoritative path is used rather than risking unbounded memory.
+    pub max_payload_bytes: u64,
+    /// Maximum number of parsed EKBLOOM bodies kept resident.
+    pub cache_capacity: usize,
+}
+
+impl Default for ReadPlannerConfig {
+    fn default() -> ReadPlannerConfig {
+        ReadPlannerConfig {
+            max_payload_bytes: 512 * 1024 * 1024,
+            cache_capacity: 64,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cost model
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy)]
+struct EwmaCost {
+    ns: f64,
+    samples: u64,
+}
+
+#[derive(Debug, Default)]
+struct CostModel {
+    costs: HashMap<(ReadPathKind, SizeClass), EwmaCost>,
+}
+
+impl CostModel {
+    /// A documented prior cost (nanoseconds), used only until real measurements
+    /// exist. `fixed` is a per-request overhead; `per_byte` is the marginal cost.
+    fn prior_ns(kind: ReadPathKind, class: SizeClass) -> f64 {
+        let (fixed, per_byte) = match kind {
+            ReadPathKind::LogicalExtent => (420.0, 24.0),
+            ReadPathKind::PathBloom => (60.0, 9.0),
+            ReadPathKind::TransitionBloom => (90.0, 11.0),
+            ReadPathKind::History => (45.0, 7.0),
+            ReadPathKind::Checkpoint => (70.0, 9.0),
+        };
+        fixed + per_byte * class.representative_len() as f64
+    }
+
+    fn predict(&self, kind: ReadPathKind, class: SizeClass) -> f64 {
+        self.costs
+            .get(&(kind, class))
+            .map(|c| c.ns)
+            .unwrap_or_else(|| Self::prior_ns(kind, class))
+    }
+
+    fn record(&mut self, kind: ReadPathKind, class: SizeClass, measured_ns: f64) {
+        const ALPHA: f64 = 0.3;
+        let entry = self.costs.entry((kind, class)).or_insert(EwmaCost {
+            ns: measured_ns,
+            samples: 0,
+        });
+        entry.ns = if entry.samples == 0 {
+            measured_ns
+        } else {
+            ALPHA * measured_ns + (1.0 - ALPHA) * entry.ns
+        };
+        entry.samples += 1;
+    }
+
+    fn measurements(&self) -> Vec<PathMeasurement> {
+        let mut out: Vec<PathMeasurement> = self
+            .costs
+            .iter()
+            .map(|(&(path, class), c)| PathMeasurement {
+                path,
+                class,
+                ewma_ns: c.ns,
+                samples: c.samples,
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            a.class
+                .name()
+                .cmp(b.class.name())
+                .then_with(|| a.path.priority().cmp(&b.path.priority()))
+        });
+        out
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Loaded body + cache
+// ---------------------------------------------------------------------------
+
+/// A validated, verified EKBLOOM body together with the generation identity it
+/// was loaded for. Manifested structures are parsed once here, so a read never
+/// re-parses a bloom.
+struct LoadedBody {
+    body: EkbloomBody,
+    report: VerificationReport,
+    path_blooms: Vec<Option<PathBloom>>,
+    global_blooms: Vec<Option<GlobalBloom>>,
+    region_tables: Vec<Option<RegionTable>>,
+    generation: u64,
+    inode: u64,
+    inode_version: u64,
+    root: u64,
+    logical_len: u64,
+}
+
+struct CacheEntry {
+    generation: u64,
+    manifest_blake3: [u8; 32],
+    body: Arc<LoadedBody>,
+}
+
+/// A bounded, insertion-ordered body cache.
+#[derive(Default)]
+struct BodyCache {
+    map: HashMap<u64, CacheEntry>,
+    order: VecDeque<u64>,
+    capacity: usize,
+}
+
+impl BodyCache {
+    fn get(&self, inode: u64, generation: u64, digest: &[u8; 32]) -> Option<Arc<LoadedBody>> {
+        let e = self.map.get(&inode)?;
+        if e.generation == generation && e.manifest_blake3 == *digest {
+            Some(e.body.clone())
+        } else {
+            None
+        }
+    }
+
+    fn insert(&mut self, inode: u64, entry: CacheEntry) {
+        if self.capacity == 0 {
+            return;
+        }
+        if self.map.contains_key(&inode) {
+            self.order.retain(|&x| x != inode);
+        }
+        self.map.insert(inode, entry);
+        self.order.push_back(inode);
+        while self.order.len() > self.capacity {
+            if let Some(old) = self.order.pop_front() {
+                self.map.remove(&old);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Candidates
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy)]
+enum Structure {
+    Extent,
+    Path { bloom_index: usize },
+    History,
+    Checkpoint { set_index: usize },
+    Global { bloom_index: usize },
+    Regional { bloom_index: usize },
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Candidate {
+    kind: ReadPathKind,
+    structure: Structure,
+    /// Certified-and-compatible: usable without a per-read verification.
+    certified: bool,
+}
+
+/// The fastest measured candidate during calibration.
+struct BestMeasure {
+    kind: ReadPathKind,
+    certified: bool,
+    nanos: u128,
+    bytes: Vec<u8>,
+}
+
+fn check_passed(report: &VerificationReport, name: &str) -> bool {
+    report.checks.iter().any(|c| c.name == name && c.passed)
+}
+
+/// Enumerate the compatible, structurally-usable candidates for a request.
+///
+/// The ordinary logical extent read is always a candidate, so the measured
+/// selection can also decide that *no* manifested structure is worth using.
+fn candidates(lb: &LoadedBody, q: &ReadQuery, eff_len: u64) -> Vec<Candidate> {
+    let body = &lb.body;
+    let report = &lb.report;
+    let offset = q.offset;
+    let end = offset + eff_len;
+    let mut out = Vec::new();
+
+    // (2) full manifested state projection.
+    if let Some(h) = &body.history {
+        if h.logical_len == body.logical_len
+            && h.core_hash == body.core_hash
+            && check_passed(report, "history")
+        {
+            out.push(Candidate {
+                kind: ReadPathKind::History,
+                structure: Structure::History,
+                certified: true,
+            });
+        }
+    }
+
+    // (3) restart checkpoints.
+    for (i, cp) in body.checkpoints.iter().enumerate() {
+        if cp.interval == 0 || cp.restart_point(offset).is_none() {
+            continue;
+        }
+        let name = format!("checkpoints[{i}] K={}", cp.interval);
+        if check_passed(report, &name) {
+            out.push(Candidate {
+                kind: ReadPathKind::Checkpoint,
+                structure: Structure::Checkpoint { set_index: i },
+                certified: true,
+            });
+        }
+    }
+
+    // (1) exact/path table and (4) D-step transition blooms.
+    for (i, shell) in body.blooms.iter().enumerate() {
+        let name = format!("bloom[{i}]:{}", shell.kind.as_str());
+        if !check_passed(report, &name) {
+            continue;
+        }
+        match shell.kind {
+            BloomKind::Path => {
+                if shell.logical_len != body.logical_len {
+                    continue;
+                }
+                let Some(pb) = lb.path_blooms[i].as_ref() else {
+                    continue;
+                };
+                if pb.logical_len < end {
+                    continue;
+                }
+                out.push(Candidate {
+                    kind: ReadPathKind::PathBloom,
+                    structure: Structure::Path { bloom_index: i },
+                    certified: shell.status == Certification::Certified,
+                });
+            }
+            BloomKind::Universal => {
+                if lb.global_blooms[i].is_none() {
+                    continue;
+                }
+                out.push(Candidate {
+                    kind: ReadPathKind::TransitionBloom,
+                    structure: Structure::Global { bloom_index: i },
+                    certified: shell.status == Certification::Certified,
+                });
+            }
+            BloomKind::Regional => {
+                let Some(tbl) = lb.region_tables[i].as_ref() else {
+                    continue;
+                };
+                if offset < tbl.logical_start
+                    || offset >= tbl.logical_start.saturating_add(tbl.logical_len)
+                {
+                    continue;
+                }
+                out.push(Candidate {
+                    kind: ReadPathKind::TransitionBloom,
+                    structure: Structure::Regional { bloom_index: i },
+                    certified: tbl.status == Certification::Certified,
+                });
+            }
+            // Contextual blooms are not part of the documented OrFS read set.
+            BloomKind::Contextual => {}
+        }
+    }
+
+    // (5) the ordinary logical extent read (the authoritative path).
+    out.push(Candidate {
+        kind: ReadPathKind::LogicalExtent,
+        structure: Structure::Extent,
+        certified: true,
+    });
+
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Executors (EKBLOOM primitives only)
+// ---------------------------------------------------------------------------
+
+/// The machine state at logical position `pos`, from the best available source.
+fn state_at(body: &EkbloomBody, pos: u64) -> Result<EkSnapshot> {
+    if let Some(h) = &body.history {
+        if h.logical_len == body.logical_len {
+            if let Some(snap) = h.snapshot_at(pos) {
+                return Ok(snap);
+            }
+        }
+    }
+    // Prefer the densest checkpoint that has a restart point for `pos`.
+    let mut best: Option<&CheckpointSet> = None;
+    for cp in &body.checkpoints {
+        if cp.interval == 0 || cp.restart_point(pos).is_none() {
+            continue;
+        }
+        if best.is_none_or(|b| cp.interval < b.interval) {
+            best = Some(cp);
+        }
+    }
+    if let Some(cp) = best {
+        return Ok(cp.restore(&body.core, pos)?);
+    }
+    let machine = machine_by_id(body.machine_id).ok_or(OrfsError::Unsupported(format!(
+        "no machine registered for id {}",
+        body.machine_id
+    )))?;
+    machine.check_core(&body.core, body.logical_len)?;
+    let mut omega = machine.init();
+    let mut i = 0u64;
+    while i < pos {
+        machine.reveal(&body.core, &mut omega)?;
+        i += 1;
+    }
+    Ok(omega)
+}
+
+fn read_path(lb: &LoadedBody, bloom_index: usize, offset: u64, end: u64) -> Result<Vec<u8>> {
+    let bloom = lb.path_blooms[bloom_index]
+        .as_ref()
+        .ok_or_else(|| OrfsError::Corrupt("path bloom unavailable".into()))?;
+    if bloom.logical_len < end {
+        return Err(OrfsError::Corrupt(
+            "path bloom does not cover the request".into(),
+        ));
+    }
+    let mut out = Vec::with_capacity((end - offset) as usize);
+    let mut pos = offset;
+    while pos < end {
+        out.push(bloom.symbol_at(pos)?);
+        pos += 1;
+    }
+    Ok(out)
+}
+
+fn read_history(lb: &LoadedBody, offset: u64, end: u64) -> Result<Vec<u8>> {
+    let history = lb
+        .body
+        .history
+        .as_ref()
+        .ok_or_else(|| OrfsError::Corrupt("history absent".into()))?;
+    if history.logical_len != lb.body.logical_len {
+        return Err(OrfsError::Corrupt(
+            "history length disagrees with the body".into(),
+        ));
+    }
+    let machine = machine_by_id(lb.body.machine_id)
+        .ok_or(OrfsError::Unsupported("no machine registered".into()))?;
+    let mut out = Vec::with_capacity((end - offset) as usize);
+    let mut pos = offset;
+    while pos < end {
+        let mut omega = history
+            .snapshot_at(pos)
+            .ok_or_else(|| OrfsError::Corrupt("history does not cover the position".into()))?;
+        out.push(machine.reveal(&lb.body.core, &mut omega)?);
+        pos += 1;
+    }
+    Ok(out)
+}
+
+fn read_checkpoint(
+    lb: &LoadedBody,
+    set_index: usize,
+    offset: u64,
+    eff_len: u64,
+) -> Result<Vec<u8>> {
+    let cp = &lb.body.checkpoints[set_index];
+    let machine = machine_by_id(lb.body.machine_id)
+        .ok_or(OrfsError::Unsupported("no machine registered".into()))?;
+    let mut omega = cp.restore(&lb.body.core, offset)?;
+    let mut out = Vec::with_capacity(eff_len as usize);
+    for _ in 0..eff_len {
+        out.push(machine.reveal(&lb.body.core, &mut omega)?);
+    }
+    Ok(out)
+}
+
+fn read_global(lb: &LoadedBody, bloom_index: usize, offset: u64, end: u64) -> Result<Vec<u8>> {
+    let bloom = lb.global_blooms[bloom_index]
+        .as_ref()
+        .ok_or_else(|| OrfsError::Corrupt("universal bloom unavailable".into()))?;
+    let machine = machine_by_id(lb.body.machine_id)
+        .ok_or(OrfsError::Unsupported("no machine registered".into()))?;
+    let d = u64::from(bloom.depth);
+    let mut out = Vec::with_capacity((end - offset) as usize);
+    let mut omega = state_at(&lb.body, offset)?;
+    let mut pos = offset;
+    while d > 0 && pos + d <= end && pos + d <= lb.body.logical_len {
+        let outcome: Outcome = bloom.step(omega.state)?;
+        out.extend_from_slice(&outcome.symbols);
+        omega = EkSnapshot::new(outcome.next_state, pos + d);
+        pos += d;
+    }
+    // Tail (positions not covered by a full D-step window).
+    while pos < end {
+        out.push(machine.reveal(&lb.body.core, &mut omega)?);
+        pos += 1;
+    }
+    Ok(out)
+}
+
+fn read_regional(lb: &LoadedBody, bloom_index: usize, offset: u64, end: u64) -> Result<Vec<u8>> {
+    let table = lb.region_tables[bloom_index]
+        .as_ref()
+        .ok_or_else(|| OrfsError::Corrupt("regional bloom unavailable".into()))?;
+    let region_end = table.logical_start.saturating_add(table.logical_len);
+    if offset < table.logical_start || offset >= region_end {
+        return Err(OrfsError::Corrupt(
+            "request does not begin inside the region".into(),
+        ));
+    }
+    let machine = machine_by_id(lb.body.machine_id)
+        .ok_or(OrfsError::Unsupported("no machine registered".into()))?;
+    let d = u64::from(table.depth);
+    let mut out = Vec::with_capacity((end - offset) as usize);
+    let mut omega = state_at(&lb.body, offset)?;
+    let mut pos = offset;
+    while d > 0 && pos + d <= end && pos + d <= region_end && pos + d <= lb.body.logical_len {
+        let outcome = table.look(omega.state).ok_or_else(|| {
+            OrfsError::Corrupt("regional bloom has no entry for a covered state".into())
+        })?;
+        out.extend_from_slice(&outcome.symbols);
+        omega = EkSnapshot::new(outcome.next_state, pos + d);
+        pos += d;
+    }
+    while pos < end {
+        out.push(machine.reveal(&lb.body.core, &mut omega)?);
+        pos += 1;
+    }
+    Ok(out)
+}
+
+/// The bytes a manifested structure reveals for the request. The ordinary extent
+/// path is not represented here: it is the caller's authoritative read.
+fn direct_bytes(
+    structure: Structure,
+    lb: &LoadedBody,
+    q: &ReadQuery,
+    eff_len: u64,
+) -> Result<Vec<u8>> {
+    let end = q.offset + eff_len;
+    match structure {
+        Structure::Path { bloom_index } => read_path(lb, bloom_index, q.offset, end),
+        Structure::History => read_history(lb, q.offset, end),
+        Structure::Checkpoint { set_index } => read_checkpoint(lb, set_index, q.offset, eff_len),
+        Structure::Global { bloom_index } => read_global(lb, bloom_index, q.offset, end),
+        Structure::Regional { bloom_index } => read_regional(lb, bloom_index, q.offset, end),
+        Structure::Extent => Err(OrfsError::InvalidArgument(
+            "the ordinary extent path is served by the caller, not a structure".into(),
+        )),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The planner
+// ---------------------------------------------------------------------------
+
+/// The read planner: evaluates compatible certified structures and picks a valid
+/// path by measurement, falling back to the authoritative extent read.
+pub struct ReadPlanner {
+    state: Arc<ManifestationState>,
+    config: ReadPlannerConfig,
+    model: RwLock<CostModel>,
+    cache: Mutex<BodyCache>,
+    calibrated: RwLock<HashSet<(u64, SizeClass)>>,
+    failed: RwLock<HashSet<(u64, ReadPathKind)>>,
+    chosen: RwLock<HashMap<ReadPathKind, u64>>,
+}
+
+impl ReadPlanner {
+    /// Create a planner over a published-generation state.
+    pub fn new(state: Arc<ManifestationState>, config: ReadPlannerConfig) -> ReadPlanner {
+        let cache = BodyCache {
+            capacity: config.cache_capacity,
+            ..Default::default()
+        };
+        ReadPlanner {
+            state,
+            config,
+            model: RwLock::new(CostModel::default()),
+            cache: Mutex::new(cache),
+            calibrated: RwLock::new(HashSet::new()),
+            failed: RwLock::new(HashSet::new()),
+            chosen: RwLock::new(HashMap::new()),
+        }
+    }
+
+    /// The planner configuration.
+    pub fn config(&self) -> &ReadPlannerConfig {
+        &self.config
+    }
+
+    /// The measured per-(path, size-class) latency model, for evidence.
+    pub fn measurements(&self) -> Vec<PathMeasurement> {
+        self.model.read().measurements()
+    }
+
+    /// The number of reads served by each path since construction.
+    pub fn chosen_counts(&self) -> Vec<(ReadPathKind, u64)> {
+        let mut v: Vec<(ReadPathKind, u64)> =
+            self.chosen.read().iter().map(|(k, c)| (*k, *c)).collect();
+        v.sort_by_key(|(k, _)| k.priority());
+        v
+    }
+
+    /// Forget the measured model, calibration set, failure set, and cached
+    /// bodies (used by evidence runs that must observe a cold planner).
+    pub fn reset(&self) {
+        self.model.write().costs.clear();
+        self.calibrated.write().clear();
+        self.failed.write().clear();
+        self.chosen.write().clear();
+        let mut cache = self.cache.lock();
+        cache.map.clear();
+        cache.order.clear();
+    }
+
+    /// Measure each compatible candidate path for a request, independently of the
+    /// cost model, and report the timings. Used for the performance evidence.
+    pub fn measure_paths<F>(
+        &self,
+        q: &ReadQuery,
+        auth: &mut F,
+        iterations: u32,
+    ) -> Result<Vec<PathLatency>>
+    where
+        F: FnMut(u64, u64) -> Result<Vec<u8>>,
+    {
+        let eff_len = q.logical_len.saturating_sub(q.offset).min(q.length);
+        if eff_len == 0 {
+            return Ok(Vec::new());
+        }
+        let manifest = self.state.latest_for(q.inode).ok_or_else(|| {
+            OrfsError::InvalidArgument("no manifested generation for the inode".into())
+        })?;
+        manifest.usable_for(q.inode, q.inode_version, q.root)?;
+        let loaded = self.load_body(&manifest)?;
+        let cands = candidates(&loaded, q, eff_len);
+        let mut out = Vec::new();
+        let rounds = iterations.max(1);
+        for c in &cands {
+            let mut samples: Vec<u128> = Vec::with_capacity(rounds as usize);
+            for _ in 0..rounds {
+                let started = Instant::now();
+                if self.execute(c, &loaded, q, eff_len, auth).is_ok() {
+                    samples.push(started.elapsed().as_nanos());
+                }
+            }
+            if samples.is_empty() {
+                continue;
+            }
+            let min_ns = *samples.iter().min().unwrap_or(&0);
+            let mean_ns = samples.iter().sum::<u128>() as f64 / samples.len() as f64;
+            out.push(PathLatency {
+                path: c.kind,
+                certified: c.certified,
+                iterations: samples.len() as u32,
+                min_ns,
+                mean_ns,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Evaluate a request, returning the bytes and the path that produced them.
+    ///
+    /// `auth` is the authoritative extent read; it is used for the ultimate
+    /// fallback and to verify-on-use uncertified structures.
+    pub fn read<F>(&self, q: &ReadQuery, mut auth: F) -> Result<PlannedRead>
+    where
+        F: FnMut(u64, u64) -> Result<Vec<u8>>,
+    {
+        let eff_len = q.logical_len.saturating_sub(q.offset).min(q.length);
+        if eff_len == 0 {
+            return Ok(PlannedRead::fallback(auth(q.offset, q.length)?, None));
+        }
+
+        // --- compatibility + version/root qualification on EVERY read ---
+        let manifest = match self.state.latest_for(q.inode) {
+            Some(m) => m,
+            None => {
+                return Ok(PlannedRead::fallback(
+                    auth(q.offset, q.length)?,
+                    Some("no manifested generation".into()),
+                ))
+            }
+        };
+        if let Err(e) = manifest.usable_for(q.inode, q.inode_version, q.root) {
+            return Ok(PlannedRead::fallback(
+                auth(q.offset, q.length)?,
+                Some(e.to_string()),
+            ));
+        }
+        if manifest.ekbloom_version != EKBLOOM_VERSION {
+            return Ok(PlannedRead::fallback(
+                auth(q.offset, q.length)?,
+                Some(format!(
+                    "ekbloom engine {} does not match {}",
+                    manifest.ekbloom_version, EKBLOOM_VERSION
+                )),
+            ));
+        }
+        if manifest.logical_start != 0 || manifest.logical_end != q.logical_len {
+            return Ok(PlannedRead::fallback(
+                auth(q.offset, q.length)?,
+                Some("manifested structure does not cover the logical extent".into()),
+            ));
+        }
+
+        // --- load + fully validate the manifested body ---
+        let loaded = match self.load_body(&manifest) {
+            Ok(l) => l,
+            Err(e) => {
+                return Ok(PlannedRead::fallback(
+                    auth(q.offset, q.length)?,
+                    Some(e.to_string()),
+                ))
+            }
+        };
+
+        // --- identity re-check on the loaded body (defence in depth) ---
+        if loaded.inode != q.inode
+            || loaded.inode_version != q.inode_version
+            || loaded.root != q.root
+            || loaded.logical_len != q.logical_len
+        {
+            return Ok(PlannedRead::fallback(
+                auth(q.offset, q.length)?,
+                Some("loaded structure identity does not match the request".into()),
+            ));
+        }
+
+        let raw = candidates(&loaded, q, eff_len);
+        let generation = loaded.generation;
+        // Drop candidates already proven unusable for this generation.
+        let cands: Vec<Candidate> = {
+            let failed = self.failed.read();
+            raw.into_iter()
+                .filter(|c| !failed.contains(&(generation, c.kind)))
+                .collect()
+        };
+        if cands.is_empty() {
+            return Ok(PlannedRead::fallback(
+                auth(q.offset, q.length)?,
+                Some("no compatible certified structure".into()),
+            ));
+        }
+
+        let class = classify_length(eff_len);
+
+        // --- calibrate once per (generation, size class): measure every candidate ---
+        if !self.calibrated.read().contains(&(generation, class)) {
+            let mut best: Option<BestMeasure> = None;
+            let mut first_err: Option<String> = None;
+            for c in &cands {
+                let started = Instant::now();
+                match self.execute(c, &loaded, q, eff_len, &mut auth) {
+                    Ok(bytes) => {
+                        let nanos = started.elapsed().as_nanos();
+                        self.model.write().record(c.kind, class, nanos as f64);
+                        if best.as_ref().is_none_or(|b| nanos < b.nanos) {
+                            best = Some(BestMeasure {
+                                kind: c.kind,
+                                certified: c.certified,
+                                nanos,
+                                bytes,
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        // A structure that cannot serve this object is barred for
+                        // this generation; a read never retries it blindly.
+                        if first_err.is_none() {
+                            first_err = Some(e.to_string());
+                        }
+                        self.failed.write().insert((generation, c.kind));
+                    }
+                }
+            }
+            self.calibrated.write().insert((generation, class));
+            if let Some(b) = best {
+                let reason = if b.kind == ReadPathKind::LogicalExtent {
+                    first_err
+                } else {
+                    None
+                };
+                return Ok(self.serve(b.bytes, b.kind, generation, &manifest, b.certified, reason));
+            }
+            return Ok(PlannedRead::fallback(
+                auth(q.offset, q.length)?,
+                Some("every candidate path failed".into()),
+            ));
+        }
+
+        // --- select the cheapest applicable candidate under the measured model ---
+        let mut order: Vec<Candidate> = cands.clone();
+        {
+            let model = self.model.read();
+            order.sort_by(|a, b| {
+                model
+                    .predict(a.kind, class)
+                    .partial_cmp(&model.predict(b.kind, class))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| b.certified.cmp(&a.certified))
+                    .then_with(|| a.kind.priority().cmp(&b.kind.priority()))
+            });
+        }
+        let mut last_err: Option<String> = None;
+        for c in &order {
+            let started = Instant::now();
+            match self.execute(c, &loaded, q, eff_len, &mut auth) {
+                Ok(bytes) => {
+                    let nanos = started.elapsed().as_nanos();
+                    self.model.write().record(c.kind, class, nanos as f64);
+                    let reason = if c.kind == ReadPathKind::LogicalExtent {
+                        last_err.clone()
+                    } else {
+                        None
+                    };
+                    return Ok(self.serve(
+                        bytes,
+                        c.kind,
+                        generation,
+                        &manifest,
+                        c.certified,
+                        reason,
+                    ));
+                }
+                Err(e) => {
+                    self.failed.write().insert((generation, c.kind));
+                    last_err = Some(e.to_string());
+                }
+            }
+        }
+        Ok(PlannedRead::fallback(
+            auth(q.offset, q.length)?,
+            Some(last_err.unwrap_or_else(|| "no candidate path produced bytes".into())),
+        ))
+    }
+
+    /// Execute each compatible candidate's structure and report whether its bytes
+    /// equal the authoritative read. This is the explicit per-path equivalence
+    /// check (research §10.2: a missing or invalid structure must never change the
+    /// bytes).
+    pub fn verify_paths<F>(&self, q: &ReadQuery, auth: &mut F) -> Result<Vec<PathVerdict>>
+    where
+        F: FnMut(u64, u64) -> Result<Vec<u8>>,
+    {
+        let eff_len = q.logical_len.saturating_sub(q.offset).min(q.length);
+        let manifest = self.state.latest_for(q.inode).ok_or_else(|| {
+            OrfsError::InvalidArgument("no manifested generation for the inode".into())
+        })?;
+        manifest.usable_for(q.inode, q.inode_version, q.root)?;
+        let loaded = self.load_body(&manifest)?;
+        let expected = auth(q.offset, q.length)?;
+        let mut out = Vec::new();
+        for c in candidates(&loaded, q, eff_len) {
+            let equivalent = match c.structure {
+                Structure::Extent => true,
+                other => matches!(direct_bytes(other, &loaded, q, eff_len), Ok(b) if b == expected),
+            };
+            out.push(PathVerdict {
+                path: c.kind,
+                certified: c.certified,
+                equivalent,
+            });
+        }
+        Ok(out)
+    }
+
+    fn serve(
+        &self,
+        bytes: Vec<u8>,
+        path: ReadPathKind,
+        generation: u64,
+        manifest: &GenerationManifest,
+        certified: bool,
+        reason: Option<String>,
+    ) -> PlannedRead {
+        *self.chosen.write().entry(path).or_insert(0) += 1;
+        if path == ReadPathKind::LogicalExtent {
+            // The authoritative path was used. When `reason` is set, one or more
+            // manifested candidates failed first (a fallback); otherwise the model
+            // chose it because it measured fastest (a normal choice).
+            let fallback = reason.is_some();
+            return PlannedRead {
+                bytes,
+                path,
+                generation: None,
+                profile: None,
+                certified: !fallback,
+                fallback_reason: reason,
+            };
+        }
+        PlannedRead {
+            bytes,
+            path,
+            generation: Some(generation),
+            profile: Some(manifest.profile.clone()),
+            certified,
+            fallback_reason: None,
+        }
+    }
+
+    fn execute<F>(
+        &self,
+        c: &Candidate,
+        lb: &LoadedBody,
+        q: &ReadQuery,
+        eff_len: u64,
+        auth: &mut F,
+    ) -> Result<Vec<u8>>
+    where
+        F: FnMut(u64, u64) -> Result<Vec<u8>>,
+    {
+        let direct = match c.structure {
+            Structure::Extent => auth(q.offset, q.length)?,
+            other => direct_bytes(other, lb, q, eff_len)?,
+        };
+        if direct.len() as u64 != eff_len {
+            return Err(OrfsError::Corrupt(format!(
+                "{} returned {} bytes, expected {}",
+                c.kind.name(),
+                direct.len(),
+                eff_len
+            )));
+        }
+        if c.certified {
+            return Ok(direct);
+        }
+        // Uncertified-for-domain: verify-on-use against the authoritative read.
+        let authoritative = auth(q.offset, q.length)?;
+        if authoritative == direct {
+            Ok(direct)
+        } else {
+            Err(OrfsError::Corrupt(format!(
+                "uncertified {} disagreed with the authoritative read; rejected",
+                c.kind.name()
+            )))
+        }
+    }
+
+    /// Load, validate, and fully verify a manifested body, with caching.
+    fn load_body(&self, manifest: &GenerationManifest) -> Result<Arc<LoadedBody>> {
+        if let Some(hit) = self.cache.lock().get(
+            manifest.inode,
+            manifest.generation,
+            &manifest.manifest_blake3,
+        ) {
+            return Ok(hit);
+        }
+        let loaded = Arc::new(self.build_loaded_body(manifest)?);
+        self.cache.lock().insert(
+            manifest.inode,
+            CacheEntry {
+                generation: manifest.generation,
+                manifest_blake3: manifest.manifest_blake3,
+                body: loaded.clone(),
+            },
+        );
+        Ok(loaded)
+    }
+
+    fn build_loaded_body(&self, manifest: &GenerationManifest) -> Result<LoadedBody> {
+        let path = self
+            .state
+            .store()
+            .volume_root()
+            .join(&manifest.payload_rel_path);
+        let bytes = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(OrfsError::Corrupt(format!(
+                    "manifested payload is absent: {}",
+                    manifest.payload_rel_path
+                )))
+            }
+            Err(e) => return Err(e.into()),
+        };
+        if bytes.len() as u64 > self.config.max_payload_bytes {
+            return Err(OrfsError::Unsupported(format!(
+                "manifested payload {} bytes exceeds the configured {} byte limit",
+                bytes.len(),
+                self.config.max_payload_bytes
+            )));
+        }
+        // Integrity: the on-disk payload must match the committed digest.
+        if *blake3::hash(&bytes).as_bytes() != manifest.payload_blake3 {
+            return Err(OrfsError::Corrupt(
+                "manifested payload BLAKE3 does not match the committed manifest".into(),
+            ));
+        }
+        let body = ekbloom::reader::open_bytes(&bytes)?;
+        if let Some(oid) = manifest.ekbloom_object_id {
+            if body.object_id != oid {
+                return Err(OrfsError::Corrupt(
+                    "manifested object identity does not match the committed manifest".into(),
+                ));
+            }
+        }
+        if body.logical_len != manifest.logical_len() {
+            return Err(OrfsError::Corrupt(
+                "manifested logical length does not match the committed manifest".into(),
+            ));
+        }
+        if body.machine_id != ekbloom::MACHINE_NL2 {
+            return Err(OrfsError::Unsupported(format!(
+                "manifested machine id {} is not the supported EKBLOOM machine",
+                body.machine_id
+            )));
+        }
+        // Certification: EKBLOOM recomputes everything against the object itself.
+        let report = ekbloom::verify(&body)?;
+        if !check_passed(&report, "core_hash") || !check_passed(&report, "decode_length") {
+            return Err(OrfsError::Corrupt(
+                "manifested body failed EKBLOOM core verification".into(),
+            ));
+        }
+        // Parse each manifested structure exactly once.
+        let path_blooms = body
+            .blooms
+            .iter()
+            .map(|s| {
+                if s.kind == BloomKind::Path {
+                    PathBloom::from_shell(s).ok()
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let global_blooms = body
+            .blooms
+            .iter()
+            .map(|s| {
+                if s.kind == BloomKind::Universal {
+                    GlobalBloom::from_shell(s).ok()
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let region_tables = body
+            .blooms
+            .iter()
+            .map(|s| {
+                if s.kind == BloomKind::Regional {
+                    RegionTable::from_shell(s).ok()
+                } else {
+                    None
+                }
+            })
+            .collect();
+        Ok(LoadedBody {
+            body,
+            report,
+            path_blooms,
+            global_blooms,
+            region_tables,
+            generation: manifest.generation,
+            inode: manifest.inode,
+            inode_version: manifest.inode_version,
+            root: manifest.root,
+            logical_len: manifest.logical_len(),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn size_classes_are_ordered_and_disjoint() {
+        assert_eq!(classify_length(0), SizeClass::Empty);
+        assert_eq!(classify_length(1), SizeClass::Byte);
+        assert_eq!(classify_length(2), SizeClass::Small);
+        assert_eq!(classify_length(4096), SizeClass::Small);
+        assert_eq!(classify_length(4097), SizeClass::Medium);
+        assert_eq!(classify_length(65_536), SizeClass::Medium);
+        assert_eq!(classify_length(65_537), SizeClass::Large);
+    }
+
+    #[test]
+    fn measured_model_overrides_the_prior() {
+        let mut m = CostModel::default();
+        let prior = m.predict(ReadPathKind::History, SizeClass::Small);
+        m.record(ReadPathKind::History, SizeClass::Small, 5.0);
+        assert!((m.predict(ReadPathKind::History, SizeClass::Small) - 5.0).abs() < 1e-9);
+        m.record(ReadPathKind::History, SizeClass::Small, 105.0);
+        let after = m.predict(ReadPathKind::History, SizeClass::Small);
+        assert!(after > 5.0 && after < 105.0, "ewma={after} prior={prior}");
+    }
+}

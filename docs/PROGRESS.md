@@ -554,3 +554,73 @@ I8), §4, §9, §10, §16, §33. This is Plane C: the concealed operational body
   changes.
 * The optional trigram/suffix/image/directory families (research §11) are
   accounted for but not yet built (Phase 9).
+
+## Phase 8 — Certified EKBLOOM read paths
+
+**Complete** (see also `docs/EKBLOOM-INTEGRATION.md`). Implements research §10,
+§10.1, §10.2, §20 Ring R, §2 I6. This is the accelerated read path over the
+concealed operational body; it selects a measured path and never changes the
+bytes a read returns.
+
+### Delivered
+
+* `src/readpath.rs` — the read planner.
+  * **Request** — `read_at(inode, root, offset, length)` now routes through the
+    planner when manifestation is enabled (`Namespace::read_at` /
+    `Namespace::planned_read`); `Namespace::read_extent` remains the
+    authoritative fallback and the reference the planner verifies against.
+  * **Candidate paths** — the ordinary logical extent read, the exact/path
+    table, the full manifested state projection, restart checkpoints, and the
+    universal/regional `D`-step transition bloom, all driven through EKBLOOM's
+    exported primitives (`PathBloom::symbol_at`, `History::snapshot_at`,
+    `CheckpointSet::restore`, `GlobalBloom::step`, `RegionTable::look`,
+    `machine_by_id`/`OrMachine`). EKBLOOM's state machine is not reimplemented.
+  * **Compatibility on every read** — exact `(inode, inode version, root)` +
+    EKBLOOM engine version + logical-extent coverage, re-derived each call.
+  * **Certification** — a structure is used without fallback only when its
+    payload BLAKE3 matches the committed manifest, `open_bytes` accepts the
+    image, and `ekbloom::verify` re-derives its exactness; path/history/
+    checkpoint are exact by construction, and a universal/regional bloom is
+    certified only when EKBLOOM's key-sufficiency verdict is `Certified`.
+    Unverified blooms are verified-on-use and rejected on disagreement.
+  * **Selection by measurement** — an EWMA latency model per `(path, size
+    class)`; the first request for a `(generation, size class)` calibrates by
+    timing every candidate, and later requests pick the measured cheapest. The
+    authoritative extent read is a candidate, so a structure can never slow a
+    read.
+  * **Correct fallback** — any rejection (absent, incomplete, corrupt, wrong
+    version, uncertified, decode failure, out of coverage) uses the
+    authoritative read with identical bytes.
+* `src/namespace.rs` — the planner is created when manifestation is enabled;
+  the authoritative reader is used to capture manifestation sources and as the
+  fallback.
+* `src/fuse.rs` — mounted reads (`read_at`) use the planner when a compatible
+  structure exists; `tests/fuse_integration.rs` proves the visible contents are
+  unchanged and a concealed payload is built.
+
+### Tests (inside the container)
+
+* `cargo test`: 71 unit + 8 `ekbloom_read` + 2 `fuse_integration`
+  + 10 `log_model` + 8 `manifestation` + 7 `namespace_model` + 4 `smoke`
+  + 1 `snapshot_fuse` + 10 `snapshot_model` + 9 `transaction_model`
+  + 7 `uring_integration` = **137 passing**.
+* `cargo fmt -p orfs --check` and `cargo clippy --all-targets -- -D warnings`
+  pass.
+* `sh scripts/container-fuse-test.sh`: the real FUSE court passes (POSIX
+  conformance + the new manifested-reads test) and the snapshot court passes.
+* `sh scripts/container-uring-test.sh`: io_uring engaged, 7/7 integration tests
+  pass, benchmark run.
+
+### Evidence
+
+* `evidence/correctness/ekbloom-read-equivalence.json` — per-case equivalence
+  verdicts across inodes/versions/roots, historical versions via snapshots,
+  and explicit rejection verdicts (wrong version/root/engine, absent, corrupt).
+* `evidence/performance/ekbloom-read-paths.json` — measured latency per path for
+  random-1B and random-4K versus the authoritative path, the measured selection
+  model, and the paths the planner chose.
+
+### Explicitly not implemented in Phase 8
+
+* The optional trigram/suffix/image/directory families and query surfaces
+  (research §11, §12) are Phase 9; they are accounted for but not built.

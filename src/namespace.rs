@@ -46,6 +46,7 @@ use crate::manifestation::{
     JobSpec, ManifestSummary, ManifestationBuilder, ManifestationConfig, ManifestationEngine,
     ManifestationEngineReport, ManifestationOutcome, ManifestationProfile, ManifestationState,
 };
+use crate::readpath::{PlannedRead, ReadPlanner, ReadPlannerConfig, ReadQuery};
 use crate::record::{RecordType, FOOTER_LEN, HEADER_LEN};
 use crate::transaction::{Transaction, TransactionBuilder, TX_BEGIN_PAYLOAD_LEN};
 use crate::volume::Volume;
@@ -251,6 +252,9 @@ pub struct Namespace {
     manifestation: Option<Arc<ManifestationState>>,
     /// The background manifestation engine, when enabled.
     manifestation_engine: Option<Arc<ManifestationEngine>>,
+    /// The certified read planner over manifested structures (Phase 8), when
+    /// manifestation is enabled.
+    read_planner: Option<Arc<ReadPlanner>>,
 }
 
 impl Namespace {
@@ -290,6 +294,7 @@ impl Namespace {
             mount_report: Some(mount_report),
             manifestation: None,
             manifestation_engine: None,
+            read_planner: None,
         })
     }
 
@@ -378,8 +383,15 @@ impl Namespace {
         let store = crate::manifestation::GenerationStore::new(&self.volume.root_dir);
         let (engine, report) =
             ManifestationEngine::start(store, self.volume.meta.uuid, builder, cfg)?;
+        // Phase 8: a certified read planner over the published generations. It
+        // never changes what a read returns; it only selects a measured path.
+        let planner = Arc::new(ReadPlanner::new(
+            engine.state(),
+            ReadPlannerConfig::default(),
+        ));
         self.manifestation = Some(engine.state());
         self.manifestation_engine = Some(engine);
+        self.read_planner = Some(planner);
         Ok(report)
     }
 
@@ -396,6 +408,11 @@ impl Namespace {
     /// The background engine, when enabled.
     pub fn manifestation_engine(&self) -> Option<Arc<ManifestationEngine>> {
         self.manifestation_engine.clone()
+    }
+
+    /// The certified read planner, when manifestation is enabled.
+    pub fn read_planner(&self) -> Option<&Arc<ReadPlanner>> {
+        self.read_planner.as_ref()
     }
 
     /// Manifest the eligible object(s) at the current committed root.
@@ -433,7 +450,7 @@ impl Namespace {
             if ino.size > u32::MAX as u64 {
                 continue;
             }
-            let source = self.read_at(inode, root, 0, ino.size as u32)?;
+            let source = self.read_extent(inode, root, 0, ino.size)?;
             let spec = JobSpec {
                 inode,
                 inode_version: version,
@@ -471,8 +488,26 @@ impl Namespace {
         Ok(view.inode(inode).ok_or(OrfsError::NotFound)?.stat())
     }
 
-    /// Read `length` bytes at `offset` from a file, using its extent map.
+    /// Read `length` bytes at `offset` from a file.
+    ///
+    /// When the concealed manifestation plane is enabled, this is served by the
+    /// measured [`ReadPlanner`], which may use a compatible **certified**
+    /// manifested structure and otherwise falls back to the authoritative extent
+    /// read. The returned bytes are byte-identical with or without any manifested
+    /// structure (research §10.2, §16).
     pub fn read_at(&self, inode: u64, root: u64, offset: u64, length: u32) -> Result<Vec<u8>> {
+        Ok(self.planned_read(inode, root, offset, length)?.bytes)
+    }
+
+    /// Read `length` bytes at `offset`, reporting the measured path used and why
+    /// the authoritative path was chosen when it was. Used by tests and evidence.
+    pub fn planned_read(
+        &self,
+        inode: u64,
+        root: u64,
+        offset: u64,
+        length: u32,
+    ) -> Result<PlannedRead> {
         let view = self.view(root)?;
         let ino = view.inode(inode).ok_or(OrfsError::NotFound)?;
         if ino.is_dir() {
@@ -483,7 +518,39 @@ impl Namespace {
                 "read_at on a non-file inode".into(),
             ));
         }
-        let pieces = ino.extents.plan_read(offset, length as u64);
+        let Some(planner) = &self.read_planner else {
+            let bytes = self.read_extent(inode, root, offset, length as u64)?;
+            return Ok(PlannedRead::fallback(
+                bytes,
+                Some("manifestation disabled".to_string()),
+            ));
+        };
+        let query = ReadQuery {
+            inode,
+            inode_version: ino.current_version(),
+            root,
+            logical_len: ino.size,
+            offset,
+            length: length as u64,
+        };
+        planner.read(&query, |off, len| self.read_extent(inode, root, off, len))
+    }
+
+    /// The authoritative logical extent read: the ultimate fallback and the
+    /// reference a read planner verifies against. It never consults any
+    /// manifested structure.
+    pub fn read_extent(&self, inode: u64, root: u64, offset: u64, length: u64) -> Result<Vec<u8>> {
+        let view = self.view(root)?;
+        let ino = view.inode(inode).ok_or(OrfsError::NotFound)?;
+        if ino.is_dir() {
+            return Err(OrfsError::IsADirectory);
+        }
+        if !ino.is_file() {
+            return Err(OrfsError::InvalidArgument(
+                "read_at on a non-file inode".into(),
+            ));
+        }
+        let pieces = ino.extents.plan_read(offset, length);
         let mut out = Vec::new();
         for piece in pieces {
             match piece {
@@ -597,7 +664,7 @@ impl Namespace {
             {
                 continue;
             }
-            let source = match self.read_at(inode, root, 0, ino.size as u32) {
+            let source = match self.read_extent(inode, root, 0, ino.size) {
                 Ok(b) => b,
                 Err(_) => continue,
             };

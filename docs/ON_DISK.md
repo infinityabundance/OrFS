@@ -80,8 +80,12 @@ torn tail rather than corruption):
 ### 2.2 Payload
 
 `payload_length` opaque bytes. Only `VOLUME_GENESIS` has a defined payload in
-format version 1 (§4). All other payloads are reserved for later planes and are
-treated as opaque bytes by the framing layer.
+format version 1 (§4) for the framing layer. The typed payloads of the
+structural records (`TX_BEGIN`, `TX_COMMIT`, `TX_ABORT`) are specified in
+`docs/TRANSACTIONS.md` §1.2; the typed payloads of the inode, directory, and
+extent records are specified in `docs/NAMESPACE.md` §2.1, §3, and §4. The
+framing layer still treats every non-genesis payload as opaque bytes and never
+casts a struct over untrusted bytes.
 
 ### 2.3 Footer (16 bytes)
 

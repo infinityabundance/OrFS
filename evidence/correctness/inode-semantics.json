@@ -1,0 +1,32 @@
+{
+  "all_ok": true,
+  "generator": "tests/namespace_model.rs",
+  "schema": "orfs.evidence.inode-semantics.v1",
+  "verdicts": [
+    {
+      "detail": "offset-zero/middle/eof/beyond-eof/overlap/zero-range/truncate up+down match model",
+      "ok": true,
+      "scenario": "extents"
+    },
+    {
+      "detail": "mkdir/rmdir(empty-only)/hardlink/unlink(last-name retains data)/symlink match model",
+      "ok": true,
+      "scenario": "namespace"
+    },
+    {
+      "detail": "ordinary/overwrite/exchange/cross-directory match model; NOREPLACE and cycle rejected",
+      "ok": true,
+      "scenario": "rename"
+    },
+    {
+      "detail": "set/overwrite/remove and XATTR_CREATE match model",
+      "ok": true,
+      "scenario": "xattr"
+    },
+    {
+      "detail": "mode/uid/gid/size applied as a masked transition",
+      "ok": true,
+      "scenario": "setattr"
+    }
+  ]
+}

@@ -372,6 +372,22 @@ impl Volume {
                 "deep_replay_checksums",
                 format!("{} committed records, CRC32C verified", records.len()),
             ));
+            // Typed-bracket validation: every committed `TX_BEGIN`/`TX_COMMIT`
+            // pair must certify exactly its actual bracketed records. An
+            // inconsistent bracket is a hard error, never silently skipped.
+            checks.push(match crate::log::validate_committed_brackets(&records) {
+                Ok(n) => VerifyCheck::ok(
+                    "transaction_brackets",
+                    format!(
+                        "{n} committed transactions: typed payloads and bracket checksums validated"
+                    ),
+                ),
+                Err(e) => VerifyCheck {
+                    name: "transaction_brackets".to_string(),
+                    ok: false,
+                    detail: e.to_string(),
+                },
+            });
             let mut offset = 0u64;
             let mut prev_ok = true;
             let mut prev_detail = "all previous_inode_offset values point backward".to_string();

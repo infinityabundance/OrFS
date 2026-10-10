@@ -1,0 +1,948 @@
+//! The derived, rebuildable namespace index (research §6, §23.2, §24, §25).
+//!
+//! The index is **not** authoritative. It is a deterministic projection of the
+//! authoritative log and can always be rebuilt from scratch by replaying
+//! committed records. If an index (or a persisted snapshot of one) disagrees
+//! with replay, the **log wins** and the index is discarded (research §23.2).
+//!
+//! The index maps:
+//!
+//! ```text
+//!   inode_id            -> current inode version (+ its historical versions)
+//!   (parent_inode,name) -> child inode_id
+//!   inode_id            -> extent map
+//!   inode_id            -> xattr map
+//!   root                -> named committed snapshots / checkpoints
+//! ```
+//!
+//! Everything is native Rust (`std::collections` maps); there is no external
+//! database and no correctness property depends on a persisted snapshot. A
+//! snapshot under `index/` is written purely as an accelerator and validated
+//! against its own digest on load.
+
+use std::collections::{BTreeMap, HashMap};
+use std::path::Path;
+
+use crate::directory::{DentryAddPayload, DentryRemovePayload, DentryRenamePayload, RenameFlags};
+use crate::error::{OrfsError, Result};
+use crate::extent::{
+    DataExtentPayload, DataZeroRangePayload, ExtentKind, FileResizePayload, DATA_EXTENT_DATA_OFFSET,
+};
+use crate::inode::{
+    Inode, InodeCreatePayload, InodeMetadataPayload, InodeSetattrPayload, InodeType,
+    PermissionChangePayload, SymlinkCreatePayload, Timespec, XattrRemovePayload, XattrSetPayload,
+};
+use crate::log::Log;
+use crate::record::{Record, RecordType};
+
+/// The reserved inode id of the volume root (matches FUSE's `FUSE_ROOT_ID`).
+pub const ROOT_INODE: u64 = 1;
+
+/// The interior map type for directory children.
+type DentryMap = HashMap<(u64, Vec<u8>), u64>;
+
+/// A recorded index checkpoint (research §24) — an accelerator/verification aid.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Checkpoint {
+    pub root: u64,
+    pub inode_count: u64,
+    pub dentry_count: u64,
+    pub digest: [u8; 32],
+}
+
+/// The derived namespace index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Index {
+    root: u64,
+    inodes: HashMap<u64, Inode>,
+    dentries: DentryMap,
+    children: HashMap<u64, BTreeMap<Vec<u8>, u64>>,
+    next_inode_id: u64,
+    snapshots: BTreeMap<Vec<u8>, u64>,
+    checkpoints: Vec<Checkpoint>,
+}
+
+impl Default for Index {
+    fn default() -> Self {
+        Index {
+            root: 0,
+            inodes: HashMap::new(),
+            dentries: HashMap::new(),
+            children: HashMap::new(),
+            next_inode_id: ROOT_INODE,
+            snapshots: BTreeMap::new(),
+            checkpoints: Vec::new(),
+        }
+    }
+}
+
+impl Index {
+    /// An empty index (no root inode yet; genesis creates it).
+    pub fn empty() -> Index {
+        Index::default()
+    }
+
+    /// Build the index by replaying the committed log up to `root`.
+    ///
+    /// `root` must be a committed transaction boundary; the log's own
+    /// [`Log::is_boundary`] is the authority.
+    pub fn from_log(log: &Log, root: u64) -> Result<Index> {
+        if root > log.committed_end_offset() {
+            return Err(OrfsError::InvalidArgument(format!(
+                "index root {root} exceeds the committed root {}",
+                log.committed_end_offset()
+            )));
+        }
+        if root != 0 && !log.is_boundary(root) {
+            return Err(OrfsError::InvalidArgument(format!(
+                "index root {root} is not a committed transaction boundary"
+            )));
+        }
+        let mut index = Index::default();
+        index.apply_range(log, 0, root)?;
+        Ok(index)
+    }
+
+    /// Apply the committed records in `[start, end)` to the index.
+    ///
+    /// Used both to build an index from scratch (`start = 0`) and to extend a
+    /// live index after a commit (`start = previous root`). Because both paths
+    /// call the identical [`Index::apply_record`], a live index is always equal
+    /// to a rebuild over the same records.
+    pub fn apply_range(&mut self, log: &Log, start: u64, end: u64) -> Result<()> {
+        if end > log.committed_end_offset() {
+            return Err(OrfsError::InvalidArgument(format!(
+                "apply end {end} exceeds the committed root {}",
+                log.committed_end_offset()
+            )));
+        }
+        let mut offset = 0u64;
+        for record in log.records_upto(end) {
+            let record = record?;
+            let total = record.header.total_len().map_err(OrfsError::from)?;
+            if offset >= start {
+                self.apply_record(&record, offset)?;
+            }
+            offset = offset.checked_add(total).ok_or(OrfsError::Overflow {
+                what: "index offset",
+            })?;
+        }
+        Ok(())
+    }
+
+    /// Apply a single authoritative record at the given logical `offset`.
+    ///
+    /// This is the *only* function that mutates the index, so the live index and
+    /// a from-scratch rebuild are provably identical over the same record
+    /// sequence.
+    pub fn apply_record(&mut self, record: &Record, offset: u64) -> Result<()> {
+        let ty = record.known_type().map_err(OrfsError::from)?;
+        match ty {
+            RecordType::VolumeGenesis => {
+                if !self.inodes.is_empty() {
+                    return Err(OrfsError::Corrupt("duplicate VOLUME_GENESIS".into()));
+                }
+                let root = Inode::new(
+                    ROOT_INODE,
+                    1,
+                    InodeType::Directory,
+                    0o755,
+                    0,
+                    0,
+                    2,
+                    0,
+                    Timespec::ZERO,
+                    Timespec::ZERO,
+                    Timespec::ZERO,
+                    offset,
+                );
+                self.inodes.insert(ROOT_INODE, root);
+                self.children.entry(ROOT_INODE).or_default();
+                self.next_inode_id = ROOT_INODE + 1;
+                self.root = offset + record.header.total_len().map_err(OrfsError::from)?;
+            }
+            RecordType::TxBegin | RecordType::TxAbort => {}
+            RecordType::TxCommit => {
+                if record.header.transaction_id == 0 {
+                    return Err(OrfsError::Corrupt(
+                        "TX_COMMIT with zero transaction id".into(),
+                    ));
+                }
+                self.root = offset + record.header.total_len().map_err(OrfsError::from)?;
+            }
+            RecordType::InodeCreate => {
+                let p = InodeCreatePayload::decode(&record.payload)?;
+                self.create_inode(
+                    p.inode_id,
+                    p.generation,
+                    p.kind,
+                    p.mode,
+                    p.uid,
+                    p.gid,
+                    p.nlink,
+                    p.size,
+                    None,
+                    p.atime,
+                    p.mtime,
+                    p.ctime,
+                    offset,
+                )?;
+            }
+            RecordType::SymlinkCreate => {
+                let p = SymlinkCreatePayload::decode(&record.payload)?;
+                let size = p.target.len() as u64;
+                self.create_inode(
+                    p.inode_id,
+                    p.generation,
+                    InodeType::Symlink,
+                    p.mode,
+                    p.uid,
+                    p.gid,
+                    1,
+                    size,
+                    Some(p.target.clone()),
+                    Timespec::ZERO,
+                    p.mtime,
+                    p.mtime,
+                    offset,
+                )?;
+            }
+            RecordType::InodeMetadata => {
+                let p = InodeMetadataPayload::decode(&record.payload)?;
+                let inode = self.inode_mut(subject(record, p.inode_id)?)?;
+                inode.nlink = p.nlink;
+                inode.bump_version(offset);
+            }
+            RecordType::PermissionChange => {
+                let p = PermissionChangePayload::decode(&record.payload)?;
+                let inode = self.inode_mut(subject(record, p.inode_id)?)?;
+                if let Some(m) = p.mode {
+                    inode.mode = m;
+                }
+                if let Some(u) = p.uid {
+                    inode.uid = u;
+                }
+                if let Some(g) = p.gid {
+                    inode.gid = g;
+                }
+                inode.bump_version(offset);
+            }
+            RecordType::InodeSetattr => {
+                let p = InodeSetattrPayload::decode(&record.payload)?;
+                let inode = self.inode_mut(subject(record, p.inode_id)?)?;
+                if let Some(t) = p.atime {
+                    inode.atime = t;
+                }
+                if let Some(t) = p.mtime {
+                    inode.mtime = t;
+                }
+                inode.ctime = inode.mtime;
+                inode.bump_version(offset);
+            }
+            RecordType::XattrSet => {
+                let p = XattrSetPayload::decode(&record.payload)?;
+                let inode = self.inode_mut(subject(record, p.inode_id)?)?;
+                inode.xattrs.insert(p.name, p.value);
+                inode.bump_version(offset);
+            }
+            RecordType::XattrRemove => {
+                let p = XattrRemovePayload::decode(&record.payload)?;
+                let inode = self.inode_mut(subject(record, p.inode_id)?)?;
+                inode.xattrs.remove(&p.name);
+                inode.bump_version(offset);
+            }
+            RecordType::DentryAdd => {
+                let p = DentryAddPayload::decode(
+                    &record.payload,
+                    crate::directory::DENTRY_ADD_MAGIC,
+                    "DENTRY_ADD",
+                )?;
+                self.add_dentry(p.parent, p.name, p.child, offset)?;
+            }
+            RecordType::HardlinkAdd => {
+                let p = DentryAddPayload::decode(
+                    &record.payload,
+                    crate::directory::HARDLINK_ADD_MAGIC,
+                    "HARDLINK_ADD",
+                )?;
+                self.add_dentry(p.parent, p.name, p.child, offset)?;
+            }
+            RecordType::DentryRemove => {
+                let p = DentryRemovePayload::decode(
+                    &record.payload,
+                    crate::directory::DENTRY_REMOVE_MAGIC,
+                    "DENTRY_REMOVE",
+                )?;
+                self.remove_dentry(p.parent, &p.name, offset)?;
+            }
+            RecordType::HardlinkRemove => {
+                let p = DentryRemovePayload::decode(
+                    &record.payload,
+                    crate::directory::HARDLINK_REMOVE_MAGIC,
+                    "HARDLINK_REMOVE",
+                )?;
+                self.remove_dentry(p.parent, &p.name, offset)?;
+            }
+            RecordType::DentryRename => {
+                let p = DentryRenamePayload::decode(&record.payload)?;
+                self.rename_dentry(&p, offset)?;
+            }
+            RecordType::DataExtent => {
+                let p = DataExtentPayload::decode(&record.payload)?;
+                let id = subject(record, 0)?;
+                let data_offset = offset
+                    .checked_add(crate::record::HEADER_LEN as u64)
+                    .and_then(|v| v.checked_add(DATA_EXTENT_DATA_OFFSET as u64))
+                    .ok_or(OrfsError::Overflow {
+                        what: "DATA_EXTENT data offset",
+                    })?;
+                let inode = self.inode_mut(id)?;
+                inode
+                    .extents
+                    .write(p.offset, p.data.len() as u64, data_offset);
+                inode.size = inode.extents.size();
+                inode.bump_version(offset);
+            }
+            RecordType::DataZeroRange => {
+                let p = DataZeroRangePayload::decode(&record.payload)?;
+                let id = subject(record, 0)?;
+                let inode = self.inode_mut(id)?;
+                inode.extents.zero(p.offset, p.len);
+                inode.size = inode.extents.size();
+                inode.bump_version(offset);
+            }
+            RecordType::FileResize => {
+                let p = FileResizePayload::decode(&record.payload)?;
+                let id = subject(record, 0)?;
+                let inode = self.inode_mut(id)?;
+                inode.extents.resize(p.new_size);
+                inode.size = inode.extents.size();
+                inode.bump_version(offset);
+            }
+            RecordType::SnapshotRoot => {
+                let p = crate::namespace::SnapshotRootPayload::decode(&record.payload)?;
+                self.snapshots.insert(p.name, p.root);
+            }
+            RecordType::IndexCheckpoint => {
+                let p = crate::namespace::IndexCheckpointPayload::decode(&record.payload)?;
+                self.checkpoints.push(Checkpoint {
+                    root: p.root,
+                    inode_count: p.inode_count,
+                    dentry_count: p.dentry_count,
+                    digest: p.digest,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn create_inode(
+        &mut self,
+        id: u64,
+        generation: u64,
+        kind: InodeType,
+        mode: u32,
+        uid: u32,
+        gid: u32,
+        nlink: u32,
+        size: u64,
+        target: Option<Vec<u8>>,
+        atime: Timespec,
+        mtime: Timespec,
+        ctime: Timespec,
+        offset: u64,
+    ) -> Result<()> {
+        if id == 0 || id == ROOT_INODE {
+            return Err(OrfsError::Corrupt(format!(
+                "INODE_CREATE with reserved inode id {id}"
+            )));
+        }
+        if self.inodes.contains_key(&id) {
+            return Err(OrfsError::Corrupt(format!("duplicate inode id {id}")));
+        }
+        let mut inode = Inode::new(
+            id, generation, kind, mode, uid, gid, nlink, size, atime, mtime, ctime, offset,
+        );
+        inode.symlink_target = target;
+        self.inodes.insert(id, inode);
+        self.next_inode_id = self.next_inode_id.max(id + 1);
+        Ok(())
+    }
+
+    fn add_dentry(&mut self, parent: u64, name: Vec<u8>, child: u64, offset: u64) -> Result<()> {
+        let p = self
+            .inodes
+            .get(&parent)
+            .ok_or_else(|| OrfsError::Corrupt(format!("dentry parent {parent} does not exist")))?;
+        if !p.is_dir() {
+            return Err(OrfsError::Corrupt(format!(
+                "dentry parent {parent} is not a directory"
+            )));
+        }
+        if !self.inodes.contains_key(&child) {
+            return Err(OrfsError::Corrupt(format!(
+                "dentry child {child} does not exist"
+            )));
+        }
+        if self.dentries.contains_key(&(parent, name.clone())) {
+            return Err(OrfsError::Corrupt(format!(
+                "duplicate dentry under {parent}"
+            )));
+        }
+        self.dentries.insert((parent, name.clone()), child);
+        self.children.entry(parent).or_default().insert(name, child);
+        self.inode_mut(child)?.bump_version(offset);
+        Ok(())
+    }
+
+    fn remove_dentry(&mut self, parent: u64, name: &[u8], offset: u64) -> Result<()> {
+        let child = self
+            .dentries
+            .remove(&(parent, name.to_vec()))
+            .ok_or_else(|| OrfsError::Corrupt(format!("remove of absent dentry under {parent}")))?;
+        if let Some(map) = self.children.get_mut(&parent) {
+            map.remove(name);
+        }
+        self.inode_mut(child)?.bump_version(offset);
+        Ok(())
+    }
+
+    fn rename_dentry(&mut self, p: &DentryRenamePayload, offset: u64) -> Result<()> {
+        let old_key = (p.old_parent, p.old_name.clone());
+        let new_key = (p.new_parent, p.new_name.clone());
+        match p.flags {
+            RenameFlags::Move => {
+                if old_key == new_key {
+                    return Ok(());
+                }
+                let child = self.dentries.remove(&old_key).ok_or_else(|| {
+                    OrfsError::Corrupt("rename source does not exist".to_string())
+                })?;
+                if self.dentries.contains_key(&new_key) {
+                    return Err(OrfsError::Corrupt(
+                        "rename destination already exists".to_string(),
+                    ));
+                }
+                self.set_child(p.old_parent, &p.old_name, None);
+                self.dentries.insert(new_key.clone(), child);
+                self.set_child(p.new_parent, &p.new_name, Some(child));
+                self.inode_mut(child)?.bump_version(offset);
+            }
+            RenameFlags::Exchange => {
+                let c1 =
+                    self.dentries.get(&old_key).copied().ok_or_else(|| {
+                        OrfsError::Corrupt("exchange source does not exist".into())
+                    })?;
+                let c2 = self.dentries.get(&new_key).copied().ok_or_else(|| {
+                    OrfsError::Corrupt("exchange destination does not exist".into())
+                })?;
+                self.dentries.insert(old_key.clone(), c2);
+                self.dentries.insert(new_key.clone(), c1);
+                self.set_child(p.old_parent, &p.old_name, Some(c2));
+                self.set_child(p.new_parent, &p.new_name, Some(c1));
+                self.inode_mut(c1)?.bump_version(offset);
+                self.inode_mut(c2)?.bump_version(offset);
+            }
+        }
+        Ok(())
+    }
+
+    fn set_child(&mut self, parent: u64, name: &[u8], child: Option<u64>) {
+        let map = self.children.entry(parent).or_default();
+        match child {
+            Some(c) => {
+                map.insert(name.to_vec(), c);
+            }
+            None => {
+                map.remove(name);
+            }
+        }
+    }
+
+    fn inode_mut(&mut self, id: u64) -> Result<&mut Inode> {
+        self.inodes
+            .get_mut(&id)
+            .ok_or_else(|| OrfsError::Corrupt(format!("record references missing inode {id}")))
+    }
+
+    // -- read accessors ----------------------------------------------------
+
+    /// The committed root this index reflects.
+    pub fn root(&self) -> u64 {
+        self.root
+    }
+
+    /// The next inode id to allocate (strictly greater than every id seen).
+    pub fn next_inode_id(&self) -> u64 {
+        self.next_inode_id
+    }
+
+    /// The number of live inodes (including unlinked-but-retained ones).
+    pub fn inode_count(&self) -> usize {
+        self.inodes.len()
+    }
+
+    /// The number of live directory entries.
+    pub fn dentry_count(&self) -> usize {
+        self.dentries.len()
+    }
+
+    /// Named committed snapshots (`SNAPSHOT_ROOT`).
+    pub fn snapshot_roots(&self) -> &BTreeMap<Vec<u8>, u64> {
+        &self.snapshots
+    }
+
+    /// Recorded index checkpoints (`INDEX_CHECKPOINT`).
+    pub fn checkpoints(&self) -> &[Checkpoint] {
+        &self.checkpoints
+    }
+
+    /// A reference to an inode by id.
+    pub fn inode(&self, id: u64) -> Option<&Inode> {
+        self.inodes.get(&id)
+    }
+
+    /// The latest authoritative record offset for an inode (0 if unknown).
+    pub fn latest_offset(&self, id: u64) -> u64 {
+        self.inodes
+            .get(&id)
+            .map(|i| i.latest_record_offset)
+            .unwrap_or(0)
+    }
+
+    /// Resolve `(parent, name)` to a child inode id.
+    pub fn lookup(&self, parent: u64, name: &[u8]) -> Option<u64> {
+        self.dentries.get(&(parent, name.to_vec())).copied()
+    }
+
+    /// The visible children of a directory, sorted by name. `None` if `parent`
+    /// is not a directory.
+    pub fn readdir(&self, parent: u64) -> Option<Vec<(Vec<u8>, u64)>> {
+        let inode = self.inodes.get(&parent)?;
+        if !inode.is_dir() {
+            return None;
+        }
+        Some(
+            self.children
+                .get(&parent)
+                .map(|m| m.iter().map(|(k, v)| (k.clone(), *v)).collect())
+                .unwrap_or_default(),
+        )
+    }
+
+    /// Whether `ancestor` is `node` or an ancestor of `node` (used to reject
+    /// directory cycles on rename).
+    pub fn is_ancestor(&self, ancestor: u64, node: u64) -> bool {
+        if ancestor == node {
+            return true;
+        }
+        let mut cur = node;
+        loop {
+            let Some(parent) = self.parent_of(cur) else {
+                return false;
+            };
+            if parent == ancestor {
+                return true;
+            }
+            if parent == cur || parent == ROOT_INODE {
+                return false;
+            }
+            cur = parent;
+        }
+    }
+
+    /// The parent directory of an inode (the sole parent for directories).
+    pub fn parent_of(&self, child: u64) -> Option<u64> {
+        let inode = self.inodes.get(&child)?;
+        if inode.is_dir() {
+            // Directories have exactly one parent: search the dentry graph.
+            for ((parent, _name), c) in &self.dentries {
+                if *c == child {
+                    return Some(*parent);
+                }
+            }
+            None
+        } else {
+            None
+        }
+    }
+
+    /// The number of visible directory entries that reference `inode`.
+    pub fn link_count_from_dentries(&self, inode: u64) -> u32 {
+        self.dentries.values().filter(|c| **c == inode).count() as u32
+    }
+
+    // -- snapshot / digest -------------------------------------------------
+
+    /// A deterministic BLAKE3 digest of the canonical index content.
+    pub fn canonical_digest(&self) -> [u8; 32] {
+        let snap = Snapshot::from_index(self);
+        let bytes = serde_json::to_vec(&snap).unwrap_or_default();
+        *blake3::hash(&bytes).as_bytes()
+    }
+
+    /// Serialise the index to a canonical, self-describing snapshot document.
+    pub fn encode_snapshot(&self) -> Result<Vec<u8>> {
+        let snap = Snapshot::from_index(self);
+        let file = SnapshotFile {
+            schema: SNAPSHOT_SCHEMA.to_string(),
+            digest: hex32(&snap.digest()),
+            snapshot: snap,
+        };
+        let mut out = serde_json::to_vec_pretty(&file)
+            .map_err(|e| OrfsError::Corrupt(format!("snapshot encode: {e}")))?;
+        out.push(b'\n');
+        Ok(out)
+    }
+
+    /// Parse a snapshot document, rejecting it if its self-digest does not
+    /// validate. The returned index is valid only for a matching committed root;
+    /// callers must confirm that against the log.
+    pub fn decode_snapshot(bytes: &[u8]) -> Result<Index> {
+        let file: SnapshotFile = serde_json::from_slice(bytes)
+            .map_err(|e| OrfsError::Corrupt(format!("snapshot decode: {e}")))?;
+        if file.schema != SNAPSHOT_SCHEMA {
+            return Err(OrfsError::Compatibility(format!(
+                "index snapshot schema {}",
+                file.schema
+            )));
+        }
+        if file.digest != hex32(&file.snapshot.digest()) {
+            return Err(OrfsError::Corrupt(
+                "index snapshot digest mismatch (tampered or torn)".into(),
+            ));
+        }
+        Ok(file.snapshot.into_index())
+    }
+
+    /// Persist the index as an accelerator snapshot under `path`.
+    pub fn save_snapshot(&self, path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let bytes = self.encode_snapshot()?;
+        let tmp = path.with_extension("tmp");
+        std::fs::write(&tmp, &bytes)?;
+        std::fs::rename(&tmp, path)?;
+        Ok(())
+    }
+
+    /// Load a persisted accelerator snapshot, if present and valid.
+    ///
+    /// Returns `Ok(None)` when the file is absent, or when it fails to validate
+    /// (torn/tampered/foreign root). A derived snapshot never overrides the log.
+    pub fn load_snapshot(path: &Path, expected_root: u64) -> Result<Option<Index>> {
+        if !path.exists() {
+            return Ok(None);
+        }
+        let bytes = std::fs::read(path)?;
+        match Index::decode_snapshot(&bytes) {
+            Ok(index) if index.root == expected_root => Ok(Some(index)),
+            _ => Ok(None),
+        }
+    }
+}
+
+/// Resolve a record's subject inode: prefer the payload's explicit id, falling
+/// back to the record header, and reject disagreements.
+fn subject(record: &Record, payload_id: u64) -> Result<u64> {
+    let header_id = record.header.inode_id;
+    let id = if payload_id != 0 {
+        payload_id
+    } else {
+        header_id
+    };
+    if id == 0 {
+        return Err(OrfsError::Corrupt("record has no subject inode".into()));
+    }
+    if payload_id != 0 && header_id != 0 && payload_id != header_id {
+        return Err(OrfsError::Corrupt(
+            "payload inode id disagrees with record header".into(),
+        ));
+    }
+    Ok(id)
+}
+
+fn hex32(bytes: &[u8; 32]) -> String {
+    let mut s = String::with_capacity(64);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
+const SNAPSHOT_SCHEMA: &str = "orfs.index.snapshot.v1";
+
+// ---------------------------------------------------------------------------
+// Snapshot serialisation (deterministic; used for the digest and the file)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct SnapshotFile {
+    schema: String,
+    digest: String,
+    snapshot: Snapshot,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct Snapshot {
+    root: u64,
+    next_inode_id: u64,
+    inodes: Vec<SnapshotInode>,
+    dentries: Vec<SnapshotDentry>,
+    snapshots: Vec<SnapshotRoot>,
+    checkpoints: Vec<SnapshotCheckpoint>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct SnapshotInode {
+    id: u64,
+    generation: u64,
+    kind: u8,
+    mode: u32,
+    uid: u32,
+    gid: u32,
+    nlink: u32,
+    size: u64,
+    atime_secs: i64,
+    atime_nanos: u32,
+    mtime_secs: i64,
+    mtime_nanos: u32,
+    ctime_secs: i64,
+    ctime_nanos: u32,
+    symlink_target: Option<Vec<u8>>,
+    latest_record_offset: u64,
+    versions: Vec<SnapshotVersion>,
+    xattrs: Vec<(Vec<u8>, Vec<u8>)>,
+    extents: Vec<SnapshotExtent>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct SnapshotVersion {
+    version: u64,
+    record_offset: u64,
+    kind: u8,
+    mode: u32,
+    uid: u32,
+    gid: u32,
+    nlink: u32,
+    size: u64,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct SnapshotExtent {
+    start: u64,
+    len: u64,
+    /// `None` is a zero extent; `Some` is immutable data at this log offset.
+    data_offset: Option<u64>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct SnapshotDentry {
+    parent: u64,
+    name: Vec<u8>,
+    child: u64,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct SnapshotRoot {
+    name: Vec<u8>,
+    root: u64,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct SnapshotCheckpoint {
+    root: u64,
+    inode_count: u64,
+    dentry_count: u64,
+    digest: Vec<u8>,
+}
+
+impl Snapshot {
+    fn from_index(index: &Index) -> Snapshot {
+        let mut inode_ids: Vec<u64> = index.inodes.keys().copied().collect();
+        inode_ids.sort_unstable();
+        let inodes = inode_ids
+            .into_iter()
+            .map(|id| {
+                let i = &index.inodes[&id];
+                SnapshotInode {
+                    id: i.id,
+                    generation: i.generation,
+                    kind: i.kind.code(),
+                    mode: i.mode,
+                    uid: i.uid,
+                    gid: i.gid,
+                    nlink: i.nlink,
+                    size: i.size,
+                    atime_secs: i.atime.secs,
+                    atime_nanos: i.atime.nanos,
+                    mtime_secs: i.mtime.secs,
+                    mtime_nanos: i.mtime.nanos,
+                    ctime_secs: i.ctime.secs,
+                    ctime_nanos: i.ctime.nanos,
+                    symlink_target: i.symlink_target.clone(),
+                    latest_record_offset: i.latest_record_offset,
+                    versions: i
+                        .versions
+                        .iter()
+                        .map(|v| SnapshotVersion {
+                            version: v.version,
+                            record_offset: v.record_offset,
+                            kind: v.kind.code(),
+                            mode: v.mode,
+                            uid: v.uid,
+                            gid: v.gid,
+                            nlink: v.nlink,
+                            size: v.size,
+                        })
+                        .collect(),
+                    xattrs: i
+                        .xattrs
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                    extents: i
+                        .extents
+                        .extents()
+                        .iter()
+                        .map(|e| SnapshotExtent {
+                            start: e.start,
+                            len: e.len,
+                            data_offset: match e.kind {
+                                ExtentKind::Data { data_offset } => Some(data_offset),
+                                ExtentKind::Zero => None,
+                            },
+                        })
+                        .collect(),
+                }
+            })
+            .collect();
+        let mut dentries: Vec<SnapshotDentry> = index
+            .dentries
+            .iter()
+            .map(|((parent, name), child)| SnapshotDentry {
+                parent: *parent,
+                name: name.clone(),
+                child: *child,
+            })
+            .collect();
+        dentries.sort_by(|a, b| (a.parent, &a.name).cmp(&(b.parent, &b.name)));
+        let mut snaps: Vec<SnapshotRoot> = index
+            .snapshots
+            .iter()
+            .map(|(name, root)| SnapshotRoot {
+                name: name.clone(),
+                root: *root,
+            })
+            .collect();
+        snaps.sort_by(|a, b| a.name.cmp(&b.name));
+        let checkpoints = index
+            .checkpoints
+            .iter()
+            .map(|c| SnapshotCheckpoint {
+                root: c.root,
+                inode_count: c.inode_count,
+                dentry_count: c.dentry_count,
+                digest: c.digest.to_vec(),
+            })
+            .collect();
+        Snapshot {
+            root: index.root,
+            next_inode_id: index.next_inode_id,
+            inodes,
+            dentries,
+            snapshots: snaps,
+            checkpoints,
+        }
+    }
+
+    fn digest(&self) -> [u8; 32] {
+        let bytes = serde_json::to_vec(self).unwrap_or_default();
+        *blake3::hash(&bytes).as_bytes()
+    }
+
+    fn into_index(self) -> Index {
+        let mut index = Index {
+            root: self.root,
+            next_inode_id: self.next_inode_id,
+            ..Index::default()
+        };
+        for si in self.inodes {
+            let kind = InodeType::from_code(si.kind).unwrap_or(InodeType::File);
+            let mut inode = Inode::new(
+                si.id,
+                si.generation,
+                kind,
+                si.mode,
+                si.uid,
+                si.gid,
+                si.nlink,
+                si.size,
+                Timespec::new(si.atime_secs, si.atime_nanos),
+                Timespec::new(si.mtime_secs, si.mtime_nanos),
+                Timespec::new(si.ctime_secs, si.ctime_nanos),
+                si.latest_record_offset,
+            );
+            inode.latest_record_offset = si.latest_record_offset;
+            inode.symlink_target = si.symlink_target;
+            inode.xattrs = si.xattrs.into_iter().collect();
+            inode.versions = si
+                .versions
+                .into_iter()
+                .map(|v| crate::inode::InodeVersion {
+                    version: v.version,
+                    record_offset: v.record_offset,
+                    kind: InodeType::from_code(v.kind).unwrap_or(InodeType::File),
+                    mode: v.mode,
+                    uid: v.uid,
+                    gid: v.gid,
+                    nlink: v.nlink,
+                    size: v.size,
+                })
+                .collect();
+            let mut extents = crate::extent::ExtentMap::default();
+            for e in si.extents {
+                match e.data_offset {
+                    Some(data_offset) => extents.write(e.start, e.len, data_offset),
+                    None => extents.zero(e.start, e.len),
+                }
+            }
+            inode.extents = extents;
+            index.inodes.insert(si.id, inode);
+            if kind == InodeType::Directory {
+                index.children.entry(si.id).or_default();
+            }
+        }
+        for d in self.dentries {
+            index.dentries.insert((d.parent, d.name.clone()), d.child);
+            index
+                .children
+                .entry(d.parent)
+                .or_default()
+                .insert(d.name, d.child);
+        }
+        index.snapshots = self
+            .snapshots
+            .into_iter()
+            .map(|s| (s.name, s.root))
+            .collect();
+        index.checkpoints = self
+            .checkpoints
+            .into_iter()
+            .map(|c| {
+                let mut digest = [0u8; 32];
+                let n = c.digest.len().min(32);
+                digest[..n].copy_from_slice(&c.digest[..n]);
+                Checkpoint {
+                    root: c.root,
+                    inode_count: c.inode_count,
+                    dentry_count: c.dentry_count,
+                    digest,
+                }
+            })
+            .collect();
+        index
+    }
+}

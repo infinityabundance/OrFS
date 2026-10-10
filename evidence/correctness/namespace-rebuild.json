@@ -1,0 +1,13 @@
+{
+  "all_ok": true,
+  "committed_root": 4847,
+  "dentry_count": 5,
+  "digest_equals": true,
+  "generator": "tests/namespace_model.rs",
+  "inode_count": 5,
+  "log_wins_after_tamper": true,
+  "rebuild_equals_live": true,
+  "schema": "orfs.evidence.namespace-rebuild.v1",
+  "snapshot_valid_on_load": true,
+  "tampered_snapshot_rejected": true
+}

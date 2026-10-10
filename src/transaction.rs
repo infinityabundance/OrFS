@@ -612,11 +612,6 @@ pub fn verify_bracket(
             bracket.len()
         )));
     }
-    if commit.record_count != begin.expected_record_count as u64 {
-        return Err(OrfsError::Corrupt(
-            "TX_COMMIT record count disagrees with TX_BEGIN".into(),
-        ));
-    }
     if commit.transaction_id != begin.transaction_id {
         return Err(OrfsError::Corrupt(
             "TX_COMMIT transaction id disagrees with TX_BEGIN".into(),
@@ -626,6 +621,49 @@ pub fn verify_bracket(
         return Err(OrfsError::Corrupt(
             "TX_COMMIT bracket checksum mismatch".into(),
         ));
+    }
+
+    // The bracket must decode into exactly the claimed number of complete
+    // records, the first of which is the `TX_BEGIN`. This cross-checks the
+    // commit and the begin against the *actual* bracketed records, not merely
+    // against each other (research §23.1: no silent repair).
+    let mut offset = 0usize;
+    let mut count = 0u64;
+    let mut first_is_begin = false;
+    while offset < bracket.len() {
+        let (record, used) = Record::decode(&bracket[offset..]).map_err(OrfsError::from)?;
+        if used == 0 {
+            return Err(OrfsError::Corrupt(
+                "TX_COMMIT bracket contains a zero-length record".into(),
+            ));
+        }
+        if count == 0 {
+            first_is_begin = record.known_type().map_err(OrfsError::from)? == RecordType::TxBegin;
+        }
+        count += 1;
+        offset += used;
+    }
+    if offset != bracket.len() {
+        return Err(OrfsError::Corrupt(
+            "TX_COMMIT bracket does not end on a record boundary".into(),
+        ));
+    }
+    if !first_is_begin {
+        return Err(OrfsError::Corrupt(
+            "TX_COMMIT bracket does not begin with TX_BEGIN".into(),
+        ));
+    }
+    if count != commit.record_count {
+        return Err(OrfsError::Corrupt(format!(
+            "TX_COMMIT record count {} disagrees with the actual {} bracketed records",
+            commit.record_count, count
+        )));
+    }
+    if begin.expected_record_count != 0 && count != begin.expected_record_count as u64 {
+        return Err(OrfsError::Corrupt(format!(
+            "TX_BEGIN expected {} records but the bracket contains {count}",
+            begin.expected_record_count
+        )));
     }
     Ok(())
 }

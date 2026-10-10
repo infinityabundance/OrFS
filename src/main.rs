@@ -411,7 +411,25 @@ fn inspect(backing: &Path, json: bool) -> Result<()> {
 
 fn verify(backing: &Path, deep: bool, json: bool) -> Result<()> {
     let vol = Volume::open(backing, OpenMode::ReadOnly)?;
-    let report = vol.verify(deep)?;
+    let mut report = vol.verify(deep)?;
+    if deep {
+        // Plane B: rebuild the derived namespace index from the log twice and
+        // confirm it is deterministic (the log is the only source of truth).
+        let root = vol.log.committed_end_offset();
+        let a = orfs::index::Index::from_log(&vol.log, root)?;
+        let b = orfs::index::Index::from_log(&vol.log, root)?;
+        let deterministic = a == b;
+        report.checks.push(orfs::volume::VerifyCheck {
+            name: "namespace_index_rebuild".to_string(),
+            ok: deterministic,
+            detail: format!(
+                "{} inode(s), {} dentry(ies); rebuild deterministic={deterministic}",
+                a.inode_count(),
+                a.dentry_count()
+            ),
+        });
+        report.ok = report.checks.iter().all(|c| c.ok);
+    }
     if json {
         let out = serde_json::json!({
             "volume": backing.display().to_string(),

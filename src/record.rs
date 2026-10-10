@@ -102,6 +102,16 @@ pub(crate) fn get_u64(buf: &[u8], off: usize) -> u64 {
     u64::from_le_bytes(b)
 }
 
+pub(crate) fn put_i64(buf: &mut [u8], off: usize, v: i64) {
+    buf[off..off + 8].copy_from_slice(&v.to_le_bytes());
+}
+
+pub(crate) fn get_i64(buf: &[u8], off: usize) -> i64 {
+    let mut b = [0u8; 8];
+    b.copy_from_slice(&buf[off..off + 8]);
+    i64::from_le_bytes(b)
+}
+
 // ---------------------------------------------------------------------------
 // Decode errors
 // ---------------------------------------------------------------------------

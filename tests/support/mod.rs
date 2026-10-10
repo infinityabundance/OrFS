@@ -9,6 +9,7 @@ use std::path::Path;
 
 use orfs::commit::{CommitSequencer, DurabilityMode};
 use orfs::log::OpenMode;
+use orfs::namespace::Namespace;
 use orfs::record::RecordType;
 use orfs::segment::segment_file_name;
 use orfs::transaction::Transaction;
@@ -34,6 +35,12 @@ pub const MUTATING_TYPES: [RecordType; 6] = [
 /// Initialise a fresh, reproducible volume.
 pub fn init_volume(dir: &Path, segment_size: u64) -> Volume {
     Volume::init_with_uuid(dir, segment_size, FIXED_UUID, FIXED_CREATED).expect("init volume")
+}
+
+/// Initialise a fresh, reproducible namespace (Phase 3).
+pub fn init_namespace(dir: &Path, segment_size: u64, durability: DurabilityMode) -> Namespace {
+    Namespace::init_with_uuid(dir, segment_size, FIXED_UUID, FIXED_CREATED, durability)
+        .expect("init namespace")
 }
 
 /// Deterministic payload of `len` bytes derived from `(tx, i)`.

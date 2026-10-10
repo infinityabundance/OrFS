@@ -31,6 +31,9 @@ use crate::segment::{
     discover_segment_ids, fsync_dir, segment_file_name, ReadAt, Segment, SegmentExtent,
     SegmentLocator,
 };
+use crate::transaction::{
+    bracket_checksum, verify_bracket, AbortReason, TxAbortPayload, TxBeginPayload, TxCommitPayload,
+};
 
 /// Default segment size policy: 64 MiB per segment file.
 pub const DEFAULT_SEGMENT_SIZE: u64 = 64 * 1024 * 1024;
@@ -79,6 +82,9 @@ pub struct LogStats {
     pub bytes: u64,
     /// Committed bytes (== the current root).
     pub committed_bytes: u64,
+    /// The greatest transaction id observed anywhere in the log (committed or
+    /// abandoned), used to allocate ids monotonically.
+    pub max_transaction_id: u64,
     /// Record counts by raw type code.
     pub by_type: BTreeMap<u16, u64>,
 }
@@ -148,8 +154,30 @@ fn read_frame(reader: &ReadAt, phys: u64, physical_len: u64) -> Result<FrameOutc
     }
 }
 
+/// A structural fault found while validating a transaction.
+#[derive(Debug)]
+enum TxFault {
+    /// A fault that may legitimately be an *uncommitted* tail in the final
+    /// segment (sequence gap, record outside a transaction, ...).
+    Soft(OrfsError),
+    /// A fault in fully-framed content that must always be treated as
+    /// corruption — in particular a committed record whose typed payload or
+    /// `TX_COMMIT` bracket is inconsistent (never silently skipped, §23.1).
+    Hard(OrfsError),
+}
+
+/// The accumulated bracket of the currently open transaction: the `TX_BEGIN`
+/// payload plus the exact encoded bytes and record count of
+/// `TX_BEGIN .. last data record`.
+#[derive(Debug)]
+struct BeginBracket {
+    payload: TxBeginPayload,
+    bytes: Vec<u8>,
+    records: u64,
+}
+
 /// The transaction state machine used to locate the committed root while
-/// scanning and to validate transaction structure.
+/// scanning and to validate transaction structure and typed brackets.
 #[derive(Debug, Default)]
 struct TxMachine {
     started: bool,
@@ -159,23 +187,29 @@ struct TxMachine {
     committed_end_offset: u64,
     committed_record_count: u64,
     transaction_count: u64,
+    max_transaction_id: u64,
+    begin: Option<BeginBracket>,
     boundaries: Vec<u64>,
 }
 
 impl TxMachine {
-    fn accept(&mut self, record: &Record, end: u64) -> Result<()> {
+    fn accept(&mut self, record: &Record, end: u64) -> std::result::Result<(), TxFault> {
+        self.max_transaction_id = self.max_transaction_id.max(record.header.transaction_id);
         if record.header.sequence_number != self.next_sequence {
-            return Err(OrfsError::Corrupt(format!(
+            return Err(TxFault::Soft(OrfsError::Corrupt(format!(
                 "record sequence number {} != expected {}",
                 record.header.sequence_number, self.next_sequence
-            )));
+            ))));
         }
-        let class = record.header.classify_type().map_err(OrfsError::from)?;
+        let class = record
+            .header
+            .classify_type()
+            .map_err(|e| TxFault::Hard(OrfsError::from(e)))?;
         if !self.started {
             if class != TypeClass::Known(RecordType::VolumeGenesis) {
-                return Err(OrfsError::Corrupt(
+                return Err(TxFault::Soft(OrfsError::Corrupt(
                     "first record is not VOLUME_GENESIS".to_string(),
-                ));
+                )));
             }
             self.started = true;
             self.committed_end_offset = end;
@@ -184,27 +218,57 @@ impl TxMachine {
         } else {
             match class {
                 TypeClass::Known(RecordType::VolumeGenesis) => {
-                    return Err(OrfsError::Corrupt("duplicate VOLUME_GENESIS".to_string()));
+                    return Err(TxFault::Soft(OrfsError::Corrupt(
+                        "duplicate VOLUME_GENESIS".to_string(),
+                    )));
                 }
                 TypeClass::Known(RecordType::TxBegin) => {
                     if self.open_tx.is_some() {
-                        return Err(OrfsError::Corrupt("nested TX_BEGIN".to_string()));
+                        return Err(TxFault::Soft(OrfsError::Corrupt(
+                            "nested TX_BEGIN".to_string(),
+                        )));
                     }
                     if record.header.transaction_id == 0 {
-                        return Err(OrfsError::Corrupt(
+                        return Err(TxFault::Soft(OrfsError::Corrupt(
                             "TX_BEGIN with zero transaction id".to_string(),
-                        ));
+                        )));
                     }
+                    let payload = TxBeginPayload::decode(&record.payload).map_err(TxFault::Hard)?;
+                    if payload.transaction_id != record.header.transaction_id {
+                        return Err(TxFault::Hard(OrfsError::Corrupt(
+                            "TX_BEGIN payload transaction id disagrees with header".to_string(),
+                        )));
+                    }
+                    let bytes = record.encode().map_err(TxFault::Hard)?;
+                    self.begin = Some(BeginBracket {
+                        payload,
+                        bytes,
+                        records: 1,
+                    });
                     self.open_tx = Some(record.header.transaction_id);
                 }
                 TypeClass::Known(RecordType::TxCommit) => {
                     let tx = self.open_tx.ok_or_else(|| {
-                        OrfsError::Corrupt("TX_COMMIT without TX_BEGIN".to_string())
+                        TxFault::Soft(OrfsError::Corrupt("TX_COMMIT without TX_BEGIN".to_string()))
                     })?;
                     if record.header.transaction_id != tx {
-                        return Err(OrfsError::Corrupt(
+                        return Err(TxFault::Soft(OrfsError::Corrupt(
                             "TX_COMMIT transaction id mismatch".to_string(),
-                        ));
+                        )));
+                    }
+                    let commit = TxCommitPayload::decode(&record.payload).map_err(TxFault::Hard)?;
+                    let bracket = self.begin.take().ok_or_else(|| {
+                        TxFault::Hard(OrfsError::Corrupt(
+                            "TX_COMMIT has no accumulated bracket".to_string(),
+                        ))
+                    })?;
+                    verify_bracket(&commit, &bracket.bytes, &bracket.payload)
+                        .map_err(TxFault::Hard)?;
+                    if commit.record_count != bracket.records {
+                        return Err(TxFault::Hard(OrfsError::Corrupt(format!(
+                            "TX_COMMIT record count {} != actual bracket count {}",
+                            commit.record_count, bracket.records
+                        ))));
                     }
                     self.open_tx = None;
                     self.transaction_count += 1;
@@ -214,27 +278,47 @@ impl TxMachine {
                 }
                 TypeClass::Known(RecordType::TxAbort) => {
                     let tx = self.open_tx.ok_or_else(|| {
-                        OrfsError::Corrupt("TX_ABORT without TX_BEGIN".to_string())
+                        TxFault::Soft(OrfsError::Corrupt("TX_ABORT without TX_BEGIN".to_string()))
                     })?;
                     if record.header.transaction_id != tx {
-                        return Err(OrfsError::Corrupt(
+                        return Err(TxFault::Soft(OrfsError::Corrupt(
                             "TX_ABORT transaction id mismatch".to_string(),
-                        ));
+                        )));
+                    }
+                    if let Some(bracket) = self.begin.take() {
+                        if bracket.payload.expected_record_count != 0
+                            && bracket.payload.expected_record_count as u64 != bracket.records
+                        {
+                            return Err(TxFault::Hard(OrfsError::Corrupt(format!(
+                                "TX_BEGIN record count {} != actual bracket count {}",
+                                bracket.payload.expected_record_count, bracket.records
+                            ))));
+                        }
                     }
                     self.open_tx = None;
                 }
                 TypeClass::Known(_) => {
                     if self.open_tx.is_none() {
-                        return Err(OrfsError::Corrupt(
+                        return Err(TxFault::Soft(OrfsError::Corrupt(
                             "record outside a transaction".to_string(),
-                        ));
+                        )));
+                    }
+                    if let Some(bracket) = self.begin.as_mut() {
+                        let bytes = record.encode().map_err(TxFault::Hard)?;
+                        bracket.bytes.extend_from_slice(&bytes);
+                        bracket.records += 1;
                     }
                 }
                 TypeClass::OptionalUnknown(_) => {
                     if self.open_tx.is_none() {
-                        return Err(OrfsError::Corrupt(
+                        return Err(TxFault::Soft(OrfsError::Corrupt(
                             "optional record outside a transaction".to_string(),
-                        ));
+                        )));
+                    }
+                    if let Some(bracket) = self.begin.as_mut() {
+                        let bytes = record.encode().map_err(TxFault::Hard)?;
+                        bracket.bytes.extend_from_slice(&bytes);
+                        bracket.records += 1;
                     }
                 }
             }
@@ -280,15 +364,22 @@ pub fn scan_log(dir: &Path) -> Result<LogScan> {
                     let end = off.checked_add(total).ok_or(OrfsError::Overflow {
                         what: "record end offset",
                     })?;
-                    if let Err(e) = machine.accept(&record, id + end) {
-                        // A structural fault in a non-final segment, or before
-                        // the genesis, is corruption; in the final segment it
-                        // terminates the uncommitted tail.
-                        if is_last && machine.started {
-                            stopped = true;
-                            break;
+                    match machine.accept(&record, id + end) {
+                        Ok(()) => {}
+                        // A hard fault (an inconsistent typed payload or a
+                        // committed bracket that does not validate) is always
+                        // corruption, even in the final segment: never skipped.
+                        Err(TxFault::Hard(e)) => return Err(e),
+                        // A soft structural fault in a non-final segment, or
+                        // before the genesis, is corruption; in the final
+                        // segment it terminates the uncommitted tail.
+                        Err(TxFault::Soft(e)) => {
+                            if is_last && machine.started {
+                                stopped = true;
+                                break;
+                            }
+                            return Err(e);
                         }
-                        return Err(e);
                     }
                     *by_type.entry(record.header.record_type_code).or_insert(0) += 1;
                     off = end;
@@ -342,6 +433,7 @@ pub fn scan_log(dir: &Path) -> Result<LogScan> {
         transaction_count: machine.transaction_count,
         bytes: total_valid,
         committed_bytes: committed_end_offset,
+        max_transaction_id: machine.max_transaction_id,
         by_type,
     };
     Ok(LogScan {
@@ -353,6 +445,28 @@ pub fn scan_log(dir: &Path) -> Result<LogScan> {
         physical_end,
         tail,
     })
+}
+
+/// Re-validate every committed transaction's typed bracket in `records`.
+///
+/// Used by `orfs verify --deep`. Returns the number of committed transactions
+/// validated. A `TX_COMMIT` whose typed payload or bracket checksum disagrees
+/// with the actual bracketed records is a hard error (research §23.1) — the log
+/// must never be interpreted on a guess.
+pub fn validate_committed_brackets(records: &[Record]) -> Result<u64> {
+    let mut machine = TxMachine::default();
+    let mut end = 0u64;
+    for record in records {
+        let total = record.header.total_len().map_err(OrfsError::from)?;
+        end = end.checked_add(total).ok_or(OrfsError::Overflow {
+            what: "verify offset",
+        })?;
+        match machine.accept(record, end) {
+            Ok(()) => {}
+            Err(TxFault::Hard(e)) | Err(TxFault::Soft(e)) => return Err(e),
+        }
+    }
+    Ok(machine.transaction_count)
 }
 
 /// An append reservation: an exact position in the logical/physical stream.
@@ -548,6 +662,12 @@ pub struct Log {
     writer: Option<Writer>,
     stats: LogStats,
     tail: Option<TailInfo>,
+    /// Encoded bytes of `TX_BEGIN .. last data record` of the open transaction,
+    /// accumulated by the low-level [`Log::append`] path so that
+    /// [`Log::commit`]/[`Log::abort`] can emit a valid typed bracket.
+    open_bracket: Vec<u8>,
+    /// Number of records accumulated in `open_bracket` (includes `TX_BEGIN`).
+    open_bracket_records: u64,
 }
 
 impl Log {
@@ -589,6 +709,8 @@ impl Log {
             }),
             stats: LogStats::default(),
             tail: None,
+            open_bracket: Vec::new(),
+            open_bracket_records: 0,
         })
     }
 
@@ -656,6 +778,8 @@ impl Log {
             writer,
             stats: scan.stats,
             tail: scan.tail,
+            open_bracket: Vec::new(),
+            open_bracket_records: 0,
         })
     }
 
@@ -687,6 +811,24 @@ impl Log {
     /// Number of committed transactions (excluding genesis).
     pub fn transaction_count(&self) -> u64 {
         self.stats.transaction_count
+    }
+
+    /// The greatest transaction id observed anywhere in the log (committed or
+    /// abandoned). Transaction ids are allocated strictly above this so they are
+    /// unique and monotonic across the whole volume, never reusing an id that a
+    /// previously aborted transaction consumed.
+    pub fn max_transaction_id(&self) -> u64 {
+        self.stats.max_transaction_id
+    }
+
+    /// The next transaction id to allocate (checked).
+    pub fn next_transaction_id(&self) -> Result<u64> {
+        self.stats
+            .max_transaction_id
+            .checked_add(1)
+            .ok_or(OrfsError::Overflow {
+                what: "transaction id",
+            })
     }
 
     /// Total canonical bytes (sum of segment valid lengths).
@@ -797,6 +939,7 @@ impl Log {
     pub fn append(&mut self, mut record: Record) -> Result<u64> {
         self.prepare_record(&mut record)?;
         let bytes = record.encode()?;
+        self.note_bracket(&record, &bytes);
         let res = self.reserve(bytes.len() as u64)?;
         self.write_reserved(&res, &bytes)?;
         let end = res
@@ -807,6 +950,30 @@ impl Log {
             })?;
         self.finish_record(&record, res.logical_offset, end)?;
         Ok(res.logical_offset)
+    }
+
+    /// Track the encoded bracket of the open transaction for the low-level
+    /// [`Log::append`] path so that [`Log::commit`]/[`Log::abort`] can emit a
+    /// valid typed payload. The structured [`crate::commit`] sequencer writes
+    /// its own payloads and leaves this bookkeeping empty.
+    fn note_bracket(&mut self, record: &Record, bytes: &[u8]) {
+        match record.known_type() {
+            Ok(RecordType::TxBegin) => {
+                self.open_bracket.clear();
+                self.open_bracket.extend_from_slice(bytes);
+                self.open_bracket_records = 1;
+            }
+            Ok(RecordType::TxCommit) | Ok(RecordType::TxAbort) => {
+                self.open_bracket.clear();
+                self.open_bracket_records = 0;
+            }
+            _ => {
+                if self.open_tx.is_some() {
+                    self.open_bracket.extend_from_slice(bytes);
+                    self.open_bracket_records += 1;
+                }
+            }
+        }
     }
 
     fn prepare_record(&mut self, record: &mut Record) -> Result<()> {
@@ -915,6 +1082,10 @@ impl Log {
             }
         }
         self.stats.record_count += 1;
+        self.stats.max_transaction_id = self
+            .stats
+            .max_transaction_id
+            .max(record.header.transaction_id);
         self.stats.bytes =
             self.stats
                 .bytes
@@ -1003,9 +1174,27 @@ impl Log {
         Ok(buf)
     }
 
-    /// Begin a transaction.
+    /// Begin a transaction (low-level convenience).
+    ///
+    /// The typed `TX_BEGIN` payload declares no expected size (the low-level API
+    /// cannot know the bracket before it is written); the closing
+    /// [`Log::commit`] still certifies the actual bracket. The structured
+    /// [`crate::commit`] sequencer always declares and certifies exact sizes.
     pub fn begin(&mut self, tx_id: u64) -> Result<u64> {
-        let rec = Record::new(RecordType::TxBegin, 0, tx_id, 0, 0, 0, Vec::new())?;
+        let payload = TxBeginPayload {
+            transaction_id: tx_id,
+            expected_byte_length: 0,
+            expected_record_count: 0,
+        };
+        let rec = Record::new(
+            RecordType::TxBegin,
+            0,
+            tx_id,
+            0,
+            0,
+            0,
+            payload.encode().to_vec(),
+        )?;
         self.append(rec)
     }
 
@@ -1014,7 +1203,22 @@ impl Log {
         let tx = self
             .open_tx
             .ok_or_else(|| OrfsError::InvalidArgument("no open transaction".to_string()))?;
-        let rec = Record::new(RecordType::TxCommit, 0, tx, 0, 0, 0, Vec::new())?;
+        let payload = TxCommitPayload {
+            transaction_id: tx,
+            record_count: self.open_bracket_records,
+            bracketed_byte_length: self.open_bracket.len() as u64,
+            commit_sequence_number: self.next_sequence_number,
+            bracket_checksum: bracket_checksum(&self.open_bracket),
+        };
+        let rec = Record::new(
+            RecordType::TxCommit,
+            0,
+            tx,
+            0,
+            0,
+            0,
+            payload.encode().to_vec(),
+        )?;
         self.append(rec)?;
         Ok(self.committed_end_offset)
     }
@@ -1024,7 +1228,12 @@ impl Log {
         let tx = self
             .open_tx
             .ok_or_else(|| OrfsError::InvalidArgument("no open transaction".to_string()))?;
-        let rec = Record::new(RecordType::TxAbort, 0, tx, 0, 0, 0, Vec::new())?;
+        let payload = TxAbortPayload {
+            transaction_id: tx,
+            reason: AbortReason::UserRequested,
+            message: "log-level abort".to_string(),
+        };
+        let rec = Record::new(RecordType::TxAbort, 0, tx, 0, 0, 0, payload.encode()?)?;
         self.append(rec)?;
         Ok(())
     }
@@ -1099,6 +1308,48 @@ impl Log {
     /// A validated record iterator over `[0, end)`.
     pub fn records_upto(&self, end: u64) -> RecordReader {
         RecordReader::new(&self.dir, self.locator.extents(), end)
+    }
+
+    /// Read `len` canonical bytes at logical `offset`, crossing segment
+    /// boundaries as needed.
+    ///
+    /// Used to fetch immutable extent bytes referenced by a derived index. The
+    /// range must lie within the canonical bytes (committed data always does).
+    pub fn read_range(&self, offset: u64, len: u64) -> Result<Vec<u8>> {
+        if len == 0 {
+            return Ok(Vec::new());
+        }
+        let end = offset.checked_add(len).ok_or(OrfsError::Overflow {
+            what: "read range end",
+        })?;
+        let limit = self.locator.total_len();
+        if end > limit {
+            return Err(OrfsError::OutOfBounds {
+                offset,
+                length: len,
+                limit,
+            });
+        }
+        let mut out = Vec::with_capacity(len as usize);
+        let mut cur = offset;
+        while cur < end {
+            let (seg_id, phys) = self.locator.locate(cur).ok_or_else(|| {
+                OrfsError::Corrupt(format!("no segment covers logical offset {cur}"))
+            })?;
+            let extent = self.locator.extent_of(seg_id).ok_or_else(|| {
+                OrfsError::Corrupt(format!("missing extent for segment {seg_id}"))
+            })?;
+            let avail = extent.valid_len.checked_sub(phys).ok_or_else(|| {
+                OrfsError::Corrupt("read offset beyond segment extent".to_string())
+            })?;
+            let want = (end - cur).min(avail) as usize;
+            let reader = ReadAt::open(&self.dir, seg_id)?;
+            let mut buf = vec![0u8; want];
+            reader.read_exact_at(phys, &mut buf)?;
+            out.extend_from_slice(&buf);
+            cur += want as u64;
+        }
+        Ok(out)
     }
 
     /// Read the exact committed canonical bytes `[0, R)`.

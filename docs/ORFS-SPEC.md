@@ -86,8 +86,8 @@ phase.
 |---|---|---|
 | 0 | Environment, pinned container workflow, capability probe, EKBLOOM wiring, evidence foundation | **complete** |
 | 1 | Authoritative append-only log (Plane A) | **complete** |
-| 2 | Transactions and durability (Plane A) | planned |
-| 3 | Namespace and extents (Plane B) | planned |
+| 2 | Transactions and durability (Plane A) | **complete** |
+| 3 | Namespace and extents (Plane B) | **complete** |
 | 4 | Traditional FUSE transport (Plane D) | planned |
 | 5 | Backing `io_uring` (Plane D) | planned |
 | 6 | Historical snapshots and index checkpoints (Planes A/B) | planned |
@@ -110,12 +110,14 @@ What actually exists and is verified today:
 - EKBLOOM `v0.3.0` is consumed as a genuine path dependency
   (`ekbloom = { path = "../EKBLOOM", version = "=0.3.0" }`) and exercised by a
   round-trip test; its state mathematics is not reimplemented here.
-- Every other CLI subcommand (`init`, `mount`, `inspect`, `verify`, `recover`,
-  `snapshot`, `manifest`, `grow`, `query`, `bench`) is present in the target
-  surface but **explicitly unimplemented**: it rejects with `ENOSYS` naming its
-  owning phase. No placeholder behaviour is advertised as working.
+* Every other CLI subcommand (`mount`, `unmount`, `stat`, `snapshot`,
+  `manifest`, `grow`, `query`, `bench`) is present in the target surface but
+  **explicitly unimplemented**: it rejects with `ENOSYS` naming its owning phase.
+  No placeholder behaviour is advertised as working. `init`, `inspect`,
+  `verify`, and `recover` are genuinely implemented.
 
-Phases 1–12 are **not implemented**. The CLI is intentionally honest about this.
+Phases 4–12 are **not implemented**. The CLI is intentionally honest about this.
+Phases 0–3 are complete; see `docs/PROGRESS.md`.
 
 ---
 
@@ -129,7 +131,8 @@ Normative implementation documents to be produced. Status is marked honestly.
 | `docs/ON_DISK.md` | Physical layout, segments, record envelope, format versioning | **exists** (Phase 1) |
 | `docs/LOG-INVARIANTS.md` | Authoritative log invariants, replay, root-by-position identity | **exists** (Phase 1) |
 | `docs/PROGRESS.md` | Honest per-phase status and delivered artifacts | **exists** |
-| `docs/TRANSACTIONS.md` | Transaction framing, ordering, atomicity, durability modes | planned (Phase 2) |
+| `docs/TRANSACTIONS.md` | Transaction framing, ordering, atomicity, durability modes | **exists** (Phase 2) |
+| `docs/NAMESPACE.md` | Inode/dentry/extent/index semantics, proof obligations | **exists** (Phase 3) |
 | `docs/FUSE-SEMANTICS.md` | POSIX/FUSE operation semantics, handles, cache modes, permissions | planned (Phase 4) |
 | `docs/IO_URING.md` | Backing `io_uring` rings (writer/read/bloom), backpressure, fallback | planned (Phase 5) |
 | `docs/FUSE_URING.md` | FUSE-over-`io_uring` transport, capability negotiation, safe fallback | planned (Phase 10) |
@@ -137,7 +140,7 @@ Normative implementation documents to be produced. Status is marked honestly.
 | `docs/RECOVERY.md` | Crash/torn-write recovery, rebuildable indexes, no silent repair | planned (Phase 2+) |
 | `docs/SECURITY.md` | Permission model, hostile-backing-data handling, threat model | planned (Phase 11) |
 | `docs/PERFORMANCE.md` | Benchmark methodology, metrics, reproducibility rules | planned (Phase 12) |
-| `docs/LIMITATIONS.md` | Known limits, kernel-dependence, unsupported capabilities | **pending** (referenced by `scripts/lib.sh` and `README.md`) |
+| `docs/LIMITATIONS.md` | Known limits, kernel-dependence, unsupported capabilities | planned |
 
 Until a document above is written, this index is the only normative OrFS
 document in `docs/`; treat unimplemented phases as unspecified by code.

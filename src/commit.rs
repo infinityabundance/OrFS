@@ -200,8 +200,13 @@ impl<'a> CommitSequencer<'a> {
     }
 
     /// Create a sequencer directly over a [`Log`].
+    ///
+    /// Transaction ids are seeded strictly above the greatest id ever observed
+    /// in the log — committed, aborted (never published), or abandoned in a
+    /// quarantined tail. An id consumed by an aborted transaction is therefore
+    /// never reused, and allocation is monotonic across reopen.
     pub fn from_log(log: &'a mut Log, durability: DurabilityMode) -> CommitSequencer<'a> {
-        let next_tx_id = log.transaction_count() + 1;
+        let next_tx_id = log.max_transaction_id().saturating_add(1);
         CommitSequencer {
             log,
             durability,
@@ -261,6 +266,8 @@ impl<'a> CommitSequencer<'a> {
 
         let tx_id = tx.id();
         let durability = self.durability;
+        // The id is now consumed regardless of the outcome: never reissue it.
+        self.next_tx_id = self.next_tx_id.max(tx_id.saturating_add(1));
 
         // --- 1. reserve + write TX_BEGIN -----------------------------------
         failpoints::check(Failpoint::BeforeReservation)?;
@@ -390,6 +397,8 @@ impl<'a> CommitSequencer<'a> {
             ));
         }
         let tx_id = tx.id();
+        // The id is now consumed regardless of the outcome: never reissue it.
+        self.next_tx_id = self.next_tx_id.max(tx_id.saturating_add(1));
 
         failpoints::check(Failpoint::BeforeReservation)?;
         let begin_payload = TxBeginPayload {

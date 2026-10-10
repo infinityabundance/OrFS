@@ -27,15 +27,21 @@
 
 pub mod capabilities;
 pub mod commit;
+pub mod directory;
 pub mod error;
+pub mod extent;
 pub mod failpoints;
+pub mod index;
+pub mod inode;
 pub mod log;
+pub mod namespace;
 pub mod record;
 pub mod segment;
 pub mod transaction;
 pub mod volume;
 
 pub use error::{FsError, OrfsError, Result};
+pub use namespace::{Namespace, OrfsCore, RenameMode, SetAttr};
 
 /// Crate version, surfaced by the CLI and evidence receipts.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

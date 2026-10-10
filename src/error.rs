@@ -38,6 +38,10 @@ pub enum OrfsError {
     #[error("object already exists")]
     AlreadyExists,
 
+    /// An extended attribute was requested that is not present.
+    #[error("no such extended attribute")]
+    NoData,
+
     /// The operation is denied by the permission model.
     #[error("permission denied")]
     PermissionDenied,
@@ -109,6 +113,7 @@ impl OrfsError {
             OrfsError::InvalidArgument(_) => libc::EINVAL,
             OrfsError::NotFound => libc::ENOENT,
             OrfsError::AlreadyExists => libc::EEXIST,
+            OrfsError::NoData => libc::ENODATA,
             OrfsError::PermissionDenied => libc::EACCES,
             OrfsError::NotADirectory => libc::ENOTDIR,
             OrfsError::IsADirectory => libc::EISDIR,

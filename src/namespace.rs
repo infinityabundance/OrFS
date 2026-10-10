@@ -838,13 +838,22 @@ impl Namespace {
         Plan::new(id, begin)
     }
 
-    fn require_dir(&self, inode: u64) -> Result<()> {
+    /// Require that `inode` is a directory that is still linked into the
+    /// namespace: the root, or a directory named by at least one entry.
+    ///
+    /// A directory whose last name was removed (`rmdir`) reaches link count `0`
+    /// and is no longer addressable, so it must not be the parent of a mutation
+    /// (see [`Index::is_live_dir`]). Reads of a removed directory by id remain
+    /// valid and return an empty listing.
+    fn require_live_dir(&self, inode: u64) -> Result<()> {
         let ino = self.index.inode(inode).ok_or(OrfsError::NotFound)?;
-        if ino.is_dir() {
-            Ok(())
-        } else {
-            Err(OrfsError::NotADirectory)
+        if !ino.is_dir() {
+            return Err(OrfsError::NotADirectory);
         }
+        if !self.index.is_live_dir(inode) {
+            return Err(OrfsError::NotFound);
+        }
+        Ok(())
     }
 
     fn require_file(&self, inode: u64) -> Result<()> {
@@ -871,7 +880,7 @@ impl Namespace {
         target: Option<Vec<u8>>,
     ) -> Result<u64> {
         validate_name(name)?;
-        self.require_dir(parent)?;
+        self.require_live_dir(parent)?;
         if self.index.lookup(parent, name).is_some() {
             return Err(OrfsError::AlreadyExists);
         }
@@ -1063,7 +1072,7 @@ impl Namespace {
 
     /// Remove one name of a file (tombstone: a `DENTRY_REMOVE`/`HARDLINK_REMOVE`).
     pub fn unlink(&mut self, parent: u64, name: &[u8]) -> Result<()> {
-        self.require_dir(parent)?;
+        self.require_live_dir(parent)?;
         let child = self.index.lookup(parent, name).ok_or(OrfsError::NotFound)?;
         let ino = self.index.inode(child).ok_or(OrfsError::NotFound)?;
         if ino.is_dir() {
@@ -1091,7 +1100,7 @@ impl Namespace {
 
     /// Remove an empty directory.
     pub fn rmdir(&mut self, parent: u64, name: &[u8]) -> Result<()> {
-        self.require_dir(parent)?;
+        self.require_live_dir(parent)?;
         let child = self.index.lookup(parent, name).ok_or(OrfsError::NotFound)?;
         let ino = self.index.inode(child).ok_or(OrfsError::NotFound)?;
         if !ino.is_dir() {
@@ -1130,7 +1139,7 @@ impl Namespace {
             return Err(OrfsError::PermissionDenied);
         }
         validate_name(new_name)?;
-        self.require_dir(new_parent)?;
+        self.require_live_dir(new_parent)?;
         if self.index.lookup(new_parent, new_name).is_some() {
             return Err(OrfsError::AlreadyExists);
         }
@@ -1158,8 +1167,8 @@ impl Namespace {
         new_name: &[u8],
         mode: RenameMode,
     ) -> Result<()> {
-        self.require_dir(old_parent)?;
-        self.require_dir(new_parent)?;
+        self.require_live_dir(old_parent)?;
+        self.require_live_dir(new_parent)?;
         let src = self
             .index
             .lookup(old_parent, old_name)

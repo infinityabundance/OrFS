@@ -72,6 +72,14 @@ impl Model {
         self.kinds.get(&id) == Some(&Kind::Dir)
     }
 
+    /// Whether `id` is a directory still linked into the namespace: the root, or
+    /// a directory that still has at least one name. A removed directory keeps
+    /// its kind (so it is still compared) but is no longer live, and so cannot
+    /// be the parent of a mutation.
+    fn is_live_dir(&self, id: u64) -> bool {
+        self.is_dir(id) && (id == 1 || self.dentries.values().any(|c| *c == id))
+    }
+
     fn readdir(&self, dir: u64) -> Vec<(Vec<u8>, u64)> {
         let mut v: Vec<(Vec<u8>, u64)> = self
             .dentries
@@ -127,7 +135,7 @@ impl Model {
         kind: Kind,
         target: Option<Vec<u8>>,
     ) -> Result<u64, ()> {
-        if !self.is_dir(parent) || self.dentries.contains_key(&(parent, name.to_vec())) {
+        if !self.is_live_dir(parent) || self.dentries.contains_key(&(parent, name.to_vec())) {
             return Err(());
         }
         let id = self.next_inode;
@@ -194,7 +202,7 @@ impl Model {
     }
 
     fn unlink(&mut self, parent: u64, name: &[u8]) -> Result<(), ()> {
-        if !self.is_dir(parent) {
+        if !self.is_live_dir(parent) {
             return Err(());
         }
         let child = match self.dentries.get(&(parent, name.to_vec())) {
@@ -209,7 +217,7 @@ impl Model {
     }
 
     fn rmdir(&mut self, parent: u64, name: &[u8]) -> Result<(), ()> {
-        if !self.is_dir(parent) {
+        if !self.is_live_dir(parent) {
             return Err(());
         }
         let child = match self.dentries.get(&(parent, name.to_vec())) {
@@ -231,7 +239,7 @@ impl Model {
         ) {
             return Err(());
         }
-        if !self.is_dir(parent) || self.dentries.contains_key(&(parent, name.to_vec())) {
+        if !self.is_live_dir(parent) || self.dentries.contains_key(&(parent, name.to_vec())) {
             return Err(());
         }
         self.dentries.insert((parent, name.to_vec()), inode);
@@ -240,7 +248,7 @@ impl Model {
 
     #[allow(clippy::too_many_arguments)]
     fn rename(&mut self, op: u64, on: &[u8], np: u64, nn: &[u8], mode: u8) -> Result<(), ()> {
-        if !self.is_dir(op) || !self.is_dir(np) {
+        if !self.is_live_dir(op) || !self.is_live_dir(np) {
             return Err(());
         }
         let src = match self.dentries.get(&(op, on.to_vec())) {
@@ -1048,6 +1056,43 @@ fn op_strategy() -> impl Strategy<Value = Op> {
         (small.clone(), 0u8..3, 0u8..4).prop_map(|(i, n, v)| Op::SetXattr(i, n, v)),
         (small, 0u8..3).prop_map(|(i, n)| Op::RemoveXattr(i, n)),
     ]
+}
+
+// ---------------------------------------------------------------------------
+// Regression: a removed directory is not a mutable parent
+// ---------------------------------------------------------------------------
+
+/// Regression (hardening). The differential property test shrank a failure to
+/// `[Mkdir(1, 2), Rmdir(1, 2), Mkdir(2, 0)]`: creating an entry inside an
+/// already-removed directory succeeded and bumped that directory's link count
+/// from `0` to `1`, disagreeing with the reference model and with the documented
+/// derivation (`docs/NAMESPACE.md` §4.1: a directory has `0` links once removed).
+///
+/// A directory that has been fully removed is retained and readable by id, but
+/// it is no longer addressable, so it must not accept a new entry.
+#[test]
+fn removed_directory_is_not_a_mutable_parent() {
+    let td = TempDir::new().unwrap();
+    let mut ns = support::init_namespace(td.path(), 1 << 20, DurabilityMode::Ordered);
+    let mut m = Model::new();
+    let root_inode = ns.root_inode();
+
+    // Mkdir(1, 2), Rmdir(1, 2), Mkdir(2, 0) — the shrunk failing sequence.
+    let d = ns.mkdir(root_inode, &name_of(2), 0o755, 0, 0).unwrap();
+    m.create(root_inode, &name_of(2), Kind::Dir, None).unwrap();
+    ns.rmdir(root_inode, &name_of(2)).unwrap();
+    m.rmdir(root_inode, &name_of(2)).unwrap();
+    assert_eq!(ns.getattr(d, ns.root()).unwrap().nlink, 0);
+    assert_eq!(m.live_nlink(d), 0);
+    assert_equivalent(&ns, &m);
+
+    // Neither engine accepts a new entry under the removed directory...
+    assert!(ns.mkdir(d, &name_of(0), 0o755, 0, 0).is_err());
+    assert!(m.create(d, &name_of(0), Kind::Dir, None).is_err());
+    // ...and the removed directory's link count stays `0`.
+    assert_eq!(ns.getattr(d, ns.root()).unwrap().nlink, 0);
+    assert_equivalent(&ns, &m);
+    assert!(ns.index_matches_log().unwrap());
 }
 
 proptest! {

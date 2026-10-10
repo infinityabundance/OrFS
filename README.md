@@ -16,7 +16,8 @@ OrFS is two laws made executable:
   spending storage, memory, and construction work to accelerate reads.
 
 `or.log` is the source of truth. EKBLOOM is the acceleration engine (consumed
-as an independent, version-pinned dependency). FUSE is the Linux interface.
+as an independent, rev-pinned git dependency; see `docs/LIMITATIONS.md`). FUSE
+is the Linux interface.
 
 ## Status
 

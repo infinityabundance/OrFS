@@ -63,8 +63,8 @@ use crate::error::{OrfsError, Result};
 use crate::segment::fsync_dir;
 
 /// The EKBLOOM engine version this build is compiled against. Kept in lockstep
-/// with the `ekbloom` path dependency in `Cargo.toml` (`= 0.3.0`); it is
-/// recorded verbatim in every generation manifest.
+/// with the rev-pinned `ekbloom` git dependency in `Cargo.toml` (`= 0.3.0`); it
+/// is recorded verbatim in every generation manifest.
 pub const EKBLOOM_VERSION: &str = "0.3.0";
 
 /// The concealed operational-body directory (research §4, §9).
@@ -638,7 +638,7 @@ pub trait ManifestationBuilder: Send + Sync {
 
 /// The production builder: real EKBLOOM construction (`create` + `write_body`).
 ///
-/// The EKBLOOM crate is consumed unchanged as a version-pinned path dependency;
+/// The EKBLOOM crate is consumed unchanged as a rev-pinned git dependency;
 /// its state machinery is never reimplemented here.
 pub struct EkbloomBuilder;
 

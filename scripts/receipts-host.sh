@@ -52,18 +52,36 @@ KMOUNT_ID="$(docker image inspect -f '{{.Id}}' "$ORFS_KMOUNT_IMAGE" 2>/dev/null 
   printf '}\n'
 } > "$R/container.json"
 
-# --- ekbloom.json (dependency fingerprint) ---------------------------------
+# --- ekbloom.json (rev-pinned dependency) ----------------------------------
 EK_DIR="$ORFS_PARENT_DIR/EKBLOOM"
 EK_VER="$(sed -n 's/^version = "\(.*\)"/\1/p' "$EK_DIR/Cargo.toml" | head -n1)"
-EK_FP="$(cat "$EK_DIR"/src/*.rs 2>/dev/null | sha256sum | cut -d' ' -f1)"
+EK_REV="$(git -C "$EK_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+EK_SHORT="$(git -C "$EK_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+if [ -n "$(git -C "$EK_DIR" status --porcelain 2>/dev/null)" ]; then EK_DIRTY=true; else EK_DIRTY=false; fi
 {
   printf '{\n'
+  printf '  "schema": "orfs.evidence.ekbloom-pin.v1",\n'
   printf '  "crate": "ekbloom",\n'
   printf '  "version": "%s",\n' "$EK_VER"
-  printf '  "source_path": "%s",\n' "$EK_DIR"
-  printf '  "source_fingerprint_sha256": "%s",\n' "$EK_FP"
-  printf '  "consumed_as": "path dependency with version pin =0.3.0",\n'
-  printf '  "copied_into_orfs": false\n'
+  printf '  "pin_kind": "git-rev",\n'
+  printf '  "git_url": "file://%s",\n' "$EK_DIR"
+  printf '  "rev": "%s",\n' "$EK_REV"
+  printf '  "rev_short": "%s",\n' "$EK_SHORT"
+  printf '  "resolved_source": "git+file://%s?rev=%s#%s",\n' "$EK_DIR" "$EK_REV" "$EK_REV"
+  printf '  "cargo_dependency": "ekbloom = { git = \\"file://%s\\", rev = \\"%s\\", version = \\"=%s\\" }",\n' "$EK_DIR" "$EK_REV" "$EK_VER"
+  printf '  "version_pin_in_manifest": "%s",\n' "$EK_VER"
+  printf '  "copied_into_orfs": false,\n'
+  printf '  "ekbloom_worktree_dirty": %s,\n' "$EK_DIRTY"
+  printf '  "why": "EKBLOOM is developed concurrently; the rev pin makes builds independent of uncommitted edits.",\n'
+  printf '  "container_git": "git is installed in Dockerfile and Dockerfile.kmount for the git dependency.",\n'
+  printf '  "public_items_orfs_depends_on": [\n'
+  printf '    "ManifestationProfile", "create", "write_body", "inspect", "EkbloomBody",\n'
+  printf '    "verify", "VerificationReport", "machine_by_id", "MACHINE_NL2", "History",\n'
+  printf '    "CheckpointSet", "Snapshot", "OrMachine", "NL2", "EkbloomError",\n'
+  printf '    "bloom::{BloomKind, Certification, Outcome}", "bloom_global::GlobalBloom",\n'
+  printf '    "bloom_path::PathBloom", "bloom_region::RegionTable", "checkpoint::CheckpointSet",\n'
+  printf '    "reader::open_bytes", "format::FORMAT_MAJOR", "format::FORMAT_MINOR"\n'
+  printf '  ]\n'
   printf '}\n'
 } > "$R/ekbloom.json"
 

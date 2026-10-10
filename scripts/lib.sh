@@ -17,9 +17,10 @@ ORFS_BASE_IMAGE="rust:1.99.0-slim-bookworm@sha256:2c3a22f0a5533ea2dd5a16627bc841
 ORFS_IMAGE="${ORFS_IMAGE:-orfs-build:1.99.0}"
 ORFS_KMOUNT_IMAGE="${ORFS_KMOUNT_IMAGE:-orfs-kmount:1.99.0}"
 
-# Absolute paths. The OrFS project consumes the sibling EKBLOOM crate as a path
-# dependency ($ORFS_PARENT/EKBLOOM), so the parent directory must be mounted at
-# the SAME path inside the container for `../EKBLOOM` to resolve identically.
+# Absolute paths. The OrFS project consumes the sibling EKBLOOM crate as a
+# rev-pinned git dependency (see docs/LIMITATIONS.md §1). Cargo resolves it from
+# the git repository at $ORFS_PARENT/EKBLOOM, so the parent directory must be
+# mounted at the SAME path inside the container for the pin to resolve.
 ORFS_PROJECT_DIR="$(cd "$(dirname "$0 2>/dev/null || echo .")/.." 2>/dev/null && pwd || pwd)"
 # When lib.sh is sourced from an interactive shell, $0 may be the shell name;
 # fall back to the current directory if the computed path is not the project.

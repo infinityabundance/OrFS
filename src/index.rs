@@ -578,6 +578,24 @@ impl Index {
         self.dentries.values().filter(|c| **c == inode).count() as u32
     }
 
+    /// Whether `inode` is a directory that is still part of the live namespace:
+    /// the root, or a directory named by at least one directory entry.
+    ///
+    /// A directory that has been removed (`rmdir`) keeps its inode (every inode
+    /// is retained immutably in history and stays readable by id), but it has no
+    /// remaining names, so it is no longer *live*. Such a directory must not
+    /// accept new namespace mutations: doing so would resurrect a deleted
+    /// subtree and make its link count inconsistent with the documented
+    /// derivation ("`0` once removed", `docs/NAMESPACE.md` §4.1).
+    pub fn is_live_dir(&self, inode: u64) -> bool {
+        match self.inodes.get(&inode) {
+            Some(i) if i.is_dir() => {
+                inode == ROOT_INODE || self.link_count_from_dentries(inode) > 0
+            }
+            _ => false,
+        }
+    }
+
     // -- snapshot / digest -------------------------------------------------
 
     /// A deterministic BLAKE3 digest of the canonical index content.

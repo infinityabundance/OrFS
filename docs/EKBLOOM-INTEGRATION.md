@@ -6,9 +6,12 @@ Normative notes for the accelerated read path. Implements research §10
 
 ## 1. Boundary: EKBLOOM's mathematics vs. OrFS's storage/selection
 
-EKBLOOM is consumed **unchanged** as a version-pinned path dependency
-(`ekbloom = { path = "../EKBLOOM", version = "= 0.3.0" }`). OrFS never copies,
-modifies, or reimplements EKBLOOM's state machine.
+EKBLOOM is consumed **unchanged** as an immutable, rev-pinned git dependency
+(`ekbloom = { git = "file:///mnt/1tb_kingston/EKBLOOM", rev = "255452e1…", version = "= 0.3.0" }`).
+Pinning to a committed revision makes OrFS builds reproducible independent of
+concurrent, uncommitted edits in EKBLOOM's working tree (see
+[`docs/LIMITATIONS.md`](LIMITATIONS.md) §1 and `evidence/receipts/ekbloom.json`).
+OrFS never copies, modifies, or reimplements EKBLOOM's state machine.
 
 The division of labour (research §10):
 
@@ -51,9 +54,10 @@ Items **not** used: `filesystem::OrFs` (OrFS has its own namespace/FUSE plane),
 convenience wrappers, not needed by the planner), `recovery`, `sweep`,
 `worker`, `asyncpub`.
 
-Version/format are pinned in two places: the `Cargo.toml` path dependency
-(`= 0.3.0`) and `manifestation::EKBLOOM_VERSION` (`"0.3.0"`), which is recorded
-verbatim in every generation manifest and re-checked on every read.
+Version/format are pinned in two places: the `Cargo.toml` git-rev dependency
+(`rev = "255452e1…"`, `= 0.3.0`) and `manifestation::EKBLOOM_VERSION`
+(`"0.3.0"`), which is recorded verbatim in every generation manifest and
+re-checked on every read. The exact rev is in `evidence/receipts/ekbloom.json`.
 
 ## 3. Generation identity (research §2 I6)
 

@@ -14,14 +14,16 @@
 FROM rust:1.99.0-slim-bookworm@sha256:2c3a22f0a5533ea2dd5a16627bc841228151faa2d4de2644ac9987e4a2f1f2fa
 
 # Minimal tooling: the slim image already ships cc/ld for linking. We add only
-# what the build/test workflow needs, plus the rustfmt/clippy components (which
-# the base image omits).
+# what the build/test workflow needs, plus `git` (Cargo requires it to fetch the
+# rev-pinned EKBLOOM git dependency) and the rustfmt/clippy components (which the
+# base image omits).
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         ca-certificates \
         coreutils \
         file \
+        git \
     ; \
     rm -rf /var/lib/apt/lists/*
 

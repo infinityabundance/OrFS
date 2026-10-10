@@ -107,9 +107,10 @@ What actually exists and is verified today:
 - `src/capabilities.rs` + `orfs doctor` perform a **real** kernel/container
   capability probe (no mutation of host state).
 - The error model (`src/error.rs`) is fully populated and maps to POSIX errnos.
-- EKBLOOM `v0.3.0` is consumed as a genuine path dependency
-  (`ekbloom = { path = "../EKBLOOM", version = "=0.3.0" }`) and exercised by a
-  round-trip test; its state mathematics is not reimplemented here.
+- EKBLOOM `v0.3.0` is consumed as an immutable, rev-pinned git dependency
+  (`ekbloom = { git = "file:///mnt/1tb_kingston/EKBLOOM", rev = "255452e1…", version = "=0.3.0" }`)
+  and exercised by a round-trip test; its state mathematics is not reimplemented
+  here. See `docs/LIMITATIONS.md` §1.
 * Every other CLI subcommand (`mount`, `unmount`, `stat`, `snapshot`,
   `manifest`, `grow`, `query`, `bench`) is present in the target surface but
   **explicitly unimplemented**: it rejects with `ENOSYS` naming its owning phase.

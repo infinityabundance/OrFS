@@ -149,6 +149,12 @@ inodes. The engine exposes `lookup`, `readdir`, `create`, `mkdir`, `unlink`,
 * a **directory** has `2 + (number of immediate subdirectories)` links, and `0`
   once removed.
 
+The derivation is authoritative: a directory whose last name was removed is no
+longer *live* and cannot be the parent of a mutation (`create`/`mkdir`/
+`symlink`/`unlink`/`rmdir`/`link`/`rename` all reject it with `NotFound`), so its
+link count stays `0`. The inode is still retained and readable by id (a removed
+directory lists as empty), matching every inode's immutable history.
+
 The reference model in `tests/namespace_model.rs` derives link counts from the
 tree and compares them against the engine, so the two are cross-checked rather
 than restated.

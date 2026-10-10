@@ -32,9 +32,13 @@ nix = { version = "0.31", default-features = false, features = [
 ] }
 
 # --- Acceleration engine (independent, version-pinned native-Rust dependency) ---
-# Consumed as a path dependency on the separately-versioned EKBLOOM crate.
-# Source is never copied into OrFS; the mathematical state machinery lives in EKBLOOM.
-ekbloom = { path = "../EKBLOOM", version = "=0.3.0" }
+# Consumed as a rev-pinned git dependency on the separately-versioned EKBLOOM
+# crate, fetched from the sibling repository at the same absolute path inside and
+# outside the container. EKBLOOM is developed concurrently and independently;
+# pinning to an immutable git revision makes OrFS builds reproducible and immune
+# to uncommitted edits in that working tree. Source is never copied into OrFS;
+# the mathematical state machinery lives in EKBLOOM.
+ekbloom = { git = "file:///mnt/1tb_kingston/EKBLOOM", rev = "255452e1a803080de99f7a18aaef840c8c835209", version = "=0.3.0" }
 
 # --- CLI / diagnostics ---
 clap = { version = "4", features = ["derive"] }

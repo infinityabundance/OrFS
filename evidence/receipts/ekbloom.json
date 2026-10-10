@@ -1,8 +1,58 @@
 {
+  "schema": "orfs.evidence.ekbloom-pin.v1",
   "crate": "ekbloom",
   "version": "0.3.0",
-  "source_path": "/mnt/1tb_kingston/EKBLOOM",
-  "source_fingerprint_sha256": "20957f6bc2c924ee074d33f828c83899481c38695062187f0dd989ffae856f00",
-  "consumed_as": "path dependency with version pin =0.3.0",
-  "copied_into_orfs": false
+  "pin_kind": "git-rev",
+  "git_url": "file:///mnt/1tb_kingston/EKBLOOM",
+  "rev": "255452e1a803080de99f7a18aaef840c8c835209",
+  "rev_short": "255452e",
+  "resolved_source": "git+file:///mnt/1tb_kingston/EKBLOOM?rev=255452e1a803080de99f7a18aaef840c8c835209#255452e1a803080de99f7a18aaef840c8c835209",
+  "cargo_dependency": "ekbloom = { git = \"file:///mnt/1tb_kingston/EKBLOOM\", rev = \"255452e1a803080de99f7a18aaef840c8c835209\", version = \"=0.3.0\" }",
+  "version_pin_in_manifest": "0.3.0",
+  "copied_into_orfs": false,
+  "why": "EKBLOOM is developed concurrently by another process and its working tree is not reproducible. Pinning to an immutable git revision makes every OrFS build fetch exactly the committed EKBLOOM source at rev 255452e, independent of any uncommitted edits in that working tree.",
+  "working_tree_at_pin_time": {
+    "head": "255452e1a803080de99f7a18aaef840c8c835209",
+    "branch": "main",
+    "dirty": true,
+    "modified": [
+      "docs/reviews/security.md",
+      "src/format.rs",
+      "src/lib.rs",
+      "src/main.rs",
+      "src/reader.rs",
+      "src/writer.rs"
+    ],
+    "untracked": [
+      "docs/SECURITY.md",
+      "tests/authenticated.rs"
+    ],
+    "note": "The uncommitted edits are additive (new authenticated-read APIs); the pinned revision contains every item OrFS depends on."
+  },
+  "container_git": "git added to Dockerfile and Dockerfile.kmount (rust:1.99.0-slim-bookworm ships none); Cargo requires it to fetch the rev-pinned git dependency.",
+  "public_items_orfs_depends_on": [
+    "ManifestationProfile",
+    "create",
+    "write_body",
+    "inspect",
+    "EkbloomBody",
+    "verify",
+    "VerificationReport",
+    "machine_by_id",
+    "MACHINE_NL2",
+    "History",
+    "CheckpointSet",
+    "Snapshot",
+    "OrMachine",
+    "NL2",
+    "EkbloomError",
+    "bloom::{BloomKind, Certification, Outcome}",
+    "bloom_global::GlobalBloom",
+    "bloom_path::PathBloom",
+    "bloom_region::RegionTable",
+    "checkpoint::CheckpointSet",
+    "reader::open_bytes",
+    "format::FORMAT_MAJOR",
+    "format::FORMAT_MINOR"
+  ]
 }

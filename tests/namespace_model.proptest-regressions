@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc ca4df839760d5f7d49ad59b48187fef87ed7902f977d1e3ad9e3babccd37c698 # shrinks to ops = [Create(1, 0), Write(2, 1, [])]
 cc d03604a5a17390bd3c8fb1632ef5fad6f8f1b38ad04b141737a12a18637a503b # shrinks to ops = [Mkdir(1, 6), Rename(1, 6, 2, 0, 1)]
+cc f8774116b14ed801e10a8aedeab6725b8df56fbaaa8dec2aee82f8f72fe6f167 # shrinks to ops = [Mkdir(1, 2), Rmdir(1, 2), Mkdir(2, 0)]

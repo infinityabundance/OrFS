@@ -211,6 +211,7 @@ dependencies = [
 [[package]]
 name = "ekbloom"
 version = "0.3.0"
+source = "git+file:///mnt/1tb_kingston/EKBLOOM?rev=255452e1a803080de99f7a18aaef840c8c835209#255452e1a803080de99f7a18aaef840c8c835209"
 dependencies = [
  "blake3",
  "crc32fast",

@@ -12,8 +12,9 @@ the pinned containers (`scripts/container-*.sh`).
   (`scripts/lib.sh`, `scripts/container-*.sh`).
 * `src/capabilities.rs` + `orfs doctor` perform a real kernel/container probe.
 * The error model (`src/error.rs`) is populated and maps to POSIX errnos.
-* EKBLOOM `v0.3.0` is consumed as a genuine path dependency and exercised by a
-  round-trip test; its state mathematics is not reimplemented.
+* EKBLOOM `v0.3.0` is consumed as an immutable, rev-pinned git dependency
+  (pinned to a committed revision) and exercised by a round-trip test; its state
+  mathematics is not reimplemented. See `docs/LIMITATIONS.md` §1.
 * Phase 0 CLI commands were explicit `ENOSYS` stubs naming their owning phase.
 
 ## Phase 1 — Authoritative append-only log

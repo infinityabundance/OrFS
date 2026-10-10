@@ -1,0 +1,17 @@
+{
+  "capabilities": {
+    "config_fuse_fs": null,
+    "config_fuse_io_uring": null,
+    "config_io_uring": null,
+    "config_io_uring_zcrx": null,
+    "dev_fuse_present": false,
+    "io_uring_disabled": 0,
+    "kernel_release": "7.2.9-2-cachyos",
+    "likely_container": true,
+    "machine": "x86_64"
+  },
+  "format_version": 1,
+  "fuse_over_io_uring_plausible": false,
+  "orfs_version": "0.1.0",
+  "traditional_fuse_usable": false
+}

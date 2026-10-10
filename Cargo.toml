@@ -1,0 +1,68 @@
+[package]
+name = "orfs"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "OrFS — non-withdrawal, concealed-expansion FUSE filesystem with io_uring backing and EKBLOOM acceleration"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+name = "orfs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "orfs"
+path = "src/main.rs"
+
+[dependencies]
+# --- Kernel / transport interfaces (version-pinned per directive) ---
+fuser = { version = "=0.18.0", default-features = false }
+io-uring = "=0.7.15"
+libc = "0.2"
+nix = { version = "0.31", default-features = false, features = [
+    "fs", "mount", "user", "sched", "signal", "poll", "time", "ioctl",
+    "process", "uio", "feature",
+] }
+
+# --- Acceleration engine (independent, version-pinned native-Rust dependency) ---
+# Consumed as a path dependency on the separately-versioned EKBLOOM crate.
+# Source is never copied into OrFS; the mathematical state machinery lives in EKBLOOM.
+ekbloom = { path = "../EKBLOOM", version = "=0.3.0" }
+
+# --- CLI / diagnostics ---
+clap = { version = "4", features = ["derive"] }
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+
+# --- Serialization (query API, evidence, JSON output) ---
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# --- Integrity / hashing (record checksums, generation integrity) ---
+crc32c = "0.6"
+blake3 = "1"
+
+# --- Concurrency primitives ---
+parking_lot = "0.12"
+rustc-hash = "2"
+
+[dev-dependencies]
+proptest = "1"
+tempfile = "3"
+rand = "0.8"
+
+[[bench]]
+name = "read_path"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[profile.bench]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

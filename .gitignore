@@ -1,0 +1,7 @@
+/target
+/.cargo-home
+# transient benchmark/test scratch
+/evidence/**/*.tmp
+/evidence/**/*.scratch
+# mount test scratch outside docker only
+/mnt-scratch

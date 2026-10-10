@@ -1,0 +1,19 @@
+{
+  "captured_at_utc": "2026-10-10T18:14:25Z",
+  "orfs_version": "0.1.0",
+  "host_kernel": "7.2.9-2-cachyos",
+  "host_machine": "x86_64",
+  "host_nproc": 16,
+  "host_mem_total_kib": 131565768,
+  "dev_fuse_present": true,
+  "io_uring_disabled": "0",
+  "kernel_config": {
+    "CONFIG_FUSE_FS": "CONFIG_FUSE_FS=y",
+    "CONFIG_FUSE_DAX": "CONFIG_FUSE_DAX=y",
+    "CONFIG_FUSE_PASSTHROUGH": "CONFIG_FUSE_PASSTHROUGH=y",
+    "CONFIG_FUSE_IO_URING": "CONFIG_FUSE_IO_URING=y",
+    "CONFIG_IO_URING": "CONFIG_IO_URING=y",
+    "CONFIG_IO_URING_ZCRX": "CONFIG_IO_URING_ZCRX=y"
+  },
+  "docker_version": "29.9.0"
+}

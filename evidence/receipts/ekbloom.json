@@ -1,0 +1,8 @@
+{
+  "crate": "ekbloom",
+  "version": "0.3.0",
+  "source_path": "/mnt/1tb_kingston/EKBLOOM",
+  "source_fingerprint_sha256": "20957f6bc2c924ee074d33f828c83899481c38695062187f0dd989ffae856f00",
+  "consumed_as": "path dependency with version pin =0.3.0",
+  "copied_into_orfs": false
+}

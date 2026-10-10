@@ -1,0 +1,29 @@
+# OrFS kernel-interface (mount) test image.
+#
+# Derived from the same pinned Rust base, adding FUSE userspace tooling. Used
+# only for tests that actually mount a FUSE filesystem; the runner adds ONLY
+# the device access and capabilities those tests demonstrably require.
+#
+# Build:  scripts/container-image-build.sh
+FROM rust:1.99.0-slim-bookworm@sha256:2c3a22f0a5533ea2dd5a16627bc841228151faa2d4de2644ac9987e4a2f1f2fa
+
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        coreutils \
+        file \
+        fuse3 \
+        util-linux \
+        procps \
+    ; \
+    rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    rustup component add rustfmt clippy
+
+ENV CARGO_TERM_COLOR=never
+
+WORKDIR /work
+
+CMD ["sh", "-c", "fusermount3 --version; ls -l /dev/fuse"]

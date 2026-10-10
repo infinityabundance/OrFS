@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use orfs::commit::DurabilityMode;
-use orfs::fuse::{self, BackingIo, MountOptions, StatfsMode};
+use orfs::fuse::{self, BackingIo, MountOptions, StatfsMode, Transport};
 use orfs::log::{scan_log, OpenMode, TailInfo, DEFAULT_SEGMENT_SIZE};
 use orfs::manifestation::{ManifestationConfig, ManifestationProfile, ManifestationStatus};
 use orfs::namespace::SnapshotRootPayload;
@@ -67,6 +67,10 @@ enum Command {
         /// Backing I/O engine: sync | uring.
         #[arg(long, default_value = "uring")]
         backing_io: String,
+        /// Opt in to FUSE-over-io_uring zero-copy (requires CAP_SYS_ADMIN and
+        /// `--transport fuse-uring`; never required for ordinary mounts).
+        #[arg(long)]
+        zero_copy: bool,
         /// Durability profile: ordered | sync | batched.
         #[arg(long, default_value = "ordered")]
         durability: String,
@@ -285,6 +289,7 @@ fn run(cli: &Cli) -> Result<()> {
             mountpoint,
             transport,
             backing_io,
+            zero_copy,
             durability,
             direct_io,
             readahead_kb,
@@ -304,6 +309,7 @@ fn run(cli: &Cli) -> Result<()> {
             mountpoint,
             transport,
             backing_io,
+            zero_copy: *zero_copy,
             durability,
             direct_io: *direct_io,
             readahead_kb: *readahead_kb,
@@ -704,6 +710,7 @@ struct MountArgs<'a> {
     mountpoint: &'a PathBuf,
     transport: &'a str,
     backing_io: &'a str,
+    zero_copy: bool,
     durability: &'a str,
     direct_io: bool,
     readahead_kb: u32,
@@ -721,19 +728,7 @@ struct MountArgs<'a> {
 }
 
 fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
-    match args.transport {
-        "fuse" => {}
-        "fuse-uring" => {
-            return Err(OrfsError::Unimplemented(
-                "Phase 5 (FUSE-over-io_uring transport)",
-            ))
-        }
-        other => {
-            return Err(OrfsError::InvalidArgument(format!(
-                "unknown transport {other:?} (expected fuse|fuse-uring)"
-            )))
-        }
-    }
+    let transport = Transport::parse(args.transport)?;
     let backing_io = BackingIo::parse(args.backing_io)?;
     let durability = DurabilityMode::parse(args.durability)?;
     let statfs = match args.statfs {
@@ -749,6 +744,36 @@ fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
         Some(p) => Some(ManifestationProfile::parse(p, None, None, None)?),
         None => None,
     };
+
+    // FUSE-over-io_uring (F2): the decisive statement is the live INIT
+    // negotiation performed during the mount; report the static preconditions and
+    // any provable blocker up front so the outcome is never a surprise. Falling
+    // back changes no filesystem contents.
+    if transport.requests_uring_fuse() {
+        let report = orfs::fuse_uring::discover_report();
+        match &report.preconditions {
+            Ok(()) => eprintln!(
+                "orfs: FUSE-over-io_uring requested; preconditions hold — the live \
+                 INIT negotiation will decide whether F2 actually engages"
+            ),
+            Err(reason) => eprintln!(
+                "orfs: warning: FUSE-over-io_uring unavailable ({reason}); \
+                 falling back to the classical /dev/fuse transport"
+            ),
+        }
+    }
+    if args.zero_copy {
+        if !transport.requests_uring_fuse() {
+            return Err(OrfsError::InvalidArgument(
+                "--zero-copy requires --transport fuse-uring (F2)".into(),
+            ));
+        }
+        if !orfs::fuse_uring::has_cap_sys_admin() {
+            return Err(OrfsError::Unsupported(
+                "--zero-copy requires CAP_SYS_ADMIN".into(),
+            ));
+        }
+    }
 
     if backing_io == BackingIo::Uring {
         // Report whether io_uring can actually engage, honestly. The real
@@ -771,7 +796,9 @@ fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
     let opts = MountOptions {
         durability,
         read_only: args.read_only,
+        transport,
         backing_io,
+        zero_copy: args.zero_copy,
         direct_io: args.direct_io,
         readahead_kb: args.readahead_kb,
         max_write_kb: args.max_write_kb,
@@ -787,10 +814,11 @@ fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
     };
 
     eprintln!(
-        "orfs: mounting {} at {} (durability={durability:?}, backing_io={:?}, \
-         direct_io={}, readahead_kb={}); press Ctrl-C or run `orfs unmount {}`",
+        "orfs: mounting {} at {} (transport={}, durability={durability:?}, \
+         backing_io={:?}, direct_io={}, readahead_kb={}); run `orfs unmount {}`",
         args.backing.display(),
         args.mountpoint.display(),
+        transport.requested_name(),
         backing_io,
         opts.direct_io,
         opts.readahead_kb,
@@ -1294,6 +1322,7 @@ fn recover(backing: &Path, json: bool) -> Result<()> {
 fn doctor(json: bool) -> Result<()> {
     let caps = orfs::capabilities::probe();
     let uring = orfs::uring::probe_available();
+    let f2 = orfs::fuse_uring::discover_report();
 
     if json {
         let out = serde_json::json!({
@@ -1302,6 +1331,9 @@ fn doctor(json: bool) -> Result<()> {
             "capabilities": caps,
             "traditional_fuse_usable": caps.traditional_fuse_usable(),
             "fuse_over_io_uring_plausible": caps.fuse_over_io_uring_plausible(),
+            "fuse_over_io_uring_usable": f2.usable(),
+            "fuse_over_io_uring_reason": f2.reason(),
+            "fuse_uring": f2,
             "backing_io_uring_available": uring.is_ok(),
             "backing_io_uring_reason": uring.err(),
         });
@@ -1332,6 +1364,29 @@ fn doctor(json: bool) -> Result<()> {
     println!(
         "FUSE-over-io_uring plausible: {}",
         yesno(caps.fuse_over_io_uring_plausible())
+    );
+    // Real negotiation (not a plausibility guess): the kernel module gate and,
+    // during a mount, the live INIT capability handshake.
+    println!(
+        "  fuse.enable_uring:           {}",
+        f2.discovery
+            .enable_uring_param
+            .map(yesno)
+            .unwrap_or("unreadable")
+    );
+    println!(
+        "  io_uring available:          {} ({})",
+        yesno(f2.discovery.io_uring_available),
+        f2.discovery.io_uring_reason.as_deref().unwrap_or("ok")
+    );
+    println!(
+        "  CAP_SYS_ADMIN (zero-copy):   {}",
+        yesno(f2.discovery.cap_sys_admin)
+    );
+    println!(
+        "FUSE-over-io_uring usable:    {} ({})",
+        yesno(f2.usable()),
+        f2.reason()
     );
     println!(
         "backing io_uring available:   {} ({})",

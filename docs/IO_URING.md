@@ -18,10 +18,12 @@ Research §17 distinguishes two independent uses of `io_uring`:
 | Domain | What it accelerates | This phase |
 |--------|---------------------|-----------|
 | **A — backing store** | authoritative writes, immutable reads, `fsync` | **implemented** |
-| B — FUSE-over-`io_uring` transport | kernel↔userspace request transport | **not implemented** (later phase) |
+| B — FUSE-over-`io_uring` transport | kernel↔userspace request transport | **Phase 10** (see `docs/FUSE_URING.md`) |
 
 Using `io_uring` for backing I/O does **not** enable FUSE-over-`io_uring`, and
-OrFS never claims it does. `--transport fuse-uring` remains an explicit `ENOSYS`.
+OrFS never claims it does. `--transport fuse-uring` now requests the Phase 10
+F2 transport, which negotiates at runtime and falls back cleanly to F1/F0 when
+the kernel does not enable it (see `docs/FUSE_URING.md`).
 
 The logical bytes written and read are identical to the synchronous path; the
 equivalence test (§8) proves it byte for byte.
@@ -280,8 +282,9 @@ All `unsafe` is confined to the `io-uring` FFI contract, each block justified:
 
 ## 11. Explicit non-claims (Phase 5)
 
-* **Domain B** (FUSE-over-`io_uring`) is not implemented; the transport is
-  unchanged.
+* **Domain B** (FUSE-over-`io_uring`) is implemented in Phase 10 as a native
+  transport adapter (discovery, negotiation, codec, and the `io_uring` command
+  layer); it does not engage on the development host. See `docs/FUSE_URING.md`.
 * **Ring B** (asynchronous bloom persistence) is not implemented; no acceleration
   structure is written in this phase.
 * The commit sequencer still writes record-by-record to preserve the Phase 2

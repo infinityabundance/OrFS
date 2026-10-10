@@ -34,6 +34,7 @@ pub mod error;
 pub mod extent;
 pub mod failpoints;
 pub mod fuse;
+pub mod fuse_uring;
 pub mod image;
 pub mod index;
 pub mod inode;
@@ -53,6 +54,7 @@ pub mod uring;
 pub mod volume;
 
 pub use error::{FsError, OrfsError, Result};
+pub use fuse_uring::{FuseUringNegotiation, FuseUringReport, TransportProfile};
 pub use namespace::{Namespace, OrfsCore, RenameMode, SetAttr};
 pub use query::{
     Credential, MatchFlow, QueryEngine, QueryMatch, QueryRequest, QueryResult, QueryStats,

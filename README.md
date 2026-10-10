@@ -28,8 +28,10 @@ pretending to work.
 
 Working today: `orfs doctor`, `orfs init`, `orfs inspect [--json]`,
 `orfs verify [--deep]`, `orfs recover`, and
-`orfs mount <backing> <mnt> --transport fuse --backing-io <sync|uring> ...`
-(plus `orfs unmount`).
+`orfs mount <backing> <mnt> --transport <fuse|fuse-uring> --backing-io <sync|uring> ...`
+(plus `orfs unmount`). `--transport fuse-uring` requests FUSE-over-`io_uring`
+(F2), which negotiates at runtime and falls back cleanly when the kernel does not
+enable it (see `docs/FUSE_URING.md`).
 
 | Phase | Area | State |
 |---|---|---|
@@ -39,11 +41,11 @@ Working today: `orfs doctor`, `orfs init`, `orfs inspect [--json]`,
 | 3 | Namespace and extents | complete |
 | 4 | Traditional FUSE | complete |
 | 5 | Backing `io_uring` | complete |
-| 6 | Historical snapshots and index checkpoints | — |
-| 7 | Concealed manifestation | — |
-| 8 | EKBLOOM integration | — |
-| 9 | Concealed query structures | — |
-| 10 | FUSE-over-`io_uring` | — |
+| 6 | Historical snapshots and index checkpoints | complete |
+| 7 | Concealed manifestation | complete |
+| 8 | EKBLOOM integration | complete |
+| 9 | Concealed query structures | complete |
+| 10 | FUSE-over-`io_uring` | implemented; not active on this host (see `docs/FUSE_URING.md`) |
 | 11 | Security and crash-hardening | — |
 | 12 | Performance court | — |
 

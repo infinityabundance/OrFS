@@ -1,0 +1,10 @@
+{
+  "cancels": 1,
+  "completions": 4,
+  "generated_by": "tests/fuse_uring.rs::ring_control_cancel_and_shutdown_are_safe",
+  "note": "submitted against a non-fuse fd; the kernel rejects URING_CMD for a file whose f_op lacks uring_cmd",
+  "shutdown": "clean",
+  "submits": 3,
+  "uring_cmd_rejected_errno": 95,
+  "what": "native FUSE-over-io_uring ring layer (IORING_OP_URING_CMD + ASYNC_CANCEL)"
+}

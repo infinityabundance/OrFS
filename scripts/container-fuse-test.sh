@@ -14,8 +14,12 @@ set -eu
 docker_run_kmount sh -c '
     set -eu
     export ORFS_FUSE_TEST=1
-    export CARGO_TARGET_DIR=/tmp/orfs-kmount-target
+    # Keep mount-test build output on the bind-mounted project drive (the file
+    # TMPDIR is likewise set by lib.sh), never the container’s RAM-backed root.
+    export CARGO_TARGET_DIR="$(pwd)/target/kmount-test"
     timeout -k 10 900 cargo test --test fuse_integration -- --nocapture --test-threads=1
     echo "--- snapshot read-only mount integration ---"
     timeout -k 10 900 cargo test --test snapshot_fuse -- --nocapture --test-threads=1
+    echo "--- FUSE-over-io_uring transport equivalence + negotiation/fallback ---"
+    timeout -k 10 900 cargo test --test fuse_uring -- --nocapture --test-threads=1
 '

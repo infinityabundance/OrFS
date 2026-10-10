@@ -700,3 +700,70 @@ changes what a query returns.
   in `src/image.rs` and `docs/QUERY.md` §9.1 and is not faked.
 * The suffix automaton is measured but not wired into the query plane (the
   trigram index is); this is stated, not implied.
+
+## Phase 10 — FUSE-over-io_uring transport (F2) with classical fallback
+
+**Complete as implemented; F2 does not engage on this host** (see
+`docs/FUSE_URING.md`). Implements research §17–§19 and directive §16/§17.
+
+### Delivered
+
+* `src/fuse_uring.rs` — a native-Rust FUSE-over-`io_uring` transport adapter:
+  (a) capability discovery; (b) queue creation (`FUSE_IO_URING_CMD_ADD_QUEUE`);
+  (c) payload-buffer-pool registration (`FUSE_IO_URING_CMD_ADD_BUFPOOL`);
+  (d) entry registration (`FUSE_IO_URING_CMD_REGISTER`); (e) CQE request
+  handling; (f) reply commit (`FUSE_IO_URING_CMD_COMMIT_AND_FETCH`);
+  (g) fetch-next lifecycle; (h) cancellation (`IORING_OP_ASYNC_CANCEL`);
+  (i) safe shutdown/drain; (j) automatic fallback. The UAPI structures and
+  commands are transcribed byte-exactly from the running kernel's headers and the
+  documented UAPI (FUSE ABI 7.45 legacy and 7.46 modern), not from the older
+  container headers.
+* Transport-neutral request/reply codec (`RingRequest`, `RingReply`) carrying
+  the ring `commit_id` and payload `offset`/`payload_sz` unchanged, so the
+  filesystem core never depends on the transport.
+* Three transport profiles wired into `orfs mount --transport fuse|fuse-uring`
+  and the library: **F0** (traditional + sync), **F1** (traditional + io_uring),
+  **F2** (FUSE-over-io_uring + io_uring). F2 negotiates at runtime; unsupported
+  kernels fall back without changing filesystem contents. `OrfsMount` reports
+  `transport_used()` truthfully — backing `io_uring` alone is never reported as
+  F2.
+* Zero-copy is opt-in (`--zero-copy` requires `--transport fuse-uring` *and*
+  `CAP_SYS_ADMIN`) and capability-checked; never required for ordinary mounts.
+* `orfs doctor` performs real negotiation (the decisive `fuse.enable_uring` gate
+  plus the live `INIT` capability handshake) and reports whether F2 is actually
+  usable, with the exact reason.
+
+### Tests (inside the containers)
+
+* `cargo test`: 92 unit + 8 `ekbloom_read` + 2 `fuse_integration` + 3
+  `fuse_uring` (new) + 10 `log_model` + 8 `manifestation` + 8 `namespace_model`
+  + 9 `query` + 4 `smoke` + 1 `snapshot_fuse` + 10 `snapshot_model` + 9
+  `transaction_model` + 7 `uring_integration` = **171 passing**.
+* `tests/fuse_uring.rs` proves transport **equivalence** (identical logical
+  transcripts for F0, F1, and a requested-F2 mount), **negotiation/fallback**
+  (F2 unavailable ⇒ clean fallback with identical contents and a recorded
+  reason), and **cancellation + safe shutdown** on the real ring layer.
+* `cargo fmt -p orfs --check` and `cargo clippy --all-targets -- -D warnings`
+  pass; `sh scripts/container-fuse-test.sh` and `sh scripts/container-uring-test.sh`
+  pass.
+
+### Evidence
+
+* `evidence/performance/fuse-uring.json` — env, kernel, UAPI version, per-profile
+  status, the live F2 negotiation, and the precise reason F2 throughput is not
+  measured.
+* `evidence/correctness/fuse-uring-equivalence.json` — the shared operation
+  transcript across profiles.
+* `evidence/correctness/fuse-uring-ring.json` — ring submission/completion/
+  cancellation/shutdown counters and the `-EOPNOTSUPP` the kernel returns for
+  `URING_CMD` on a non-`fuse` fd.
+
+### Explicitly not implemented / not achieved in Phase 10
+
+* A **real F2 mount** is not achievable on this host: (1) `fuse.enable_uring=0`
+  (kernel module parameter; root-owned, unprivileged container) makes the kernel
+  never offer `FUSE_OVER_IO_URING`; (2) the pinned `io-uring` 0.7.15 cannot set
+  `sqe->len`, required by `REGISTER`; (3) `fuser` 0.18 does not expose the
+  `/dev/fuse` fd for a native ring to attach. See `docs/FUSE_URING.md` §7.
+* Zero-copy is not exercised and no zero-copy number is claimed.
+* FUSE passthrough (research §28.2) is not implemented in this phase.

@@ -25,8 +25,8 @@ Mount options map explicitly:
 
 | OrFS option | FUSE effect |
 |---|---|
-| transport `fuse` | traditional `/dev/fuse` |
-| transport `fuse-uring` | **rejected**: `ENOSYS`, Phase 5 |
+| transport `fuse` | traditional `/dev/fuse` (F0/F1) |
+| transport `fuse-uring` | requests F2 (FUSE-over-`io_uring`); negotiates at runtime, falls back to F1/F0 (Phase 10, `docs/FUSE_URING.md`) |
 | `--backing-io sync` | synchronous `pread`/`pwrite`/`fsync` |
 | `--backing-io uring` | accepted; **falls back to sync**, a warning is printed |
 | `--durability sync\|ordered\|batched` | maps to `DurabilityMode` |
@@ -234,7 +234,10 @@ is recorded here and in `evidence/correctness/posix-results.json`.
 
 ## 10. What is not implemented
 
-* Transport `fuse-uring` (FUSE-over-`io_uring`) — Phase 5.
+* Transport `fuse-uring` (FUSE-over-`io_uring`) — implemented in Phase 10 as a
+  native transport adapter; it does not engage on this host, so mounts fall back
+  to F1/F0 (`docs/FUSE_URING.md`). The classical `/dev/fuse` semantics above are
+  unchanged and transport-neutral.
 * Backing `io_uring` — Phase 5 (requests fall back to synchronous I/O).
 * FUSE passthrough reads — a later optimization (must never bypass authoritative
   writes).

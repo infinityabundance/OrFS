@@ -44,6 +44,7 @@ use parking_lot::Mutex;
 
 use crate::commit::DurabilityMode;
 use crate::error::{OrfsError, Result};
+use crate::fuse_uring::{self, FuseUringNegotiation, FuseUringReport, TransportProfile};
 use crate::inode::{has_permission, InodeStat, InodeType, Timespec};
 use crate::log::OpenMode;
 use crate::manifestation::ManifestationProfile;
@@ -91,6 +92,44 @@ impl BackingIo {
     }
 }
 
+/// Which FUSE transport a mount *requested* (research §18; directive §16.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Transport {
+    /// Traditional `/dev/fuse` request transport. Combined with the backing
+    /// engine this is profile F0 (sync) or F1 (io_uring).
+    Fuse,
+    /// Request FUSE-over-`io_uring` (profile F2). Negotiated at runtime; falls
+    /// back cleanly to F1/F0 when the kernel or privilege model does not permit
+    /// it, without changing filesystem contents.
+    FuseUring,
+}
+
+impl Transport {
+    /// Parse the `--transport` value.
+    pub fn parse(s: &str) -> Result<Transport> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "fuse" => Ok(Transport::Fuse),
+            "fuse-uring" | "fuse_uring" | "fuse-over-io-uring" => Ok(Transport::FuseUring),
+            other => Err(OrfsError::InvalidArgument(format!(
+                "unknown transport {other:?} (expected fuse|fuse-uring)"
+            ))),
+        }
+    }
+
+    /// The requested transport profile name, before negotiation.
+    pub fn requested_name(&self) -> &'static str {
+        match self {
+            Transport::Fuse => "fuse",
+            Transport::FuseUring => "fuse-uring",
+        }
+    }
+
+    /// Whether the caller asked for the advanced (F2) transport.
+    pub fn requests_uring_fuse(&self) -> bool {
+        matches!(self, Transport::FuseUring)
+    }
+}
+
 /// How `statfs` reports free space (research §30).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatfsMode {
@@ -111,8 +150,13 @@ pub struct MountOptions {
     pub durability: DurabilityMode,
     /// Mount read-only.
     pub read_only: bool,
+    /// Requested FUSE transport (`fuse` = F0/F1, `fuse-uring` = attempt F2).
+    pub transport: Transport,
     /// Request the `io_uring` backing engine (falls back to sync if unavailable).
     pub backing_io: BackingIo,
+    /// Opt in to FUSE-over-`io_uring` zero-copy. Requires the F2 transport, a
+    /// buffer pool, and `CAP_SYS_ADMIN`; never required for ordinary mounts.
+    pub zero_copy: bool,
     /// Ask the kernel for `FOPEN_DIRECT_IO` on every open (bypass page cache).
     pub direct_io: bool,
     /// Kernel readahead in kibibytes (0 keeps the kernel default).
@@ -146,7 +190,9 @@ impl Default for MountOptions {
         MountOptions {
             durability: DurabilityMode::Ordered,
             read_only: false,
+            transport: Transport::Fuse,
             backing_io: BackingIo::Sync,
+            zero_copy: false,
             direct_io: false,
             readahead_kb: 128,
             max_write_kb: 128,
@@ -397,6 +443,10 @@ pub struct OrfsFuse<C: OrfsCore + Send + 'static> {
     notifier: NotifierCell,
     notify_tx: std::sync::mpsc::Sender<NotifyMsg>,
     options: MountOptions,
+    /// Filled during the FUSE `INIT` handshake with the live FUSE-over-
+    /// `io_uring` negotiation result (the only authoritative statement of
+    /// whether the kernel would enable `io_uring` on this connection).
+    negotiation: Arc<Mutex<FuseUringNegotiation>>,
 }
 
 impl<C: OrfsCore + Send + 'static> OrfsFuse<C> {
@@ -441,7 +491,13 @@ impl<C: OrfsCore + Send + 'static> OrfsFuse<C> {
             notifier,
             notify_tx,
             options,
+            negotiation: Arc::new(Mutex::new(FuseUringNegotiation::not_requested())),
         }
+    }
+
+    /// The shared cell the `INIT` negotiation writes and the mount reports from.
+    fn negotiation_cell(&self) -> Arc<Mutex<FuseUringNegotiation>> {
+        Arc::clone(&self.negotiation)
     }
 
     /// A snapshot of the operation counters.
@@ -478,6 +534,59 @@ impl<C: OrfsCore + Send + 'static> OrfsFuse<C> {
         } else {
             Ok(())
         }
+    }
+
+    /// Perform the live FUSE-over-`io_uring` negotiation during `INIT`.
+    ///
+    /// The kernel sets `FUSE_OVER_IO_URING` in the `INIT` flags **only** when
+    /// `fuse_uring_enabled()` is true (`fs/fuse/inode.c`), so the presence (or
+    /// absence) of that capability bit is the authoritative runtime answer, not a
+    /// guess. The result is recorded truthfully: `engaged` stays `false` unless a
+    /// native ring is actually driven for this mount.
+    fn negotiate_fuse_uring(&self, config: &mut KernelConfig) {
+        if self.options.transport != Transport::FuseUring {
+            *self.negotiation.lock() = FuseUringNegotiation::not_requested();
+            return;
+        }
+        let caps = config.capabilities();
+        let kernel_offered = caps.contains(InitFlags::FUSE_OVER_IO_URING);
+        let kernel_offered_bufpool = caps.bits() & fuse_uring::FUSE_HAS_IO_URING_BUFPOOL != 0;
+        let v = config.kernel_abi();
+        // Echo the capability back to the kernel when it was offered. On a host
+        // where `fuse.enable_uring` is off the kernel never offers it, so this
+        // returns `false` and nothing is claimed.
+        let accepted = if kernel_offered {
+            config
+                .add_capabilities(InitFlags::FUSE_OVER_IO_URING)
+                .is_ok()
+        } else {
+            false
+        };
+        let reason = if !kernel_offered {
+            Some(format!(
+                "kernel did not offer FUSE_OVER_IO_URING at INIT (FUSE ABI {}.{}); it \
+                 gates this on the fuse.enable_uring module parameter, which is off on \
+                 this host, so FUSE requests continue over /dev/fuse",
+                v.0, v.1
+            ))
+        } else {
+            Some(
+                "FUSE_OVER_IO_URING was negotiated, but this build uses the fuser crate \
+                 for the session and fuser 0.18 does not expose the /dev/fuse file \
+                 descriptor, so a native ring cannot be attached (see docs/FUSE_URING.md)"
+                    .to_string(),
+            )
+        };
+        let neg = FuseUringNegotiation {
+            kernel_offered,
+            kernel_offered_bufpool,
+            kernel_abi: Some((v.0, v.1)),
+            accepted,
+            engaged: false,
+            reason,
+        };
+        eprintln!("orfs: {}", neg.describe());
+        *self.negotiation.lock() = neg;
     }
 }
 
@@ -569,6 +678,8 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             let _ = config.set_max_readahead(self.options.readahead_kb.saturating_mul(1024));
         }
         let _ = config.set_time_granularity(Duration::from_nanos(1));
+
+        self.negotiate_fuse_uring(config);
         Ok(())
     }
 
@@ -1743,10 +1854,14 @@ fn statvfs(path: &Path) -> Option<StatfsValues> {
 pub struct OrfsMount {
     session: BackgroundSession,
     notifier: NotifierCell,
+    /// The requested FUSE transport.
+    transport_requested: Transport,
     /// The backing-I/O engine actually in use (never lies about `Uring`).
     pub backing_io_used: BackingIo,
     /// The durability profile in force.
     pub durability: DurabilityMode,
+    /// The live FUSE-over-`io_uring` negotiation result from `INIT`.
+    negotiation: Arc<Mutex<FuseUringNegotiation>>,
 }
 
 impl OrfsMount {
@@ -1763,6 +1878,54 @@ impl OrfsMount {
     /// A notifier for explicit kernel cache invalidation.
     pub fn notifier(&self) -> Option<Notifier> {
         self.notifier.lock().clone()
+    }
+
+    /// The transport the caller requested.
+    pub fn transport_requested(&self) -> Transport {
+        self.transport_requested
+    }
+
+    /// The transport profile **actually in force** (F0/F1/F2).
+    ///
+    /// F2 is reported only when a real FUSE-over-`io_uring` ring negotiated and
+    /// engaged; backing `io_uring` on its own is F1, never F2.
+    pub fn transport_used(&self) -> TransportProfile {
+        let neg = self.negotiation.lock();
+        fuse_uring::classify(
+            self.transport_requested.requests_uring_fuse(),
+            self.backing_io_used == BackingIo::Uring,
+            Some(&neg),
+        )
+    }
+
+    /// A one-line description of the transport in force, including the fallback
+    /// reason when F2 was requested but is not active.
+    pub fn transport_description(&self) -> String {
+        let used = self.transport_used();
+        let base = used.describe(self.backing_io_used == BackingIo::Uring);
+        if self.transport_requested.requests_uring_fuse() && used != TransportProfile::F2 {
+            let neg = self.negotiation.lock();
+            format!("{base}; F2 unavailable: {}", neg.describe())
+        } else {
+            base
+        }
+    }
+
+    /// The live FUSE-over-`io_uring` negotiation result.
+    pub fn fuse_uring_negotiation(&self) -> FuseUringNegotiation {
+        self.negotiation.lock().clone()
+    }
+
+    /// A full report of FUSE-over-`io_uring` availability for this mount.
+    pub fn fuse_uring_report(&self) -> FuseUringReport {
+        let discovery = fuse_uring::Discovery::probe();
+        let preconditions = discovery.preconditions();
+        let negotiation = Some(self.fuse_uring_negotiation());
+        FuseUringReport {
+            discovery,
+            preconditions,
+            negotiation,
+        }
     }
 }
 
@@ -1855,14 +2018,17 @@ pub fn spawn(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<O
         BackingIo::Sync
     };
     let fs = OrfsFuse::new(core, backing.to_path_buf(), *opts);
+    let negotiation = fs.negotiation_cell();
     let config = build_config(opts);
     let (session, notifier) = attach(fs, mountpoint, &config)?;
     let session = session.spawn()?;
     Ok(OrfsMount {
         session,
         notifier,
+        transport_requested: opts.transport,
         backing_io_used,
         durability: opts.durability,
+        negotiation,
     })
 }
 
@@ -1941,8 +2107,10 @@ pub fn spawn_snapshot(
     Ok(OrfsMount {
         session,
         notifier,
+        transport_requested: Transport::Fuse,
         backing_io_used: BackingIo::Sync,
         durability: opts.durability,
+        negotiation: Arc::new(Mutex::new(FuseUringNegotiation::not_requested())),
     })
 }
 

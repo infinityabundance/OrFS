@@ -1,0 +1,50 @@
+{
+  "claim": "the same operations yield identical logical results across F0, F1 and the F2-request fallback",
+  "contents_identical": true,
+  "fallback_reason": "kernel did not offer FUSE_OVER_IO_URING at INIT (FUSE ABI 7.45); it gates this on the fuse.enable_uring module parameter, which is off on this host, so FUSE requests continue over /dev/fuse",
+  "generated_by": "tests/fuse_uring.rs::transport_equivalence_and_f2_fallback",
+  "profiles_compared": [
+    "F0",
+    "F1",
+    "F1"
+  ],
+  "schema": "orfs.fuse-uring-equivalence.v1",
+  "transcript": [
+    [
+      "create_write_read",
+      "hello orfs"
+    ],
+    [
+      "pread",
+      " orfs"
+    ],
+    [
+      "readdir",
+      "inner"
+    ],
+    [
+      "readlink",
+      "a.txt"
+    ],
+    [
+      "hardlink-content",
+      "hello orfs!"
+    ],
+    [
+      "rename-exists",
+      "true"
+    ],
+    [
+      "truncate-size",
+      "he"
+    ],
+    [
+      "reextend",
+      "size=10 perm=644"
+    ],
+    [
+      "unlink-exists",
+      "false"
+    ]
+  ]
+}

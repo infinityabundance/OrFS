@@ -29,6 +29,8 @@ $RUNNER sh -c '
     export ORFS_REQUIRE_URING=1
     echo "--- io_uring integration tests ---"
     timeout -k 10 900 cargo test --test uring_integration -- --nocapture --test-threads=1
+    echo "--- FUSE-over-io_uring ring layer (submission / cancel / shutdown) ---"
+    timeout -k 10 900 cargo test --test fuse_uring -- --nocapture --test-threads=1
     echo "--- backing I/O benchmark (writes evidence/performance/backing-uring.json) ---"
     timeout -k 10 900 cargo bench --bench backing_io
 '

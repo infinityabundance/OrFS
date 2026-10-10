@@ -37,11 +37,16 @@ Consequences:
 
 ## 2. Host kernel use for FUSE and io_uring
 
-The containerized workflow provides toolchain isolation, **not kernel
-isolation**. FUSE mounts and `io_uring` inevitably run against the host kernel
+The containerized workflow provides toolchain isolation, **not** kernel
+isolation. FUSE mounts and `io_uring` inevitably run against the host kernel
 (see `scripts/lib.sh`). The FUSE mount tests additionally require the host's
 `/dev/fuse`, `SYS_ADMIN`, and unconfined AppArmor/seccomp, and are confined to
 `scripts/container-fuse-test.sh`.
+
+On this host Docker's data-root is a **RAM-backed tmpfs** that is shared with
+other builds, so transient `ENOSPC` is possible under contention. `scripts/lib.sh`
+therefore sets `TMPDIR` (and the FUSE mount scripts set `CARGO_TARGET_DIR`) to the
+project's bind-mounted drive rather than the container's writable layer.
 
 ## 3. Accelerated reads are exactness-preserving, not free
 
@@ -50,3 +55,29 @@ The EKBLOOM read planner only uses a concealed structure when it is compatible
 worth it; otherwise it falls back to the authoritative extent read. Absolute
 latencies in the evidence come from unoptimized test builds; the *selection*, not
 the absolute figure, is the point.
+
+## 4. FUSE-over-`io_uring` (profile F2) is implemented but not active here
+
+The native F2 transport adapter is implemented and tested, but a real F2 mount
+is **not achievable on this host**, for three independent reasons detailed in
+`docs/FUSE_URING.md` §7:
+
+1. **`fuse.enable_uring=0`.** The running kernel (`7.2.9`, FUSE ABI 7.45) gates
+   FUSE-over-`io_uring` on the `fuse.enable_uring` module parameter
+   (`fs/fuse/inode.c`, `fs/fuse/dev_uring.c`). It is off; the parameter is
+   `root:root 0644` and the container runs unprivileged. The kernel therefore
+   never offers `FUSE_OVER_IO_URING` at `INIT`, and every `IORING_OP_URING_CMD`
+   would be rejected with `-EOPNOTSUPP`. Changing a host-global kernel parameter
+   is deliberately out of scope.
+2. **`io-uring` 0.7.15 cannot set `sqe->len`.** `FUSE_IO_URING_CMD_REGISTER`
+   requires `sqe->len == 2`; the crate's `UringCmd80` builder exposes no `len`
+   setter. Closing this needs a raw-SQE path.
+3. **`fuser` 0.18 does not expose the `/dev/fuse` fd.** A native ring cannot
+   attach to a `fuser`-managed session; a full F2 driver would own the session.
+
+Consequently `orfs mount --transport fuse-uring` performs the real `INIT`
+negotiation, records the precise reason, and continues as F1/F0 with
+**byte-identical contents**. `orfs doctor` reports F2 as *not usable* with the
+exact reason rather than merely "plausible". Zero-copy is opt-in and
+capability-checked (`CAP_SYS_ADMIN`) and, because F2 does not engage here, is not
+exercised; no zero-copy performance number is claimed.

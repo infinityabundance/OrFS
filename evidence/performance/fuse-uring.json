@@ -1,0 +1,79 @@
+{
+  "environment": {
+    "container": true,
+    "dev_fuse": true,
+    "kernel_release": "7.2.9-2-cachyos",
+    "machine": "x86_64"
+  },
+  "f2_negotiation": {
+    "accepted": false,
+    "engaged": false,
+    "kernel_abi": [
+      7,
+      45
+    ],
+    "kernel_offered": false,
+    "kernel_offered_bufpool": false,
+    "reason": "kernel did not offer FUSE_OVER_IO_URING at INIT (FUSE ABI 7.45); it gates this on the fuse.enable_uring module parameter, which is off on this host, so FUSE requests continue over /dev/fuse"
+  },
+  "f2_report": {
+    "discovery": {
+      "cap_sys_admin": false,
+      "config_fuse_io_uring": null,
+      "config_io_uring": null,
+      "dev_fuse_present": true,
+      "enable_uring_param": false,
+      "io_uring_available": true,
+      "io_uring_reason": null,
+      "kernel_release": "7.2.9-2-cachyos"
+    },
+    "negotiation": {
+      "accepted": false,
+      "engaged": false,
+      "kernel_abi": [
+        7,
+        45
+      ],
+      "kernel_offered": false,
+      "kernel_offered_bufpool": false,
+      "reason": "kernel did not offer FUSE_OVER_IO_URING at INIT (FUSE ABI 7.45); it gates this on the fuse.enable_uring module parameter, which is off on this host, so FUSE requests continue over /dev/fuse"
+    },
+    "preconditions": {
+      "Err": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+    }
+  },
+  "generated_by": "tests/fuse_uring.rs::transport_equivalence_and_f2_fallback",
+  "measurements": {
+    "f2": "not measured (F2 unavailable)",
+    "note": "submission micro-benchmarks are recorded in evidence/performance/backing-uring.json; F2 transport throughput could not be measured because F2 did not engage"
+  },
+  "profiles": {
+    "F0": {
+      "reported": "F0",
+      "requested": "fuse + sync"
+    },
+    "F1": {
+      "backing_used": "Uring",
+      "reported": "F1",
+      "requested": "fuse + uring"
+    },
+    "F2": {
+      "backing_used": "Uring",
+      "description": "F1 (traditional /dev/fuse, io_uring backing); F2 unavailable: FUSE-over-io_uring not active: kernel did not offer FUSE_OVER_IO_URING at INIT (FUSE ABI 7.45); it gates this on the fuse.enable_uring module parameter, which is off on this host, so FUSE requests continue over /dev/fuse",
+      "reported": "F1",
+      "requested": "fuse-uring + uring"
+    }
+  },
+  "schema": "orfs.fuse-uring.v1",
+  "uapi": {
+    "add_queue_minor": 46,
+    "baseline_minor": 45,
+    "commands": [
+      "FUSE_IO_URING_CMD_REGISTER",
+      "FUSE_IO_URING_CMD_COMMIT_AND_FETCH",
+      "FUSE_IO_URING_CMD_ADD_QUEUE",
+      "FUSE_IO_URING_CMD_ADD_BUFPOOL"
+    ],
+    "fuse_kernel_version": 7
+  }
+}

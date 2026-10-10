@@ -41,8 +41,13 @@ ORFS_PIDS="${ORFS_PIDS:-2048}"
 # resolve identically on host and container.
 ORFS_CARGO_HOME="$ORFS_PROJECT_DIR/.cargo-home"
 ORFS_TARGET_DIR="$ORFS_PROJECT_DIR/target"
+# Scratch for the toolchain (rustc/cc intermediate files) lives on the project's
+# bind-mounted drive, not the container's RAM-backed writable layer. On this host
+# Docker's data-root is a tmpfs; keeping TMPDIR off it prevents transient ENOSPC
+# when several builds share the machine. See docs/LIMITATIONS.md.
+ORFS_TMP_DIR="$ORFS_TARGET_DIR/.tmp"
 
-mkdir -p "$ORFS_PROJECT_DIR/.cargo-home" "$ORFS_PROJECT_DIR/target"
+mkdir -p "$ORFS_PROJECT_DIR/.cargo-home" "$ORFS_TARGET_DIR" "$ORFS_TMP_DIR"
 
 # docker_run: unprivileged, memory/pid-capped, source tree bind-mounted read-write.
 docker_run() {
@@ -58,6 +63,7 @@ docker_run() {
         -w "$ORFS_PROJECT_DIR" \
         -u "$(id -u):$(id -g)" \
         -e HOME=/tmp \
+        -e TMPDIR="$ORFS_TMP_DIR" \
         -e CARGO_HOME="$ORFS_CARGO_HOME" \
         -e RUSTUP_HOME=/usr/local/rustup \
         -e CARGO_TARGET_DIR="$ORFS_TARGET_DIR" \
@@ -85,6 +91,7 @@ docker_run_uring() {
         -w "$ORFS_PROJECT_DIR" \
         -u "$(id -u):$(id -g)" \
         -e HOME=/tmp \
+        -e TMPDIR="$ORFS_TMP_DIR" \
         -e CARGO_HOME="$ORFS_CARGO_HOME" \
         -e RUSTUP_HOME=/usr/local/rustup \
         -e CARGO_TARGET_DIR="$ORFS_TARGET_DIR" \
@@ -142,6 +149,7 @@ docker_run_kmount() {
         -w "$ORFS_PROJECT_DIR" \
         -u "$(id -u):$(id -g)" \
         -e HOME=/tmp \
+        -e TMPDIR="$ORFS_TMP_DIR" \
         -e CARGO_HOME="$ORFS_CARGO_HOME" \
         -e RUSTUP_HOME=/usr/local/rustup \
         -e CARGO_TARGET_DIR="$ORFS_TARGET_DIR" \

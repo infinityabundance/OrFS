@@ -25,6 +25,7 @@
 //! independent, version-pinned native-Rust dependency; its mathematical state
 //! machine is never reimplemented here.
 
+pub mod buffers;
 pub mod capabilities;
 pub mod commit;
 pub mod directory;
@@ -39,6 +40,7 @@ pub mod namespace;
 pub mod record;
 pub mod segment;
 pub mod transaction;
+pub mod uring;
 pub mod volume;
 
 pub use error::{FsError, OrfsError, Result};

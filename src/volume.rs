@@ -298,6 +298,15 @@ impl Volume {
         self.log.sync()
     }
 
+    /// Attempt to engage the io_uring backing engine on the authoritative log
+    /// (research §17 Domain A). Returns a truthful report of what engaged.
+    pub fn enable_backing_io(
+        &mut self,
+        cfg: &crate::uring::UringConfig,
+    ) -> crate::uring::UringReport {
+        self.log.enable_uring(cfg)
+    }
+
     /// Verify the volume's authoritative structure. `deep` additionally
     /// revalidates every committed record.
     pub fn verify(&self, deep: bool) -> Result<VerifyReport> {

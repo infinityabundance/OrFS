@@ -956,6 +956,21 @@ impl Namespace {
         self.volume.sync()
     }
 
+    /// Attempt to engage the io_uring backing engine for authoritative writes and
+    /// reads (research §17 Domain A, §20). Returns a truthful report; on failure
+    /// the engine stays synchronous and the reason is recorded.
+    pub fn enable_backing_io(
+        &mut self,
+        cfg: &crate::uring::UringConfig,
+    ) -> crate::uring::UringReport {
+        self.volume.enable_backing_io(cfg)
+    }
+
+    /// Whether the backing I/O actually runs on io_uring.
+    pub fn backing_io_is_uring(&self) -> bool {
+        self.volume.log.backing_io_is_uring()
+    }
+
     /// Resolve `SEEK_DATA`/`SEEK_HOLE` against the current logical extent map.
     ///
     /// Returns the absolute file offset of the next data (or hole) region at or

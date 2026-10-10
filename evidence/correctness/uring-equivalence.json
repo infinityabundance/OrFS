@@ -1,0 +1,23 @@
+{
+  "engine": {
+    "engaged": true,
+    "read_depth": 64,
+    "registered_buffers": 4,
+    "write_depth": 32
+  },
+  "generated_by": "tests/uring_integration.rs",
+  "result": {
+    "bytes_equal": true,
+    "committed_bytes": 20464,
+    "digests_equal": true,
+    "roots_equal": true,
+    "sync_digest": "1752967ef37f814da11d57420bc1c82d056034f9d23a15747f661527a3ea921c",
+    "sync_root": 20464,
+    "uring_digest": "1752967ef37f814da11d57420bc1c82d056034f9d23a15747f661527a3ea921c",
+    "uring_root": 20464
+  },
+  "workload": {
+    "segment_size": 262144,
+    "transactions": 24
+  }
+}

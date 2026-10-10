@@ -244,9 +244,11 @@ across generated workloads and durability modes.
 
 ### 6.1 Explicit non-claims (Phase 2)
 
-* No `io_uring` submission/completion ordering is implemented yet; the commit
-  path uses synchronous `pwrite`/`fsync`. Ring W (`research/OrFS.md` §9) is a
-  later phase.
+* No `io_uring` submission/completion ordering was implemented in this phase; the
+  commit path uses synchronous `pwrite`/`fsync`. (Phase 5 adds an optional
+  `io_uring` backing engine — Ring W/Ring R — without changing this protocol:
+  the same completion barrier is now explicit and a durability `fsync` may be
+  submitted with `IOSQE_IO_DRAIN`. See `docs/IO_URING.md`.)
 * No power-loss (device-cache) evidence is produced; only process-crash evidence.
 * `batched` amortises `fsync` but batching is per-sequencer, not yet the
   multi-writer coalescing of Ring W.

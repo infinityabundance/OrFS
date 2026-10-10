@@ -69,7 +69,10 @@ const COPY_CHUNK: u64 = 1024 * 1024;
 pub enum BackingIo {
     /// Synchronous positional `pread`/`pwrite` + `fsync`.
     Sync,
-    /// `io_uring` backing ring (Phase 5). Accepted, but see [`MountOutcome`].
+    /// `io_uring` backing rings (Ring W + Ring R). Whether it actually engages is
+    /// reported truthfully by [`OrfsMount::backing_io_used`] and
+    /// [`crate::uring::UringReport`]; if unavailable at runtime, OrFS falls back
+    /// to [`BackingIo::Sync`].
     Uring,
 }
 
@@ -106,7 +109,7 @@ pub struct MountOptions {
     pub durability: DurabilityMode,
     /// Mount read-only.
     pub read_only: bool,
-    /// Request the `io_uring` backing engine (falls back to sync today).
+    /// Request the `io_uring` backing engine (falls back to sync if unavailable).
     pub backing_io: BackingIo,
     /// Ask the kernel for `FOPEN_DIRECT_IO` on every open (bypass page cache).
     pub direct_io: bool,
@@ -1778,13 +1781,26 @@ impl OrfsMount {
     }
 }
 
-fn build_core(backing: &Path, opts: &MountOptions) -> Result<Namespace> {
+fn build_core(
+    backing: &Path,
+    opts: &MountOptions,
+) -> Result<(Namespace, crate::uring::UringReport)> {
     let mode = if opts.read_only {
         OpenMode::ReadOnly
     } else {
         OpenMode::ReadWrite
     };
-    Namespace::open(backing, mode, opts.durability)
+    let mut core = Namespace::open(backing, mode, opts.durability)?;
+    let report = if opts.backing_io == BackingIo::Uring {
+        let cfg = crate::uring::UringConfig {
+            enabled: true,
+            ..Default::default()
+        };
+        core.enable_backing_io(&cfg)
+    } else {
+        crate::uring::UringReport::disabled()
+    };
+    Ok((core, report))
 }
 
 fn build_config(opts: &MountOptions) -> Config {
@@ -1828,7 +1844,12 @@ fn attach<C: OrfsCore + Send + 'static>(
 
 /// Mount an existing OrFS backing volume in the background.
 pub fn spawn(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<OrfsMount> {
-    let core = build_core(backing, opts)?;
+    let (core, report) = build_core(backing, opts)?;
+    let backing_io_used = if report.engaged {
+        BackingIo::Uring
+    } else {
+        BackingIo::Sync
+    };
     let fs = OrfsFuse::new(core, backing.to_path_buf(), *opts);
     let config = build_config(opts);
     let (session, notifier) = attach(fs, mountpoint, &config)?;
@@ -1836,7 +1857,7 @@ pub fn spawn(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<O
     Ok(OrfsMount {
         session,
         notifier,
-        backing_io_used: BackingIo::Sync,
+        backing_io_used,
         durability: opts.durability,
     })
 }
@@ -1864,7 +1885,8 @@ fn install_signal_handlers() {
 /// Mount and run in the foreground until unmounted (external `orfs unmount`, a
 /// signal, or an error).
 pub fn run(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<()> {
-    let core = build_core(backing, opts)?;
+    let (core, report) = build_core(backing, opts)?;
+    eprintln!("orfs: {}", report.describe());
     let fs = OrfsFuse::new(core, backing.to_path_buf(), *opts);
     let config = build_config(opts);
     let (mut session, _notifier) = attach(fs, mountpoint, &config)?;

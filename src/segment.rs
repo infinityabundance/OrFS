@@ -17,6 +17,7 @@
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::os::unix::fs::FileExt;
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 
 use crate::error::{OrfsError, Result};
@@ -192,6 +193,11 @@ impl Segment {
         self.file.sync_all()?;
         Ok(())
     }
+
+    /// The underlying file descriptor, for `io_uring` submission.
+    pub(crate) fn raw_fd(&self) -> RawFd {
+        self.file.as_raw_fd()
+    }
 }
 
 /// A read-only, open segment used by the log reader.
@@ -228,6 +234,11 @@ impl ReadAt {
             done += n;
         }
         Ok(())
+    }
+
+    /// The underlying file descriptor, for `io_uring` submission.
+    pub(crate) fn raw_fd(&self) -> RawFd {
+        self.file.as_raw_fd()
     }
 }
 

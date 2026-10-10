@@ -1,0 +1,75 @@
+{
+  "environment": {
+    "io_uring_available": true,
+    "io_uring_disabled_sysctl": 0,
+    "io_uring_reason": null,
+    "kernel_release": "7.2.9-2-cachyos",
+    "likely_container": true,
+    "machine": "x86_64"
+  },
+  "generated_by": "benches/backing_io.rs",
+  "method": {
+    "append_ops": 20000,
+    "note": "Both engines run in the same process against the same scratch files. Sync uses pread/pwrite; uring uses io_uring READ/WRITE SQEs with per-op user_data and explicit CQE validation. Sync append is measured after a warm-up pass; buffers are page-cache resident (this is a syscall/submission micro-benchmark, not a device-durability benchmark).",
+    "read_ops": 40000,
+    "record_bytes": 4096
+  },
+  "orfs_version": "0.1.0",
+  "results": {
+    "ordered_write_fsync": {
+      "uring": {
+        "bytes_written": 4096,
+        "fsync_after_write_every_round": true,
+        "rounds": 1,
+        "short_writes": 0
+      }
+    },
+    "random_read": {
+      "speedup_uring_batched_over_sync": 0.39621961869388356,
+      "speedup_uring_over_sync": 0.1460367267847512,
+      "sync": {
+        "mb_per_s": 9443.315295317727,
+        "ops_per_s": 2305496.898270929,
+        "seconds": 0.017349839
+      },
+      "uring": {
+        "mb_per_s": 1379.0708557245766,
+        "ops_per_s": 336687.220635883,
+        "seconds": 0.118804628
+      },
+      "uring_batched": {
+        "mb_per_s": 3741.626785516908,
+        "ops_per_s": 913483.1019328389,
+        "seconds": 0.04378844
+      }
+    },
+    "sequential_append": {
+      "bytes": 81920000,
+      "speedup_uring_batched_over_sync": 0.5660431500253001,
+      "speedup_uring_over_sync": 0.21591000720868186,
+      "sync": {
+        "mb_per_s": 5739.976674337952,
+        "ops_per_s": 1401361.4927582892,
+        "seconds": 0.014271835
+      },
+      "uring": {
+        "mb_per_s": 1239.3184051339733,
+        "ops_per_s": 302567.97000341146,
+        "seconds": 0.06610085
+      },
+      "uring_batched": {
+        "mb_per_s": 3249.074477814001,
+        "ops_per_s": 793231.0736850589,
+        "seconds": 0.025213334
+      }
+    },
+    "uring_stats_after_workload": {
+      "completions": 120003,
+      "depth": 32,
+      "orphan_completions": 0,
+      "short_reads": 0,
+      "short_writes": 0,
+      "submits": 120003
+    }
+  }
+}

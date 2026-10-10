@@ -257,6 +257,12 @@ impl Model {
                 if dest.is_some() {
                     return Err(());
                 }
+                // Renaming a directory into itself or a descendant is a cycle.
+                // OrFS rejects this (`DirectoryCycle`); the reference model must
+                // too (the Ordinary branch below already does).
+                if self.is_dir(src) && self.is_ancestor(src, np) {
+                    return Err(());
+                }
                 self.move_entry(src, op, on, np, nn);
             }
             2 => {

@@ -356,12 +356,15 @@ fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
     };
 
     if backing_io == BackingIo::Uring {
-        // Honest fallback: the io_uring backing ring is Phase 5. The mount still
-        // works, backed by synchronous positional I/O.
-        eprintln!(
-            "orfs: warning: backing io_uring is not wired in this build (Phase 5); \
-             using synchronous backing I/O"
-        );
+        // Report whether io_uring can actually engage, honestly. The real
+        // engagement happens inside `fuse::run`, which prints the same truth.
+        match orfs::uring::probe_available() {
+            Ok(()) => eprintln!("orfs: io_uring backing I/O is available"),
+            Err(reason) => eprintln!(
+                "orfs: warning: io_uring unavailable ({reason}); \
+                 falling back to synchronous backing I/O"
+            ),
+        }
     }
     if !args.mountpoint.is_dir() {
         return Err(OrfsError::InvalidArgument(format!(
@@ -390,7 +393,7 @@ fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
          direct_io={}, readahead_kb={}); press Ctrl-C or run `orfs unmount {}`",
         args.backing.display(),
         args.mountpoint.display(),
-        BackingIo::Sync,
+        backing_io,
         opts.direct_io,
         opts.readahead_kb,
         args.mountpoint.display(),
@@ -696,6 +699,7 @@ fn recover(backing: &Path, json: bool) -> Result<()> {
 
 fn doctor(json: bool) -> Result<()> {
     let caps = orfs::capabilities::probe();
+    let uring = orfs::uring::probe_available();
 
     if json {
         let out = serde_json::json!({
@@ -704,6 +708,8 @@ fn doctor(json: bool) -> Result<()> {
             "capabilities": caps,
             "traditional_fuse_usable": caps.traditional_fuse_usable(),
             "fuse_over_io_uring_plausible": caps.fuse_over_io_uring_plausible(),
+            "backing_io_uring_available": uring.is_ok(),
+            "backing_io_uring_reason": uring.err(),
         });
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
         return Ok(());
@@ -732,6 +738,11 @@ fn doctor(json: bool) -> Result<()> {
     println!(
         "FUSE-over-io_uring plausible: {}",
         yesno(caps.fuse_over_io_uring_plausible())
+    );
+    println!(
+        "backing io_uring available:   {} ({})",
+        yesno(uring.is_ok()),
+        uring.as_ref().err().map(|s| s.as_str()).unwrap_or("ok")
     );
     Ok(())
 }

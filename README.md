@@ -26,16 +26,18 @@ but not yet wired rejects the request with its owning phase rather than
 pretending to work.
 
 Working today: `orfs doctor`, `orfs init`, `orfs inspect [--json]`,
-`orfs verify [--deep]`, and `orfs recover`.
+`orfs verify [--deep]`, `orfs recover`, and
+`orfs mount <backing> <mnt> --transport fuse --backing-io <sync|uring> ...`
+(plus `orfs unmount`).
 
 | Phase | Area | State |
 |---|---|---|
 | 0 | Environment, pinned container workflow, evidence foundation | complete |
 | 1 | Authoritative append-only log | complete |
-| 2 | Transactions and durability | — |
-| 3 | Namespace and extents | — |
-| 4 | Traditional FUSE | — |
-| 5 | Backing `io_uring` | — |
+| 2 | Transactions and durability | complete |
+| 3 | Namespace and extents | complete |
+| 4 | Traditional FUSE | complete |
+| 5 | Backing `io_uring` | complete |
 | 6 | Historical snapshots and index checkpoints | — |
 | 7 | Concealed manifestation | — |
 | 8 | EKBLOOM integration | — |

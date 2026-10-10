@@ -34,6 +34,7 @@ use crate::segment::{
 use crate::transaction::{
     bracket_checksum, verify_bracket, AbortReason, TxAbortPayload, TxBeginPayload, TxCommitPayload,
 };
+use crate::uring::{BackingEngine, ReadJob, UringConfig, UringReport};
 
 /// Default segment size policy: 64 MiB per segment file.
 pub const DEFAULT_SEGMENT_SIZE: u64 = 64 * 1024 * 1024;
@@ -668,6 +669,9 @@ pub struct Log {
     open_bracket: Vec<u8>,
     /// Number of records accumulated in `open_bracket` (includes `TX_BEGIN`).
     open_bracket_records: u64,
+    /// The backing-I/O engine. [`BackingEngine::Sync`] unless io_uring was
+    /// explicitly and successfully engaged (research §17 Domain A, §20).
+    io: BackingEngine,
 }
 
 impl Log {
@@ -711,6 +715,7 @@ impl Log {
             tail: None,
             open_bracket: Vec::new(),
             open_bracket_records: 0,
+            io: BackingEngine::Sync,
         })
     }
 
@@ -780,6 +785,7 @@ impl Log {
             tail: scan.tail,
             open_bracket: Vec::new(),
             open_bracket_records: 0,
+            io: BackingEngine::Sync,
         })
     }
 
@@ -924,7 +930,16 @@ impl Log {
                 "append reservation written out of order".to_string(),
             ));
         }
-        w.seg.write_at(res.physical_offset, bytes)?;
+        match &self.io {
+            BackingEngine::Sync => w.seg.write_at(res.physical_offset, bytes)?,
+            BackingEngine::Uring(rings) => {
+                let fd = w.seg.raw_fd();
+                rings
+                    .write()
+                    .borrow_mut()
+                    .write_at_all(fd, res.physical_offset, bytes)?;
+            }
+        }
         w.valid = w.valid.checked_add(res.len).ok_or(OrfsError::Overflow {
             what: "segment valid length",
         })?;
@@ -1159,7 +1174,16 @@ impl Log {
                 "partial reservation write out of order".into(),
             ));
         }
-        w.seg.write_at(res.physical_offset, prefix)?;
+        match &self.io {
+            BackingEngine::Sync => w.seg.write_at(res.physical_offset, prefix)?,
+            BackingEngine::Uring(rings) => {
+                let fd = w.seg.raw_fd();
+                rings
+                    .write()
+                    .borrow_mut()
+                    .write_at_all(fd, res.physical_offset, prefix)?;
+            }
+        }
         Ok(())
     }
 
@@ -1170,7 +1194,16 @@ impl Log {
     pub(crate) fn read_back(&self, res: &AppendReservation) -> Result<Vec<u8>> {
         let reader = ReadAt::open(&self.dir, res.segment_id)?;
         let mut buf = vec![0u8; res.len as usize];
-        reader.read_exact_at(res.physical_offset, &mut buf)?;
+        match &self.io {
+            BackingEngine::Sync => reader.read_exact_at(res.physical_offset, &mut buf)?,
+            BackingEngine::Uring(rings) => {
+                rings.read().borrow_mut().read_exact_at(
+                    reader.raw_fd(),
+                    res.physical_offset,
+                    &mut buf,
+                )?;
+            }
+        }
         Ok(buf)
     }
 
@@ -1250,7 +1283,15 @@ impl Log {
                 "segment rollover with outstanding reservations".to_string(),
             ));
         }
-        w.seg.sync()?;
+        match &self.io {
+            BackingEngine::Sync => w.seg.sync()?,
+            BackingEngine::Uring(rings) => {
+                rings
+                    .write()
+                    .borrow_mut()
+                    .fsync_order_barrier(w.seg.raw_fd())?;
+            }
+        }
         let next_id =
             w.id.checked_add(w.valid)
                 .ok_or(OrfsError::Overflow { what: "segment id" })?;
@@ -1276,9 +1317,66 @@ impl Log {
     /// Flush and fsync the current segment (durability hook).
     pub fn sync(&mut self) -> Result<()> {
         if let Some(w) = &self.writer {
-            w.seg.sync()?;
+            match &self.io {
+                BackingEngine::Sync => w.seg.sync()?,
+                // Explicit ordered durability barrier: the fsync is flagged
+                // IOSQE_IO_DRAIN so it cannot start before earlier SQEs complete.
+                BackingEngine::Uring(rings) => {
+                    rings
+                        .write()
+                        .borrow_mut()
+                        .fsync_order_barrier(w.seg.raw_fd())?;
+                }
+            }
         }
         Ok(())
+    }
+
+    /// Attempt to engage the io_uring backing engine (research §17 Domain A).
+    ///
+    /// On success every subsequent authoritative write, read, and `fsync` in this
+    /// log is performed through `io_uring` and the returned report has
+    /// `engaged: true`. If the ring cannot be created (or a required opcode is
+    /// unsupported) the log keeps using synchronous positional I/O and the report
+    /// carries the reason. This method never weakens any correctness or durability
+    /// contract: it only changes *how* the same bytes are moved.
+    pub fn enable_uring(&mut self, cfg: &UringConfig) -> UringReport {
+        match BackingEngine::engage(cfg) {
+            Ok(engine) => {
+                let engaged = engine.is_uring();
+                let (depth, read_depth, registered_buffers) = match engine.rings() {
+                    Some(r) => (r.write_depth(), r.read_depth(), r.registered_buffers()),
+                    None => (0, 0, 0),
+                };
+                self.io = engine;
+                UringReport {
+                    requested: cfg.enabled,
+                    engaged,
+                    depth,
+                    read_depth,
+                    registered_buffers,
+                    reason: None,
+                }
+            }
+            Err(reason) => UringReport {
+                requested: true,
+                engaged: false,
+                depth: cfg.write_depth,
+                read_depth: cfg.read_depth,
+                registered_buffers: 0,
+                reason: Some(reason),
+            },
+        }
+    }
+
+    /// Whether this log's backing I/O actually runs on io_uring.
+    pub fn backing_io_is_uring(&self) -> bool {
+        self.io.is_uring()
+    }
+
+    /// Combined `(write_ring, read_ring)` io_uring statistics, if engaged.
+    pub fn uring_stats(&self) -> Option<(crate::uring::UringStats, crate::uring::UringStats)> {
+        self.io.rings().map(|r| r.stats())
     }
 
     /// Replay validated records from the start of the log up to `end`.
@@ -1330,7 +1428,9 @@ impl Log {
                 limit,
             });
         }
-        let mut out = Vec::with_capacity(len as usize);
+        // Plan the segment-by-segment reads first, so the io_uring path can issue
+        // them concurrently (Ring R) while the sync path performs them in order.
+        let mut plan: Vec<(ReadAt, u64, usize)> = Vec::new();
         let mut cur = offset;
         while cur < end {
             let (seg_id, phys) = self.locator.locate(cur).ok_or_else(|| {
@@ -1344,10 +1444,32 @@ impl Log {
             })?;
             let want = (end - cur).min(avail) as usize;
             let reader = ReadAt::open(&self.dir, seg_id)?;
-            let mut buf = vec![0u8; want];
-            reader.read_exact_at(phys, &mut buf)?;
-            out.extend_from_slice(&buf);
+            plan.push((reader, phys, want));
             cur += want as u64;
+        }
+
+        let mut out = Vec::with_capacity(len as usize);
+        match &self.io {
+            BackingEngine::Sync => {
+                for (reader, phys, want) in &plan {
+                    let mut buf = vec![0u8; *want];
+                    reader.read_exact_at(*phys, &mut buf)?;
+                    out.extend_from_slice(&buf);
+                }
+            }
+            BackingEngine::Uring(rings) => {
+                let mut bufs: Vec<Vec<u8>> =
+                    plan.iter().map(|(_, _, want)| vec![0u8; *want]).collect();
+                let mut jobs: Vec<ReadJob<'_>> = plan
+                    .iter()
+                    .zip(bufs.iter_mut())
+                    .map(|((reader, phys, _), buf)| ReadJob::new(reader.raw_fd(), *phys, buf))
+                    .collect();
+                rings.read().borrow_mut().read_batch(&mut jobs)?;
+                for buf in &bufs {
+                    out.extend_from_slice(buf);
+                }
+            }
         }
         Ok(out)
     }

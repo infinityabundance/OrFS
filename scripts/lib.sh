@@ -65,6 +65,52 @@ docker_run() {
         "$ORFS_IMAGE" "$@"
 }
 
+# docker_run_uring: identical to docker_run but with an unconfined seccomp
+# profile. PROVEN NECESSARY, NOT ASSUMED: on this host the default Docker seccomp
+# profile blocks `io_uring_setup` with EPERM, while `--security-opt
+# seccomp=unconfined` permits it (see scripts/container-uring-test.sh, which
+# re-proves this at run time with scripts/uring-probe.c).
+docker_run_uring() {
+    exec docker run --rm \
+        --memory="$ORFS_MEM_LIMIT" \
+        --memory-swap="$ORFS_MEMSWAP_LIMIT" \
+        --cpus="$ORFS_CPUS" \
+        --pids-limit="$ORFS_PIDS" \
+        --ulimit core=0 \
+        --cap-drop=ALL \
+        --security-opt=no-new-privileges \
+        --security-opt seccomp=unconfined \
+        -v "$ORFS_PARENT_DIR":"$ORFS_PARENT_DIR" \
+        -w "$ORFS_PROJECT_DIR" \
+        -u "$(id -u):$(id -g)" \
+        -e HOME=/tmp \
+        -e CARGO_HOME="$ORFS_CARGO_HOME" \
+        -e RUSTUP_HOME=/usr/local/rustup \
+        -e CARGO_TARGET_DIR="$ORFS_TARGET_DIR" \
+        -e CARGO_TERM_COLOR=never \
+        -e RUSTUP_TOOLCHAIN=1.99.0 \
+        "$ORFS_IMAGE" "$@"
+}
+
+# docker_probe_io_uring_default: returns 0 when the DEFAULT seccomp profile
+# permits io_uring_setup (the probe compiles and runs scripts/uring-probe.c under
+# the exact default flags). Does not `exec`, so it can be used as a test.
+docker_probe_io_uring_default() {
+    docker run --rm \
+        --memory="$ORFS_MEM_LIMIT" \
+        --cpus="$ORFS_CPUS" \
+        --pids-limit="$ORFS_PIDS" \
+        --ulimit core=0 \
+        --cap-drop=ALL \
+        --security-opt=no-new-privileges \
+        -v "$ORFS_PARENT_DIR":"$ORFS_PARENT_DIR" \
+        -w "$ORFS_PROJECT_DIR" \
+        -u "$(id -u):$(id -g)" \
+        -e HOME=/tmp \
+        "$ORFS_IMAGE" sh -c 'cc scripts/uring-probe.c -o /tmp/orfs-uring-probe && /tmp/orfs-uring-probe' \
+        >/dev/null 2>&1
+}
+
 # docker_run_kmount: for tests that must actually mount FUSE. Adds only the
 # device access, capabilities, and (where required) unconfined AppArmor profile
 # that the FUSE mount tests demonstrably need. Never used by default.

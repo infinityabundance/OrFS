@@ -5,3 +5,6 @@
 /evidence/**/*.scratch
 # mount test scratch outside docker only
 /mnt-scratch
+
+# Originating design documents kept local, not published.
+/research/

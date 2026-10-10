@@ -13,10 +13,11 @@ use clap::{Parser, Subcommand};
 use orfs::commit::DurabilityMode;
 use orfs::fuse::{self, BackingIo, MountOptions, StatfsMode};
 use orfs::log::{scan_log, OpenMode, TailInfo, DEFAULT_SEGMENT_SIZE};
-use orfs::record::record_type_name;
+use orfs::namespace::SnapshotRootPayload;
+use orfs::record::{record_type_name, RecordType};
 use orfs::segment::{segment_file_name, SegmentExtent};
 use orfs::volume::Volume;
-use orfs::{OrfsError, Result};
+use orfs::{checkpoint, OrfsError, Result};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -284,15 +285,15 @@ fn run(cli: &Cli) -> Result<()> {
         Command::Verify { backing, deep } => verify(backing, *deep, cli.json),
         Command::Recover { backing } => recover(backing, cli.json),
         Command::Snapshot { cmd } => match cmd {
-            SnapshotCommand::List { .. } => {
-                phase("snapshot list", "Phase 6 (snapshots & checkpoints)")
+            SnapshotCommand::List { backing } => snapshot_list(backing, cli.json),
+            SnapshotCommand::Inspect { backing, root } => {
+                snapshot_inspect(backing, *root, cli.json)
             }
-            SnapshotCommand::Inspect { .. } => {
-                phase("snapshot inspect", "Phase 6 (snapshots & checkpoints)")
-            }
-            SnapshotCommand::Mount { .. } => {
-                phase("snapshot mount", "Phase 6 (snapshots & checkpoints)")
-            }
+            SnapshotCommand::Mount {
+                backing,
+                root,
+                mountpoint,
+            } => snapshot_mount_cmd(backing, *root, mountpoint),
         },
         Command::Manifest { .. } => phase("manifest", "Phase 8 (EKBLOOM integration)"),
         Command::Grow { .. } => phase("grow", "Phase 7 (concealed manifestation)"),
@@ -412,6 +413,202 @@ fn unmount_cmd(mountpoint: &Path, json: bool) -> Result<()> {
         println!("unmounted {}", mountpoint.display());
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// snapshot: list / inspect / mount
+// ---------------------------------------------------------------------------
+
+fn hex32(bytes: &[u8; 32]) -> String {
+    let mut s = String::with_capacity(64);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
+/// List the committed roots available as snapshots: the current committed root,
+/// the named `SNAPSHOT_ROOT` publications, and the `INDEX_CHECKPOINT` records.
+///
+/// Every committed transaction boundary is a valid snapshot root (research §2,
+/// I3); this command lists the *named* and *checkpointed* ones and reports the
+/// total boundary count.
+fn snapshot_list(backing: &Path, json: bool) -> Result<()> {
+    let vol = Volume::open(backing, OpenMode::ReadOnly)?;
+    let committed = vol.log.committed_end_offset();
+
+    let named_raw = vol
+        .log
+        .scan_records_of_types(committed, &[RecordType::SnapshotRoot])?;
+    let mut named = Vec::new();
+    for r in &named_raw {
+        let p = SnapshotRootPayload::decode(&r.payload)?;
+        named.push(serde_json::json!({
+            "name": String::from_utf8_lossy(&p.name).to_string(),
+            "root": p.root,
+            "record_offset": r.offset,
+        }));
+    }
+
+    let checkpoints = checkpoint::discover_checkpoints(&vol.log, committed)?;
+    let checkpoint_json: Vec<serde_json::Value> = checkpoints
+        .iter()
+        .map(|c| {
+            serde_json::json!({
+                "record_offset": c.offset,
+                "payload_bytes": c.raw_len,
+                "valid": c.payload.is_some(),
+                "root": c.root(),
+            })
+        })
+        .collect();
+
+    if json {
+        let out = serde_json::json!({
+            "schema": "orfs.snapshot.list.v1",
+            "volume": backing.display().to_string(),
+            "uuid": vol.meta.uuid_string(),
+            "committed_root": committed,
+            "transaction_boundaries": vol.log.boundaries().len(),
+            "named_snapshots": named,
+            "checkpoints": checkpoint_json,
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
+
+    println!("volume {} ({})", backing.display(), vol.meta.uuid_string());
+    println!("  committed root:         {committed}");
+    println!(
+        "  transaction boundaries: {} (every boundary is a valid snapshot root)",
+        vol.log.boundaries().len()
+    );
+    if named.is_empty() {
+        println!("  named snapshots:        none");
+    } else {
+        println!("  named snapshots:");
+        for n in &named {
+            println!(
+                "    {} -> root {} (record offset {})",
+                n["name"].as_str().unwrap_or(""),
+                n["root"],
+                n["record_offset"]
+            );
+        }
+    }
+    if checkpoint_json.is_empty() {
+        println!("  index checkpoints:      none");
+    } else {
+        println!("  index checkpoints:");
+        for c in &checkpoint_json {
+            println!(
+                "    record offset {} -> {} ({} bytes, valid={})",
+                c["record_offset"], c["root"], c["payload_bytes"], c["valid"]
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Inspect a historical root: reconstruct its namespace state and report the
+/// identity and summary, plus the top-level entries as of that root.
+fn snapshot_inspect(backing: &Path, root: u64, json: bool) -> Result<()> {
+    let snap = orfs::snapshot::Snapshot::open_dir(backing, root)?;
+    let identity = snap.identity();
+    let entries = snap.readdir(orfs::index::ROOT_INODE).unwrap_or_default();
+    let entries_json: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|(name, child)| {
+            let st = snap.getattr(*child).ok();
+            serde_json::json!({
+                "name": String::from_utf8_lossy(name).to_string(),
+                "inode": child,
+                "kind": st.as_ref().map(|s| format!("{:?}", s.kind).to_lowercase()),
+                "size": st.as_ref().map(|s| s.size),
+            })
+        })
+        .collect();
+
+    // Named snapshots that point at this root.
+    let vol = Volume::open(backing, OpenMode::ReadOnly)?;
+    let mut names = Vec::new();
+    for r in vol
+        .log
+        .scan_records_of_types(vol.log.committed_end_offset(), &[RecordType::SnapshotRoot])?
+    {
+        if let Ok(p) = SnapshotRootPayload::decode(&r.payload) {
+            if p.root == root {
+                names.push(String::from_utf8_lossy(&p.name).to_string());
+            }
+        }
+    }
+
+    if json {
+        let out = serde_json::json!({
+            "schema": "orfs.snapshot.inspect.v1",
+            "reference": identity.to_string(),
+            "uuid": identity.uuid_string(),
+            "root": root,
+            "read_only": true,
+            "is_committed_boundary": vol.log.is_boundary(root),
+            "inode_count": snap.index().inode_count(),
+            "dentry_count": snap.index().dentry_count(),
+            "index_digest_blake3": hex32(&snap.index().canonical_digest()),
+            "named_at_root": names,
+            "entries": entries_json,
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
+
+    println!("snapshot {identity}");
+    println!("  root:          {root}");
+    println!("  committed:     {}", vol.log.is_boundary(root));
+    println!("  read-only:     true");
+    println!("  inodes:        {}", snap.index().inode_count());
+    println!("  dentries:      {}", snap.index().dentry_count());
+    println!(
+        "  index digest:  {}",
+        hex32(&snap.index().canonical_digest())
+    );
+    if !names.is_empty() {
+        println!("  named:         {}", names.join(", "));
+    }
+    println!("  top-level entries:");
+    for e in &entries_json {
+        println!(
+            "    {} (inode {}, kind {}, size {})",
+            e["name"].as_str().unwrap_or(""),
+            e["inode"],
+            e["kind"],
+            e["size"]
+        );
+    }
+    Ok(())
+}
+
+/// Mount a historical root read-only through FUSE.
+fn snapshot_mount_cmd(backing: &Path, root: u64, mountpoint: &Path) -> Result<()> {
+    if !mountpoint.is_dir() {
+        return Err(OrfsError::InvalidArgument(format!(
+            "mount point {} is not an existing directory",
+            mountpoint.display()
+        )));
+    }
+    let opts = MountOptions {
+        read_only: true,
+        durability: DurabilityMode::Ordered,
+        statfs: StatfsMode::PhysicalSafe,
+        ..Default::default()
+    };
+    eprintln!(
+        "orfs: mounting snapshot root {root} of {} at {} (read-only); \
+         press Ctrl-C or run `orfs unmount {}`",
+        backing.display(),
+        mountpoint.display(),
+        mountpoint.display(),
+    );
+    fuse::run_snapshot(backing, mountpoint, root, &opts)
 }
 
 // ---------------------------------------------------------------------------

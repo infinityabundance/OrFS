@@ -93,6 +93,12 @@ pub enum OrfsError {
     #[error("volume is read-only: {0}")]
     ReadOnly(String),
 
+    /// A live committed-root pin still needs a resource that an operation would
+    /// discard (for example a segment a snapshot read depends on). The operation
+    /// is refused rather than silently withdrawing committed history.
+    #[error("resource is pinned by a historical root: {0}")]
+    Pinned(String),
+
     /// Checked integer arithmetic overflowed while decoding an untrusted value.
     #[error("integer overflow while decoding {what}")]
     Overflow { what: &'static str },
@@ -125,6 +131,7 @@ impl OrfsError {
             OrfsError::Compatibility(_) => libc::EPROTONOSUPPORT,
             OrfsError::OutOfBounds { .. } => libc::EINVAL,
             OrfsError::ReadOnly(_) => libc::EROFS,
+            OrfsError::Pinned(_) => libc::EBUSY,
             OrfsError::Overflow { .. } => libc::EIO,
             OrfsError::Failpoint(_) => libc::EIO,
         }

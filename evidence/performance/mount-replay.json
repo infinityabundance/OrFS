@@ -1,0 +1,48 @@
+{
+  "build_profile": "debug (unoptimized); ratios are meaningful, absolute times are not",
+  "generator": "tests/snapshot_model.rs",
+  "method": "best-of-three in-process reconstruction on identical logs; checkpoint mount = header-scan + load newest valid checkpoint + replay tail",
+  "note": "Mount is NOT constant-time: discovery is an O(#records) header scan and replay is O(bytes after the checkpoint). Both are measured, not claimed. Checkpoints pay off when the retained log dwarfs the index.",
+  "rows": [
+    {
+      "bytes_replayed": 204936,
+      "checkpoint_interval": 32,
+      "checkpoint_mount_micros": 3696,
+      "checkpoint_root": 1239811,
+      "checkpoints_found": 7,
+      "full_replay_micros": 3454,
+      "records_replayed": 96,
+      "retained_bytes": 1444747,
+      "speedup_full_over_checkpoint": 0.9345238095238095,
+      "used_checkpoint": true,
+      "writes": 256
+    },
+    {
+      "bytes_replayed": 787612,
+      "checkpoint_interval": 128,
+      "checkpoint_mount_micros": 8083,
+      "checkpoint_root": 4695115,
+      "checkpoints_found": 7,
+      "full_replay_micros": 10173,
+      "records_replayed": 384,
+      "retained_bytes": 5482727,
+      "speedup_full_over_checkpoint": 1.258567363602623,
+      "used_checkpoint": true,
+      "writes": 1024
+    },
+    {
+      "bytes_replayed": 1565278,
+      "checkpoint_interval": 256,
+      "checkpoint_mount_micros": 16259,
+      "checkpoint_root": 9304241,
+      "checkpoints_found": 7,
+      "full_replay_micros": 20827,
+      "records_replayed": 768,
+      "retained_bytes": 10869519,
+      "speedup_full_over_checkpoint": 1.2809520880742973,
+      "used_checkpoint": true,
+      "writes": 2048
+    }
+  ],
+  "schema": "orfs.evidence.mount-replay.v1"
+}

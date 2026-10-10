@@ -47,6 +47,7 @@ use crate::error::{OrfsError, Result};
 use crate::inode::{InodeStat, InodeType, Timespec};
 use crate::log::OpenMode;
 use crate::namespace::{Namespace, OrfsCore, RenameMode, SetAttr};
+use crate::snapshot::Snapshot;
 
 /// The FUSE root inode (`FUSE_ROOT_ID`), shared with the namespace engine.
 pub const ROOT_INODE: u64 = 1;
@@ -1889,7 +1890,66 @@ pub fn run(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<()>
     eprintln!("orfs: {}", report.describe());
     let fs = OrfsFuse::new(core, backing.to_path_buf(), *opts);
     let config = build_config(opts);
-    let (mut session, _notifier) = attach(fs, mountpoint, &config)?;
+    run_session(fs, mountpoint, &config)
+}
+
+/// Mount a historical snapshot **read-only** and run in the foreground.
+///
+/// The mount serves the namespace exactly as of `root`: every read is answered
+/// from the prefix `L[0:root]`, and every mutation returns `EROFS` because the
+/// snapshot core is read-only *and* the kernel mount is flagged read-only
+/// (research §7.4, §14).
+pub fn run_snapshot(
+    backing: &Path,
+    mountpoint: &Path,
+    root: u64,
+    opts: &MountOptions,
+) -> Result<()> {
+    let opts = MountOptions {
+        read_only: true,
+        ..*opts
+    };
+    let snap = Snapshot::open_dir(backing, root)?;
+    eprintln!(
+        "orfs: snapshot mount of {} at root {root} (read-only; pinned for the mount lifetime)",
+        snap.identity()
+    );
+    let fs = OrfsFuse::new(snap, backing.to_path_buf(), opts);
+    let config = build_config(&opts);
+    run_session(fs, mountpoint, &config)
+}
+
+/// Mount a historical snapshot read-only in the background (tests/embedding).
+pub fn spawn_snapshot(
+    backing: &Path,
+    mountpoint: &Path,
+    root: u64,
+    opts: &MountOptions,
+) -> Result<OrfsMount> {
+    let opts = MountOptions {
+        read_only: true,
+        ..*opts
+    };
+    let snap = Snapshot::open_dir(backing, root)?;
+    let fs = OrfsFuse::new(snap, backing.to_path_buf(), opts);
+    let config = build_config(&opts);
+    let (session, notifier) = attach(fs, mountpoint, &config)?;
+    let session = session.spawn()?;
+    Ok(OrfsMount {
+        session,
+        notifier,
+        backing_io_used: BackingIo::Sync,
+        durability: opts.durability,
+    })
+}
+
+/// Run a constructed filesystem session until unmounted or interrupted.
+fn run_session<C: OrfsCore + Send + 'static>(
+    fs: OrfsFuse<C>,
+    mountpoint: &Path,
+    config: &Config,
+) -> Result<()> {
+    let (mut session, _notifier) = attach(fs, mountpoint, config)?;
 
     INTERRUPTED.store(false, Ordering::SeqCst);
     WATCH_STOP.store(false, Ordering::SeqCst);

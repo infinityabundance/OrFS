@@ -56,8 +56,9 @@ pub const TX_BEGIN_RECORD_LEN: u64 = (HEADER_LEN + TX_BEGIN_PAYLOAD_LEN + FOOTER
 pub const SNAPSHOT_ROOT_MAGIC: u32 = 0x3152_4E53;
 /// `INDEX_CHECKPOINT` magic; LE bytes spell `ICP1`.
 pub const INDEX_CHECKPOINT_MAGIC: u32 = 0x3150_4349;
-/// Fixed length of an `INDEX_CHECKPOINT` payload.
-pub const INDEX_CHECKPOINT_PAYLOAD_LEN: usize = 64;
+/// Fixed length of the `INDEX_CHECKPOINT` payload prefix, before the embedded
+/// serialized index bytes and the trailing CRC32C.
+pub const INDEX_CHECKPOINT_FIXED_LEN: usize = 64;
 
 /// Payload of `SNAPSHOT_ROOT`: publish a named committed root.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,39 +106,79 @@ impl SnapshotRootPayload {
     }
 }
 
-/// Payload of `INDEX_CHECKPOINT`: an accelerator/verification checkpoint.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Payload of `INDEX_CHECKPOINT`: an authoritative index checkpoint (research
+/// §24).
+///
+/// Unlike the original stub, a checkpoint now carries the **full serialized
+/// index snapshot** at `root`, so mounting can *load* it (reconstruct a verified
+/// namespace state) rather than merely verify a header. Mount-time recovery
+/// loads a valid checkpoint and then replays only the records committed after
+/// `root` — instead of replaying the whole log from genesis.
+///
+/// Layout (little-endian):
+///
+/// ```text
+///   magic            u32   (ICP1)
+///   root             u64   committed end offset this index reflects
+///   inode_count      u64   asserted live inode count at root
+///   dentry_count     u64   asserted live dentry count at root
+///   index_digest     [32]  blake3 of the canonical index (Index::canonical_digest)
+///   index_len        u32   length of the embedded serialized index snapshot
+///   index_bytes      [index_len]   the index snapshot document
+///   crc32c           u32   over every preceding byte of this payload
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexCheckpointPayload {
     pub root: u64,
     pub inode_count: u64,
     pub dentry_count: u64,
     pub digest: [u8; 32],
+    /// The serialized [`crate::index::Index`] snapshot at `root` (the format
+    /// produced by `Index::encode_snapshot`).
+    pub index_bytes: Vec<u8>,
 }
 
 impl IndexCheckpointPayload {
+    /// The fixed prefix length (before `index_bytes` and the trailing CRC32C).
+    pub const FIXED_LEN: usize = INDEX_CHECKPOINT_FIXED_LEN;
+
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = vec![0u8; INDEX_CHECKPOINT_PAYLOAD_LEN];
+        let mut b = Vec::with_capacity(Self::FIXED_LEN + self.index_bytes.len() + 4);
+        b.resize(Self::FIXED_LEN, 0);
         crate::record::put_u32(&mut b, 0, INDEX_CHECKPOINT_MAGIC);
         crate::record::put_u64(&mut b, 4, self.root);
         crate::record::put_u64(&mut b, 12, self.inode_count);
         crate::record::put_u64(&mut b, 20, self.dentry_count);
         b[28..60].copy_from_slice(&self.digest);
-        let check = crc32c::crc32c(&b[..60]);
-        crate::record::put_u32(&mut b, 60, check);
+        crate::record::put_u32(&mut b, 60, self.index_bytes.len() as u32);
+        b.extend_from_slice(&self.index_bytes);
+        let check = crc32c::crc32c(&b);
+        b.extend_from_slice(&check.to_le_bytes());
         b
     }
 
     pub fn decode(buf: &[u8]) -> Result<IndexCheckpointPayload> {
-        if buf.len() != INDEX_CHECKPOINT_PAYLOAD_LEN
+        if buf.len() < INDEX_CHECKPOINT_FIXED_LEN + 4
             || crate::record::get_u32(buf, 0) != INDEX_CHECKPOINT_MAGIC
         {
             return Err(OrfsError::Corrupt(
                 "INDEX_CHECKPOINT payload bad magic or length".into(),
             ));
         }
-        if crate::record::get_u32(buf, 60) != crc32c::crc32c(&buf[..60]) {
+        let n = buf.len();
+        if crate::record::get_u32(buf, n - 4) != crc32c::crc32c(&buf[..n - 4]) {
             return Err(OrfsError::Corrupt(
                 "INDEX_CHECKPOINT payload checksum mismatch".into(),
+            ));
+        }
+        let index_len = crate::record::get_u32(buf, 60) as usize;
+        let start = INDEX_CHECKPOINT_FIXED_LEN;
+        let end = start.checked_add(index_len).ok_or(OrfsError::Overflow {
+            what: "checkpoint index length",
+        })?;
+        if end + 4 != n {
+            return Err(OrfsError::Corrupt(
+                "INDEX_CHECKPOINT payload length disagreement".into(),
             ));
         }
         let mut digest = [0u8; 32];
@@ -147,6 +188,7 @@ impl IndexCheckpointPayload {
             inode_count: crate::record::get_u64(buf, 12),
             dentry_count: crate::record::get_u64(buf, 20),
             digest,
+            index_bytes: buf[start..end].to_vec(),
         })
     }
 }
@@ -198,6 +240,8 @@ pub struct Namespace {
     volume: Volume,
     index: Index,
     durability: DurabilityMode,
+    /// How the index was reconstructed at open time (checkpoint-aware recovery).
+    mount_report: Option<crate::checkpoint::MountReport>,
 }
 
 impl Namespace {
@@ -226,12 +270,15 @@ impl Namespace {
     }
 
     fn from_volume(volume: Volume, durability: DurabilityMode) -> Result<Namespace> {
-        let root = volume.log.committed_end_offset();
-        let index = Index::from_log(&volume.log, root)?;
+        // Checkpoint-aware mount: discover the newest valid index checkpoint,
+        // load and validate it, then replay only the records committed after it;
+        // fall back to an earlier checkpoint or to full replay (research §24).
+        let (index, mount_report) = crate::checkpoint::mount_index(&volume.log)?;
         Ok(Namespace {
             volume,
             index,
             durability,
+            mount_report: Some(mount_report),
         })
     }
 
@@ -258,6 +305,11 @@ impl Namespace {
     /// The durability profile used by this namespace's commits.
     pub fn durability(&self) -> DurabilityMode {
         self.durability
+    }
+
+    /// The measured index-reconstruction (mount) report, if available.
+    pub fn mount_report(&self) -> Option<&crate::checkpoint::MountReport> {
+        self.mount_report.as_ref()
     }
 
     /// Rebuild the index from scratch by replaying the log.
@@ -934,15 +986,31 @@ impl Namespace {
         Ok(snapshot_root)
     }
 
-    /// Append an index checkpoint over the current index.
+    /// Append an index checkpoint over the current index (research §24).
+    ///
+    /// The record embeds the full serialized index at the current committed
+    /// root, so a later mount can load a verified namespace state instead of
+    /// replaying the whole log. If the serialized index would exceed the record
+    /// payload limit the checkpoint is refused (an explicit error, never a
+    /// silently truncated accelerator).
     pub fn write_index_checkpoint(&mut self) -> Result<()> {
+        let root = self.index.root();
+        let index_bytes = self.index.encode_snapshot()?;
         let payload = IndexCheckpointPayload {
-            root: self.index.root(),
+            root,
             inode_count: self.index.inode_count() as u64,
             dentry_count: self.index.dentry_count() as u64,
             digest: self.index.canonical_digest(),
+            index_bytes,
         }
         .encode();
+        if payload.len() as u64 > crate::record::MAX_PAYLOAD_LEN {
+            return Err(OrfsError::Unsupported(format!(
+                "index checkpoint is {} bytes, larger than the {}-byte record payload limit",
+                payload.len(),
+                crate::record::MAX_PAYLOAD_LEN
+            )));
+        }
         let mut plan = self.plan()?;
         let inode = ROOT_INODE;
         let prev = plan.prev_for(inode, &self.index);
@@ -1039,14 +1107,26 @@ fn adjust_parent_nlink_for_swap(
 }
 
 /// The derived, read-only `user.orfs.*` attributes (research §8).
-const DERIVED_XATTRS: [&str; 4] = [
+///
+/// These are surfaced for every inode by [`Namespace::getxattr`] and
+/// [`Namespace::listxattr`] (and by [`crate::snapshot::Snapshot`], which reads
+/// them as of its historical root). Their values obey the ordinary extended-
+/// attribute size and access rules; they are computed, never stored.
+///
+/// The root values are **references**, not contents: `user.orfs.creation_root`
+/// and `user.orfs.current_root` identify positions in the authoritative log. A
+/// root number alone does not contain the filesystem history; the corresponding
+/// log body must be available to reproduce the state (research §8).
+pub(crate) const DERIVED_XATTRS: [&str; 6] = [
     "user.orfs.creation_root",
     "user.orfs.current_root",
     "user.orfs.history_available",
     "user.orfs.version",
+    "user.orfs.manifested_bytes",
+    "user.orfs.ekbloom_profile",
 ];
 
-fn derived_xattr(inode: &Inode, name: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn derived_xattr(inode: &Inode, name: &[u8]) -> Option<Vec<u8>> {
     let value = match name {
         b"user.orfs.creation_root" => inode
             .versions
@@ -1057,6 +1137,10 @@ fn derived_xattr(inode: &Inode, name: &[u8]) -> Option<Vec<u8>> {
         b"user.orfs.current_root" => inode.latest_record_offset.to_string(),
         b"user.orfs.version" => inode.current_version().to_string(),
         b"user.orfs.history_available" => "1".to_string(),
+        // No acceleration structure is manifested in Plane C yet, so the honest
+        // reported size is zero and the profile is `none` (research §10, §33).
+        b"user.orfs.manifested_bytes" => "0".to_string(),
+        b"user.orfs.ekbloom_profile" => "none".to_string(),
         _ => return None,
     };
     Some(value.into_bytes())
@@ -1302,6 +1386,7 @@ mod tests {
             inode_count: 4,
             dentry_count: 3,
             digest: [9u8; 32],
+            index_bytes: b"{\"schema\":\"orfs.index.snapshot.v1\"}".to_vec(),
         };
         assert_eq!(IndexCheckpointPayload::decode(&c.encode()).unwrap(), c);
         let mut bad = c.encode();

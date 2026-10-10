@@ -23,6 +23,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use crate::error::{OrfsError, Result};
 use crate::failpoints::{self, Failpoint};
@@ -574,6 +575,26 @@ impl RecordReader {
         }
     }
 
+    /// Iterate the canonical records in `[start, end)`.
+    ///
+    /// `start` must be a committed transaction boundary (a record boundary), so
+    /// that iteration begins exactly at a framed record. Used by checkpoint
+    /// recovery to replay only the records committed after a checkpoint root.
+    pub fn starting_at(
+        dir: &Path,
+        extents: &[SegmentExtent],
+        start: u64,
+        end: u64,
+    ) -> RecordReader {
+        RecordReader {
+            reader: None,
+            dir: dir.to_path_buf(),
+            extents: extents.to_vec(),
+            end,
+            offset: start,
+        }
+    }
+
     fn locate(&self, offset: u64) -> Option<(u64, u64, u64)> {
         let idx = self.extents.partition_point(|e| e.id <= offset);
         if idx == 0 {
@@ -650,6 +671,126 @@ impl Iterator for RecordReader {
     }
 }
 
+/// One committed record's payload selected by type during a header scan
+/// (used for checkpoint discovery; see [`Log::scan_records_of_types`]).
+#[derive(Debug, Clone)]
+pub struct RawRecord {
+    /// The logical offset of the record's first byte.
+    pub offset: u64,
+    /// The record's known type.
+    pub record_type: RecordType,
+    /// The raw typed payload bytes.
+    pub payload: Vec<u8>,
+}
+
+// ---------------------------------------------------------------------------
+// Committed-root pinning
+// ---------------------------------------------------------------------------
+
+/// A shared registry of pinned committed roots (research §7.4, §24, §26).
+///
+/// A root `R` selects the historical prefix `L[0:R]`. While a snapshot or a
+/// read-only handle is reading that prefix, the segments covering it must not be
+/// quarantined or rolled over underneath it. Compile-time borrowing already
+/// prevents a single [`Log`] from being mutated while it is read through `&self`;
+/// this registry extends the [`crate::buffers`] pin discipline to **roots** so
+/// that *distinct* handles sharing one volume (a writer and its readers, or a
+/// live mount and a snapshot mount) observe the same rule at run time.
+///
+/// The registry is reference-counted: `Arc` so it can be shared by every handle
+/// over a volume, and an internal per-root counter so concurrent readers
+/// independently pin and release the same root.
+#[derive(Debug, Default)]
+pub struct RootPins {
+    roots: Mutex<BTreeMap<u64, u64>>,
+}
+
+impl RootPins {
+    /// A fresh, empty registry.
+    pub fn new() -> Arc<RootPins> {
+        Arc::new(RootPins::default())
+    }
+
+    /// Register a pin on `root`, returning the resulting pin count.
+    fn register(&self, root: u64) -> u64 {
+        let mut roots = self.roots.lock().unwrap_or_else(|e| e.into_inner());
+        let count = roots.entry(root).or_insert(0);
+        *count += 1;
+        *count
+    }
+
+    /// Release one pin on `root`.
+    fn release(&self, root: u64) {
+        let mut roots = self.roots.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(count) = roots.get_mut(&root) {
+            *count -= 1;
+            if *count == 0 {
+                roots.remove(&root);
+            }
+        }
+    }
+
+    /// Whether `root` is currently pinned by at least one handle.
+    pub fn is_pinned(&self, root: u64) -> bool {
+        self.roots
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(&root)
+    }
+
+    /// The number of live pins on `root`.
+    pub fn pin_count(&self, root: u64) -> u64 {
+        self.roots
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&root)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Every currently pinned root, ascending.
+    pub fn pinned_roots(&self) -> Vec<u64> {
+        self.roots
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .keys()
+            .copied()
+            .collect()
+    }
+
+    /// Whether any pinned root still needs the segment with this id.
+    ///
+    /// A segment whose id `S` covers logical bytes `[S, S+len)`; it is required
+    /// by a pinned root `R` exactly when `S < R` (some of its bytes lie below the
+    /// root). `rollover`/quarantine consult this before discarding a segment.
+    pub fn segment_required(&self, segment_id: u64) -> bool {
+        self.roots
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .keys()
+            .any(|&r| segment_id < r)
+    }
+}
+
+/// A live pin on a committed root. Dropping it releases the pin.
+pub struct RootPin {
+    pins: Arc<RootPins>,
+    root: u64,
+}
+
+impl RootPin {
+    /// The pinned root.
+    pub fn root(&self) -> u64 {
+        self.root
+    }
+}
+
+impl Drop for RootPin {
+    fn drop(&mut self) {
+        self.pins.release(self.root);
+    }
+}
+
 /// The authoritative append-only log.
 pub struct Log {
     dir: PathBuf,
@@ -672,6 +813,10 @@ pub struct Log {
     /// The backing-I/O engine. [`BackingEngine::Sync`] unless io_uring was
     /// explicitly and successfully engaged (research §17 Domain A, §20).
     io: BackingEngine,
+    /// The committed-root pin registry (research §7.4, §24, §26). Shared (`Arc`)
+    /// with every read-only handle and snapshot opened over the same volume so a
+    /// writer observes the pins a reader holds.
+    pins: Arc<RootPins>,
 }
 
 impl Log {
@@ -716,6 +861,7 @@ impl Log {
             open_bracket: Vec::new(),
             open_bracket_records: 0,
             io: BackingEngine::Sync,
+            pins: RootPins::new(),
         })
     }
 
@@ -725,6 +871,20 @@ impl Log {
     /// writer is prepared at the committed root. In [`OpenMode::ReadOnly`] the
     /// on-disk bytes are never touched.
     pub fn open(dir: &Path, segment_size: u64, mode: OpenMode) -> Result<Log> {
+        Self::open_with_pins(dir, segment_size, mode, RootPins::new())
+    }
+
+    /// Open an existing log with a caller-supplied committed-root pin registry.
+    ///
+    /// A read-only handle opened over the same volume as a writer can share the
+    /// writer's registry, so the writer's `rollover`/quarantine paths observe the
+    /// reader's pins (Phase 6 root-pinning discipline).
+    pub fn open_with_pins(
+        dir: &Path,
+        segment_size: u64,
+        mode: OpenMode,
+        pins: Arc<RootPins>,
+    ) -> Result<Log> {
         let scan = scan_log(dir)?;
         let committed = scan.committed_end_offset;
         let mut locator = SegmentLocator::from_extents(scan.extents.clone())?;
@@ -786,6 +946,37 @@ impl Log {
             open_bracket: Vec::new(),
             open_bracket_records: 0,
             io: BackingEngine::Sync,
+            pins,
+        })
+    }
+
+    /// The committed-root pin registry shared by this handle.
+    pub fn root_pins(&self) -> Arc<RootPins> {
+        self.pins.clone()
+    }
+
+    /// Pin a committed root so its segments cannot be quarantined or rolled over
+    /// while the returned [`RootPin`] is alive.
+    ///
+    /// `root` must be `0` or a committed transaction boundary that does not
+    /// exceed the current committed root (research §2, I3): an arbitrary offset
+    /// inside a record is not a snapshot.
+    pub fn pin_root(&self, root: u64) -> Result<RootPin> {
+        if root > self.committed_end_offset {
+            return Err(OrfsError::InvalidArgument(format!(
+                "pin root {root} exceeds the committed root {}",
+                self.committed_end_offset
+            )));
+        }
+        if root != 0 && !self.is_boundary(root) {
+            return Err(OrfsError::InvalidArgument(format!(
+                "pin root {root} is not a committed transaction boundary"
+            )));
+        }
+        self.pins.register(root);
+        Ok(RootPin {
+            pins: self.pins.clone(),
+            root,
         })
     }
 
@@ -936,7 +1127,7 @@ impl Log {
                 let fd = w.seg.raw_fd();
                 rings
                     .write()
-                    .borrow_mut()
+                    .lock()
                     .write_at_all(fd, res.physical_offset, bytes)?;
             }
         }
@@ -1180,7 +1371,7 @@ impl Log {
                 let fd = w.seg.raw_fd();
                 rings
                     .write()
-                    .borrow_mut()
+                    .lock()
                     .write_at_all(fd, res.physical_offset, prefix)?;
             }
         }
@@ -1197,7 +1388,7 @@ impl Log {
         match &self.io {
             BackingEngine::Sync => reader.read_exact_at(res.physical_offset, &mut buf)?,
             BackingEngine::Uring(rings) => {
-                rings.read().borrow_mut().read_exact_at(
+                rings.read().lock().read_exact_at(
                     reader.raw_fd(),
                     res.physical_offset,
                     &mut buf,
@@ -1286,10 +1477,7 @@ impl Log {
         match &self.io {
             BackingEngine::Sync => w.seg.sync()?,
             BackingEngine::Uring(rings) => {
-                rings
-                    .write()
-                    .borrow_mut()
-                    .fsync_order_barrier(w.seg.raw_fd())?;
+                rings.write().lock().fsync_order_barrier(w.seg.raw_fd())?;
             }
         }
         let next_id =
@@ -1297,6 +1485,15 @@ impl Log {
                 .ok_or(OrfsError::Overflow { what: "segment id" })?;
         let name = segment_file_name(next_id)?;
         if self.dir.join(&name).exists() {
+            // Reusing this name would discard the bytes it currently holds. If a
+            // live root pin still needs a segment at or above `next_id`, that
+            // discard would withdraw committed history, so refuse loudly rather
+            // than silently invalidate a snapshot (research §2, I1; §24).
+            if self.pins.segment_required(next_id) {
+                return Err(OrfsError::Pinned(format!(
+                    "segment {next_id} is required by a pinned historical root"
+                )));
+            }
             quarantine_segment(&self.dir, next_id)?;
         }
         let seg = Segment::create(&self.dir, next_id)?;
@@ -1322,10 +1519,7 @@ impl Log {
                 // Explicit ordered durability barrier: the fsync is flagged
                 // IOSQE_IO_DRAIN so it cannot start before earlier SQEs complete.
                 BackingEngine::Uring(rings) => {
-                    rings
-                        .write()
-                        .borrow_mut()
-                        .fsync_order_barrier(w.seg.raw_fd())?;
+                    rings.write().lock().fsync_order_barrier(w.seg.raw_fd())?;
                 }
             }
         }
@@ -1408,6 +1602,176 @@ impl Log {
         RecordReader::new(&self.dir, self.locator.extents(), end)
     }
 
+    /// A validated record iterator over `[start, end)`.
+    ///
+    /// `start` must be a committed transaction boundary; the returned reader
+    /// begins exactly there and reads no bytes before it (the checkpoint-replay
+    /// fast path).
+    pub fn records_from(&self, start: u64, end: u64) -> RecordReader {
+        RecordReader::starting_at(&self.dir, self.locator.extents(), start, end)
+    }
+
+    /// Read the single committed record whose first byte is at `offset`.
+    ///
+    /// `offset` must be a committed transaction boundary. Used to load exactly
+    /// one `INDEX_CHECKPOINT` body once its header-scan offset is known.
+    pub fn read_record_at(&self, offset: u64, end: u64) -> Result<Record> {
+        if offset >= end {
+            return Err(OrfsError::InvalidArgument(format!(
+                "record offset {offset} is not before {end}"
+            )));
+        }
+        self.records_from(offset, end)
+            .next()
+            .ok_or_else(|| OrfsError::Corrupt(format!("no record at offset {offset}")))?
+    }
+
+    /// Header-only scan of `[0, end)` returning the offsets of the records whose
+    /// type is in `wanted`, **without reading any record body**.
+    ///
+    /// This lets checkpoint recovery locate candidate checkpoints cheaply and
+    /// then read exactly one body, instead of materialising every checkpoint's
+    /// embedded index (research §24).
+    pub fn scan_record_offsets_of_types(
+        &self,
+        end: u64,
+        wanted: &[RecordType],
+    ) -> Result<Vec<u64>> {
+        if end > self.committed_end_offset {
+            return Err(OrfsError::InvalidArgument(format!(
+                "scan end {end} exceeds the committed root {}",
+                self.committed_end_offset
+            )));
+        }
+        if end != 0 && !self.is_boundary(end) {
+            return Err(OrfsError::InvalidArgument(format!(
+                "scan end {end} is not a committed transaction boundary"
+            )));
+        }
+        let mut out = Vec::new();
+        let mut offset = 0u64;
+        let mut reader: Option<(u64, ReadAt)> = None;
+        while offset < end {
+            let (sid, phys) = self.locator.locate(offset).ok_or_else(|| {
+                OrfsError::Corrupt(format!("no segment covers logical offset {offset}"))
+            })?;
+            let extent = self
+                .locator
+                .extent_of(sid)
+                .ok_or_else(|| OrfsError::Corrupt(format!("missing extent for segment {sid}")))?;
+            if reader.as_ref().map(|(id, _)| *id) != Some(sid) {
+                reader = Some((sid, ReadAt::open(&self.dir, sid)?));
+            }
+            let r = &reader.as_ref().expect("reader opened").1;
+            let avail = extent
+                .valid_len
+                .checked_sub(phys)
+                .ok_or_else(|| OrfsError::Corrupt("scan offset beyond extent".to_string()))?
+                .min(end - offset);
+            if avail < HEADER_LEN as u64 {
+                return Err(OrfsError::Corrupt(format!(
+                    "truncated record within committed region at offset {offset}"
+                )));
+            }
+            let mut header_bytes = [0u8; HEADER_LEN];
+            r.read_exact_at(phys, &mut header_bytes)?;
+            let header = RecordHeader::decode(&header_bytes).map_err(OrfsError::from)?;
+            let class = header.classify_type().map_err(OrfsError::from)?;
+            let total = header.total_len().map_err(OrfsError::from)?;
+            if total > avail {
+                return Err(OrfsError::Corrupt(format!(
+                    "record at offset {offset} crosses the committed root"
+                )));
+            }
+            if let TypeClass::Known(t) = class {
+                if wanted.contains(&t) {
+                    out.push(offset);
+                }
+            }
+            offset = offset.checked_add(total).ok_or(OrfsError::Overflow {
+                what: "scan offset",
+            })?;
+        }
+        Ok(out)
+    }
+
+    /// Scan the committed frames in `[0, end)` and return the payloads of only
+    /// the records whose type is in `wanted`.
+    ///
+    /// This is the checkpoint-discovery primitive: it walks record **headers**
+    /// (60 bytes each) and reads a record's body only when its type is wanted, so
+    /// discovering an `INDEX_CHECKPOINT` does not require materialising every
+    /// intervening `DATA_EXTENT` payload. The full log was already framed and
+    /// checksum-validated by [`scan_log`] when the log was opened, so skipping
+    /// bodies here cannot hide a corrupt committed record (research §23.1, §24).
+    pub fn scan_records_of_types(&self, end: u64, wanted: &[RecordType]) -> Result<Vec<RawRecord>> {
+        if end > self.committed_end_offset {
+            return Err(OrfsError::InvalidArgument(format!(
+                "scan end {end} exceeds the committed root {}",
+                self.committed_end_offset
+            )));
+        }
+        if end != 0 && !self.is_boundary(end) {
+            return Err(OrfsError::InvalidArgument(format!(
+                "scan end {end} is not a committed transaction boundary"
+            )));
+        }
+        let mut out = Vec::new();
+        let mut offset = 0u64;
+        let mut reader: Option<(u64, ReadAt)> = None;
+        while offset < end {
+            let (sid, phys) = self.locator.locate(offset).ok_or_else(|| {
+                OrfsError::Corrupt(format!("no segment covers logical offset {offset}"))
+            })?;
+            let extent = self
+                .locator
+                .extent_of(sid)
+                .ok_or_else(|| OrfsError::Corrupt(format!("missing extent for segment {sid}")))?;
+            if reader.as_ref().map(|(id, _)| *id) != Some(sid) {
+                reader = Some((sid, ReadAt::open(&self.dir, sid)?));
+            }
+            let r = &reader.as_ref().expect("reader opened").1;
+            let avail = extent
+                .valid_len
+                .checked_sub(phys)
+                .ok_or_else(|| OrfsError::Corrupt("scan offset beyond extent".to_string()))?
+                .min(end - offset);
+            if avail < HEADER_LEN as u64 {
+                return Err(OrfsError::Corrupt(format!(
+                    "truncated record within committed region at offset {offset}"
+                )));
+            }
+            let mut header_bytes = [0u8; HEADER_LEN];
+            r.read_exact_at(phys, &mut header_bytes)?;
+            let header = RecordHeader::decode(&header_bytes).map_err(OrfsError::from)?;
+            let class = header.classify_type().map_err(OrfsError::from)?;
+            let total = header.total_len().map_err(OrfsError::from)?;
+            if total > avail {
+                return Err(OrfsError::Corrupt(format!(
+                    "record at offset {offset} crosses the committed root"
+                )));
+            }
+            if let TypeClass::Known(t) = class {
+                if wanted.contains(&t) {
+                    let n = usize::try_from(total)
+                        .map_err(|_| OrfsError::Corrupt("record length overflow".to_string()))?;
+                    let mut buf = vec![0u8; n];
+                    r.read_exact_at(phys, &mut buf)?;
+                    let (record, _) = Record::decode(&buf).map_err(OrfsError::from)?;
+                    out.push(RawRecord {
+                        offset,
+                        record_type: t,
+                        payload: record.payload,
+                    });
+                }
+            }
+            offset = offset.checked_add(total).ok_or(OrfsError::Overflow {
+                what: "scan offset",
+            })?;
+        }
+        Ok(out)
+    }
+
     /// Read `len` canonical bytes at logical `offset`, crossing segment
     /// boundaries as needed.
     ///
@@ -1465,7 +1829,7 @@ impl Log {
                     .zip(bufs.iter_mut())
                     .map(|((reader, phys, _), buf)| ReadJob::new(reader.raw_fd(), *phys, buf))
                     .collect();
-                rings.read().borrow_mut().read_batch(&mut jobs)?;
+                rings.read().lock().read_batch(&mut jobs)?;
                 for buf in &bufs {
                     out.extend_from_slice(buf);
                 }
@@ -1510,5 +1874,67 @@ impl Log {
         Ok(blake3::hash(&self.read_committed_bytes()?)
             .to_hex()
             .to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Compile-time proof that the shared read path is genuinely shareable: a
+    /// `Log` (and therefore an `Arc<Log>`) can be sent to and shared by many
+    /// reader threads at once (Phase 6 carry-over fix; a `RefCell` read ring
+    /// would make `Log` `!Sync` and this assertion fail to compile).
+    #[test]
+    fn log_and_pins_are_send_and_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        fn assert_send<T: Send>() {}
+        // The log is shareable (`Arc<Log>`) because the rings are behind a
+        // `Mutex`, not a `RefCell`.
+        assert_send_sync::<Log>();
+        assert_send_sync::<RootPins>();
+        assert_send_sync::<crate::uring::BackingRings>();
+        assert_send_sync::<crate::snapshot::Snapshot>();
+        // The engine itself is only `Send` (it owns `Cell`/`RefCell` state and
+        // raw staging buffers); the `Mutex` makes it shareable safely.
+        assert_send::<crate::uring::UringEngine>();
+    }
+
+    #[test]
+    fn pins_are_reference_counted_and_released() {
+        let pins = RootPins::new();
+        assert!(!pins.is_pinned(100));
+        let a = {
+            pins.register(100);
+            RootPin {
+                pins: pins.clone(),
+                root: 100,
+            }
+        };
+        pins.register(100);
+        assert_eq!(pins.pin_count(100), 2);
+        assert!(pins.is_pinned(100));
+        drop(a);
+        assert_eq!(pins.pin_count(100), 1);
+        pins.release(100);
+        assert!(!pins.is_pinned(100));
+        assert_eq!(pins.pinned_roots(), Vec::<u64>::new());
+    }
+
+    #[test]
+    fn a_segment_below_a_pinned_root_is_required() {
+        let pins = RootPins::new();
+        let _pin = {
+            pins.register(4096);
+            RootPin {
+                pins: pins.clone(),
+                root: 4096,
+            }
+        };
+        // Segments whose id is strictly below the pinned root are required.
+        assert!(pins.segment_required(0));
+        assert!(pins.segment_required(4095));
+        assert!(!pins.segment_required(4096));
+        assert!(!pins.segment_required(9999));
     }
 }

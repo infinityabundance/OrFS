@@ -377,3 +377,92 @@ exercise the honest fallback.
   persistence); batched submission as the default commit path (record-by-record
   is retained so the Phase 2 fault-injection court is unchanged); a ring-depth /
   staging-size sweep.
+
+## Phase 6 — Historical snapshots and index checkpoints
+
+**Complete** (see also `docs/SNAPSHOTS.md`).
+
+### Delivered
+
+* `src/snapshot.rs` — `Snapshot` + `HistoricalRoot`: a historical root reference
+  is `(volume UUID, committed end offset)`; `open_snapshot(volume, root)` (and
+  `Snapshot::open` / `Snapshot::open_dir`) validate that the root is a committed
+  transaction boundary (I3) and reconstruct the namespace by replaying the
+  committed prefix `L[0:R]` (`Index::from_log`). Reads (lookup, `getattr`,
+  `readdir`, `readlink`, `read`, xattrs, `seek_data_hole`) return historical
+  contents, sizes, metadata, directory entries, symlink targets, and permissions.
+  The `Snapshot` owns an `Arc<Log>` read handle and a `RootPin`.
+* `src/checkpoint.rs` — `INDEX_CHECKPOINT` recovery: discover candidate
+  checkpoints with a **header-only** scan, load and validate the newest valid one
+  (self-digest + root + counts), replay only the records after its root, and fall
+  back to an earlier checkpoint or to full replay. `MountReport` measures the
+  actual work (records/bytes replayed, wall time, fallback).
+* `INDEX_CHECKPOINT` payload extended to embed the full serialized index
+  (`src/namespace.rs`), so a checkpoint is a loadable accelerator, not just a
+  header. `Namespace::write_index_checkpoint` appends one.
+* **Phase-5 carry-over fix** — `src/uring.rs` `BackingRings` now guards both rings
+  with a `Mutex` (not a `RefCell`), so `Log` is `Send + Sync` and one `Arc<Log>`
+  is shared by many readers/snapshots. `src/log.rs` adds a `RootPins` registry:
+  `Log::pin_root(root) -> RootPin` extends the buffer-pool pin discipline to
+  committed roots, and `rollover` refuses (`OrfsError::Pinned`, `EBUSY`) to
+  quarantine a segment a pinned root still needs.
+* Derived `user.orfs.manifested_bytes` and `user.orfs.ekbloom_profile` xattrs
+  added (honest `0`/`none`); the root xattrs are documented as references, not
+  contents.
+* CLI made real: `orfs snapshot list <backing> [--json]`,
+  `orfs snapshot inspect <backing> <root> [--json]`, and
+  `orfs snapshot mount <backing> <root> <mnt>` (read-only FUSE).
+  `fuse::run_snapshot` / `fuse::spawn_snapshot` mount a `Snapshot` core with
+  `MountOption::RO`.
+* `tests/snapshot_model.rs` — the six required invariants plus a randomized
+  `proptest` driver, and the two evidence generators.
+* `tests/snapshot_fuse.rs` — a real read-only snapshot mount court
+  (`scripts/container-fuse-test.sh` runs it alongside `fuse_integration`).
+
+### What actually works today
+
+```sh
+orfs snapshot list    <backing> [--json]
+orfs snapshot inspect <backing> <root> [--json]
+orfs snapshot mount   <backing> <root> <mnt>      # read-only FUSE
+```
+
+* For every committed root `R`, `Replay(L[0:R])` reconstructs the exact
+  namespace at `R`; a snapshot never observes a later write.
+* Snapshot mounts are read-only (`EROFS`), enforced by the kernel `RO` flag and
+  by the read-only `Snapshot` core.
+* Checkpoint mount is bit-identical to full replay; a corrupt checkpoint is
+  discarded and an earlier checkpoint (or full replay) is used — committed
+  history is never silently skipped.
+* Mount is **not** constant-time; the measured cost is reported.
+
+### Tests (inside the container)
+
+* `cargo test`: 64 unit + 10 `log_model` + 7 `namespace_model` + 4 `smoke`
+  + 9 `transaction_model` + 7 `uring_integration` + **10 `snapshot_model`**
+  + **1 `snapshot_fuse`** + 1 `fuse_integration` (skips without a mount)
+  = **113 passing**.
+* `cargo test --features failpoints`: 65 unit + 2 `crash_recovery`
+  + 10 `log_model` + 7 `namespace_model` + 4 `smoke` + 11 `transaction_model`
+  + 7 `uring_integration` + 10 `snapshot_model` + 1 `snapshot_fuse`
+  + 1 `fuse_integration` = **118 passing**.
+* `cargo fmt -p orfs --check` and `cargo clippy --all-targets -- -D warnings`
+  pass.
+* `sh scripts/container-uring-test.sh`: io_uring engaged, 7/7 integration
+  tests pass, benchmark run; the shareable (`Mutex`) read ring is exercised.
+* `sh scripts/container-fuse-test.sh`: the real FUSE court passes (18/18 POSIX
+  operations) **and** the new snapshot read-only mount court passes.
+
+### Evidence
+
+* `evidence/correctness/snapshot-equivalence.json` — per-root reconstruction
+  verdicts (historical bytes/size vs the state captured at `R`).
+* `evidence/performance/mount-replay.json` — measured full-replay vs
+  checkpoint-mount time on identical logs, across retained-history sizes.
+
+### Explicitly not implemented in Phase 6
+
+* A self-contained historical carrier (an export embedding the log prefix); it
+  is a separate optional feature and is not faked. Snapshot mounts are read-only;
+  branching history is not implemented. Checkpoints are single-record (an index
+  larger than the record payload limit is refused, not truncated).

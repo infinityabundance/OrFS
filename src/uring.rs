@@ -46,10 +46,11 @@
 //! (submit-and-wait), so no pointer it hands to the kernel outlives the call that
 //! created it.
 
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::os::unix::io::RawFd;
+
+use parking_lot::Mutex;
 
 use io_uring::{opcode, squeue, types, IoUring};
 
@@ -956,9 +957,18 @@ fn take_result(order: &[(u64, i32)], ud: u64) -> Result<i32> {
 }
 
 /// Ring W (authoritative writes) + Ring R (concurrent reads) as one owned unit.
+///
+/// Both rings are guarded by a [`Mutex`], **not** a `RefCell`: a `Log` holding a
+/// [`crate::uring::BackingRings`] is therefore `Sync`, so a single `&Log` can be
+/// shared by many reader threads and by any number of read-only snapshots at
+/// once (Phase 6 carry-over fix). A `RefCell` would make the whole log `!Sync`,
+/// permitting only one in-process reader at a time.
+///
+/// The engine itself is synchronous (submit-and-wait), so the lock is held only
+/// for the duration of one read/write call, never across a caller's decision.
 pub struct BackingRings {
-    write: RefCell<UringEngine>,
-    read: RefCell<UringEngine>,
+    write: Mutex<UringEngine>,
+    read: Mutex<UringEngine>,
 }
 
 impl BackingRings {
@@ -974,39 +984,38 @@ impl BackingRings {
         }
         let read = UringEngine::try_new(read_depth, false)?;
         Ok(BackingRings {
-            write: RefCell::new(write),
-            read: RefCell::new(read),
+            write: Mutex::new(write),
+            read: Mutex::new(read),
         })
     }
 
-    /// The write ring.
-    pub fn write(&self) -> &RefCell<UringEngine> {
+    /// The write ring (Ring W). Lock it for the duration of one write.
+    pub fn write(&self) -> &Mutex<UringEngine> {
         &self.write
     }
 
-    /// The read ring.
-    pub fn read(&self) -> &RefCell<UringEngine> {
+    /// The read ring (Ring R). Lock it for the duration of one read; many
+    /// callers may contend for it, which is why it is shareable rather than a
+    /// `RefCell`.
+    pub fn read(&self) -> &Mutex<UringEngine> {
         &self.read
     }
 
     /// Write-ring depth.
     pub fn write_depth(&self) -> u32 {
-        self.write.borrow().depth()
+        self.write.lock().depth()
     }
 
     /// Read-ring depth.
     pub fn read_depth(&self) -> u32 {
-        self.read.borrow().depth()
+        self.read.lock().depth()
     }
 
     /// Number of registered staging buffers (0 if not registered).
     pub fn registered_buffers(&self) -> usize {
-        if self.write.borrow().buffers_registered() {
-            self.write
-                .borrow()
-                .pool()
-                .map(|p| p.capacity())
-                .unwrap_or(0)
+        let write = self.write.lock();
+        if write.buffers_registered() {
+            write.pool().map(|p| p.capacity()).unwrap_or(0)
         } else {
             0
         }
@@ -1014,7 +1023,7 @@ impl BackingRings {
 
     /// Combined stats for evidence.
     pub fn stats(&self) -> (UringStats, UringStats) {
-        (self.write.borrow().stats(), self.read.borrow().stats())
+        (self.write.lock().stats(), self.read.lock().stats())
     }
 }
 

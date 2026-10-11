@@ -55,7 +55,7 @@ use crate::snapshot::Snapshot;
 pub const ROOT_INODE: u64 = 1;
 /// Fixed inode generation. OrFS never reuses an inode id, so the generation is
 /// always 1 (research §26.2).
-const GENERATION: Generation = Generation(1);
+pub(crate) const GENERATION: Generation = Generation(1);
 /// Reported `st_blksize` / `statfs` block size.
 const BLOCK_SIZE: u32 = 4096;
 /// Maximum filename length reported by `statfs`.
@@ -215,21 +215,21 @@ impl Default for MountOptions {
 
 /// One directory entry as captured at `opendir`/`create` time.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct DirEntryView {
-    name: Vec<u8>,
-    ino: u64,
-    kind: FuseFileType,
+pub(crate) struct DirEntryView {
+    pub(crate) name: Vec<u8>,
+    pub(crate) ino: u64,
+    pub(crate) kind: FuseFileType,
 }
 
 /// A single open file or directory handle.
 #[derive(Debug)]
-struct Handle {
-    ino: u64,
-    is_dir: bool,
+pub(crate) struct Handle {
+    pub(crate) ino: u64,
+    pub(crate) is_dir: bool,
     /// The raw open flags (file handles only).
-    flags: i32,
+    pub(crate) flags: i32,
     /// The immutable directory listing captured at `opendir` (dir handles only).
-    dir: Option<Vec<DirEntryView>>,
+    pub(crate) dir: Option<Vec<DirEntryView>>,
 }
 
 /// The per-mount handle table. Handle ids are distinct from inode ids.
@@ -332,17 +332,17 @@ pub struct Metrics {
 // The adaptor
 // ---------------------------------------------------------------------------
 
-struct Inner<C: OrfsCore + Send + 'static> {
-    core: Mutex<C>,
+pub(crate) struct Inner<C: OrfsCore + Send + 'static> {
+    pub(crate) core: Mutex<C>,
     handles: Mutex<HandleTable>,
     lookups: Mutex<LookupTable>,
-    metrics: Mutex<Metrics>,
-    backing: PathBuf,
-    root_inode: u64,
+    pub(crate) metrics: Mutex<Metrics>,
+    pub(crate) backing: PathBuf,
+    pub(crate) root_inode: u64,
 }
 
 impl<C: OrfsCore + Send + 'static> Inner<C> {
-    fn stat(&self, core: &C, ino: u64) -> Result<InodeStat> {
+    pub(crate) fn stat(&self, core: &C, ino: u64) -> Result<InodeStat> {
         core.getattr(ino, core.root())
     }
 
@@ -355,7 +355,7 @@ impl<C: OrfsCore + Send + 'static> Inner<C> {
     /// the iteration cookies stable and makes a partially consumed listing
     /// resumable, which is the strongest guarantee a FUSE filesystem can offer
     /// without per-directory versioning.
-    fn build_dir_listing(&self, core: &C, dir: u64) -> Result<Vec<DirEntryView>> {
+    pub(crate) fn build_dir_listing(&self, core: &C, dir: u64) -> Result<Vec<DirEntryView>> {
         let root = core.root();
         let ino = core.getattr(dir, root)?;
         if ino.kind != InodeType::Directory {
@@ -387,7 +387,7 @@ impl<C: OrfsCore + Send + 'static> Inner<C> {
         Ok(out)
     }
 
-    fn register_file(&self, ino: u64, flags: i32) -> u64 {
+    pub(crate) fn register_file(&self, ino: u64, flags: i32) -> u64 {
         self.handles.lock().insert(Handle {
             ino,
             is_dir: false,
@@ -396,7 +396,7 @@ impl<C: OrfsCore + Send + 'static> Inner<C> {
         })
     }
 
-    fn register_dir(&self, ino: u64, listing: Vec<DirEntryView>) -> u64 {
+    pub(crate) fn register_dir(&self, ino: u64, listing: Vec<DirEntryView>) -> u64 {
         let mut table = self.handles.lock();
         table.insert(Handle {
             ino,
@@ -406,7 +406,7 @@ impl<C: OrfsCore + Send + 'static> Inner<C> {
         })
     }
 
-    fn handle(&self, id: u64) -> Option<Handle> {
+    pub(crate) fn handle(&self, id: u64) -> Option<Handle> {
         self.handles.lock().get(id).map(|h| Handle {
             ino: h.ino,
             is_dir: h.is_dir,
@@ -415,15 +415,15 @@ impl<C: OrfsCore + Send + 'static> Inner<C> {
         })
     }
 
-    fn remove_handle(&self, id: u64) -> Option<Handle> {
+    pub(crate) fn remove_handle(&self, id: u64) -> Option<Handle> {
         self.handles.lock().remove(id)
     }
 
-    fn record_lookup(&self, ino: u64) {
+    pub(crate) fn record_lookup(&self, ino: u64) {
         self.lookups.lock().acquire(ino);
     }
 
-    fn record_forget(&self, ino: u64, n: u64) {
+    pub(crate) fn record_forget(&self, ino: u64, n: u64) {
         self.lookups.lock().forget(ino, n);
     }
 }
@@ -439,10 +439,10 @@ enum NotifyMsg {
 
 /// A mounted OrFS filesystem (transport adaptor + mount state).
 pub struct OrfsFuse<C: OrfsCore + Send + 'static> {
-    inner: Arc<Inner<C>>,
+    pub(crate) inner: Arc<Inner<C>>,
     notifier: NotifierCell,
     notify_tx: std::sync::mpsc::Sender<NotifyMsg>,
-    options: MountOptions,
+    pub(crate) options: MountOptions,
     /// Filled during the FUSE `INIT` handshake with the live FUSE-over-
     /// `io_uring` negotiation result (the only authoritative statement of
     /// whether the kernel would enable `io_uring` on this connection).
@@ -450,7 +450,7 @@ pub struct OrfsFuse<C: OrfsCore + Send + 'static> {
 }
 
 impl<C: OrfsCore + Send + 'static> OrfsFuse<C> {
-    fn new(core: C, backing: PathBuf, options: MountOptions) -> OrfsFuse<C> {
+    pub(crate) fn new(core: C, backing: PathBuf, options: MountOptions) -> OrfsFuse<C> {
         let inner = Arc::new(Inner {
             core: Mutex::new(core),
             handles: Mutex::new(HandleTable::default()),
@@ -496,8 +496,15 @@ impl<C: OrfsCore + Send + 'static> OrfsFuse<C> {
     }
 
     /// The shared cell the `INIT` negotiation writes and the mount reports from.
-    fn negotiation_cell(&self) -> Arc<Mutex<FuseUringNegotiation>> {
+    pub(crate) fn negotiation_cell(&self) -> Arc<Mutex<FuseUringNegotiation>> {
         Arc::clone(&self.negotiation)
+    }
+
+    /// Record a FUSE-over-`io_uring` negotiation result computed by the native
+    /// F2 session (which performs the same `INIT` handshake itself).
+    pub(crate) fn record_negotiation(&self, neg: FuseUringNegotiation) {
+        eprintln!("orfs: {}", neg.describe());
+        *self.negotiation.lock() = neg;
     }
 
     /// A snapshot of the operation counters.
@@ -1804,7 +1811,7 @@ impl<C: OrfsCore + Send + 'static> OrfsFuse<C> {
     /// Conservative write-through: no page cache is retained across opens; the
     /// kernel still caches within a single open. `direct_io` bypasses the page
     /// cache entirely.
-    fn fopen_flags(&self) -> FopenFlags {
+    pub(crate) fn fopen_flags(&self) -> FopenFlags {
         if self.options.direct_io {
             FopenFlags::FOPEN_DIRECT_IO
         } else {
@@ -1880,9 +1887,16 @@ fn statvfs(path: &Path) -> Option<StatfsValues> {
 // Mount / unmount
 // ---------------------------------------------------------------------------
 
+/// The live request-handling session behind a mount: either the classical
+/// `fuser`-managed `/dev/fuse` session (F0/F1) or the native F2 session.
+enum MountSession {
+    Fuser(BackgroundSession),
+    Native(crate::fuse_native::NativeMount),
+}
+
 /// A live mounted OrFS volume.
 pub struct OrfsMount {
-    session: BackgroundSession,
+    session: MountSession,
     notifier: NotifierCell,
     /// The requested FUSE transport.
     transport_requested: Transport,
@@ -1897,15 +1911,22 @@ pub struct OrfsMount {
 impl OrfsMount {
     /// Unmount and wait for the request loop to end.
     pub fn unmount(self) -> io::Result<()> {
-        self.session.umount_and_join()
+        match self.session {
+            MountSession::Fuser(s) => s.umount_and_join(),
+            MountSession::Native(n) => n.unmount(),
+        }
     }
 
     /// Wait for the session to end (for example after an external unmount).
     pub fn join(self) -> io::Result<()> {
-        self.session.join()
+        match self.session {
+            MountSession::Fuser(s) => s.join(),
+            MountSession::Native(n) => n.join(),
+        }
     }
 
-    /// A notifier for explicit kernel cache invalidation.
+    /// A notifier for explicit kernel cache invalidation. `None` for a native F2
+    /// mount: the `fuser` `Notifier` is not available off a `fuser` session.
     pub fn notifier(&self) -> Option<Notifier> {
         self.notifier.lock().clone()
     }
@@ -1944,6 +1965,23 @@ impl OrfsMount {
     /// The live FUSE-over-`io_uring` negotiation result.
     pub fn fuse_uring_negotiation(&self) -> FuseUringNegotiation {
         self.negotiation.lock().clone()
+    }
+
+    /// F2 session counters, present only when this mount is the native
+    /// FUSE-over-`io_uring` session (proof the ring carried requests).
+    pub fn f2_stats(&self) -> Option<crate::fuse_native::NativeStats> {
+        match &self.session {
+            MountSession::Native(n) => Some(n.stats()),
+            MountSession::Fuser(_) => None,
+        }
+    }
+
+    /// F2 environment facts, present only for a native F2 mount.
+    pub fn f2_environment(&self) -> Option<crate::fuse_native::NativeEnvironment> {
+        match &self.session {
+            MountSession::Native(n) => Some(n.environment()),
+            MountSession::Fuser(_) => None,
+        }
     }
 
     /// A full report of FUSE-over-`io_uring` availability for this mount.
@@ -2040,7 +2078,45 @@ fn attach<C: OrfsCore + Send + 'static>(
 }
 
 /// Mount an existing OrFS backing volume in the background.
+///
+/// When `--transport fuse-uring` is requested, the native F2 session is tried
+/// first; if it cannot engage for any reason, the exact reason is reported and
+/// the classical `/dev/fuse` transport is used instead, with byte-identical
+/// filesystem contents.
 pub fn spawn(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<OrfsMount> {
+    if opts.transport.requests_uring_fuse() {
+        match crate::fuse_native::prepare(mountpoint, opts) {
+            Ok(prepared) => {
+                let (core, report) = build_core(backing, opts)?;
+                let backing_io_used = if report.engaged {
+                    BackingIo::Uring
+                } else {
+                    BackingIo::Sync
+                };
+                match prepared.launch(core, backing.to_path_buf()) {
+                    Ok(native) => {
+                        let negotiation = native.negotiation_cell();
+                        return Ok(OrfsMount {
+                            session: MountSession::Native(native),
+                            notifier: Arc::new(Mutex::new(None)),
+                            transport_requested: opts.transport,
+                            backing_io_used,
+                            durability: opts.durability,
+                            negotiation,
+                        });
+                    }
+                    Err(e) => eprintln!(
+                        "orfs: warning: native F2 session failed to start ({e}); \
+                         falling back to the classical /dev/fuse transport"
+                    ),
+                }
+            }
+            Err(reason) => eprintln!(
+                "orfs: F2 not engaged ({reason}); falling back to the classical \
+                 /dev/fuse transport"
+            ),
+        }
+    }
     let (core, report) = build_core(backing, opts)?;
     let backing_io_used = if report.engaged {
         BackingIo::Uring
@@ -2053,7 +2129,7 @@ pub fn spawn(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<O
     let (session, notifier) = attach(fs, mountpoint, &config)?;
     let session = session.spawn()?;
     Ok(OrfsMount {
-        session,
+        session: MountSession::Fuser(session),
         notifier,
         transport_requested: opts.transport,
         backing_io_used,
@@ -2085,11 +2161,56 @@ fn install_signal_handlers() {
 /// Mount and run in the foreground until unmounted (external `orfs unmount`, a
 /// signal, or an error).
 pub fn run(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<()> {
+    if opts.transport.requests_uring_fuse() {
+        match crate::fuse_native::prepare(mountpoint, opts) {
+            Ok(prepared) => {
+                let (core, report) = build_core(backing, opts)?;
+                eprintln!("orfs: {}", report.describe());
+                match prepared.launch(core, backing.to_path_buf()) {
+                    Ok(native) => return run_native_foreground(native, mountpoint),
+                    Err(e) => eprintln!(
+                        "orfs: warning: native F2 session failed to start ({e}); \
+                         falling back to the classical /dev/fuse transport"
+                    ),
+                }
+            }
+            Err(reason) => eprintln!(
+                "orfs: F2 not engaged ({reason}); falling back to the classical \
+                 /dev/fuse transport"
+            ),
+        }
+    }
     let (core, report) = build_core(backing, opts)?;
     eprintln!("orfs: {}", report.describe());
     let fs = OrfsFuse::new(core, backing.to_path_buf(), *opts);
     let config = build_config(opts);
     run_session(fs, mountpoint, &config)
+}
+
+/// Run a native F2 session in the foreground until externally unmounted or
+/// interrupted, mirroring [`run_session`]'s signal handling.
+fn run_native_foreground(native: crate::fuse_native::NativeMount, mountpoint: &Path) -> Result<()> {
+    INTERRUPTED.store(false, Ordering::SeqCst);
+    WATCH_STOP.store(false, Ordering::SeqCst);
+    install_signal_handlers();
+    let stop = native.stop_cell();
+    let mnt = mountpoint.to_path_buf();
+    let watcher = std::thread::Builder::new()
+        .name("orfs-signal".to_string())
+        .spawn(move || {
+            while !WATCH_STOP.load(Ordering::SeqCst) && !INTERRUPTED.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            if INTERRUPTED.load(Ordering::SeqCst) {
+                let _ = unmount(&mnt);
+                stop.store(true, Ordering::SeqCst);
+            }
+        })
+        .map_err(OrfsError::Io)?;
+    let result = native.join();
+    WATCH_STOP.store(true, Ordering::SeqCst);
+    let _ = watcher.join();
+    result.map_err(OrfsError::Io)
 }
 
 /// Mount a historical snapshot **read-only** and run in the foreground.
@@ -2135,7 +2256,7 @@ pub fn spawn_snapshot(
     let (session, notifier) = attach(fs, mountpoint, &config)?;
     let session = session.spawn()?;
     Ok(OrfsMount {
-        session,
+        session: MountSession::Fuser(session),
         notifier,
         transport_requested: Transport::Fuse,
         backing_io_used: BackingIo::Sync,

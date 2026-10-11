@@ -35,32 +35,23 @@
 //! * **Fallback** ([`TransportProfile`], [`FuseUringReport`]) — a truthful
 //!   decision of F0/F1/F2 that can never claim F2 unless a real ring negotiated.
 //!
-//! # Honest status on this host
+//! # Honest status on this host (Phase 15)
 //!
-//! A **real F2 mount is not achievable on the development host**, for two
-//! independent, documented reasons (see `docs/FUSE_URING.md`):
+//! A **real F2 mount is achieved here**: the kernel gate is open
+//! (`fuse.enable_uring=Y`), the raw-SQE path below supplies the `sqe->len == 2`
+//! that `FUSE_IO_URING_CMD_REGISTER` requires, and [`crate::fuse_native`] owns the
+//! `/dev/fuse` fd and drives the ring. See `docs/FUSE_URING.md`.
 //!
-//! 1. `fuse.enable_uring=0`. The running kernel (`7.2.9`, FUSE ABI 7.45) exposes
-//!    the module parameter `/sys/module/fuse/parameters/enable_uring`, and
-//!    `fuse_uring_enabled()` gates both the `FUSE_OVER_IO_URING` `INIT` flag and
-//!    the connection's `io_uring` enablement on it (`fs/fuse/inode.c`). With it
-//!    off, the kernel never offers `FUSE_OVER_IO_URING` at `INIT` and every
-//!    `IORING_OP_URING_CMD` is rejected with `-EOPNOTSUPP`. The parameter is
-//!    `root:root 0644`; the container runs as an unprivileged uid.
-//! 2. The pinned `io-uring` 0.7.15 crate cannot set `sqe->len`, which
-//!    `FUSE_IO_URING_CMD_REGISTER` requires to be `2`
-//!    (`fuse_uring_get_iovec_from_sqe`, `sqe->len != FUSE_URING_IOV_SEGS`). This
-//!    is a *dependency* limitation, not a protocol one; the control commands
-//!    that do not use an iovec (`ADD_QUEUE`, `ADD_BUFPOOL`, `COMMIT_AND_FETCH`,
-//!    cancellation) are unaffected.
-//!
-//! Both are recorded by `orfs doctor`, by the negotiation test, and in the
-//! machine-generated evidence. F2 falls back to F1/F0 with byte-identical
-//! contents.
+//! This module remains the *UAPI codec + ring command layer*: it is deliberately
+//! transport-boundary code, so the filesystem core and every POSIX semantic stay
+//! transport-neutral. It is used by [`crate::fuse_native`] and is exercised both
+//! against a live mount and against a non-`fuse` fd (where the kernel rejects
+//! `URING_CMD` with `-EOPNOTSUPP`, the honest result).
 
 use std::fs;
 use std::io;
 use std::os::unix::io::RawFd;
+use std::time::Duration;
 
 use io_uring::{opcode, squeue, types, IoUring};
 
@@ -810,6 +801,40 @@ pub struct FuseUringRing {
     stats: RingStats,
 }
 
+/// Write the raw `sqe->len` ABI field of an `Entry128`.
+///
+/// `FUSE_IO_URING_CMD_REGISTER` is the one command that needs it: the kernel
+/// requires `sqe->len == FUSE_URING_IOV_SEGS (2)`, the number of iovecs at
+/// `sqe->addr` (`fuse_uring_get_iovec_from_sqe`: `if (sqe->len !=
+/// FUSE_URING_IOV_SEGS) return -EINVAL;`). The pinned `io-uring` 0.7.15 crate
+/// exposes no setter for `len`, so the ABI field is written directly.
+///
+/// # Safety
+///
+/// `squeue::Entry128` is `#[repr(C)]` and exactly 128 bytes: a 64-byte
+/// `struct io_uring_sqe` followed by the 64-byte command area (the crate's own
+/// `test_entry_sizes` asserts `size_of::<Entry128>() == 128`). In the kernel's
+/// `struct io_uring_sqe` — and in the crate's bindgen of it — the fields up to
+/// `len` are `opcode@0 u8`, `flags@1 u8`, `ioprio@2 u16`, `fd@4 s32`,
+/// `off/addr2@8 u64`, `addr@16 u64`, `len@24 u32`, so byte offset 24 is
+/// unambiguous on every supported architecture. This writes only within the
+/// 128-byte value owned by `entry`, through a raw pointer derived from a unique
+/// `&mut`, using an unaligned store because the field's alignment is not
+/// guaranteed by the byte-slice view. `entry` is consumed and returned by value.
+fn entry128_set_len(mut entry: squeue::Entry128, len: u32) -> squeue::Entry128 {
+    const _: () = assert!(std::mem::size_of::<squeue::Entry128>() == 128);
+    const SQE_LEN_OFFSET: usize = 24;
+    // SAFETY: see the function-level invariant above. `entry` is a live, unique,
+    // `repr(C)` `Entry128` of at least 28 bytes; offset 24 holds `sqe->len`.
+    unsafe {
+        let base = (&mut entry as *mut squeue::Entry128).cast::<u8>();
+        base.add(SQE_LEN_OFFSET)
+            .cast::<[u8; 4]>()
+            .write_unaligned(len.to_ne_bytes());
+    }
+    entry
+}
+
 impl FuseUringRing {
     /// Create an SQE128 ring for `fd`. `depth` is rounded up to a power of two.
     pub fn new(fd: RawFd, depth: u32) -> Result<FuseUringRing, String> {
@@ -842,12 +867,16 @@ impl FuseUringRing {
     }
 
     /// Push an `IORING_OP_URING_CMD` SQE carrying `req` for `cmd_op`.
+    ///
+    /// `len` sets the raw `sqe->len` ABI field (see [`entry128_set_len`]);
+    /// `None` leaves it zero, which every command except `REGISTER` requires.
     fn push_cmd(
         &mut self,
         cmd_op: u32,
         req: &FuseUringCmdReq,
         buf_index: Option<u16>,
         addr: Option<u64>,
+        len: Option<u32>,
         user_data: u64,
     ) -> Result<(), String> {
         let mut entry = opcode::UringCmd80::new(types::Fd(self.fd), cmd_op).cmd(req.to_sqe_cmd());
@@ -857,7 +886,10 @@ impl FuseUringRing {
         if let Some(addr) = addr {
             entry = entry.addr(Some(addr));
         }
-        let entry = entry.build().user_data(user_data);
+        let mut entry = entry.build().user_data(user_data);
+        if let Some(len) = len {
+            entry = entry128_set_len(entry, len);
+        }
         // SAFETY: the SQE references only `req`'s encoded bytes (copied into the
         // SQE) and, when `addr` is set, a caller-owned buffer whose lifetime the
         // caller guarantees for the whole operation. This function copies the
@@ -870,7 +902,7 @@ impl FuseUringRing {
     }
 
     /// Submit everything pushed so far and wait for at least `wait` completions.
-    fn submit_and_wait(&mut self, wait: usize) -> Result<Vec<RingCompletion>, String> {
+    pub fn submit_and_wait(&mut self, wait: usize) -> Result<Vec<RingCompletion>, String> {
         loop {
             match self.ring.submit_and_wait(wait.max(1)) {
                 Ok(_) => break,
@@ -909,7 +941,7 @@ impl FuseUringRing {
         addr: Option<u64>,
     ) -> Result<(i32, Vec<RingCompletion>), String> {
         let ud = self.alloc_ud();
-        self.push_cmd(cmd_op, req, buf_index, addr, ud)?;
+        self.push_cmd(cmd_op, req, buf_index, addr, None, ud)?;
         let mut orphans = Vec::new();
         loop {
             for c in self.submit_and_wait(1)? {
@@ -967,15 +999,11 @@ impl FuseUringRing {
     /// kernel pins both for the entry's lifetime. They are passed as a 2-element
     /// `iovec` array at `iov_addr`.
     ///
-    /// # Dependency limitation
-    ///
     /// The kernel requires `sqe->len == FUSE_URING_IOV_SEGS (2)` for this command
-    /// (`fuse_uring_get_iovec_from_sqe`). The pinned `io-uring` 0.7.15 crate does
-    /// not expose a setter for `sqe->len` on `UringCmd80`, so the SQE is submitted
-    /// with `len == 0` and a capable kernel would reject it with `-EINVAL`. This is
-    /// documented in `docs/FUSE_URING.md` and is not worked around by silently
-    /// faking success. Everything else — queue creation, buffer pools, reply
-    /// commit and fetch, cancellation — does not use `len`.
+    /// (`fuse_uring_get_iovec_from_sqe`). The pinned `io-uring` 0.7.15 crate exposes
+    /// no setter for `sqe->len`, so this uses the raw-SQE path
+    /// (`entry128_set_len`) to write the ABI field directly. Everything else —
+    /// reply commit and fetch, cancellation — leaves `len` zero.
     pub fn register_entry(
         &mut self,
         qid: u16,
@@ -987,7 +1015,14 @@ impl FuseUringRing {
             req.set_zero_copy_buf_index(idx);
         }
         let ud = self.alloc_ud();
-        self.push_cmd(FUSE_IO_URING_CMD_REGISTER, &req, None, Some(iov_addr), ud)?;
+        self.push_cmd(
+            FUSE_IO_URING_CMD_REGISTER,
+            &req,
+            None,
+            Some(iov_addr),
+            Some(FUSE_URING_IOV_SEGS),
+            ud,
+        )?;
         // The entry's completion arrives only when a request is delivered to it,
         // so registration is fire-and-forget here; the caller observes later
         // completions through `reap`/`wait_event`.
@@ -1001,6 +1036,91 @@ impl FuseUringRing {
         req.commit_id = commit_id;
         let (res, _) = self.control(FUSE_IO_URING_CMD_COMMIT_AND_FETCH, &req, None, None)?;
         Ok(res)
+    }
+
+    /// Submit every queued SQE without waiting for any completion.
+    pub fn submit(&mut self) -> Result<(), String> {
+        self.ring
+            .submit()
+            .map(|_| ())
+            .map_err(|e| format!("io_uring submit: {e}"))
+    }
+
+    /// Submit queued SQEs and wait up to `timeout` for at least one completion.
+    ///
+    /// Returns whatever is on the completion queue (possibly empty on timeout),
+    /// so a driver can periodically check a stop flag while blocked on an idle
+    /// mount without busy-waiting. `ETIME` (the kernel's "timeout expired") and
+    /// `EINTR` are treated as "no completion yet".
+    pub fn submit_and_wait_timeout(
+        &mut self,
+        wait: usize,
+        timeout: Duration,
+    ) -> Result<Vec<RingCompletion>, String> {
+        let ts = types::Timespec::from(timeout);
+        let args = types::SubmitArgs::new().timespec(&ts);
+        match self.ring.submitter().submit_with_args(wait.max(1), &args) {
+            Ok(_) => {}
+            Err(e) if e.raw_os_error() == Some(libc::ETIME) => {}
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(format!("io_uring submit_with_args: {e}")),
+        }
+        self.reap()
+    }
+
+    /// Queue a `REGISTER` SQE for `qid` carrying the 2-element iovec array at
+    /// `iov_addr`, tagged with `user_data`.
+    ///
+    /// This is the raw-SQE path: unlike every other command, `REGISTER` requires
+    /// `sqe->len == 2` (see [`entry128_set_len`]), which the `io-uring` crate
+    /// cannot express. `user_data` doubles as the entry identity: the SQE's
+    /// completion is not posted until the kernel delivers a request into the
+    /// registered buffers, so the CQE's `user_data` tells the driver which entry
+    /// received work.
+    ///
+    /// The caller guarantees that the iovec array is valid for the duration of
+    /// the syscall and that the two buffers it points at stay allocated, at a
+    /// stable address, for the entry's whole lifetime (the kernel retains the
+    /// base pointers across requests).
+    pub fn submit_register(
+        &mut self,
+        qid: u16,
+        iov_addr: u64,
+        user_data: u64,
+    ) -> Result<(), String> {
+        let req = FuseUringCmdReq::for_queue(qid);
+        self.push_cmd(
+            FUSE_IO_URING_CMD_REGISTER,
+            &req,
+            None,
+            Some(iov_addr),
+            Some(FUSE_URING_IOV_SEGS),
+            user_data,
+        )
+    }
+
+    /// Queue a `COMMIT_AND_FETCH` SQE committing the reply for `commit_id` on
+    /// `qid`, tagged with `user_data` (the entry whose buffers hold the reply).
+    ///
+    /// The SQE is not waited on: its completion *is* the next request delivered
+    /// into that entry's buffers, which may not arrive until the filesystem is
+    /// next used.
+    pub fn submit_commit_and_fetch(
+        &mut self,
+        qid: u16,
+        commit_id: u64,
+        user_data: u64,
+    ) -> Result<(), String> {
+        let mut req = FuseUringCmdReq::for_queue(qid);
+        req.commit_id = commit_id;
+        self.push_cmd(
+            FUSE_IO_URING_CMD_COMMIT_AND_FETCH,
+            &req,
+            None,
+            None,
+            None,
+            user_data,
+        )
     }
 
     /// Wait for the next event (a delivered request) and return its completion.

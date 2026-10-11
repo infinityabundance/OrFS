@@ -44,6 +44,7 @@ use crate::commit::DurabilityMode;
 use crate::error::{OrfsError, Result};
 use crate::fuse::{self, BackingIo, MountOptions, Transport};
 use crate::fuse_uring;
+use crate::fuse_uring::TransportProfile;
 use crate::log::OpenMode;
 use crate::manifestation::ManifestationProfile;
 use crate::namespace::Namespace;
@@ -234,16 +235,18 @@ impl BenchConfig {
     }
 
     /// `Err(reason)` when the configuration cannot run in this environment.
-    /// `F2`/`E2` require FUSE-over-`io_uring` to actually negotiate.
+    ///
+    /// `F2`/`E2` require FUSE-over-`io_uring`. When the static preconditions
+    /// provably do not hold the config is skipped with the exact reason; when
+    /// they do hold it is **attempted**, and the live mount decides (see
+    /// [`run`]): a mount that silently falls back to F1/F0 is reported
+    /// unavailable rather than mislabelled as F2.
     pub fn unavailable(self) -> Option<String> {
         if matches!(self, BenchConfig::F2 | BenchConfig::E2) {
             let report = fuse_uring::discover_report();
-            if !report.usable() {
-                return Some(report.reason());
+            if let Err(reason) = &report.preconditions {
+                return Some(reason.clone());
             }
-            // Even the static probe being satisfied does not prove F2 engages; the
-            // decisive statement is the live INIT negotiation, which the harness
-            // records after mounting.
             return None;
         }
         None
@@ -1125,6 +1128,24 @@ pub fn run(
             );
             let mount = fuse::spawn(backing, scratch_root, &opts)?;
             let desc = mount.transport_description();
+            // F2/E2 are only genuinely measured when the native FUSE-over-io_uring
+            // session actually engaged; a silent fallback is reported as
+            // unavailable with the exact negotiation reason.
+            if matches!(config, BenchConfig::F2 | BenchConfig::E2)
+                && mount.transport_used() != TransportProfile::F2
+            {
+                let neg = mount.fuse_uring_negotiation();
+                let reason = neg
+                    .reason
+                    .unwrap_or_else(|| "FUSE-over-io_uring did not engage".into());
+                let _ = mount.unmount();
+                return Ok(base(
+                    Measurement::simple(0, 0, 0.0),
+                    false,
+                    Some(reason),
+                    Some(desc),
+                ));
+            }
             let dir = scratch_root.join(format!("orfs-{}", workload.name()));
             eprintln!("orfs bench: running {}", workload.name());
             let result = run_fs_workload(&dir, workload, params);

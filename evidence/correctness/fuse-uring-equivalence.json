@@ -1,14 +1,99 @@
 {
-  "claim": "the same operations yield identical logical results across F0, F1 and the F2-request fallback",
+  "claim": "the same operations yield byte-identical logical results across F0, F1 and F2",
   "contents_identical": true,
-  "fallback_reason": "kernel did not offer FUSE_OVER_IO_URING at INIT (FUSE ABI 7.45); it gates this on the fuse.enable_uring module parameter, which is off on this host, so FUSE requests continue over /dev/fuse",
-  "generated_by": "tests/fuse_uring.rs::transport_equivalence_and_f2_fallback",
-  "profiles_compared": [
-    "F0",
-    "F1",
-    "F1"
-  ],
-  "schema": "orfs.fuse-uring-equivalence.v1",
+  "environment": {
+    "container": true,
+    "image_digest": "sha256:a41df86df391732ab467b5bedc8b4a17c0df437fa180b5230417a6a8339d97ac",
+    "kernel_release": "7.2.9-2-cachyos",
+    "machine": "x86_64"
+  },
+  "f2_environment": {
+    "fuse_abi_major": 7,
+    "fuse_abi_minor": 45,
+    "kernel_release": "7.2.9-2-cachyos",
+    "max_write": 131072,
+    "mount_options": "fsname=orfs,subtype=orfs,max_read=131072,rw",
+    "num_queues": 16,
+    "payload_buf": 262144
+  },
+  "f2_negotiation": {
+    "accepted": true,
+    "engaged": true,
+    "kernel_abi": [
+      7,
+      45
+    ],
+    "kernel_offered": true,
+    "kernel_offered_bufpool": false,
+    "reason": null
+  },
+  "f2_report": {
+    "discovery": {
+      "cap_sys_admin": false,
+      "config_fuse_io_uring": null,
+      "config_io_uring": null,
+      "dev_fuse_present": true,
+      "enable_uring_param": true,
+      "io_uring_available": true,
+      "io_uring_reason": null,
+      "kernel_release": "7.2.9-2-cachyos"
+    },
+    "negotiation": {
+      "accepted": true,
+      "engaged": true,
+      "kernel_abi": [
+        7,
+        45
+      ],
+      "kernel_offered": true,
+      "kernel_offered_bufpool": false,
+      "reason": null
+    },
+    "preconditions": {
+      "Ok": null
+    }
+  },
+  "f2_stats_after_transcript": {
+    "forgets_classical": 0,
+    "interrupts_classical": 0,
+    "negative_completions": 0,
+    "register_failures": 0,
+    "register_sqes": 16,
+    "reply_bytes": 1479,
+    "requests_served": 59,
+    "ring_completions": 59,
+    "ring_submits": 59
+  },
+  "f2_stats_before_transcript": {
+    "forgets_classical": 0,
+    "interrupts_classical": 0,
+    "negative_completions": 0,
+    "register_failures": 0,
+    "register_sqes": 16,
+    "reply_bytes": 0,
+    "requests_served": 0,
+    "ring_completions": 0,
+    "ring_submits": 0
+  },
+  "generated_by": "tests/fuse_uring.rs::transport_equivalence_across_f0_f1_f2",
+  "profiles": {
+    "F0": {
+      "reported": "F0",
+      "requested": "fuse + sync"
+    },
+    "F1": {
+      "backing_used": "Uring",
+      "reported": "F1",
+      "requested": "fuse + uring"
+    },
+    "F2": {
+      "backing_used": "Uring",
+      "description": "F2 (FUSE-over-io_uring, io_uring backing)",
+      "reported": "F2",
+      "requested": "fuse-uring + uring"
+    }
+  },
+  "schema": "orfs.fuse-uring-equivalence.v2",
   "transcript": [
     [
       "create_write_read",

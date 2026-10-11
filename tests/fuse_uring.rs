@@ -1,29 +1,31 @@
-//! Phase 10 integration tests: the FUSE-over-`io_uring` transport (profile F2)
-//! with classical fallback.
+//! Phase 15 integration tests: the native FUSE-over-`io_uring` transport
+//! (profile **F2**) that owns the `/dev/fuse` descriptor, with the classical
+//! F0/F1 transports alongside it.
 //!
-//! Three concerns are covered:
+//! Four concerns are covered:
 //!
-//! 1. **Transport equivalence** — the same POSIX operations applied through the
-//!    FUSE layer yield identical logical results whether the mount used profile
-//!    F0 (`/dev/fuse` + sync backing), F1 (`/dev/fuse` + `io_uring` backing), or a
-//!    *requested* F2 mount that falls back. This proves the filesystem core is
-//!    transport-neutral.
-//! 2. **Negotiation and fallback** — requesting F2 performs a real `INIT`
-//!    negotiation; when the kernel does not enable FUSE-over-`io_uring` the mount
-//!    records the precise reason and continues with byte-identical contents.
-//! 3. **Cancellation and safe shutdown** — the native ring layer submits,
-//!    reaps, cancels, and shuts down without panicking or leaking.
+//! 1. **Real F2 engagement** — a `--transport fuse-uring` mount performs its own
+//!    `mount(2)` + `INIT`, advertises `FUSE_OVER_IO_URING`, registers ring
+//!    entries, and reports `F2`; the live `INIT` flags and the ring counters are
+//!    recorded as evidence.
+//! 2. **Transport equivalence** — the same POSIX operations applied through F0,
+//!    F1, and F2 yield byte-identical logical results.
+//! 3. **Measurements** — real F0/F1/F2 numbers for sequential read, random 4K
+//!    read, random 1-byte read, metadata lookup, create/unlink, and fsync.
+//! 4. **Ring layer safety** — submission, cancellation, and safe shutdown of the
+//!    native ring.
 //!
 //! Mounting requires `/dev/fuse` + `CAP_SYS_ADMIN` and is expected only under
-//! `scripts/container-fuse-test.sh` (`ORFS_FUSE_TEST=1`). The ring tests require a
-//! working `io_uring` and are expected under `scripts/container-uring-test.sh`
-//! (`ORFS_REQUIRE_URING=1`). When the prerequisite is missing the test **skips**
-//! and prints the exact reason; it never fabricates a pass.
+//! `scripts/container-fuse-test.sh` (`ORFS_FUSE_TEST=1`). The ring-layer test
+//! requires a working `io_uring` (`ORFS_REQUIRE_URING=1`). When a prerequisite is
+//! missing the test **skips** and prints the exact reason; it never fabricates a
+//! pass.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use orfs::commit::DurabilityMode;
 use orfs::fuse::{self, BackingIo, MountOptions, Transport};
@@ -50,6 +52,10 @@ fn unique_scratch(prefix: &str) -> PathBuf {
 
 fn io_err<T>(r: std::io::Result<T>) -> Result<T, String> {
     r.map_err(|e| format!("{:?}", e.kind()))
+}
+
+fn image_digest() -> String {
+    std::env::var("ORFS_IMAGE_DIGEST").unwrap_or_else(|_| "unknown".to_string())
 }
 
 /// Apply a fixed sequence of logical operations under `root` and return a
@@ -158,13 +164,17 @@ fn init_volume(backing: &Path) -> Result<(), String> {
     ns.sync().map_err(|e| e.to_string())
 }
 
-// ---------------------------------------------------------------------------
-// Ring layer: submission, cancellation, shutdown (io_uring required)
-// ---------------------------------------------------------------------------
+fn fuse_test_required() -> bool {
+    std::env::var("ORFS_FUSE_TEST").as_deref() == Ok("1")
+}
 
 fn io_uring_available() -> bool {
     orfs::uring::probe_available().is_ok()
 }
+
+// ---------------------------------------------------------------------------
+// Ring layer: submission, cancellation, shutdown (io_uring required)
+// ---------------------------------------------------------------------------
 
 /// The native ring submits a command, the kernel rejects it for a non-`fuse`
 /// file, and cancellation + shutdown remain safe. This exercises the real
@@ -252,45 +262,57 @@ fn write_ring_evidence(errno: i32, submits: u64, completions: u64, cancels: u64)
 }
 
 // ---------------------------------------------------------------------------
-// Transport equivalence + negotiation/fallback (mount required)
+// Mount helpers
 // ---------------------------------------------------------------------------
 
 fn mount_profile(
     scratch: &Path,
     label: &str,
     opts: &MountOptions,
-) -> Result<(fuse::OrfsMount, Vec<(String, String)>), String> {
+) -> Result<fuse::OrfsMount, String> {
     let backing = scratch.join(format!("{label}-backing"));
     let mnt = scratch.join(format!("{label}-mnt"));
     fs::create_dir_all(&mnt).map_err(|e| e.to_string())?;
     init_volume(&backing)?;
-    let mount = fuse::spawn(&backing, &mnt, opts).map_err(|e| e.to_string())?;
-    let transcript = apply_ops(&mnt)?;
-    Ok((mount, transcript))
+    fuse::spawn(&backing, &mnt, opts).map_err(|e| e.to_string())
 }
 
-#[test]
-fn transport_equivalence_and_f2_fallback() {
-    let required = std::env::var("ORFS_FUSE_TEST").as_deref() == Ok("1");
-    let scratch = unique_scratch("equiv");
-
-    let f0_opts = MountOptions {
+fn f0_opts() -> MountOptions {
+    MountOptions {
         transport: Transport::Fuse,
         backing_io: BackingIo::Sync,
         ..Default::default()
-    };
-    let f1_opts = MountOptions {
+    }
+}
+fn f1_opts() -> MountOptions {
+    MountOptions {
         transport: Transport::Fuse,
         backing_io: BackingIo::Uring,
         ..Default::default()
-    };
-    let f2_opts = MountOptions {
+    }
+}
+fn f2_opts() -> MountOptions {
+    MountOptions {
         transport: Transport::FuseUring,
         backing_io: BackingIo::Uring,
         ..Default::default()
-    };
+    }
+}
 
-    let (m0, t0) = match mount_profile(&scratch, "f0", &f0_opts) {
+// ---------------------------------------------------------------------------
+// Equivalence across F0 / F1 / F2 (mount required)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn transport_equivalence_across_f0_f1_f2() {
+    let required = fuse_test_required();
+    let scratch = unique_scratch("equiv");
+
+    let (m0, t0) = match mount_profile(&scratch, "f0", &f0_opts()).and_then(|m| {
+        let mnt = scratch.join("f0-mnt");
+        let t = apply_ops(&mnt)?;
+        Ok((m, t))
+    }) {
         Ok(v) => v,
         Err(e) => {
             if required {
@@ -302,26 +324,31 @@ fn transport_equivalence_and_f2_fallback() {
         }
     };
     let p0 = m0.transport_used();
-    let m0_unmount = m0.unmount();
+    let m0u = m0.unmount();
 
-    let (m1, t1) = mount_profile(&scratch, "f1", &f1_opts).expect("F1 mount");
+    let m1 = mount_profile(&scratch, "f1", &f1_opts()).expect("F1 mount");
     let p1 = m1.transport_used();
     let backing1 = m1.backing_io_used;
-    let m1_unmount = m1.unmount();
+    let t1 = apply_ops(&scratch.join("f1-mnt")).expect("F1 ops");
+    let m1u = m1.unmount();
 
-    let (m2, t2) = mount_profile(&scratch, "f2", &f2_opts).expect("F2-request mount");
+    let m2 = mount_profile(&scratch, "f2", &f2_opts()).expect("F2 mount");
     let p2 = m2.transport_used();
     let backing2 = m2.backing_io_used;
     let neg2 = m2.fuse_uring_negotiation();
     let report2 = m2.fuse_uring_report();
     let desc2 = m2.transport_description();
-    let m2_unmount = m2.unmount();
+    let stats2 = m2.f2_stats();
+    let env2 = m2.f2_environment();
+    let t2 = apply_ops(&scratch.join("f2-mnt")).expect("F2 ops");
+    // Re-read stats after serving the F2 transcript, so the counters cover it.
+    let stats2_after = m2.f2_stats();
+    let m2u = m2.unmount();
 
     // Transport neutrality: identical logical results under every profile.
     assert_eq!(t0, t1, "F0 and F1 transcripts differ");
-    assert_eq!(t0, t2, "F0 and requested-F2 transcripts differ");
+    assert_eq!(t0, t2, "F0 and F2 transcripts differ");
 
-    // Profiles must be exactly as reported.
     assert_eq!(
         p0,
         TransportProfile::F0,
@@ -332,76 +359,76 @@ fn transport_equivalence_and_f2_fallback() {
         TransportProfile::F2,
         "backing io_uring alone must never be F2"
     );
-    assert_ne!(
-        p2,
-        TransportProfile::F2,
-        "F2 cannot be active in this build"
-    );
 
-    // The F2 request must have negotiated for real and recorded a reason.
-    assert!(
-        !neg2.engaged,
-        "F2 must not claim engagement without a running ring"
-    );
-    assert!(
-        neg2.reason
-            .as_deref()
-            .map(|r| !r.is_empty())
-            .unwrap_or(false),
-        "a non-engaged F2 must carry a reason"
-    );
-    if !neg2.kernel_offered {
-        let reason = neg2.reason.clone().unwrap_or_default();
+    if required {
+        // Under the F2-capable container the F2 request must have really engaged.
+        assert_eq!(p2, TransportProfile::F2, "F2 must be active: {desc2}");
         assert!(
-            reason.contains("FUSE_OVER_IO_URING") || reason.contains("enable_uring"),
-            "unexpected reason: {reason}"
+            neg2.kernel_offered,
+            "kernel must have offered FUSE_OVER_IO_URING at INIT"
         );
+        assert!(neg2.accepted, "server must have echoed FUSE_OVER_IO_URING");
+        assert!(neg2.engaged, "a real ring must be running");
+        assert!(neg2.reason.is_none());
+        assert!(report2.usable(), "F2 must be reported usable");
+        let st = stats2_after.as_ref().expect("native F2 stats");
+        assert!(
+            st.requests_served > 0,
+            "the F2 ring must have carried requests, got {st:?}"
+        );
+        assert!(
+            st.register_sqes > 0,
+            "register SQEs must have been submitted"
+        );
+        assert_eq!(st.register_failures, 0, "REGISTER must not have failed");
     }
-    assert!(!report2.usable(), "F2 must not be reported usable here");
 
-    write_mount_evidence(
-        &scratch, p0, p1, backing1, p2, backing2, &neg2, &t0, &desc2, &report2,
+    write_equivalence_evidence(
+        &t0,
+        p0,
+        p1,
+        p2,
+        &neg2,
+        &desc2,
+        &report2,
+        &stats2,
+        &stats2_after,
+        &env2,
+        backing1,
+        backing2,
     );
 
     let _ = fs::remove_dir_all(&scratch);
-    m0_unmount.expect("unmount F0");
-    m1_unmount.expect("unmount F1");
-    m2_unmount.expect("unmount requested-F2");
+    m0u.expect("unmount F0");
+    m1u.expect("unmount F1");
+    m2u.expect("unmount F2");
 }
 
 #[allow(clippy::too_many_arguments)]
-fn write_mount_evidence(
-    _scratch: &Path,
+fn write_equivalence_evidence(
+    transcript: &[(String, String)],
     p0: TransportProfile,
     p1: TransportProfile,
-    backing1: BackingIo,
     p2: TransportProfile,
-    backing2: BackingIo,
     neg2: &fuse_uring::FuseUringNegotiation,
-    transcript: &[(String, String)],
     desc2: &str,
     report2: &fuse_uring::FuseUringReport,
+    stats2: &Option<orfs::fuse_native::NativeStats>,
+    stats2_after: &Option<orfs::fuse_native::NativeStats>,
+    env2: &Option<orfs::fuse_native::NativeEnvironment>,
+    backing1: BackingIo,
+    backing2: BackingIo,
 ) {
     let caps = orfs::capabilities::probe();
-    let perf = serde_json::json!({
-        "schema": "orfs.fuse-uring.v1",
-        "generated_by": "tests/fuse_uring.rs::transport_equivalence_and_f2_fallback",
+    let doc = serde_json::json!({
+        "schema": "orfs.fuse-uring-equivalence.v2",
+        "generated_by": "tests/fuse_uring.rs::transport_equivalence_across_f0_f1_f2",
+        "claim": "the same operations yield byte-identical logical results across F0, F1 and F2",
         "environment": {
             "kernel_release": caps.kernel_release,
             "machine": caps.machine,
             "container": caps.likely_container,
-            "dev_fuse": caps.dev_fuse_present,
-        },
-        "uapi": {
-            "fuse_kernel_version": fuse_uring::FUSE_KERNEL_VERSION,
-            "baseline_minor": fuse_uring::FUSE_KERNEL_MINOR_BASELINE,
-            "add_queue_minor": fuse_uring::FUSE_KERNEL_MINOR_ADD_QUEUE,
-            "commands": [
-                "FUSE_IO_URING_CMD_REGISTER",
-                "FUSE_IO_URING_CMD_COMMIT_AND_FETCH",
-                "FUSE_IO_URING_CMD_ADD_QUEUE",
-                "FUSE_IO_URING_CMD_ADD_BUFPOOL",
-            ],
+            "image_digest": image_digest(),
         },
         "profiles": {
             "F0": { "reported": p0.name(), "requested": "fuse + sync" },
@@ -415,76 +442,349 @@ fn write_mount_evidence(
         },
         "f2_negotiation": neg2,
         "f2_report": report2,
-        "measurements": {
-            "note": "submission micro-benchmarks are recorded in evidence/performance/backing-uring.json; \
-                     F2 transport throughput could not be measured because F2 did not engage",
-            "f2": "not measured (F2 unavailable)",
-        },
-    });
-    let path = manifest_dir().join("evidence/performance/fuse-uring.json");
-    if let Some(p) = path.parent() {
-        let _ = fs::create_dir_all(p);
-    }
-    if let Ok(mut s) = serde_json::to_string_pretty(&perf) {
-        s.push('\n');
-        let _ = fs::write(&path, s);
-    }
-
-    let correct = serde_json::json!({
-        "schema": "orfs.fuse-uring-equivalence.v1",
-        "generated_by": "tests/fuse_uring.rs::transport_equivalence_and_f2_fallback",
-        "claim": "the same operations yield identical logical results across F0, F1 and the F2-request fallback",
+        "f2_stats_before_transcript": stats2,
+        "f2_stats_after_transcript": stats2_after,
+        "f2_environment": env2,
         "transcript": transcript,
-        "profiles_compared": [p0.name(), p1.name(), p2.name()],
-        "fallback_reason": neg2.reason,
         "contents_identical": true,
     });
     let path = manifest_dir().join("evidence/correctness/fuse-uring-equivalence.json");
     if let Some(p) = path.parent() {
         let _ = fs::create_dir_all(p);
     }
-    if let Ok(mut s) = serde_json::to_string_pretty(&correct) {
+    if let Ok(mut s) = serde_json::to_string_pretty(&doc) {
         s.push('\n');
         let _ = fs::write(&path, s);
     }
 }
 
-/// The negotiation must be a real `INIT` result even when F2 does not engage: a
-/// fresh F2 request reports `kernel_offered`/`reason` rather than a bare guess.
+// ---------------------------------------------------------------------------
+// Explicit F2 engagement proof (INIT flags + ring really carrying requests)
+// ---------------------------------------------------------------------------
+
 #[test]
-fn f2_negotiation_records_a_real_reason() {
-    let required = std::env::var("ORFS_FUSE_TEST").as_deref() == Ok("1");
-    let scratch = unique_scratch("neg");
-    let backing = scratch.join("backing");
+fn f2_real_mount_engages_and_carries_requests() {
+    let required = fuse_test_required();
+    let scratch = unique_scratch("f2engage");
     let mnt = scratch.join("mnt");
-    fs::create_dir_all(&mnt).expect("mnt");
-    if let Err(e) = init_volume(&backing) {
-        if required {
-            panic!("init failed: {e}");
-        }
-        eprintln!("f2_negotiation: skipped — {e}");
-        return;
-    }
-    let opts = MountOptions {
-        transport: Transport::FuseUring,
-        backing_io: BackingIo::Uring,
-        ..Default::default()
-    };
-    let mount = match fuse::spawn(&backing, &mnt, &opts) {
+    fs::create_dir_all(&mnt).unwrap();
+    let backing = scratch.join("backing");
+
+    let mount = match init_volume(&backing)
+        .and_then(|()| fuse::spawn(&backing, &mnt, &f2_opts()).map_err(|e| e.to_string()))
+    {
         Ok(m) => m,
         Err(e) => {
             if required {
-                panic!("F2-request mount failed under ORFS_FUSE_TEST=1: {e}");
+                panic!("F2 mount failed under ORFS_FUSE_TEST=1: {e}");
             }
-            eprintln!("f2_negotiation: skipped — mount unavailable: {e}");
+            eprintln!("f2_real_mount: skipped — {e}");
             let _ = fs::remove_dir_all(&scratch);
             return;
         }
     };
+
     let neg = mount.fuse_uring_negotiation();
-    assert!(!neg.engaged);
-    assert!(neg.reason.is_some(), "negotiation must record a reason");
-    assert_ne!(mount.transport_used(), TransportProfile::F2);
-    let _ = mount.unmount();
+    let used = mount.transport_used();
+    let stats_before = mount.f2_stats();
+    let env = mount.f2_environment();
+
+    if required {
+        assert_eq!(used, TransportProfile::F2, "expected real F2");
+        assert!(
+            neg.kernel_offered,
+            "INIT did not advertise FUSE_OVER_IO_URING"
+        );
+        assert!(neg.accepted, "server did not echo FUSE_OVER_IO_URING");
+        assert!(neg.engaged, "ring not engaged");
+        assert_eq!(neg.kernel_abi, Some((7, neg.kernel_abi.unwrap().1)));
+        let e = env.as_ref().expect("F2 environment");
+        assert!(e.num_queues >= 1);
+        assert!(e.fuse_abi_minor >= 42);
+    }
+
+    // Exercise lookup/getattr/read/write/readdir/create/unlink/rename through
+    // ordinary POSIX syscalls.
+    let t = apply_ops(&mnt).expect("F2 POSIX ops");
+    let stats_after = mount.f2_stats();
+
+    if required {
+        let before = stats_before.as_ref().expect("stats before").requests_served;
+        let after = stats_after.as_ref().expect("stats after").requests_served;
+        assert!(
+            after > before,
+            "ring served no requests during the transcript ({before} -> {after})"
+        );
+    }
+
+    let path = manifest_dir().join("evidence/correctness/fuse-uring-f2-engagement.json");
+    if let Some(p) = path.parent() {
+        let _ = fs::create_dir_all(p);
+    }
+    let doc = serde_json::json!({
+        "schema": "orfs.fuse-uring-engagement.v1",
+        "generated_by": "tests/fuse_uring.rs::f2_real_mount_engages_and_carries_requests",
+        "init_flags": {
+            "kernel_offered_fuse_over_io_uring": neg.kernel_offered,
+            "server_accepted": neg.accepted,
+            "engaged": neg.engaged,
+            "fuse_abi": neg.kernel_abi,
+        },
+        "environment": env,
+        "image_digest": image_digest(),
+        "stats_before": stats_before,
+        "stats_after": stats_after,
+        "transcript_len": t.len(),
+    });
+    if let Ok(mut s) = serde_json::to_string_pretty(&doc) {
+        s.push('\n');
+        let _ = fs::write(&path, s);
+    }
+
+    let _ = fs::remove_dir_all(&scratch);
+    mount.unmount().expect("unmount F2");
+}
+
+// ---------------------------------------------------------------------------
+// Measurements: real F0 / F1 / F2 numbers
+// ---------------------------------------------------------------------------
+
+/// Deterministic PRNG so the read workloads are identical across profiles.
+struct Lcg(u64);
+impl Lcg {
+    fn next(&mut self) -> u64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        self.0 >> 11
+    }
+    fn below(&mut self, n: u64) -> u64 {
+        self.next() % n
+    }
+}
+
+fn perf_opts(transport: Transport, backing_io: BackingIo) -> MountOptions {
+    MountOptions {
+        transport,
+        backing_io,
+        // Bypass the page cache so every read is a real transport round-trip,
+        // and disable attribute/entry caching so every lookup reaches the daemon.
+        direct_io: true,
+        attr_ttl: Duration::from_millis(0),
+        entry_ttl: Duration::from_millis(0),
+        ..Default::default()
+    }
+}
+
+/// Measure a fixed workload through `root`; returns microseconds-per-op metrics.
+fn measure(root: &Path) -> Result<serde_json::Value, String> {
+    let path = root.join("bench.bin");
+    let size: usize = 4 * 1024 * 1024;
+    let data: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
+    {
+        let mut h = io_err(File::create(&path))?;
+        io_err(h.write_all(&data))?;
+        io_err(h.sync_all())?;
+    }
+
+    // Sequential read (2 passes over the whole file in 128 KiB chunks).
+    let seq_start = Instant::now();
+    let mut seq_bytes: u64 = 0;
+    for _ in 0..2 {
+        let mut h = io_err(File::open(&path))?;
+        let mut buf = vec![0u8; 128 * 1024];
+        loop {
+            let n = io_err(h.read(&mut buf))?;
+            if n == 0 {
+                break;
+            }
+            seq_bytes += n as u64;
+        }
+    }
+    let seq = seq_start.elapsed();
+
+    let mut rng = Lcg(0x1234_5678_9abc_def0);
+    let reads_4k: u64 = 1000;
+    let r4_start = Instant::now();
+    {
+        let mut h = io_err(File::open(&path))?;
+        let mut buf = [0u8; 4096];
+        for _ in 0..reads_4k {
+            let off = rng.below((size - 4096) as u64);
+            io_err(h.seek(SeekFrom::Start(off)))?;
+            io_err(h.read_exact(&mut buf))?;
+        }
+    }
+    let r4 = r4_start.elapsed();
+
+    let reads_1b: u64 = 1000;
+    let r1_start = Instant::now();
+    {
+        let mut h = io_err(File::open(&path))?;
+        let mut b = [0u8; 1];
+        for _ in 0..reads_1b {
+            let off = rng.below((size - 1) as u64);
+            io_err(h.seek(SeekFrom::Start(off)))?;
+            io_err(h.read_exact(&mut b))?;
+        }
+    }
+    let r1 = r1_start.elapsed();
+
+    // Metadata lookup: stat the file 1000 times (LOOKUP + GETATTR, uncached).
+    let lk_n: u64 = 1000;
+    let lk_start = Instant::now();
+    for _ in 0..lk_n {
+        io_err(fs::symlink_metadata(&path))?;
+    }
+    let lk = lk_start.elapsed();
+
+    // create + unlink.
+    let cu_n: u64 = 300;
+    let cu_start = Instant::now();
+    for i in 0..cu_n {
+        let p = root.join(format!("tmp-{i}"));
+        {
+            let h = io_err(File::create(&p))?;
+            drop(h);
+        }
+        io_err(fs::remove_file(&p))?;
+    }
+    let cu = cu_start.elapsed();
+
+    // fsync latency: write 1 byte then fsync, 300 times.
+    let fs_n: u64 = 300;
+    let fs_start = Instant::now();
+    {
+        let mut h = io_err(OpenOptions::new().read(true).write(true).open(&path))?;
+        for i in 0..fs_n {
+            io_err(h.seek(SeekFrom::Start((i * 4096) % size as u64)))?;
+            io_err(h.write_all(&[0x5a]))?;
+            io_err(h.sync_data())?;
+        }
+    }
+    let fsd = fs_start.elapsed();
+
+    let us = |d: Duration, n: u64| (d.as_micros() as f64) / (n as f64);
+    Ok(serde_json::json!({
+        "sequential_read": {
+            "bytes": seq_bytes,
+            "seconds": seq.as_secs_f64(),
+            "mib_per_s": (seq_bytes as f64 / (1024.0 * 1024.0)) / seq.as_secs_f64().max(1e-9),
+        },
+        "random_4k_read": { "ops": reads_4k, "us_per_op": us(r4, reads_4k) },
+        "random_1b_read": { "ops": reads_1b, "us_per_op": us(r1, reads_1b) },
+        "metadata_lookup": { "ops": lk_n, "us_per_op": us(lk, lk_n) },
+        "create_unlink": { "ops": cu_n, "us_per_op": us(cu, cu_n) },
+        "fsync": { "ops": fs_n, "us_per_op": us(fsd, fs_n) },
+    }))
+}
+
+#[test]
+fn f2_performance_f0_f1_f2() {
+    let required = fuse_test_required();
+    let scratch = unique_scratch("perf");
+    let caps = orfs::capabilities::probe();
+
+    let mut results = serde_json::Map::new();
+    let mut profile_meta = serde_json::Map::new();
+    let mut measured_f2 = false;
+
+    for (name, opts) in [
+        ("F0", perf_opts(Transport::Fuse, BackingIo::Sync)),
+        ("F1", perf_opts(Transport::Fuse, BackingIo::Uring)),
+        ("F2", perf_opts(Transport::FuseUring, BackingIo::Uring)),
+    ] {
+        let mnt = scratch.join(format!("{name}-mnt"));
+        let backing = scratch.join(format!("{name}-backing"));
+        fs::create_dir_all(&mnt).unwrap();
+        if let Err(e) = init_volume(&backing) {
+            if required {
+                panic!("{name} init failed: {e}");
+            }
+            eprintln!("perf: skipped — {e}");
+            let _ = fs::remove_dir_all(&scratch);
+            return;
+        }
+        let mount = match fuse::spawn(&backing, &mnt, &opts) {
+            Ok(m) => m,
+            Err(e) => {
+                if required {
+                    panic!("{name} mount failed: {e}");
+                }
+                eprintln!("perf: skipped — {name} mount unavailable: {e}");
+                let _ = fs::remove_dir_all(&scratch);
+                return;
+            }
+        };
+        let used = mount.transport_used();
+        let neg = mount.fuse_uring_negotiation();
+        let env = mount.f2_environment();
+        let value = match measure(&mnt) {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = mount.unmount();
+                let _ = fs::remove_dir_all(&scratch);
+                panic!("{name} measurement failed: {e}");
+            }
+        };
+        let unmount = mount.unmount();
+        if name == "F2" {
+            measured_f2 = used == TransportProfile::F2;
+        }
+        results.insert(name.to_string(), value);
+        profile_meta.insert(
+            name.to_string(),
+            serde_json::json!({
+                "reported_profile": used.name(),
+                "backing_io": format!("{:?}", opts.backing_io),
+                "direct_io": opts.direct_io,
+                "attr_ttl_ms": opts.attr_ttl.as_millis(),
+                "entry_ttl_ms": opts.entry_ttl.as_millis(),
+                "f2_engaged": neg.engaged,
+                "f2_environment": env,
+            }),
+        );
+        unmount.expect("unmount");
+    }
+
+    if required {
+        assert!(measured_f2, "F2 must have engaged for the F2 measurements");
+    }
+
+    let doc = serde_json::json!({
+        "schema": "orfs.fuse-uring.v2",
+        "generated_by": "tests/fuse_uring.rs::f2_performance_f0_f1_f2",
+        "method": "POSIX syscalls through a real mount; direct_io=on and attr/entry TTL=0 so every \
+                   operation is a real transport round-trip. Identical workloads and deterministic \
+                   offsets for all three profiles. Numbers are observations, not models.",
+        "environment": {
+            "kernel_release": caps.kernel_release,
+            "machine": caps.machine,
+            "container": caps.likely_container,
+            "image_digest": image_digest(),
+            "orfs_version": orfs::VERSION,
+        },
+        "workloads": {
+            "sequential_read": "2 passes over 4 MiB in 128 KiB reads (page cache bypassed by direct_io)",
+            "random_4k_read": "1000 pread of 4096 B at deterministic offsets",
+            "random_1b_read": "1000 pread of 1 B at deterministic offsets",
+            "metadata_lookup": "1000 stat() of one file (LOOKUP + GETATTR, uncached)",
+            "create_unlink": "300 create+unlink pairs",
+            "fsync": "300 write(1B)+fdatasync",
+        },
+        "profiles": profile_meta,
+        "measurements": results,
+        "f2_measured": measured_f2,
+    });
+    let path = manifest_dir().join("evidence/performance/fuse-uring.json");
+    if let Some(p) = path.parent() {
+        let _ = fs::create_dir_all(p);
+    }
+    if let Ok(mut s) = serde_json::to_string_pretty(&doc) {
+        s.push('\n');
+        let _ = fs::write(&path, s);
+    }
+
     let _ = fs::remove_dir_all(&scratch);
 }

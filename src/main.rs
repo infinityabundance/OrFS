@@ -1440,6 +1440,22 @@ fn doctor(json: bool) -> Result<()> {
     let uring = orfs::uring::probe_available();
     let f2 = orfs::fuse_uring::discover_report();
 
+    // When the static preconditions hold, attempt a *live* negotiation (a
+    // throwaway mount + `INIT` + ring registration) so doctor reports the real
+    // result rather than a prediction. When they do not hold, the static reason
+    // is exact and no mount is attempted.
+    let live: Option<std::result::Result<orfs::fuse_uring::FuseUringNegotiation, String>> =
+        if f2.preconditions.is_ok() {
+            Some(orfs::fuse_native::negotiate_live())
+        } else {
+            None
+        };
+    let (usable, reason) = match &live {
+        Some(Ok(neg)) => (neg.engaged && neg.kernel_offered, neg.describe()),
+        Some(Err(e)) => (false, e.clone()),
+        None => (f2.usable(), f2.reason()),
+    };
+
     if json {
         let out = serde_json::json!({
             "orfs_version": orfs::VERSION,
@@ -1447,9 +1463,13 @@ fn doctor(json: bool) -> Result<()> {
             "capabilities": caps,
             "traditional_fuse_usable": caps.traditional_fuse_usable(),
             "fuse_over_io_uring_plausible": caps.fuse_over_io_uring_plausible(),
-            "fuse_over_io_uring_usable": f2.usable(),
-            "fuse_over_io_uring_reason": f2.reason(),
+            "fuse_over_io_uring_usable": usable,
+            "fuse_over_io_uring_reason": reason,
             "fuse_uring": f2,
+            "fuse_over_io_uring_live": live.as_ref().map(|r| match r {
+                Ok(n) => serde_json::to_value(n).unwrap_or(serde_json::Value::Null),
+                Err(e) => serde_json::json!({ "error": e }),
+            }),
             "backing_io_uring_available": uring.is_ok(),
             "backing_io_uring_reason": uring.err(),
         });
@@ -1499,10 +1519,15 @@ fn doctor(json: bool) -> Result<()> {
         "  CAP_SYS_ADMIN (zero-copy):   {}",
         yesno(f2.discovery.cap_sys_admin)
     );
+    match &live {
+        Some(Ok(neg)) => println!("  live negotiation:           {}", neg.describe()),
+        Some(Err(e)) => println!("  live negotiation:           failed: {e}"),
+        None => println!("  live negotiation:           not attempted (preconditions fail)"),
+    }
     println!(
         "FUSE-over-io_uring usable:    {} ({})",
-        yesno(f2.usable()),
-        f2.reason()
+        yesno(usable),
+        reason
     );
     println!(
         "backing io_uring available:   {} ({})",

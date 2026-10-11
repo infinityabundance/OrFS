@@ -17,6 +17,14 @@ ORFS_BASE_IMAGE="rust:1.99.0-slim-bookworm@sha256:2c3a22f0a5533ea2dd5a16627bc841
 ORFS_IMAGE="${ORFS_IMAGE:-orfs-build:1.99.0}"
 ORFS_KMOUNT_IMAGE="${ORFS_KMOUNT_IMAGE:-orfs-kmount:1.99.0}"
 
+# Image-ID digest for machine-generated evidence. The derived images are built
+# locally (not pulled), so they have no RepoDigests; the image config `.Id` is a
+# sha256 digest of the image and is always present. Best-effort; `unknown` when
+# Docker is unavailable.
+_orfs_image_digest() {
+    docker image inspect --format '{{.Id}}' "$1" 2>/dev/null || echo unknown
+}
+
 # Absolute paths. The OrFS project consumes EKBLOOM as a rev-pinned git
 # dependency on the public GitHub repository (see docs/LIMITATIONS.md §1).
 #
@@ -93,6 +101,7 @@ docker_run() {
         -e CARGO_TARGET_DIR="$ORFS_TARGET_DIR" \
         -e CARGO_TERM_COLOR=never \
         -e RUSTUP_TOOLCHAIN=1.99.0 \
+        -e ORFS_IMAGE_DIGEST="$(_orfs_image_digest "$ORFS_IMAGE")" \
         "$ORFS_IMAGE" "$@"
 }
 
@@ -121,6 +130,7 @@ docker_run_uring() {
         -e CARGO_TARGET_DIR="$ORFS_TARGET_DIR" \
         -e CARGO_TERM_COLOR=never \
         -e RUSTUP_TOOLCHAIN=1.99.0 \
+        -e ORFS_IMAGE_DIGEST="$(_orfs_image_digest "$ORFS_IMAGE")" \
         "$ORFS_IMAGE" "$@"
 }
 
@@ -179,5 +189,6 @@ docker_run_kmount() {
         -e CARGO_TARGET_DIR="$ORFS_TARGET_DIR" \
         -e CARGO_TERM_COLOR=never \
         -e RUSTUP_TOOLCHAIN=1.99.0 \
+        -e ORFS_IMAGE_DIGEST="$(_orfs_image_digest "$ORFS_KMOUNT_IMAGE")" \
         "$ORFS_KMOUNT_IMAGE" "$@"
 }

@@ -2,7 +2,7 @@
   "engine": {
     "engaged": true,
     "read_depth": 64,
-    "registered_buffers": 4,
+    "registered_buffers": 0,
     "write_depth": 32
   },
   "generated_by": "tests/uring_integration.rs",

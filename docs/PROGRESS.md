@@ -999,3 +999,63 @@ evidence-namespacing fix below.
 * `evidence/correctness/posix-results.json` — **26/26** with the §33 coverage
   table (covered vs. intentionally-unsupported vs. delegated-to-kernel; the
   `intentionally_unsupported` list is now empty — every §33 operation is served).
+
+## Phase 15 — Real FUSE-over-`io_uring` (F2) transport
+
+**Complete.** A real F2 mount is achieved: an OrFS volume mounted with
+`--transport fuse-uring` serves ordinary POSIX syscalls through a genuine
+FUSE-over-`io_uring` ring, on the development kernel (7.2.9-2-cachyos, FUSE ABI
+7.45, `fuse.enable_uring=Y`).
+
+### Delivered
+
+* **Raw-SQE path (`src/fuse_uring.rs`).** `FUSE_IO_URING_CMD_REGISTER` requires
+  `sqe->len == 2` (the iovec count), which the pinned `io-uring` 0.7.15 crate
+  cannot express. `entry128_set_len` writes that ABI field directly into the
+  `#[repr(C)]`, 128-byte `Entry128` (documented unsafe invariant), and
+  `FuseUringRing::submit_register` / `submit_commit_and_fetch` / `submit` /
+  `submit_and_wait_timeout` expose the non-blocking lifecycle the driver needs.
+* **Native F2 session (`src/fuse_native.rs`).** Owns `/dev/fuse` end to end:
+  opens it, performs `mount(2)` (or the setuid `fusermount3` helper, which hands
+  back the fd over `_FUSE_COMMFD` — required because the container's unprivileged
+  uid has `CapEff=0`), reads and answers `FUSE_INIT` advertising
+  `FUSE_OVER_IO_URING` (`flags2`), registers one ring entry per CPU queue
+  (`num_possible_cpus()`), and runs the `COMMIT_AND_FETCH` loop over 24 FUSE
+  opcodes. The ring is created and driven by the session thread, because
+  `io_uring` delivers `URING_CMD` completions as task-work to the submitting task
+  (`io_uring_cmd_complete_in_task`) — creating it anywhere else deadlocks.
+  A classical `/dev/fuse` reader is kept for `FORGET`/`BATCH_FORGET`/`INTERRUPT`.
+* **Reuse, not reinvention.** The F2 dispatcher borrows the *same* transport-neutral
+  `OrfsFuse` adaptor (handle/lookup tables, permission checks, metrics), so
+  transport changes can never change filesystem semantics.
+* **Doctor.** `orfs doctor` performs a *live* negotiation (throwaway mount +
+  `INIT` + ring registration) when the static preconditions hold, and reports the
+  real result; otherwise the exact static reason.
+* **Bench harness.** `BenchConfig::unavailable` no longer pre-declares F2/E2
+  unavailable when the gate is open; the live mount decides, and a silent
+  fallback to F1/F0 is reported unavailable rather than mislabelled as F2.
+
+### Evidence
+
+* `evidence/correctness/fuse-uring-f2-engagement.json` — the live `INIT` flags
+  (`kernel_offered`, `accepted`, `engaged`, ABI 7.45), 16 queues, and the ring
+  counters (e.g. 59 requests served / 59 completions / 0 register failures).
+* `evidence/correctness/fuse-uring-equivalence.json` — the same POSIX transcript
+  under F0, F1 and F2, byte-identical.
+* `evidence/performance/fuse-uring.json` — real F0/F1/F2 numbers (sequential read,
+  random 4K read, random 1-byte read, metadata lookup, create/unlink, fsync) with
+  kernel, ABI, image digest and mount options.
+
+### Tests
+
+`tests/fuse_uring.rs` (4): ring-layer safety; `transport_equivalence_across_f0_f1_f2`;
+`f2_real_mount_engages_and_carries_requests`; `f2_performance_f0_f1_f2`. The
+kmount suite (`scripts/container-fuse-test.sh`) additionally drives F2/E2 through
+the full performance court.
+
+### Remaining limits
+
+`ADD_QUEUE`/`ADD_BUFPOOL` and the buffer-pool `offset` field do not exist on FUSE
+ABI 7.45, so only the baseline register/commit interface is used; zero-copy is
+not exercised; `OrfsMount::notifier()` is `None` for a native F2 mount; and
+`auto_unmount` is not forwarded to the session. See `docs/FUSE_URING.md` §7.

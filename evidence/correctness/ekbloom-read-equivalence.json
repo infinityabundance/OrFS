@@ -2897,12 +2897,12 @@
       "certified": true,
       "equivalent": true,
       "file": "f4",
-      "generation": 3,
+      "generation": null,
       "historical": true,
       "inode": 4,
       "length": 4096,
       "offset": 10,
-      "path": "path-bloom",
+      "path": "logical-extent",
       "root": 81720
     },
     {
@@ -2910,12 +2910,12 @@
       "certified": true,
       "equivalent": true,
       "file": "f4",
-      "generation": null,
+      "generation": 3,
       "historical": true,
       "inode": 4,
       "length": 777,
       "offset": 3,
-      "path": "logical-extent",
+      "path": "path-bloom",
       "root": 81720
     },
     {

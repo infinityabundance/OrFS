@@ -55,31 +55,33 @@ worth it; otherwise it falls back to the authoritative extent read. Absolute
 latencies in the evidence come from unoptimized test builds; the *selection*, not
 the absolute figure, is the point.
 
-## 4. FUSE-over-`io_uring` (profile F2) is implemented but not active here
+## 4. FUSE-over-`io_uring` (profile F2) is active here (Phase 15)
 
-The native F2 transport adapter is implemented and tested, but a real F2 mount
-is **not achievable on this host**, for three independent reasons detailed in
-`docs/FUSE_URING.md` §7:
+**Resolved in Phase 15.** The three former blockers are closed, and a real F2
+mount now works on this host (kernel 7.2.9-2-cachyos, FUSE ABI 7.45,
+`fuse.enable_uring=Y`):
 
-1. **`fuse.enable_uring=0`.** The running kernel (`7.2.9`, FUSE ABI 7.45) gates
-   FUSE-over-`io_uring` on the `fuse.enable_uring` module parameter
-   (`fs/fuse/inode.c`, `fs/fuse/dev_uring.c`). It is off; the parameter is
-   `root:root 0644` and the container runs unprivileged. The kernel therefore
-   never offers `FUSE_OVER_IO_URING` at `INIT`, and every `IORING_OP_URING_CMD`
-   would be rejected with `-EOPNOTSUPP`. Changing a host-global kernel parameter
-   is deliberately out of scope.
-2. **`io-uring` 0.7.15 cannot set `sqe->len`.** `FUSE_IO_URING_CMD_REGISTER`
-   requires `sqe->len == 2`; the crate's `UringCmd80` builder exposes no `len`
-   setter. Closing this needs a raw-SQE path.
-3. **`fuser` 0.18 does not expose the `/dev/fuse` fd.** A native ring cannot
-   attach to a `fuser`-managed session; a full F2 driver would own the session.
+1. **`fuse.enable_uring` is now `Y`.** The kernel offers `FUSE_OVER_IO_URING` in
+   the `FUSE_INIT` request, and the server echoes it (`flags2`). This is the gate
+   (`fs/fuse/inode.c`; `fs/fuse/dev_uring.c`).
+2. **The `sqe->len` gap is closed (`src/fuse_uring.rs`).** `FUSE_IO_URING_CMD_REGISTER`
+   needs `sqe->len == 2`; `entry128_set_len` writes that ABI field into the
+   `#[repr(C)]` 128-byte SQE, so `REGISTER` is accepted (no `-EINVAL`).
+3. **OrFS now owns the `/dev/fuse` fd (`src/fuse_native.rs`).** The F2 session
+   opens `/dev/fuse`, mounts it (`mount(2)`, or the setuid `fusermount3` helper
+   when the uid has no effective `CAP_SYS_ADMIN` — verified in the kmount
+   container, `CapEff=0`), performs the `INIT` handshake, and drives the
+   `COMMIT_AND_FETCH` ring. It does not use `fuser` for the F2 path.
 
-Consequently `orfs mount --transport fuse-uring` performs the real `INIT`
-negotiation, records the precise reason, and continues as F1/F0 with
-**byte-identical contents**. `orfs doctor` reports F2 as *not usable* with the
-exact reason rather than merely "plausible". Zero-copy is opt-in and
-capability-checked (`CAP_SYS_ADMIN`) and, because F2 does not engage here, is not
-exercised; no zero-copy performance number is claimed.
+`orfs mount --transport fuse-uring` therefore negotiates F2 for real and serves
+POSIX operations through the ring; `orfs doctor` performs a live negotiation.
+The fallback to F1/F0 remains exact and content-preserving when F2 cannot engage.
+
+Residual F2 limits on this kernel: `ADD_QUEUE`/`ADD_BUFPOOL` and the buffer-pool
+`offset` field do not exist at FUSE ABI 7.45, so only the baseline register/commit
+interface is used; zero-copy is not exercised; a native F2 mount exposes no `fuser`
+`Notifier` (`OrfsMount::notifier()` is `None`); and `auto_unmount` is not forwarded
+to the session. See `docs/FUSE_URING.md`.
 
 ## 5. Logical deletion is not secure erasure (research §29)
 
@@ -125,16 +127,17 @@ leaves the watermark one durability point behind, so loss of exactly those
 not-yet-watermarked bytes cannot be detected. This is inherent to any scheme that
 cannot rewrite committed history. See `docs/RECOVERY.md` §5.
 
-## 7. Performance: no portability claim, and F2/E2 remain unavailable
+## 7. Performance: no portability claim
 
 Phase 12 measured real configurations (`conventional`, `F0`, `F1`, `E1`) on one
-host/container; the full methodology and numbers are in `docs/PERFORMANCE.md`. The
-figures are **warm-cache single-run** measurements and are not a portable
-benchmark. `fio`, `hyperfine`, and `perf` are absent from the pinned image, and
-hardware counters are additionally blocked by `perf_event_paranoid=2` and dropped
-`CAP_PERFMON`; Criterion/Divan were not added (the pinned build is offline-capable
-and dependency-free). F2/E2 remain unavailable because `fuse.enable_uring=0`
-(§4). No performance superiority is claimed.
+host/container; Phase 15 added `F2` (and `E2`, `F0`/`F1` comparisons in
+`evidence/performance/fuse-uring.json`). The full methodology and numbers are in
+`docs/PERFORMANCE.md` and `docs/FUSE_URING.md`. The figures are **warm-cache
+single-run** measurements and are not a portable benchmark. `fio`, `hyperfine`,
+and `perf` are absent from the pinned image, and hardware counters are
+additionally blocked by `perf_event_paranoid=2` and dropped `CAP_PERFMON`;
+Criterion/Divan were not added (the pinned build is offline-capable and
+dependency-free). No performance superiority is claimed.
 
 ## 8. Extended-attribute access rule
 

@@ -4,7 +4,7 @@
     {
       "file": "bench.rs",
       "has_safety_comment": true,
-      "line": 641,
+      "line": 644,
       "text": "unsafe {"
     },
     {
@@ -58,37 +58,163 @@
     {
       "file": "fuse.rs",
       "has_safety_comment": true,
-      "line": 1860,
+      "line": 1867,
       "text": "let mut st: libc::statvfs = unsafe { std::mem::zeroed() };"
     },
     {
       "file": "fuse.rs",
       "has_safety_comment": true,
-      "line": 1861,
+      "line": 1868,
       "text": "let rc = unsafe { libc::statvfs(c.as_ptr(), &mut st) };"
     },
     {
       "file": "fuse.rs",
       "has_safety_comment": true,
-      "line": 2079,
+      "line": 2155,
       "text": "unsafe {"
     },
     {
       "file": "fuse.rs",
       "has_safety_comment": true,
-      "line": 2204,
+      "line": 2325,
       "text": "let rc = unsafe { libc::umount2(c.as_ptr(), libc::MNT_DETACH) };"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 417,
+      "text": "let mut st: libc::statvfs = unsafe { std::mem::zeroed() };"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 418,
+      "text": "let rc = unsafe { libc::statvfs(c.as_ptr(), &mut st) };"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 1131,
+      "text": "unsafe impl Send for EntryState {}"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 1237,
+      "text": "let (uid, gid) = unsafe { (libc::geteuid(), libc::getegid()) };"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 1258,
+      "text": "let rc = unsafe {"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 1284,
+      "text": "if unsafe { libc::socketpair(libc::AF_UNIX, libc::SOCK_STREAM, 0, fds.as_mut_ptr()) } != 0 {"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 1291,
+      "text": "unsafe {"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 1305,
+      "text": "unsafe {"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 1312,
+      "text": "unsafe {"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 1321,
+      "text": "unsafe {"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 1351,
+      "text": "let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 1358,
+      "text": "let n = unsafe { libc::recvmsg(sock, &mut msg, 0) };"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 1370,
+      "text": "unsafe {"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 1418,
+      "text": "unsafe {"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 1429,
+      "text": "let n = unsafe { libc::read(fd, buf.as_mut_ptr().cast(), buf.len()) };"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 1446,
+      "text": "let n = unsafe { libc::write(fd, buf[off..].as_ptr().cast(), buf.len() - off) };"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 1742,
+      "text": "let n = unsafe { libc::dup(fd) };"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 1995,
+      "text": "let rc = unsafe { libc::poll(&mut pfd, 1, 200) };"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 2007,
+      "text": "let n = unsafe { libc::read(fd, buf.as_mut_ptr().cast(), buf.len()) };"
+    },
+    {
+      "file": "fuse_native.rs",
+      "has_safety_comment": true,
+      "line": 2060,
+      "text": "unsafe {"
     },
     {
       "file": "fuse_uring.rs",
       "has_safety_comment": true,
-      "line": 865,
+      "line": 829,
+      "text": "unsafe {"
+    },
+    {
+      "file": "fuse_uring.rs",
+      "has_safety_comment": true,
+      "line": 897,
       "text": "if unsafe { self.ring.submission().push(&entry) }.is_err() {"
     },
     {
       "file": "fuse_uring.rs",
       "has_safety_comment": true,
-      "line": 1025,
+      "line": 1145,
       "text": "if unsafe { self.ring.submission().push(&entry) }.is_err() {"
     },
     {
@@ -137,5 +263,5 @@
   "generator": "tests/hostile_files.rs",
   "method": "every `unsafe` token in src/*.rs is enumerated from the source at test time; each must be accompanied by a `SAFETY:` invariant comment within the preceding six lines",
   "schema": "orfs.evidence.unsafe-audit.v1",
-  "unsafe_sites": 22
+  "unsafe_sites": 43
 }

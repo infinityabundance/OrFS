@@ -1,0 +1,46 @@
+{
+  "environment": {
+    "fuse_abi_major": 7,
+    "fuse_abi_minor": 45,
+    "kernel_release": "7.2.9-2-cachyos",
+    "max_write": 131072,
+    "mount_options": "fsname=orfs,subtype=orfs,max_read=131072,rw",
+    "num_queues": 16,
+    "payload_buf": 262144
+  },
+  "generated_by": "tests/fuse_uring.rs::f2_real_mount_engages_and_carries_requests",
+  "image_digest": "sha256:a41df86df391732ab467b5bedc8b4a17c0df437fa180b5230417a6a8339d97ac",
+  "init_flags": {
+    "engaged": true,
+    "fuse_abi": [
+      7,
+      45
+    ],
+    "kernel_offered_fuse_over_io_uring": true,
+    "server_accepted": true
+  },
+  "schema": "orfs.fuse-uring-engagement.v1",
+  "stats_after": {
+    "forgets_classical": 0,
+    "interrupts_classical": 0,
+    "negative_completions": 0,
+    "register_failures": 0,
+    "register_sqes": 16,
+    "reply_bytes": 1479,
+    "requests_served": 59,
+    "ring_completions": 59,
+    "ring_submits": 59
+  },
+  "stats_before": {
+    "forgets_classical": 0,
+    "interrupts_classical": 0,
+    "negative_completions": 0,
+    "register_failures": 0,
+    "register_sqes": 16,
+    "reply_bytes": 0,
+    "requests_served": 0,
+    "ring_completions": 0,
+    "ring_submits": 0
+  },
+  "transcript_len": 9
+}

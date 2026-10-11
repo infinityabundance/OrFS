@@ -247,6 +247,33 @@ impl BufferPool {
         self.slots.iter().map(|s| s.iov).collect()
     }
 
+    /// Build the two-element `iovec` array that a FUSE-over-`io_uring`
+    /// `REGISTER` command imports from `sqe->addr`: `iov[0]` is the request
+    /// header, `iov[1]` the payload buffer.
+    ///
+    /// This is the same pin discipline as [`BufferPool::iovecs`], specialised to
+    /// the ring transport: both buffers must stay allocated, at a stable address,
+    /// and untouched by anyone else for as long as the kernel keeps the entry
+    /// registered — deregistration is *not* implied by cancelling an operation,
+    /// so the entry's whole lifetime is the pin window. The array is boxed so its
+    /// own address is stable across moves of the owning struct, which is what lets
+    /// the caller hand the kernel a pointer once at registration time.
+    pub fn register_iovecs(
+        header: &AlignedBuffer,
+        payload: &AlignedBuffer,
+    ) -> Box<[libc::iovec; 2]> {
+        Box::new([
+            libc::iovec {
+                iov_base: header.as_ptr().cast(),
+                iov_len: header.len(),
+            },
+            libc::iovec {
+                iov_base: payload.as_ptr().cast(),
+                iov_len: payload.len(),
+            },
+        ])
+    }
+
     /// Attempt to release (`true`) or report why the pool is still busy.
     ///
     /// A pool is releasable only when nothing is pinned and nothing is in flight.

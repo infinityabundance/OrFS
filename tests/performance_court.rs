@@ -6,9 +6,8 @@
 //!
 //! * a **conventional** baseline (a plain directory on the same backing medium);
 //! * `F0` (traditional FUSE, synchronous backing), `F1` (traditional FUSE,
-//!   `io_uring` backing), `E1` (traditional FUSE, `io_uring` backing + EKBLOOM
-//!   manifestation) when a real FUSE mount is available;
-//! * `F2`/`E2` reported **UNAVAILABLE** with the concrete runtime reason.
+//!   `io_uring` backing), `F2` (FUSE-over-`io_uring`) and their EKBLOOM variants
+//!   `E1`/`E2` when a real FUSE mount is available.
 //!
 //! It writes `evidence/performance/{sequential-read,random-read,append-write,
 //! fuse-baseline,mount-replay}.json` when run against real mounts, and the
@@ -45,8 +44,17 @@ const FS_WORKLOADS: [Workload; 11] = [
     Workload::FsyncLatency,
 ];
 
-/// The stored-filesystem configurations, in isolation order.
-const FUSE_CONFIGS: [BenchConfig; 3] = [BenchConfig::F0, BenchConfig::F1, BenchConfig::E1];
+/// The stored-filesystem configurations, in isolation order. `F2`/`E2` are the
+/// FUSE-over-`io_uring` transport; under a non-mount-capable container they are
+/// skipped with the exact static reason, and under the kmount container they are
+/// attempted and the live mount decides (`src/bench.rs`).
+const FUSE_CONFIGS: [BenchConfig; 5] = [
+    BenchConfig::F0,
+    BenchConfig::F1,
+    BenchConfig::E1,
+    BenchConfig::F2,
+    BenchConfig::E2,
+];
 
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -204,10 +212,6 @@ fn performance_court_sweep() {
     let mut probe: serde_json::Value = serde_json::Value::Null;
     let mut mount_replay: Vec<serde_json::Value> = Vec::new();
 
-    // F2/E2 unavailability is a fact about this host, recorded for every config.
-    let f2_reason = BenchConfig::F2.unavailable();
-    let e2_reason = BenchConfig::E2.unavailable();
-
     // Mounted configurations are only attempted under the kmount container.
     if required {
         let m = probe_mount(&backing, &scratch, &base)
@@ -242,36 +246,19 @@ fn performance_court_sweep() {
                 entries.insert(config.name().to_string(), r);
             }
         } else {
+            let reason = "not a FUSE-capable container (ORFS_FUSE_TEST unset); \
+                          run under scripts/container-fuse-test.sh";
             for config in FUSE_CONFIGS {
                 entries.insert(
                     config.name().to_string(),
                     serde_json::json!({
                         "config": config.name(),
                         "config_available": false,
-                        "unavailable_reason": "not a FUSE-capable container (ORFS_FUSE_TEST unset); \
-                                               run under scripts/container-fuse-test.sh",
+                        "unavailable_reason": reason,
                     }),
                 );
             }
         }
-
-        // F2 / E2: always unavailable with the concrete reason.
-        entries.insert(
-            "f2".to_string(),
-            serde_json::json!({
-                "config": "f2",
-                "config_available": false,
-                "unavailable_reason": f2_reason.clone().unwrap_or_else(|| "no reason recorded".into()),
-            }),
-        );
-        entries.insert(
-            "e2".to_string(),
-            serde_json::json!({
-                "config": "e2",
-                "config_available": false,
-                "unavailable_reason": e2_reason.clone().unwrap_or_else(|| "no reason recorded".into()),
-            }),
-        );
 
         per_workload.insert(
             workload.name().to_string(),

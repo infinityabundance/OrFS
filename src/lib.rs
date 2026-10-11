@@ -35,6 +35,7 @@ pub mod error;
 pub mod extent;
 pub mod failpoints;
 pub mod fuse;
+pub mod fuse_native;
 pub mod fuse_uring;
 pub mod image;
 pub mod index;

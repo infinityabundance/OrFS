@@ -6,7 +6,7 @@
     "cores_visible": 8,
     "cpu_max": "800000 100000",
     "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-    "fuse_enable_uring": false,
+    "fuse_enable_uring": true,
     "kernel_release": "7.2.9-2-cachyos",
     "likely_container": true,
     "machine": "x86_64",
@@ -29,7 +29,7 @@
         "cores_visible": 8,
         "cpu_max": "800000 100000",
         "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-        "fuse_enable_uring": false,
+        "fuse_enable_uring": true,
         "kernel_release": "7.2.9-2-cachyos",
         "likely_container": true,
         "machine": "x86_64",
@@ -40,13 +40,13 @@
       "generated_by": "src/bench.rs",
       "measurement": {
         "bytes": 819200,
-        "mb_per_s": 1752.4419097167258,
+        "mb_per_s": 1334.477978344055,
         "notes": [
           "4 concurrent reader thread(s)"
         ],
         "ops": 200,
-        "ops_per_s": 427842.263114435,
-        "seconds": 0.000467462
+        "ops_per_s": 325800.28768165404,
+        "seconds": 0.000613873
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -77,7 +77,7 @@
         "cores_visible": 8,
         "cpu_max": "800000 100000",
         "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-        "fuse_enable_uring": false,
+        "fuse_enable_uring": true,
         "kernel_release": "7.2.9-2-cachyos",
         "likely_container": true,
         "machine": "x86_64",
@@ -89,18 +89,18 @@
       "measurement": {
         "bytes": 0,
         "latency": {
-          "max_ns": 56753696,
-          "mean_ns": 40234180.635,
-          "min_ns": 31536630,
-          "p50_ns": 37210049,
-          "p95_ns": 53059250,
-          "p99_ns": 54711243,
+          "max_ns": 131609186,
+          "mean_ns": 81499849.07,
+          "min_ns": 70232453,
+          "p50_ns": 80487463,
+          "p95_ns": 89960904,
+          "p99_ns": 111825451,
           "samples": 200
         },
         "mb_per_s": 0.0,
         "ops": 200,
-        "ops_per_s": 24.85184937491865,
-        "seconds": 8.047690817
+        "ops_per_s": 12.269056864157488,
+        "seconds": 16.301171493
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -131,7 +131,7 @@
         "cores_visible": 8,
         "cpu_max": "800000 100000",
         "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-        "fuse_enable_uring": false,
+        "fuse_enable_uring": true,
         "kernel_release": "7.2.9-2-cachyos",
         "likely_container": true,
         "machine": "x86_64",
@@ -143,18 +143,18 @@
       "measurement": {
         "bytes": 0,
         "latency": {
-          "max_ns": 717308,
-          "mean_ns": 280641.59375,
-          "min_ns": 246801,
-          "p50_ns": 264413,
-          "p95_ns": 348120,
-          "p99_ns": 717308,
+          "max_ns": 679795,
+          "mean_ns": 285807.125,
+          "min_ns": 255515,
+          "p50_ns": 260685,
+          "p95_ns": 429118,
+          "p99_ns": 679795,
           "samples": 32
         },
         "mb_per_s": 0.0,
         "ops": 6400,
-        "ops_per_s": 712481.9263373843,
-        "seconds": 0.008982684
+        "ops_per_s": 699529.7738999539,
+        "seconds": 0.009149003
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -185,7 +185,7 @@
         "cores_visible": 8,
         "cpu_max": "800000 100000",
         "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-        "fuse_enable_uring": false,
+        "fuse_enable_uring": true,
         "kernel_release": "7.2.9-2-cachyos",
         "likely_container": true,
         "machine": "x86_64",
@@ -197,18 +197,18 @@
       "measurement": {
         "bytes": 819200,
         "latency": {
-          "max_ns": 5253043,
-          "mean_ns": 3674323.005,
-          "min_ns": 3384817,
-          "p50_ns": 3560224,
-          "p95_ns": 4786813,
-          "p99_ns": 5231483,
+          "max_ns": 6368669,
+          "mean_ns": 3890995.535,
+          "min_ns": 3490489,
+          "p50_ns": 3706591,
+          "p95_ns": 5356513,
+          "p99_ns": 5580831,
           "samples": 200
         },
-        "mb_per_s": 0.10553403121011985,
+        "mb_per_s": 0.044206221066784804,
         "ops": 200,
-        "ops_per_s": 25.765144338408167,
-        "seconds": 7.762424979
+        "ops_per_s": 10.792534440133009,
+        "seconds": 18.531328402
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -239,7 +239,7 @@
         "cores_visible": 8,
         "cpu_max": "800000 100000",
         "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-        "fuse_enable_uring": false,
+        "fuse_enable_uring": true,
         "kernel_release": "7.2.9-2-cachyos",
         "likely_container": true,
         "machine": "x86_64",
@@ -251,18 +251,18 @@
       "measurement": {
         "bytes": 0,
         "latency": {
-          "max_ns": 81442,
-          "mean_ns": 9463.265,
-          "min_ns": 7614,
-          "p50_ns": 8446,
-          "p95_ns": 11882,
-          "p99_ns": 28703,
+          "max_ns": 70502,
+          "mean_ns": 9442.115,
+          "min_ns": 7634,
+          "p50_ns": 8486,
+          "p95_ns": 11181,
+          "p99_ns": 27311,
           "samples": 200
         },
         "mb_per_s": 0.0,
         "ops": 200,
-        "ops_per_s": 105192.90011039995,
-        "seconds": 0.001901269
+        "ops_per_s": 105435.23930372676,
+        "seconds": 0.001896899
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -293,7 +293,7 @@
         "cores_visible": 8,
         "cpu_max": "800000 100000",
         "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-        "fuse_enable_uring": false,
+        "fuse_enable_uring": true,
         "kernel_release": "7.2.9-2-cachyos",
         "likely_container": true,
         "machine": "x86_64",
@@ -305,18 +305,18 @@
       "measurement": {
         "bytes": 200,
         "latency": {
-          "max_ns": 41297,
-          "mean_ns": 2721.3,
+          "max_ns": 329785,
+          "mean_ns": 4626.905,
           "min_ns": 150,
-          "p50_ns": 180,
-          "p95_ns": 10440,
-          "p99_ns": 20689,
+          "p50_ns": 190,
+          "p95_ns": 13064,
+          "p99_ns": 39032,
           "samples": 200
         },
-        "mb_per_s": 0.3606430265162785,
+        "mb_per_s": 0.21299209160363874,
         "ops": 200,
-        "ops_per_s": 360643.0265162785,
-        "seconds": 0.000554565
+        "ops_per_s": 212992.09160363875,
+        "seconds": 0.000939002
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -347,7 +347,7 @@
         "cores_visible": 8,
         "cpu_max": "800000 100000",
         "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-        "fuse_enable_uring": false,
+        "fuse_enable_uring": true,
         "kernel_release": "7.2.9-2-cachyos",
         "likely_container": true,
         "machine": "x86_64",
@@ -359,18 +359,18 @@
       "measurement": {
         "bytes": 819200,
         "latency": {
-          "max_ns": 1057825,
-          "mean_ns": 10680.015,
-          "min_ns": 130,
+          "max_ns": 38391,
+          "mean_ns": 2476.165,
+          "min_ns": 190,
           "p50_ns": 211,
-          "p95_ns": 13876,
-          "p99_ns": 30277,
+          "p95_ns": 10309,
+          "p99_ns": 14678,
           "samples": 200
         },
-        "mb_per_s": 381.79305716409596,
+        "mb_per_s": 1622.1396719285879,
         "ops": 200,
-        "ops_per_s": 93211.19559670311,
-        "seconds": 0.002145665
+        "ops_per_s": 396030.1933419404,
+        "seconds": 0.000505012
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -401,7 +401,7 @@
         "cores_visible": 8,
         "cpu_max": "800000 100000",
         "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-        "fuse_enable_uring": false,
+        "fuse_enable_uring": true,
         "kernel_release": "7.2.9-2-cachyos",
         "likely_container": true,
         "machine": "x86_64",
@@ -413,18 +413,18 @@
       "measurement": {
         "bytes": 819200,
         "latency": {
-          "max_ns": 6904638,
-          "mean_ns": 3688042.345,
-          "min_ns": 2467726,
-          "p50_ns": 3639854,
-          "p95_ns": 5005113,
-          "p99_ns": 5166554,
+          "max_ns": 10014672,
+          "mean_ns": 6390796.105,
+          "min_ns": 5404422,
+          "p50_ns": 6352561,
+          "p95_ns": 7218907,
+          "p99_ns": 9261487,
           "samples": 200
         },
-        "mb_per_s": 1.1105596286611792,
+        "mb_per_s": 0.6408834929433385,
         "ops": 200,
-        "ops_per_s": 271.1327218411082,
-        "seconds": 0.737646119
+        "ops_per_s": 156.46569651936974,
+        "seconds": 1.27823545
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -455,7 +455,7 @@
         "cores_visible": 8,
         "cpu_max": "800000 100000",
         "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-        "fuse_enable_uring": false,
+        "fuse_enable_uring": true,
         "kernel_release": "7.2.9-2-cachyos",
         "likely_container": true,
         "machine": "x86_64",
@@ -467,18 +467,18 @@
       "measurement": {
         "bytes": 0,
         "latency": {
-          "max_ns": 34867635,
-          "mean_ns": 21771498.53,
-          "min_ns": 19306202,
-          "p50_ns": 21128944,
-          "p95_ns": 30008607,
-          "p99_ns": 34487535,
+          "max_ns": 84760024,
+          "mean_ns": 52750359.855,
+          "min_ns": 42107210,
+          "p50_ns": 52529827,
+          "p95_ns": 54955014,
+          "p99_ns": 58278796,
           "samples": 200
         },
         "mb_per_s": 0.0,
         "ops": 200,
-        "ops_per_s": 15.327855450404119,
-        "seconds": 13.048139751
+        "ops_per_s": 6.340927704450172,
+        "seconds": 31.54112605
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -509,7 +509,7 @@
         "cores_visible": 8,
         "cpu_max": "800000 100000",
         "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-        "fuse_enable_uring": false,
+        "fuse_enable_uring": true,
         "kernel_release": "7.2.9-2-cachyos",
         "likely_container": true,
         "machine": "x86_64",
@@ -520,10 +520,10 @@
       "generated_by": "src/bench.rs",
       "measurement": {
         "bytes": 262144,
-        "mb_per_s": 4.962084284373934,
+        "mb_per_s": 2.6814754739418194,
         "ops": 64,
-        "ops_per_s": 1211.44635848973,
-        "seconds": 0.052829413
+        "ops_per_s": 654.657098130327,
+        "seconds": 0.097761103
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -554,7 +554,7 @@
         "cores_visible": 8,
         "cpu_max": "800000 100000",
         "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-        "fuse_enable_uring": false,
+        "fuse_enable_uring": true,
         "kernel_release": "7.2.9-2-cachyos",
         "likely_container": true,
         "machine": "x86_64",
@@ -565,10 +565,10 @@
       "generated_by": "src/bench.rs",
       "measurement": {
         "bytes": 262144,
-        "mb_per_s": 2913.747110083585,
+        "mb_per_s": 2182.6417105175515,
         "ops": 64,
-        "ops_per_s": 711364.0405477503,
-        "seconds": 0.000089968
+        "ops_per_s": 532871.5113568241,
+        "seconds": 0.000120104
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -591,8 +591,8 @@
     "backing_io_used": "sync",
     "description": "F0 (traditional /dev/fuse, sync backing)",
     "durability": "ordered",
-    "fuse_over_io_uring": "not usable: fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off",
-    "mount_seconds": 0.001021937,
+    "fuse_over_io_uring": "not usable: F2 was not requested for this mount",
+    "mount_seconds": 0.00124909,
     "transport_requested": "fuse",
     "transport_used": "F0",
     "unmounted_cleanly": true
@@ -626,7 +626,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -637,13 +637,13 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 819200,
-          "mb_per_s": 10925.580154707923,
+          "mb_per_s": 3115.3027076361423,
           "notes": [
             "4 concurrent reader thread(s)"
           ],
           "ops": 200,
-          "ops_per_s": 2667377.9674579888,
-          "seconds": 0.00007498
+          "ops_per_s": 760571.95010648,
+          "seconds": 0.00026296
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -674,7 +674,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -685,13 +685,13 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 819200,
-          "mb_per_s": 5.510331754325975,
+          "mb_per_s": 3.4352475215771037,
           "notes": [
             "4 concurrent reader thread(s)"
           ],
           "ops": 200,
-          "ops_per_s": 1345.29583845849,
-          "seconds": 0.148666185
+          "ops_per_s": 838.683476947535,
+          "seconds": 0.238468988
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -710,8 +710,51 @@
       },
       "e2": {
         "config": "e2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; EKBLOOM manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 819200,
+          "mb_per_s": 3.711708434283353,
+          "notes": [
+            "4 concurrent reader thread(s)"
+          ],
+          "ops": 200,
+          "ops_per_s": 906.1788169637092,
+          "seconds": 0.220706991
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "concurrent-readers"
       },
       "f0": {
         "config": "f0",
@@ -727,7 +770,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -738,13 +781,13 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 819200,
-          "mb_per_s": 1752.4419097167258,
+          "mb_per_s": 1334.477978344055,
           "notes": [
             "4 concurrent reader thread(s)"
           ],
           "ops": 200,
-          "ops_per_s": 427842.263114435,
-          "seconds": 0.000467462
+          "ops_per_s": 325800.28768165404,
+          "seconds": 0.000613873
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -775,7 +818,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -786,13 +829,13 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 819200,
-          "mb_per_s": 1276.3166299756797,
+          "mb_per_s": 1028.1601931816613,
           "notes": [
             "4 concurrent reader thread(s)"
           ],
           "ops": 200,
-          "ops_per_s": 311600.73974015616,
-          "seconds": 0.000641847
+          "ops_per_s": 251015.67216349152,
+          "seconds": 0.000796763
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -811,8 +854,51 @@
       },
       "f2": {
         "config": "f2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; no manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 819200,
+          "mb_per_s": 1127.4847812952037,
+          "notes": [
+            "4 concurrent reader thread(s)"
+          ],
+          "ops": 200,
+          "ops_per_s": 275264.83918339934,
+          "seconds": 0.000726573
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "concurrent-readers"
       }
     },
     "create-unlink": {
@@ -830,7 +916,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -842,18 +928,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 1697508,
-            "mean_ns": 1139518.42,
-            "min_ns": 1095274,
-            "p50_ns": 1114460,
-            "p95_ns": 1199168,
-            "p99_ns": 1686769,
+            "max_ns": 1715259,
+            "mean_ns": 1174307.455,
+            "min_ns": 1100733,
+            "p50_ns": 1120059,
+            "p95_ns": 1676648,
+            "p99_ns": 1698829,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 877.1899238333796,
-          "seconds": 0.228000795
+          "ops_per_s": 850.9982232561246,
+          "seconds": 0.235018117
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -884,7 +970,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -896,18 +982,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 67152140,
-            "mean_ns": 52448553.825,
-            "min_ns": 38165271,
-            "p50_ns": 53188459,
-            "p95_ns": 65397195,
-            "p99_ns": 66393414,
+            "max_ns": 140431782,
+            "mean_ns": 92218066.395,
+            "min_ns": 81475322,
+            "p50_ns": 91731051,
+            "p95_ns": 95864440,
+            "p99_ns": 101755842,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 19.06448930862286,
-          "seconds": 10.490708498
+          "ops_per_s": 10.843025452324076,
+          "seconds": 18.445036478
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -926,8 +1012,57 @@
       },
       "e2": {
         "config": "e2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; EKBLOOM manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 0,
+          "latency": {
+            "max_ns": 160395354,
+            "mean_ns": 104667677.575,
+            "min_ns": 86505249,
+            "p50_ns": 102231142,
+            "p95_ns": 126768641,
+            "p99_ns": 145257069,
+            "samples": 200
+          },
+          "mb_per_s": 0.0,
+          "ops": 200,
+          "ops_per_s": 9.553409588349645,
+          "seconds": 20.934934083
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "create-unlink"
       },
       "f0": {
         "config": "f0",
@@ -943,7 +1078,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -955,18 +1090,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 56753696,
-            "mean_ns": 40234180.635,
-            "min_ns": 31536630,
-            "p50_ns": 37210049,
-            "p95_ns": 53059250,
-            "p99_ns": 54711243,
+            "max_ns": 131609186,
+            "mean_ns": 81499849.07,
+            "min_ns": 70232453,
+            "p50_ns": 80487463,
+            "p95_ns": 89960904,
+            "p99_ns": 111825451,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 24.85184937491865,
-          "seconds": 8.047690817
+          "ops_per_s": 12.269056864157488,
+          "seconds": 16.301171493
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -997,7 +1132,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1009,18 +1144,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 63121920,
-            "mean_ns": 46255830.265,
-            "min_ns": 35580627,
-            "p50_ns": 45521441,
-            "p95_ns": 58975681,
-            "p99_ns": 59820739,
+            "max_ns": 138102939,
+            "mean_ns": 91480312.035,
+            "min_ns": 74398053,
+            "p50_ns": 86954357,
+            "p95_ns": 119539410,
+            "p99_ns": 133407492,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 21.616776245764097,
-          "seconds": 9.252073377
+          "ops_per_s": 10.930450946719235,
+          "seconds": 18.297506752
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1039,8 +1174,57 @@
       },
       "f2": {
         "config": "f2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; no manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 0,
+          "latency": {
+            "max_ns": 212408170,
+            "mean_ns": 100621786.06,
+            "min_ns": 86052492,
+            "p50_ns": 96570291,
+            "p95_ns": 121880460,
+            "p99_ns": 151835772,
+            "samples": 200
+          },
+          "mb_per_s": 0.0,
+          "ops": 200,
+          "ops_per_s": 9.937620152131817,
+          "seconds": 20.12554283
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "create-unlink"
       }
     },
     "dir-enumeration": {
@@ -1058,7 +1242,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1070,18 +1254,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 71083,
-            "mean_ns": 26379.28125,
-            "min_ns": 23774,
-            "p50_ns": 23955,
-            "p95_ns": 38792,
-            "p99_ns": 71083,
+            "max_ns": 92912,
+            "mean_ns": 28350.5625,
+            "min_ns": 22902,
+            "p50_ns": 23083,
+            "p95_ns": 47498,
+            "p99_ns": 92912,
             "samples": 32
           },
           "mb_per_s": 0.0,
           "ops": 6400,
-          "ops_per_s": 7567713.297181737,
-          "seconds": 0.000845698
+          "ops_per_s": 7037204.822244604,
+          "seconds": 0.000909452
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -1112,7 +1296,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1124,18 +1308,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 740422,
-            "mean_ns": 281156.59375,
-            "min_ns": 250829,
-            "p50_ns": 261788,
-            "p95_ns": 321219,
-            "p99_ns": 740422,
+            "max_ns": 1966550,
+            "mean_ns": 557287.84375,
+            "min_ns": 372123,
+            "p50_ns": 402228,
+            "p95_ns": 1442394,
+            "p99_ns": 1966550,
             "samples": 32
           },
           "mb_per_s": 0.0,
           "ops": 6400,
-          "ops_per_s": 711171.6397195583,
-          "seconds": 0.008999234
+          "ops_per_s": 358690.9729868147,
+          "seconds": 0.017842657
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1154,8 +1338,57 @@
       },
       "e2": {
         "config": "e2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; EKBLOOM manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 0,
+          "latency": {
+            "max_ns": 355582,
+            "mean_ns": 225782.8125,
+            "min_ns": 208568,
+            "p50_ns": 215471,
+            "p95_ns": 313022,
+            "p99_ns": 355582,
+            "samples": 32
+          },
+          "mb_per_s": 0.0,
+          "ops": 6400,
+          "ops_per_s": 885375.9140122912,
+          "seconds": 0.007228568
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "dir-enumeration"
       },
       "f0": {
         "config": "f0",
@@ -1171,7 +1404,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1183,18 +1416,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 717308,
-            "mean_ns": 280641.59375,
-            "min_ns": 246801,
-            "p50_ns": 264413,
-            "p95_ns": 348120,
-            "p99_ns": 717308,
+            "max_ns": 679795,
+            "mean_ns": 285807.125,
+            "min_ns": 255515,
+            "p50_ns": 260685,
+            "p95_ns": 429118,
+            "p99_ns": 679795,
             "samples": 32
           },
           "mb_per_s": 0.0,
           "ops": 6400,
-          "ops_per_s": 712481.9263373843,
-          "seconds": 0.008982684
+          "ops_per_s": 699529.7738999539,
+          "seconds": 0.009149003
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -1225,7 +1458,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1237,18 +1470,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 730353,
-            "mean_ns": 274361.96875,
-            "min_ns": 249275,
-            "p50_ns": 256018,
-            "p95_ns": 310389,
-            "p99_ns": 730353,
+            "max_ns": 854590,
+            "mean_ns": 335227.90625,
+            "min_ns": 271967,
+            "p50_ns": 290892,
+            "p95_ns": 445570,
+            "p99_ns": 854590,
             "samples": 32
           },
           "mb_per_s": 0.0,
           "ops": 6400,
-          "ops_per_s": 728829.9386940141,
-          "seconds": 0.008781198
+          "ops_per_s": 596416.8950368703,
+          "seconds": 0.010730749
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1267,8 +1500,57 @@
       },
       "f2": {
         "config": "f2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; no manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 0,
+          "latency": {
+            "max_ns": 1876283,
+            "mean_ns": 425854.34375,
+            "min_ns": 197537,
+            "p50_ns": 209310,
+            "p95_ns": 1839203,
+            "p99_ns": 1876283,
+            "samples": 32
+          },
+          "mb_per_s": 0.0,
+          "ops": 6400,
+          "ops_per_s": 469488.5619015167,
+          "seconds": 0.013631855
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "dir-enumeration"
       }
     },
     "fsync-latency": {
@@ -1286,7 +1568,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1298,18 +1580,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 1557496,
-            "mean_ns": 1139870.04,
-            "min_ns": 1093641,
-            "p50_ns": 1121152,
-            "p95_ns": 1191643,
-            "p99_ns": 1545454,
+            "max_ns": 1744689,
+            "mean_ns": 1166324.785,
+            "min_ns": 1107942,
+            "p50_ns": 1133180,
+            "p95_ns": 1317843,
+            "p99_ns": 1711446,
             "samples": 200
           },
-          "mb_per_s": 3.5853215988395046,
+          "mb_per_s": 3.5008079186907617,
           "ops": 200,
-          "ops_per_s": 875.3226559666759,
-          "seconds": 0.228487174
+          "ops_per_s": 854.6894332741117,
+          "seconds": 0.234003127
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -1340,7 +1622,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1352,18 +1634,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 5907795,
-            "mean_ns": 3580176.46,
-            "min_ns": 3390507,
-            "p50_ns": 3496886,
-            "p95_ns": 4266181,
-            "p99_ns": 5104185,
+            "max_ns": 11121540,
+            "mean_ns": 3734918.015,
+            "min_ns": 3461906,
+            "p50_ns": 3563236,
+            "p95_ns": 4696936,
+            "p99_ns": 6081805,
             "samples": 200
           },
-          "mb_per_s": 0.06081679855643803,
+          "mb_per_s": 0.028195788816852974,
           "ops": 200,
-          "ops_per_s": 14.84785121006788,
-          "seconds": 13.469962567
+          "ops_per_s": 6.883737504114496,
+          "seconds": 29.053984101
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1382,8 +1664,57 @@
       },
       "e2": {
         "config": "e2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; EKBLOOM manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 819200,
+          "latency": {
+            "max_ns": 225884361,
+            "mean_ns": 14908943.66,
+            "min_ns": 2888269,
+            "p50_ns": 3551795,
+            "p95_ns": 83110735,
+            "p99_ns": 146377207,
+            "samples": 200
+          },
+          "mb_per_s": 0.021913600229254607,
+          "ops": 200,
+          "ops_per_s": 5.350000055970363,
+          "seconds": 37.383177179
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "fsync-latency"
       },
       "f0": {
         "config": "f0",
@@ -1399,7 +1730,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1411,18 +1742,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 5253043,
-            "mean_ns": 3674323.005,
-            "min_ns": 3384817,
-            "p50_ns": 3560224,
-            "p95_ns": 4786813,
-            "p99_ns": 5231483,
+            "max_ns": 6368669,
+            "mean_ns": 3890995.535,
+            "min_ns": 3490489,
+            "p50_ns": 3706591,
+            "p95_ns": 5356513,
+            "p99_ns": 5580831,
             "samples": 200
           },
-          "mb_per_s": 0.10553403121011985,
+          "mb_per_s": 0.044206221066784804,
           "ops": 200,
-          "ops_per_s": 25.765144338408167,
-          "seconds": 7.762424979
+          "ops_per_s": 10.792534440133009,
+          "seconds": 18.531328402
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -1453,7 +1784,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1465,18 +1796,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 7908098,
-            "mean_ns": 3745998.505,
-            "min_ns": 3474414,
-            "p50_ns": 3595079,
-            "p95_ns": 5104976,
-            "p99_ns": 6770725,
+            "max_ns": 8222842,
+            "mean_ns": 4040662.225,
+            "min_ns": 3612548,
+            "p50_ns": 3786070,
+            "p95_ns": 5448175,
+            "p99_ns": 6506375,
             "samples": 200
           },
-          "mb_per_s": 0.10201319244666568,
+          "mb_per_s": 0.040066090773535123,
           "ops": 200,
-          "ops_per_s": 24.905564562174238,
-          "seconds": 8.030333924
+          "ops_per_s": 9.781760442757598,
+          "seconds": 20.446217342
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1495,8 +1826,57 @@
       },
       "f2": {
         "config": "f2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; no manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 819200,
+          "latency": {
+            "max_ns": 11914177,
+            "mean_ns": 3992230.77,
+            "min_ns": 3366689,
+            "p50_ns": 3759462,
+            "p95_ns": 5403683,
+            "p99_ns": 6632842,
+            "samples": 200
+          },
+          "mb_per_s": 0.039578576451168294,
+          "ops": 200,
+          "ops_per_s": 9.66273839139851,
+          "seconds": 20.698066314
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "fsync-latency"
       }
     },
     "metadata-lookup": {
@@ -1514,7 +1894,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1526,18 +1906,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 12914,
-            "mean_ns": 1209.055,
-            "min_ns": 801,
-            "p50_ns": 1102,
-            "p95_ns": 1373,
-            "p99_ns": 2144,
+            "max_ns": 5700,
+            "mean_ns": 976.125,
+            "min_ns": 591,
+            "p50_ns": 952,
+            "p95_ns": 1182,
+            "p99_ns": 1392,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 798030.4608226896,
-          "seconds": 0.000250617
+          "ops_per_s": 981161.6954474098,
+          "seconds": 0.00020384
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -1568,7 +1948,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1580,18 +1960,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 451132,
-            "mean_ns": 11504.17,
-            "min_ns": 7795,
-            "p50_ns": 8606,
-            "p95_ns": 11822,
-            "p99_ns": 27651,
+            "max_ns": 59140,
+            "mean_ns": 9357.7,
+            "min_ns": 7564,
+            "p50_ns": 8345,
+            "p95_ns": 13595,
+            "p99_ns": 29765,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 86601.79326333311,
-          "seconds": 0.002309421
+          "ops_per_s": 106333.8841428532,
+          "seconds": 0.001880868
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1610,8 +1990,57 @@
       },
       "e2": {
         "config": "e2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; EKBLOOM manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 0,
+          "latency": {
+            "max_ns": 38612,
+            "mean_ns": 8765.215,
+            "min_ns": 5861,
+            "p50_ns": 8476,
+            "p95_ns": 10059,
+            "p99_ns": 13476,
+            "samples": 200
+          },
+          "mb_per_s": 0.0,
+          "ops": 200,
+          "ops_per_s": 113565.70769890324,
+          "seconds": 0.001761095
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "metadata-lookup"
       },
       "f0": {
         "config": "f0",
@@ -1627,7 +2056,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1639,18 +2068,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 81442,
-            "mean_ns": 9463.265,
-            "min_ns": 7614,
-            "p50_ns": 8446,
-            "p95_ns": 11882,
-            "p99_ns": 28703,
+            "max_ns": 70502,
+            "mean_ns": 9442.115,
+            "min_ns": 7634,
+            "p50_ns": 8486,
+            "p95_ns": 11181,
+            "p99_ns": 27311,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 105192.90011039995,
-          "seconds": 0.001901269
+          "ops_per_s": 105435.23930372676,
+          "seconds": 0.001896899
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -1681,7 +2110,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1693,18 +2122,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 58509,
-            "mean_ns": 9295.725,
-            "min_ns": 7905,
-            "p50_ns": 8677,
-            "p95_ns": 9979,
-            "p99_ns": 23384,
+            "max_ns": 42409,
+            "mean_ns": 8925.195,
+            "min_ns": 7414,
+            "p50_ns": 8175,
+            "p95_ns": 11512,
+            "p99_ns": 27220,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 107097.57017032798,
-          "seconds": 0.001867456
+          "ops_per_s": 111531.52299082933,
+          "seconds": 0.001793215
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1723,8 +2152,57 @@
       },
       "f2": {
         "config": "f2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; no manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 0,
+          "latency": {
+            "max_ns": 477019,
+            "mean_ns": 11171.38,
+            "min_ns": 7785,
+            "p50_ns": 8526,
+            "p95_ns": 10600,
+            "p99_ns": 18875,
+            "samples": 200
+          },
+          "mb_per_s": 0.0,
+          "ops": 200,
+          "ops_per_s": 89183.67064827164,
+          "seconds": 0.002242563
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "metadata-lookup"
       }
     },
     "random-read-1": {
@@ -1742,7 +2220,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1754,18 +2232,18 @@
         "measurement": {
           "bytes": 200,
           "latency": {
-            "max_ns": 3527,
-            "mean_ns": 189.325,
-            "min_ns": 160,
-            "p50_ns": 170,
-            "p95_ns": 181,
+            "max_ns": 2144,
+            "mean_ns": 188.145,
+            "min_ns": 170,
+            "p50_ns": 180,
+            "p95_ns": 190,
             "p99_ns": 261,
             "samples": 200
           },
-          "mb_per_s": 4.109307581672488,
+          "mb_per_s": 4.192081158691232,
           "ops": 200,
-          "ops_per_s": 4109307.5816724882,
-          "seconds": 0.00004867
+          "ops_per_s": 4192081.158691232,
+          "seconds": 0.000047709
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -1796,7 +2274,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1808,18 +2286,18 @@
         "measurement": {
           "bytes": 200,
           "latency": {
-            "max_ns": 236045755,
-            "mean_ns": 1185210.525,
-            "min_ns": 150,
+            "max_ns": 228006070,
+            "mean_ns": 1144373.095,
+            "min_ns": 160,
             "p50_ns": 180,
-            "p95_ns": 22051,
-            "p99_ns": 45595,
+            "p95_ns": 18505,
+            "p99_ns": 37540,
             "samples": 200
           },
-          "mb_per_s": 0.0008436895629572901,
+          "mb_per_s": 0.0008737947945003285,
           "ops": 200,
-          "ops_per_s": 843.68956295729,
-          "seconds": 0.237054017
+          "ops_per_s": 873.7947945003285,
+          "seconds": 0.228886692
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1838,8 +2316,57 @@
       },
       "e2": {
         "config": "e2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; EKBLOOM manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 200,
+          "latency": {
+            "max_ns": 251728804,
+            "mean_ns": 1263795.065,
+            "min_ns": 150,
+            "p50_ns": 190,
+            "p95_ns": 23694,
+            "p99_ns": 61405,
+            "samples": 200
+          },
+          "mb_per_s": 0.0007912282912473994,
+          "ops": 200,
+          "ops_per_s": 791.2282912473994,
+          "seconds": 0.252771548
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "random-read-1"
       },
       "f0": {
         "config": "f0",
@@ -1855,7 +2382,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1867,18 +2394,18 @@
         "measurement": {
           "bytes": 200,
           "latency": {
-            "max_ns": 41297,
-            "mean_ns": 2721.3,
+            "max_ns": 329785,
+            "mean_ns": 4626.905,
             "min_ns": 150,
-            "p50_ns": 180,
-            "p95_ns": 10440,
-            "p99_ns": 20689,
+            "p50_ns": 190,
+            "p95_ns": 13064,
+            "p99_ns": 39032,
             "samples": 200
           },
-          "mb_per_s": 0.3606430265162785,
+          "mb_per_s": 0.21299209160363874,
           "ops": 200,
-          "ops_per_s": 360643.0265162785,
-          "seconds": 0.000554565
+          "ops_per_s": 212992.09160363875,
+          "seconds": 0.000939002
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -1909,7 +2436,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1921,18 +2448,18 @@
         "measurement": {
           "bytes": 200,
           "latency": {
-            "max_ns": 91641,
-            "mean_ns": 3661.79,
-            "min_ns": 110,
-            "p50_ns": 131,
-            "p95_ns": 14226,
-            "p99_ns": 26630,
+            "max_ns": 66294,
+            "mean_ns": 4285.305,
+            "min_ns": 160,
+            "p50_ns": 200,
+            "p95_ns": 17653,
+            "p99_ns": 61745,
             "samples": 200
           },
-          "mb_per_s": 0.26999589606237984,
+          "mb_per_s": 0.2298126796847889,
           "ops": 200,
-          "ops_per_s": 269995.8960623798,
-          "seconds": 0.000740752
+          "ops_per_s": 229812.67968478892,
+          "seconds": 0.000870274
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1951,8 +2478,57 @@
       },
       "f2": {
         "config": "f2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; no manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 200,
+          "latency": {
+            "max_ns": 67586,
+            "mean_ns": 3737.605,
+            "min_ns": 150,
+            "p50_ns": 200,
+            "p95_ns": 15760,
+            "p99_ns": 27511,
+            "samples": 200
+          },
+          "mb_per_s": 0.26323513346679356,
+          "ops": 200,
+          "ops_per_s": 263235.1334667936,
+          "seconds": 0.000759777
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "random-read-1"
       }
     },
     "random-read-4k": {
@@ -1970,7 +2546,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -1982,18 +2558,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 3977,
-            "mean_ns": 276.145,
+            "max_ns": 4989,
+            "mean_ns": 244.655,
             "min_ns": 190,
-            "p50_ns": 220,
-            "p95_ns": 430,
-            "p99_ns": 491,
+            "p50_ns": 210,
+            "p95_ns": 310,
+            "p99_ns": 411,
             "samples": 200
           },
-          "mb_per_s": 12671.111042365934,
+          "mb_per_s": 14124.624987068519,
           "ops": 200,
-          "ops_per_s": 3093532.9693276207,
-          "seconds": 0.000064651
+          "ops_per_s": 3448394.7722335253,
+          "seconds": 0.000057998
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -2024,7 +2600,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2036,18 +2612,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 209098559,
-            "mean_ns": 1048536.36,
-            "min_ns": 130,
-            "p50_ns": 150,
-            "p95_ns": 14777,
-            "p99_ns": 31930,
+            "max_ns": 246948281,
+            "mean_ns": 1239647.165,
+            "min_ns": 190,
+            "p50_ns": 220,
+            "p95_ns": 23824,
+            "p99_ns": 79849,
             "samples": 200
           },
-          "mb_per_s": 3.906243108225107,
+          "mb_per_s": 3.3040059382085634,
           "ops": 200,
-          "ops_per_s": 953.6726338440203,
-          "seconds": 0.20971557
+          "ops_per_s": 806.64207475795,
+          "seconds": 0.247941443
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2066,8 +2642,57 @@
       },
       "e2": {
         "config": "e2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; EKBLOOM manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 819200,
+          "latency": {
+            "max_ns": 228300463,
+            "mean_ns": 1146061.625,
+            "min_ns": 190,
+            "p50_ns": 241,
+            "p95_ns": 24956,
+            "p99_ns": 49111,
+            "samples": 200
+          },
+          "mb_per_s": 3.5738090489656553,
+          "ops": 200,
+          "ops_per_s": 872.5119748451307,
+          "seconds": 0.229223215
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "random-read-4k"
       },
       "f0": {
         "config": "f0",
@@ -2083,7 +2708,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2095,18 +2720,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 1057825,
-            "mean_ns": 10680.015,
-            "min_ns": 130,
+            "max_ns": 38391,
+            "mean_ns": 2476.165,
+            "min_ns": 190,
             "p50_ns": 211,
-            "p95_ns": 13876,
-            "p99_ns": 30277,
+            "p95_ns": 10309,
+            "p99_ns": 14678,
             "samples": 200
           },
-          "mb_per_s": 381.79305716409596,
+          "mb_per_s": 1622.1396719285879,
           "ops": 200,
-          "ops_per_s": 93211.19559670311,
-          "seconds": 0.002145665
+          "ops_per_s": 396030.1933419404,
+          "seconds": 0.000505012
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -2137,7 +2762,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2149,18 +2774,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 45224,
-            "mean_ns": 2354.235,
-            "min_ns": 130,
-            "p50_ns": 200,
-            "p95_ns": 10530,
-            "p99_ns": 13826,
+            "max_ns": 62176,
+            "mean_ns": 3864.86,
+            "min_ns": 190,
+            "p50_ns": 230,
+            "p95_ns": 17784,
+            "p99_ns": 32040,
             "samples": 200
           },
-          "mb_per_s": 1713.5099972180562,
+          "mb_per_s": 1043.0553168191398,
           "ops": 200,
-          "ops_per_s": 418337.4016645645,
-          "seconds": 0.000478083
+          "ops_per_s": 254652.17695779778,
+          "seconds": 0.000785385
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2179,8 +2804,57 @@
       },
       "f2": {
         "config": "f2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; no manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 819200,
+          "latency": {
+            "max_ns": 44673,
+            "mean_ns": 3228.775,
+            "min_ns": 190,
+            "p50_ns": 351,
+            "p95_ns": 14928,
+            "p99_ns": 18785,
+            "samples": 200
+          },
+          "mb_per_s": 1248.2381892013377,
+          "ops": 200,
+          "ops_per_s": 304745.65166048286,
+          "seconds": 0.000656285
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "random-read-4k"
       }
     },
     "random-write-4k": {
@@ -2198,7 +2872,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2210,18 +2884,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 7023,
-            "mean_ns": 425.1,
-            "min_ns": 290,
-            "p50_ns": 391,
-            "p95_ns": 461,
-            "p99_ns": 701,
+            "max_ns": 4779,
+            "mean_ns": 431.755,
+            "min_ns": 291,
+            "p50_ns": 410,
+            "p95_ns": 481,
+            "p99_ns": 792,
             "samples": 200
           },
-          "mb_per_s": 8593.487747566298,
+          "mb_per_s": 8501.452885014529,
           "ops": 200,
-          "ops_per_s": 2098019.469620678,
-          "seconds": 0.000095328
+          "ops_per_s": 2075550.0207555,
+          "seconds": 0.00009636
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -2252,7 +2926,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2264,18 +2938,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 396529706,
-            "mean_ns": 96810915.695,
-            "min_ns": 32103795,
-            "p50_ns": 53640356,
-            "p95_ns": 198029551,
-            "p99_ns": 292669549,
+            "max_ns": 134679012,
+            "mean_ns": 64365645.795,
+            "min_ns": 34252798,
+            "p50_ns": 56939861,
+            "p95_ns": 116755587,
+            "p99_ns": 133988544,
             "samples": 200
           },
-          "mb_per_s": 0.04230869814836375,
+          "mb_per_s": 0.06363483922068519,
           "ops": 200,
-          "ops_per_s": 10.329272008877869,
-          "seconds": 19.36244876
+          "ops_per_s": 15.535849419112594,
+          "seconds": 12.873451242
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2294,8 +2968,57 @@
       },
       "e2": {
         "config": "e2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; EKBLOOM manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 819200,
+          "latency": {
+            "max_ns": 70382437,
+            "mean_ns": 58226478.01,
+            "min_ns": 50359124,
+            "p50_ns": 57054033,
+            "p95_ns": 66872530,
+            "p99_ns": 68875296,
+            "samples": 200
+          },
+          "mb_per_s": 0.07034444610568891,
+          "ops": 200,
+          "ops_per_s": 17.173937037521707,
+          "seconds": 11.64555335
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "random-write-4k"
       },
       "f0": {
         "config": "f0",
@@ -2311,7 +3034,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2323,18 +3046,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 6904638,
-            "mean_ns": 3688042.345,
-            "min_ns": 2467726,
-            "p50_ns": 3639854,
-            "p95_ns": 5005113,
-            "p99_ns": 5166554,
+            "max_ns": 10014672,
+            "mean_ns": 6390796.105,
+            "min_ns": 5404422,
+            "p50_ns": 6352561,
+            "p95_ns": 7218907,
+            "p99_ns": 9261487,
             "samples": 200
           },
-          "mb_per_s": 1.1105596286611792,
+          "mb_per_s": 0.6408834929433385,
           "ops": 200,
-          "ops_per_s": 271.1327218411082,
-          "seconds": 0.737646119
+          "ops_per_s": 156.46569651936974,
+          "seconds": 1.27823545
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -2365,7 +3088,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2377,18 +3100,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 7305396,
-            "mean_ns": 5443121.01,
-            "min_ns": 3511494,
-            "p50_ns": 5772204,
-            "p95_ns": 7145569,
-            "p99_ns": 7249953,
+            "max_ns": 11450370,
+            "mean_ns": 8459342.005,
+            "min_ns": 7288587,
+            "p50_ns": 8505788,
+            "p95_ns": 9395948,
+            "p99_ns": 10887040,
             "samples": 200
           },
-          "mb_per_s": 0.752468136823089,
+          "mb_per_s": 0.4841737625187235,
           "ops": 200,
-          "ops_per_s": 183.70804121657446,
-          "seconds": 1.088683972
+          "ops_per_s": 118.20648498992273,
+          "seconds": 1.691954549
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2407,8 +3130,57 @@
       },
       "f2": {
         "config": "f2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; no manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 819200,
+          "latency": {
+            "max_ns": 14643387,
+            "mean_ns": 12499862.25,
+            "min_ns": 7695676,
+            "p50_ns": 12530445,
+            "p95_ns": 13762494,
+            "p99_ns": 13924676,
+            "samples": 200
+          },
+          "mb_per_s": 0.3276628051734403,
+          "ops": 200,
+          "ops_per_s": 79.99580204429695,
+          "seconds": 2.500131193
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "random-write-4k"
       }
     },
     "rename": {
@@ -2426,7 +3198,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2438,18 +3210,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 8325,
-            "mean_ns": 2127.365,
-            "min_ns": 1763,
-            "p50_ns": 1894,
-            "p95_ns": 2364,
-            "p99_ns": 7494,
+            "max_ns": 11632,
+            "mean_ns": 3129.08,
+            "min_ns": 2675,
+            "p50_ns": 2985,
+            "p95_ns": 3606,
+            "p99_ns": 7313,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 154534.90402609785,
-          "seconds": 0.001294206
+          "ops_per_s": 98773.96812070179,
+          "seconds": 0.002024825
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -2480,7 +3252,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2492,18 +3264,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 44030604,
-            "mean_ns": 29053066.97,
-            "min_ns": 24775980,
-            "p50_ns": 26868885,
-            "p95_ns": 42098247,
-            "p99_ns": 42702576,
+            "max_ns": 75998812,
+            "mean_ns": 47368886.26,
+            "min_ns": 37396209,
+            "p50_ns": 41281471,
+            "p95_ns": 61564134,
+            "p99_ns": 65747326,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 11.502071231968966,
-          "seconds": 17.388172614
+          "ops_per_s": 7.072569703164176,
+          "seconds": 28.278264958
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2522,8 +3294,57 @@
       },
       "e2": {
         "config": "e2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; EKBLOOM manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 0,
+          "latency": {
+            "max_ns": 71401661,
+            "mean_ns": 45536205.335,
+            "min_ns": 41904023,
+            "p50_ns": 44223346,
+            "p95_ns": 54775373,
+            "p99_ns": 67689181,
+            "samples": 200
+          },
+          "mb_per_s": 0.0,
+          "ops": 200,
+          "ops_per_s": 7.372243012099672,
+          "seconds": 27.128785591
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "rename"
       },
       "f0": {
         "config": "f0",
@@ -2539,7 +3360,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2551,18 +3372,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 34867635,
-            "mean_ns": 21771498.53,
-            "min_ns": 19306202,
-            "p50_ns": 21128944,
-            "p95_ns": 30008607,
-            "p99_ns": 34487535,
+            "max_ns": 84760024,
+            "mean_ns": 52750359.855,
+            "min_ns": 42107210,
+            "p50_ns": 52529827,
+            "p95_ns": 54955014,
+            "p99_ns": 58278796,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 15.327855450404119,
-          "seconds": 13.048139751
+          "ops_per_s": 6.340927704450172,
+          "seconds": 31.54112605
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -2593,7 +3414,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2605,18 +3426,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 38801806,
-            "mean_ns": 25582902.81,
-            "min_ns": 21965305,
-            "p50_ns": 24001774,
-            "p95_ns": 37352152,
-            "p99_ns": 38351025,
+            "max_ns": 86584342,
+            "mean_ns": 48699209.59,
+            "min_ns": 36230075,
+            "p50_ns": 53469851,
+            "p95_ns": 57699247,
+            "p99_ns": 58981977,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 13.020253770982698,
-          "seconds": 15.36068371
+          "ops_per_s": 6.844345066309276,
+          "seconds": 29.221203499
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2635,8 +3456,57 @@
       },
       "f2": {
         "config": "f2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; no manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 0,
+          "latency": {
+            "max_ns": 68960846,
+            "mean_ns": 46044690.38,
+            "min_ns": 39395737,
+            "p50_ns": 42508853,
+            "p95_ns": 64499130,
+            "p99_ns": 67177927,
+            "samples": 200
+          },
+          "mb_per_s": 0.0,
+          "ops": 200,
+          "ops_per_s": 7.256895062047112,
+          "seconds": 27.559996154
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "rename"
       }
     },
     "sequential-append": {
@@ -2654,7 +3524,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2665,10 +3535,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 1.873903167006008,
+          "mb_per_s": 1819.9641761201904,
           "ops": 64,
-          "ops_per_s": 457.4958903823262,
-          "seconds": 0.139891967
+          "ops_per_s": 444327.19143559335,
+          "seconds": 0.000144038
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -2699,7 +3569,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2710,10 +3580,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 0.16132301661696183,
+          "mb_per_s": 0.14040915194955242,
           "ops": 64,
-          "ops_per_s": 39.38550210375045,
-          "seconds": 1.6249634149999999
+          "ops_per_s": 34.279578112683694,
+          "seconds": 1.8670008070000002
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2732,8 +3602,48 @@
       },
       "e2": {
         "config": "e2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; EKBLOOM manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 262144,
+          "mb_per_s": 0.13476564368998775,
+          "ops": 64,
+          "ops_per_s": 32.901768479000914,
+          "seconds": 1.9451841939999999
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "sequential-append"
       },
       "f0": {
         "config": "f0",
@@ -2749,7 +3659,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2760,10 +3670,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 4.962084284373934,
+          "mb_per_s": 2.6814754739418194,
           "ops": 64,
-          "ops_per_s": 1211.44635848973,
-          "seconds": 0.052829413
+          "ops_per_s": 654.657098130327,
+          "seconds": 0.097761103
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -2794,7 +3704,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2805,10 +3715,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 3.1118443960044218,
+          "mb_per_s": 1.878862184042544,
           "ops": 64,
-          "ops_per_s": 759.727635743267,
-          "seconds": 0.084240716
+          "ops_per_s": 458.7065879010117,
+          "seconds": 0.13952274
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2827,8 +3737,48 @@
       },
       "f2": {
         "config": "f2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; no manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 262144,
+          "mb_per_s": 1.229399593549269,
+          "ops": 64,
+          "ops_per_s": 300.1463851438645,
+          "seconds": 0.213229288
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "sequential-append"
       }
     },
     "sequential-read": {
@@ -2846,7 +3796,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2857,10 +3807,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 37811.04860810615,
+          "mb_per_s": 26245.895074088905,
           "ops": 64,
-          "ops_per_s": 9231213.039088417,
-          "seconds": 6.933e-6
+          "ops_per_s": 6407689.227072487,
+          "seconds": 9.988e-6
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -2891,7 +3841,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2902,10 +3852,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 1.1900074473973006,
+          "mb_per_s": 1.0642124609177146,
           "ops": 64,
-          "ops_per_s": 290.52916196223157,
-          "seconds": 0.220287697
+          "ops_per_s": 259.8174953412389,
+          "seconds": 0.246326753
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2924,8 +3874,48 @@
       },
       "e2": {
         "config": "e2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; EKBLOOM manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 262144,
+          "mb_per_s": 1.0957796219910596,
+          "ops": 64,
+          "ops_per_s": 267.524321775161,
+          "seconds": 0.239230585
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "sequential-read"
       },
       "f0": {
         "config": "f0",
@@ -2941,7 +3931,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2952,10 +3942,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 2913.747110083585,
+          "mb_per_s": 2182.6417105175515,
           "ops": 64,
-          "ops_per_s": 711364.0405477503,
-          "seconds": 0.000089968
+          "ops_per_s": 532871.5113568241,
+          "seconds": 0.000120104
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -2986,7 +3976,7 @@
           "cores_visible": 8,
           "cpu_max": "800000 100000",
           "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
-          "fuse_enable_uring": false,
+          "fuse_enable_uring": true,
           "kernel_release": "7.2.9-2-cachyos",
           "likely_container": true,
           "machine": "x86_64",
@@ -2997,10 +3987,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 1669.7814552241182,
+          "mb_per_s": 2104.3404268982845,
           "ops": 64,
-          "ops_per_s": 407661.48809182574,
-          "seconds": 0.000156993
+          "ops_per_s": 513754.987035714,
+          "seconds": 0.000124573
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -3019,8 +4009,48 @@
       },
       "f2": {
         "config": "f2",
-        "config_available": false,
-        "unavailable_reason": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
+        "config_available": true,
+        "config_description": "FUSE-over-io_uring; io_uring backing; no manifestation",
+        "config_independent": false,
+        "data_size": 262144,
+        "durability": "ordered",
+        "environment": {
+          "cgroup_memory_max": "8589934592",
+          "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+          "container_image": null,
+          "cores_visible": 8,
+          "cpu_max": "800000 100000",
+          "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+          "fuse_enable_uring": true,
+          "kernel_release": "7.2.9-2-cachyos",
+          "likely_container": true,
+          "machine": "x86_64",
+          "perf_counters_available": false,
+          "perf_event_paranoid": "2",
+          "ram_total_bytes": 134723346432
+        },
+        "generated_by": "src/bench.rs",
+        "measurement": {
+          "bytes": 262144,
+          "mb_per_s": 2213.1007758482415,
+          "ops": 64,
+          "ops_per_s": 540307.8066035745,
+          "seconds": 0.000118451
+        },
+        "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
+        "orfs_version": "0.1.0",
+        "params": {
+          "cold_cache": false,
+          "data_bytes": 262144,
+          "durability": {
+            "mode": "ordered"
+          },
+          "iterations": 200,
+          "readers": 4,
+          "region_bytes": 4096
+        },
+        "schema": "orfs.bench.v1",
+        "workload": "sequential-read"
       }
     }
   }

@@ -1,79 +1,141 @@
 {
   "environment": {
     "container": true,
-    "dev_fuse": true,
+    "image_digest": "sha256:a41df86df391732ab467b5bedc8b4a17c0df437fa180b5230417a6a8339d97ac",
     "kernel_release": "7.2.9-2-cachyos",
-    "machine": "x86_64"
+    "machine": "x86_64",
+    "orfs_version": "0.1.0"
   },
-  "f2_negotiation": {
-    "accepted": false,
-    "engaged": false,
-    "kernel_abi": [
-      7,
-      45
-    ],
-    "kernel_offered": false,
-    "kernel_offered_bufpool": false,
-    "reason": "kernel did not offer FUSE_OVER_IO_URING at INIT (FUSE ABI 7.45); it gates this on the fuse.enable_uring module parameter, which is off on this host, so FUSE requests continue over /dev/fuse"
-  },
-  "f2_report": {
-    "discovery": {
-      "cap_sys_admin": false,
-      "config_fuse_io_uring": null,
-      "config_io_uring": null,
-      "dev_fuse_present": true,
-      "enable_uring_param": false,
-      "io_uring_available": true,
-      "io_uring_reason": null,
-      "kernel_release": "7.2.9-2-cachyos"
-    },
-    "negotiation": {
-      "accepted": false,
-      "engaged": false,
-      "kernel_abi": [
-        7,
-        45
-      ],
-      "kernel_offered": false,
-      "kernel_offered_bufpool": false,
-      "reason": "kernel did not offer FUSE_OVER_IO_URING at INIT (FUSE ABI 7.45); it gates this on the fuse.enable_uring module parameter, which is off on this host, so FUSE requests continue over /dev/fuse"
-    },
-    "preconditions": {
-      "Err": "fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off"
-    }
-  },
-  "generated_by": "tests/fuse_uring.rs::transport_equivalence_and_f2_fallback",
+  "f2_measured": true,
+  "generated_by": "tests/fuse_uring.rs::f2_performance_f0_f1_f2",
   "measurements": {
-    "f2": "not measured (F2 unavailable)",
-    "note": "submission micro-benchmarks are recorded in evidence/performance/backing-uring.json; F2 transport throughput could not be measured because F2 did not engage"
-  },
-  "profiles": {
     "F0": {
-      "reported": "F0",
-      "requested": "fuse + sync"
+      "create_unlink": {
+        "ops": 300,
+        "us_per_op": 8166.736666666667
+      },
+      "fsync": {
+        "ops": 300,
+        "us_per_op": 11711.233333333334
+      },
+      "metadata_lookup": {
+        "ops": 1000,
+        "us_per_op": 11.223
+      },
+      "random_1b_read": {
+        "ops": 1000,
+        "us_per_op": 8.306
+      },
+      "random_4k_read": {
+        "ops": 1000,
+        "us_per_op": 8.31
+      },
+      "sequential_read": {
+        "bytes": 8388608,
+        "mib_per_s": 3240.150650804509,
+        "seconds": 0.002469021
+      }
     },
     "F1": {
-      "backing_used": "Uring",
-      "reported": "F1",
-      "requested": "fuse + uring"
+      "create_unlink": {
+        "ops": 300,
+        "us_per_op": 9039.643333333333
+      },
+      "fsync": {
+        "ops": 300,
+        "us_per_op": 10237.923333333334
+      },
+      "metadata_lookup": {
+        "ops": 1000,
+        "us_per_op": 10.342
+      },
+      "random_1b_read": {
+        "ops": 1000,
+        "us_per_op": 10.325
+      },
+      "random_4k_read": {
+        "ops": 1000,
+        "us_per_op": 10.887
+      },
+      "sequential_read": {
+        "bytes": 8388608,
+        "mib_per_s": 3039.7273364579196,
+        "seconds": 0.002631815
+      }
     },
     "F2": {
-      "backing_used": "Uring",
-      "description": "F1 (traditional /dev/fuse, io_uring backing); F2 unavailable: FUSE-over-io_uring not active: kernel did not offer FUSE_OVER_IO_URING at INIT (FUSE ABI 7.45); it gates this on the fuse.enable_uring module parameter, which is off on this host, so FUSE requests continue over /dev/fuse",
-      "reported": "F1",
-      "requested": "fuse-uring + uring"
+      "create_unlink": {
+        "ops": 300,
+        "us_per_op": 7876.843333333333
+      },
+      "fsync": {
+        "ops": 300,
+        "us_per_op": 11232.833333333334
+      },
+      "metadata_lookup": {
+        "ops": 1000,
+        "us_per_op": 8.847
+      },
+      "random_1b_read": {
+        "ops": 1000,
+        "us_per_op": 7.948
+      },
+      "random_4k_read": {
+        "ops": 1000,
+        "us_per_op": 8.858
+      },
+      "sequential_read": {
+        "bytes": 8388608,
+        "mib_per_s": 3052.661462896426,
+        "seconds": 0.002620664
+      }
     }
   },
-  "schema": "orfs.fuse-uring.v1",
-  "uapi": {
-    "add_queue_minor": 46,
-    "baseline_minor": 45,
-    "commands": [
-      "FUSE_IO_URING_CMD_REGISTER",
-      "FUSE_IO_URING_CMD_COMMIT_AND_FETCH",
-      "FUSE_IO_URING_CMD_ADD_QUEUE",
-      "FUSE_IO_URING_CMD_ADD_BUFPOOL"
-    ],
-    "fuse_kernel_version": 7
+  "method": "POSIX syscalls through a real mount; direct_io=on and attr/entry TTL=0 so every operation is a real transport round-trip. Identical workloads and deterministic offsets for all three profiles. Numbers are observations, not models.",
+  "profiles": {
+    "F0": {
+      "attr_ttl_ms": 0,
+      "backing_io": "Sync",
+      "direct_io": true,
+      "entry_ttl_ms": 0,
+      "f2_engaged": false,
+      "f2_environment": null,
+      "reported_profile": "F0"
+    },
+    "F1": {
+      "attr_ttl_ms": 0,
+      "backing_io": "Uring",
+      "direct_io": true,
+      "entry_ttl_ms": 0,
+      "f2_engaged": false,
+      "f2_environment": null,
+      "reported_profile": "F1"
+    },
+    "F2": {
+      "attr_ttl_ms": 0,
+      "backing_io": "Uring",
+      "direct_io": true,
+      "entry_ttl_ms": 0,
+      "f2_engaged": true,
+      "f2_environment": {
+        "fuse_abi_major": 7,
+        "fuse_abi_minor": 45,
+        "kernel_release": "7.2.9-2-cachyos",
+        "max_write": 131072,
+        "mount_options": "fsname=orfs,subtype=orfs,max_read=131072,rw",
+        "num_queues": 16,
+        "payload_buf": 262144
+      },
+      "reported_profile": "F2"
+    }
+  },
+  "schema": "orfs.fuse-uring.v2",
+  "workloads": {
+    "create_unlink": "300 create+unlink pairs",
+    "fsync": "300 write(1B)+fdatasync",
+    "metadata_lookup": "1000 stat() of one file (LOOKUP + GETATTR, uncached)",
+    "random_1b_read": "1000 pread of 1 B at deterministic offsets",
+    "random_4k_read": "1000 pread of 4096 B at deterministic offsets",
+    "sequential_read": "2 passes over 4 MiB in 128 KiB reads (page cache bypassed by direct_io)"
   }
 }

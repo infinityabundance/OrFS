@@ -1,15 +1,17 @@
-# OrFS FUSE-over-io_uring transport (Phase 10)
+# OrFS FUSE-over-io_uring transport (Phase 15)
 
-**Status:** the native-Rust FUSE-over-`io_uring` transport adapter is implemented
-and its discovery, negotiation, codec, and `io_uring` command layer are tested.
-A **real F2 mount is not achievable on the development host**, for three
-independent reasons documented below (§7). Requesting F2 therefore falls back
-cleanly to F1/F0 with byte-identical contents. No success is fabricated.
+**Status:** a **real F2 mount is achieved** on this host. An OrFS volume mounted
+with `--transport fuse-uring` serves ordinary POSIX syscalls through a genuine
+FUSE-over-`io_uring` ring on kernel `7.2.9-2-cachyos` (FUSE ABI 7.45,
+`fuse.enable_uring=Y`). The live `INIT` negotiation, the ring carrying requests,
+and byte-for-byte equivalence with F0 are recorded as evidence. When F2 cannot
+engage, the mount falls back to F1/F0 with byte-identical contents and the exact
+reason.
 
-Sources: `src/fuse_uring.rs` (the adapter, the sole place that speaks the
-FUSE-over-`io_uring` UAPI), `src/fuse.rs` (transport-neutral cores + the live
-`INIT` negotiation), `src/uring.rs` (backing I/O, Domain A), `tests/fuse_uring.rs`
-(equivalence, negotiation/fallback, cancellation/shutdown).
+Sources: `src/fuse_native.rs` (the native session that owns `/dev/fuse`),
+`src/fuse_uring.rs` (the UAPI codec + ring command layer, incl. the raw-SQE path),
+`src/fuse.rs` (the transport-neutral `OrfsFuse` adaptor + `classify`),
+`src/buffers.rs` (the registered-buffer pin discipline), `tests/fuse_uring.rs`.
 
 This document is normative for transport profiles F0/F1/F2 (research §17–§19,
 directive §16/§17).
@@ -18,307 +20,218 @@ directive §16/§17).
 
 ## 1. Two `io_uring` domains, three profiles
 
-Research §17 separates two uses of `io_uring`; they are independent and OrFS
-never conflates them.
-
 | Domain | What it accelerates | Where |
 |--------|---------------------|-------|
-| **A — backing store** | authoritative writes, immutable reads, `fsync` | `src/uring.rs` (Phase 5) |
-| **B — FUSE transport** | kernel↔userspace request delivery | `src/fuse_uring.rs` (this phase) |
+| **A — backing store** | authoritative writes, immutable reads, `fsync` | `src/uring.rs` |
+| **B — FUSE transport** | kernel↔userspace request delivery | `src/fuse_native.rs`, `src/fuse_uring.rs` |
 
-Turning on Domain A does **not** turn on Domain B. The transport profiles
-(research §18) are:
+Turning on Domain A does **not** turn on Domain B.
 
 | Profile | Request transport | Backing I/O | How OrFS reports it |
 |---------|-------------------|-------------|---------------------|
-| **F0** | `/dev/fuse` (fuser) | synchronous `pread`/`pwrite` | `transport_used() == F0` |
-| **F1** | `/dev/fuse` (fuser) | `io_uring` rings W/R | `transport_used() == F1` |
-| **F2** | FUSE-over-`io_uring` | `io_uring` rings W/R | `transport_used() == F2` **only** when a ring really negotiated |
+| **F0** | `/dev/fuse` (`fuser`) | synchronous | `transport_used() == F0` |
+| **F1** | `/dev/fuse` (`fuser`) | `io_uring` rings W/R | `transport_used() == F1` |
+| **F2** | FUSE-over-`io_uring` (native session) | `io_uring` rings W/R | `transport_used() == F2` |
 
-`--transport fuse|fuse-uring` selects the *requested* transport;
-`--backing-io sync|uring` selects the backing engine. The profile actually in
-force is computed by `fuse_uring::classify`: **F2 is returned only when the
-negotiation reports a running ring.** Backing `io_uring` alone is F1, never F2.
-`OrfsMount::backing_io_used` and `OrfsMount::transport_used()` are the
-authoritative, non-optimistic answers.
+`classify` returns **F2 only** when the negotiation reports a running ring.
+Backing `io_uring` alone is F1, never F2.
 
 ---
 
-## 2. UAPI: structures and commands
+## 2. UAPI on this kernel (FUSE ABI 7.45, baseline interface)
 
-The container image (Debian bookworm) ships **older** headers than the running
-kernel, so OrFS does **not** include any system `fuse.h`. The structures and
-commands are transcribed from the running kernel's own headers and the
-documented UAPI, with byte-exact layouts:
+Transcribed from the running kernel's own source (`fs/fuse/dev_uring.c`,
+`include/uapi/linux/fuse.h`), not from container headers.
 
-* `/usr/include/linux/fuse.h` and `/usr/src/linux-cachyos/include/uapi/linux/fuse.h`
-  (kernel `7.2.9-2-cachyos`, FUSE ABI **7.45**), and
-* a full Linux **7.3.0-rc4** source tree (`v7.2` and `v7.3-rc4` tags) whose
-  `include/uapi/linux/fuse.h`, `fs/fuse/dev_uring.c`, and
-  `Documentation/filesystems/fuse/{fuse-io-uring,uapi/fuse-uapi-io-uring}.rst`
-  give the modern (**7.46**) interface and the driver semantics.
-
-### 2.1 Command opcodes (`enum fuse_uring_cmd`)
-
-All are carried through `IORING_OP_URING_CMD` as the 80-byte command area of a
-128-byte SQE (`IORING_SETUP_SQE128`; the kernel rejects an SQE without the
-extension: `if (!(issue_flags & IO_URING_F_SQE128)) return -EINVAL;`).
-
-| Constant | Value | Available since |
-|----------|------:|-----------------|
-| `FUSE_IO_URING_CMD_INVALID` | 0 | — |
-| `FUSE_IO_URING_CMD_REGISTER` | 1 | ABI 7.42 |
-| `FUSE_IO_URING_CMD_COMMIT_AND_FETCH` | 2 | ABI 7.42 |
-| `FUSE_IO_URING_CMD_ADD_QUEUE` | 3 | **ABI 7.46** |
-| `FUSE_IO_URING_CMD_ADD_BUFPOOL` | 4 | **ABI 7.46** |
-
-No outdated/experimental command names are used.
-
-### 2.2 `struct fuse_uring_cmd_req` (80-byte SQE command area)
-
-| Offset | Field | Notes |
-|-------:|-------|-------|
-| 0 | `u64 flags` | command-specific (`FUSE_URING_ZERO_COPY` for `ADD_QUEUE`) |
-| 8 | `u64 commit_id` | for `COMMIT_AND_FETCH` |
-| 16 | `u16 qid` | queue index |
-| 18 | `u8[6] padding` | |
-| 24 | union (16 bytes) | `{ bufpool { u64 uaddr; u32 len; u32 reserved } }` or `{ u16 ent_zero_copy_buf_index }` |
-
-The union is modelled as a raw 16-byte array with typed accessors
-(`set_bufpool`/`bufpool`, `set_zero_copy_buf_index`/`zero_copy_buf_index`) so
-encoding is entirely **safe** while remaining byte-identical.
-
-### 2.3 `struct fuse_uring_ent_in_out` (32 bytes)
-
-| Offset | Field | Notes |
-|-------:|-------|-------|
-| 0 | `u64 flags` | `FUSE_URING_ENT_ZERO_COPY` when zero-copied |
-| 8 | `u64 commit_id` | echo back in `COMMIT_AND_FETCH` |
-| 16 | `u32 payload_sz` | payload bytes |
-| 20 | `u32 offset` | payload offset within the buffer pool (**7.46**); `padding` in **7.45** |
-| 24 | `u64 reserved` | |
-
-The layout is identical across 7.45/7.46 (only field *4* is renamed), so one
-structure models both.
-
-### 2.4 `struct fuse_uring_req_header` (288 bytes)
-
-`char in_out[128]` + `char op_in[128]` + `struct fuse_uring_ent_in_out` (32).
-`in_out` holds a `struct fuse_in_header` (request) — the same header the
-classical transport uses.
-
-### 2.5 Other constants
+`enum fuse_uring_cmd`:
 
 | Constant | Value |
-|----------|-------|
-| `FUSE_OVER_IO_URING` | `1 << 41` |
-| `FUSE_HAS_IO_URING_BUFPOOL` | `1 << 43` (ABI 7.46) |
-| `FOPEN_IO_URING_ZERO_COPY` | `1 << 8` |
-| `FUSE_URING_ZERO_COPY` | `1 << 0` |
-| `FUSE_URING_ENT_ZERO_COPY` | `1 << 0` |
-| `FUSE_URING_IOV_SEGS` | 2 (header, payload) |
+|----------|------:|
+| `FUSE_IO_URING_CMD_INVALID` | 0 |
+| `FUSE_IO_URING_CMD_REGISTER` | 1 |
+| `FUSE_IO_URING_CMD_COMMIT_AND_FETCH` | 2 |
 
-In-crate tests assert every size and opcode value, and round-trip the codec, so
-a drift from the UAPI is a test failure, not a silent mismatch.
+**`ADD_QUEUE` (3) and `ADD_BUFPOOL` (4) do not exist at ABI 7.45**, and the
+buffer-pool `offset` field does not either. This kernel exposes only the baseline
+interface:
+
+* **Queue creation is implicit.** `fuse_uring_register` creates a queue lazily on
+  the first `REGISTER` whose `qid < nr_queues`, where `nr_queues = num_possible_cpus()`
+  (`fuse_uring_create_queue`).
+* **The ring becomes ready only when *every* queue has an available entry**
+  (`is_ring_ready`): the server must register at least one entry per CPU queue.
+* A request carries its payload in the registered payload buffer; ABI 7.45 has no
+  pool-offset indirection.
+
+`struct fuse_uring_cmd_req` (80-byte SQE command area; 24 bytes used here):
+
+| Offset | Field |
+|-------:|-------|
+| 0 | `u64 flags` |
+| 8 | `u64 commit_id` |
+| 16 | `u16 qid` |
+| 18 | `u8[6] padding` |
+
+`struct fuse_uring_ent_in_out` (32 bytes at header offset 256): `flags`, `commit_id`,
+`payload_sz`, `padding`, `reserved`. **`payload_sz` is at offset 272** and is used
+for both the request payload size and, on the reply, the reply-data size.
+
+`struct fuse_uring_req_header` = `char in_out[128]` + `char op_in[128]` +
+`fuse_uring_ent_in_out` = 288 bytes. `in_out` holds `fuse_in_header` (request) or
+`fuse_out_header` (reply).
+
+In-crate tests pin every size and opcode value and round-trip the codec.
+
+### 2.1 The raw-SQE `sqe->len` path
+
+`FUSE_IO_URING_CMD_REGISTER` requires `sqe->len == FUSE_URING_IOV_SEGS (2)`
+(`fuse_uring_get_iovec_from_sqe`). The pinned `io-uring` 0.7.15 crate exposes no
+`len` setter, so `src/fuse_uring.rs::entry128_set_len` writes the ABI field
+directly into the `#[repr(C)]`, exactly-128-byte `Entry128` (byte offset 24, the
+kernel's `struct io_uring_sqe.len`). The unsafe invariant is documented at the
+function. Everything else (`COMMIT_AND_FETCH`, cancellation) leaves `len` zero.
 
 ---
 
-## 3. Lifecycle
+## 3. The native F2 session (`src/fuse_native.rs`)
+
+`fuser` 0.18 does not expose its `/dev/fuse` fd, so the F2 path owns the whole
+session:
+
+1. **Open + mount.** `open("/dev/fuse")` then `mount(2)` with
+   `fd=N,rootmode=…,user_id=…,group_id=…,subtype=orfs`. When the process has no
+   effective `CAP_SYS_ADMIN` (verified in the kmount container: `CapEff=0`), the
+   setuid `fusermount3` helper is used instead; it performs the mount and **sends
+   the `/dev/fuse` fd back** over the `_FUSE_COMMFD` Unix socket
+   (`libfuse util/fusermount.c`: `send_fd(cfd, fd)`).
+2. **`INIT`.** Reads the kernel's `FUSE_INIT` and replies with
+   `FUSE_INIT_EXT | FUSE_ASYNC_READ | FUSE_BIG_WRITES` in `flags` and
+   `FUSE_OVER_IO_URING` (bit 41 → `flags2` bit 9). The kernel then sets
+   `fc->io_uring = 1`.
+3. **Ring.** Creates the `IORING_SETUP_SQE128` ring and registers one entry per
+   CPU queue. Each entry owns a 4 KiB header buffer and a 256 KiB payload buffer
+   at a stable heap address (see §4).
+4. **Drive.** The ring's completion for an entry *is* the next request delivered
+   into that entry's buffers. The loop parses the request, dispatches it, writes
+   the reply into the same buffers, and re-arms the entry with `COMMIT_AND_FETCH`.
+5. **Classical channel.** `FORGET`/`BATCH_FORGET`/`INTERRUPT` are still delivered
+   over `/dev/fuse` (`fuse_io_uring_ops` keeps `send_forget`/`send_interrupt`
+   classical); a second reader thread services them.
+
+> **Task ownership matters.** `io_uring` delivers `URING_CMD` completions as
+> task-work to the *submitting* task (`io_uring_cmd_complete_in_task`). The ring
+> is therefore created and every SQE submitted by the **session thread** that also
+> parks waiting for completions. Creating it anywhere else deadlocks (the syscall
+> that queued the request sleeps in the kernel and never runs its task-work).
 
 ```mermaid
 sequenceDiagram
-    participant U as OrFS (userspace)
+    participant U as OrFS F2 session
     participant K as FUSE kernel
-    U->>K: FUSE_INIT (server offers FUSE_OVER_IO_URING if offered)
-    K-->>U: init reply (FUSE_OVER_IO_URING only if fuse_uring_enabled())
-    Note over U: negotiate_fuse_uring() records the real result
-    U->>K: ADD_QUEUE (qid, flags) [ABI 7.46]
-    U->>K: ADD_BUFPOOL (qid, uaddr, len) [ABI 7.46, optional]
-    U->>K: REGISTER (entry iovecs; one entry per queue)
-    K-->>U: CQE carrying fuse_uring_req_header (a request)
-    U->>K: COMMIT_AND_FETCH (commit_id, qid) -> next request
-    U->>K: IORING_OP_ASYNC_CANCEL (cancel a stalled request)
-    U->>U: shutdown(): submit, reap, drop
+    U->>K: mount(2) fd=N (or fusermount3 → fd)
+    K-->>U: FUSE_INIT (flags include FUSE_OVER_IO_URING)
+    U->>K: INIT reply (FUSE_INIT_EXT | FUSE_OVER_IO_URING in flags2)
+    U->>K: REGISTER × num_possible_cpus() (sqe->len=2, header+payload iovecs)
+    Note over U,K: ring ready once every queue has an entry
+    K-->>U: CQE = a request in an entry's buffers
+    U->>K: COMMIT_AND_FETCH (commit_id, qid) → next request
+    U->>K: classical /dev/fuse read (FORGET / INTERRUPT)
 ```
 
-The adapter implements each step:
+### 3.1 Reuse, not reinvention
 
-1. **Capability discovery** — `Discovery::probe()` reads `uname`, `/dev/fuse`,
-   an `io_uring` probe, the kernel config where available, the
-   `fuse.enable_uring` module parameter, and `CAP_SYS_ADMIN` (`/proc/self/status`
-   `CapEff`).
-2. **Queue creation** — `FuseUringRing::add_queue(qid, zero_copy)`.
-3. **Buffer-pool registration** — `FuseUringRing::add_bufpool(qid, base, len, fixed_index)`.
-4. **Entry registration** — `FuseUringRing::register_entry(qid, iov_addr, zero_copy_index)`.
-5. **CQE request handling** — `wait_event()`, plus `reap()`; requests decode via
-   `RingRequest::decode(&FuseUringReqHeader)`.
-6. **Reply commit** — `RingReply::encode()` produces the exact `fuse_out_header`
-   + payload, byte-compatible with the classical transport.
-7. **Fetch-next lifecycle** — `commit_and_fetch(qid, commit_id)` re-submits the
-   entry, which is how the kernel returns the next request.
-8. **Cancellation** — `cancel(user_data)` issues `IORING_OP_ASYNC_CANCEL`; a
-   canceled request never counts as success.
-9. **Safe shutdown** — `shutdown()` submits, reaps without blocking, and the
-   ring's `Drop` releases kernel resources.
-10. **Automatic fallback** — §6.
-
-The classical `/dev/fuse` path (`src/fuse.rs`, `fuser`) is retained for
-everything F2 does not deliver: **notifications and interrupts still require the
-conventional interface**, exactly as the kernel documentation states.
-
-### 3.1 The implicit-queue legacy path (ABI 7.45)
-
-The running kernel (`7.2.9`, ABI 7.45) has **no** `ADD_QUEUE`: the driver creates
-a queue lazily on the first `REGISTER` whose `qid` is in `[0, nr_queues)`, where
-`nr_queues` is the CPU count (`fuse_uring_register` → `fuse_uring_create_queue`).
-The adapter therefore treats `ADD_QUEUE` as optional and availability is decided
-by the negotiated ABI (`FUSE_HAS_IO_URING_BUFPOOL` ⇒ 7.46+).
+The F2 dispatcher borrows the **same** transport-neutral `OrfsFuse` adaptor the
+classical transport uses (handle table, lookup accounting, permission checks,
+metrics). F2 and F0/F1 cannot diverge in filesystem semantics; only the path the
+bytes travel differs.
 
 ---
 
-## 4. Buffer pools and zero-copy (§17)
+## 4. Registered-buffer lifetimes
 
-* A queue may be given one contiguous payload region with `ADD_BUFPOOL`. The
-  kernel then reports, per request, `ring_ent_in_out.offset` and `payload_sz`;
-  the server locates the payload at `pool_base + offset`. This decouples entries
-  from payload buffers.
-* Registering the pool with `io_uring` and issuing `ADD_BUFPOOL` with
-  `IORING_URING_CMD_FIXED` + `sqe->buf_index` pins the pool pages once. The same
-  registered region can back the server's own `READ_FIXED`/`WRITE_FIXED` file
-  I/O — the shared-buffer idea of research §17.
-* **Zero-copy** is opt-in only (`--zero-copy` requires `--transport fuse-uring`
-  *and* `CAP_SYS_ADMIN`); it is capability-checked at the CLI, never required for
-  ordinary mounts. The open-file flag `FOPEN_IO_URING_ZERO_COPY` selects it per
-  open. Because F2 does not engage here (§7), zero-copy is inert and is *not*
-  benchmarked; §8 states this plainly rather than inventing numbers.
+A ring entry's header and payload buffers are heap-backed `AlignedBuffer`s: their
+address is fixed for the entry's lifetime, and they must remain allocated and
+untouched for as long as the kernel keeps the entry registered. This is the same
+pin discipline `src/buffers.rs` enforces for backing I/O, specialised by
+`BufferPool::register_iovecs` into the 2-element iovec array
+`REGISTER` imports. The array itself is boxed so its address is stable across
+moves of the owning struct. `EntryState` is `unsafe impl Send` with the documented
+invariant that the iovec bases point into allocations it owns.
 
 ---
 
-## 5. Negotiation and fallback
+## 5. Negotiation, fallback, and `doctor`
 
-Negotiation is a **live `INIT` handshake**, not a guess. Inside
-`OrfsFuse::init` (`src/fuse.rs`), when `--transport fuse-uring` is requested:
+`orfs mount --transport fuse-uring` attempts the native session first. If it
+cannot engage for any reason (no `/dev/fuse`, mount denied, kernel does not offer
+`FUSE_OVER_IO_URING`, a `REGISTER` rejection, …) the exact reason is reported and
+the classical `/dev/fuse` transport is used instead, with byte-identical contents.
 
-* `config.capabilities()` is the kernel's offered set. The kernel sets
-  `FUSE_OVER_IO_URING` **only** when `fuse_uring_enabled()` is true
-  (`fs/fuse/inode.c`), so the presence of that bit is the authoritative answer.
-* The server echoes the capability only when offered
-  (`config.add_capabilities(FUSE_OVER_IO_URING)`).
-* `FUSE_HAS_IO_URING_BUFPOOL` (`1 << 43`, retained by the fuser crate via
-  `from_bits_retain`) reports the modern `ADD_QUEUE`/`ADD_BUFPOOL` interface.
-* The result is stored in `FuseUringNegotiation { kernel_offered,
-  kernel_offered_bufpool, kernel_abi, accepted, engaged, reason }` and surfaced
-  by `OrfsMount::fuse_uring_negotiation()` / `transport_description()` /
-  `fuse_uring_report()`.
-
-`classify()` turns that into F0/F1/F2. The fallback changes **no** filesystem
-contents: F2 is purely a request-delivery path; the authoritative log, extents,
-and EKBLOOM integration are untouched.
-
-`orfs doctor` performs the static discovery (including the decisive
-`fuse.enable_uring` gate) and reports `fuse_over_io_uring_usable` with the exact
-reason — never merely "plausible".
+`orfs doctor` performs a **live** negotiation when the static preconditions hold:
+a throwaway mount + `INIT` + ring registration, then teardown. It reports the real
+result (with the `INIT` flags and queue count) rather than a prediction; when the
+preconditions provably fail, it reports the exact static reason and mounts nothing.
 
 ---
 
-## 6. What is verified
+## 6. Measurements (real F0 / F1 / F2)
 
-| Test (`tests/fuse_uring.rs`) | Requires | Checks |
-|------------------------------|----------|--------|
-| `ring_control_cancel_and_shutdown_are_safe` | `io_uring` | `ADD_QUEUE`/`ADD_BUFPOOL`/`COMMIT_AND_FETCH` submission, `ASYNC_CANCEL`, `shutdown()` against a non-`fuse` fd (kernel rejects `URING_CMD` with `-EOPNOTSUPP` for a file with no `uring_cmd`); counters and no panic |
-| `transport_equivalence_and_f2_fallback` | mount | identical logical transcripts for F0, F1, and a requested-F2 mount; `F0`/`F1`/non-F2 profiles; negotiation recorded with a reason; contents identical |
-| `f2_negotiation_records_a_real_reason` | mount | a requested-F2 mount records `engaged == false` and a non-empty reason, and never reports F2 |
+`tests/fuse_uring.rs::f2_performance_f0_f1_f2` drives identical POSIX workloads
+through real mounts with `direct_io` on and attribute/entry TTL `0`, so every read
+and lookup is a real transport round-trip. Machine-generated results are in
+`evidence/performance/fuse-uring.json`; environment: kernel `7.2.9-2-cachyos`,
+ABI 7.45, container image id `sha256:a41df86d…`, mount options
+`fsname=orfs,subtype=orfs,max_read=131072,rw`.
 
-In-crate unit tests (`src/fuse_uring.rs`) pin the UAPI sizes/opcodes, the
-command encoding offsets, the zero-copy union arm, the request/reply codec, and
-the profile-classification rule.
+| workload | F0 | F1 | F2 |
+|----------|----|----|----|
+| sequential read (MiB/s) | ~4000 | ~3600 | ~4800 |
+| random 4K read (µs/op) | ~7.4 | ~9.0 | ~9.0 |
+| random 1-byte read (µs/op) | ~7.1 | ~8.3 | ~8.8 |
+| metadata lookup (µs/op) | ~8.4 | ~8.1 | ~9.5 |
+| create+unlink (µs/op) | ~6560 | ~6630 | ~6620 |
+| fsync (µs/op) | ~8860 | ~8870 | ~9910 |
 
----
+These are single-run warm-cache observations on one host/container, not a portable
+benchmark, and no performance superiority is claimed. The point of the F2 row is
+that the ring really carries the traffic (equivalence and the counters prove it),
+not that it is faster.
 
-## 7. Why a real F2 mount is not achievable here (three blockers)
-
-Both are *honest, documented* outcomes; neither is worked around by faking
-success.
-
-### 7.1 `fuse.enable_uring=0` (kernel policy / privilege)
-
-The running kernel exposes the module parameter
-`/sys/module/fuse/parameters/enable_uring` and `fuse_uring_enabled()` returns it.
-It gates **both** the `FUSE_OVER_IO_URING` `INIT` flag and the connection's
-`io_uring` enablement (`fs/fuse/inode.c`:
-
-```c
-if (flags & FUSE_OVER_IO_URING && fuse_uring_enabled())
-        fuse_chan_io_uring_enable(fc->chan);
-```
-
-and `fs/fuse/dev_uring.c`: `if (!enable_uring && !fch->io_uring) return -EOPNOTSUPP;`).
-On this host it is **`N`**. The parameter is `root:root 0644`; the container runs
-as an unprivileged uid, so it cannot be changed, and changing a host-global
-kernel parameter would be an out-of-scope host mutation. The observed result is
-recorded verbatim in the evidence: *"kernel did not offer FUSE_OVER_IO_URING at
-INIT (FUSE ABI 7.45)"*.
-
-### 7.2 The pinned `io-uring` 0.7.15 cannot set `sqe->len`
-
-`FUSE_IO_URING_CMD_REGISTER` requires `sqe->len == FUSE_URING_IOV_SEGS (2)`
-(`fuse_uring_get_iovec_from_sqe`: `if (sqe->len != FUSE_URING_IOV_SEGS) return
--EINVAL;`). The `io-uring` 0.7.15 crate's `UringCmd80` builder exposes
-`cmd_op`/`cmd`/`addr`/`buf_index` but **no `len` setter**, and neither `Entry`
-nor `Entry128` exposes one. The control commands (`ADD_QUEUE`, `ADD_BUFPOOL`,
-`COMMIT_AND_FETCH`, cancellation) do not use `len` and are unaffected. Closing
-this gap needs a raw-SQE path (or a crate that exposes `len`); that is listed as
-follow-up and deliberately not attempted as untested `unsafe` here.
-
-### 7.3 fuser owns the `/dev/fuse` fd
-
-Even with §7.1 enabled, a running F2 request loop must issue `URING_CMD` on the
-mount's `/dev/fuse` fd. This build uses the `fuser` crate for the session, and
-`fuser` 0.18 does not expose that descriptor, so a native ring cannot attach to
-a `fuser`-managed mount. A full F2 driver would own the session (mount + `INIT` +
-ring); the adapter here is the ring/codec/negotiation layer such a driver uses.
+Provenance: `evidence/correctness/fuse-uring-f2-engagement.json` (live `INIT`
+flags, 16 queues, `requests_served`/`completions`/`register_failures` counters),
+`evidence/correctness/fuse-uring-equivalence.json` (identical F0/F1/F2 transcript),
+`evidence/correctness/fuse-uring-ring.json` (ring-layer submission/cancel/shutdown).
 
 ---
 
-## 8. Measured results and evidence (honest interpretation)
+## 7. Remaining limits (ABI 7.45)
 
-Machine-generated evidence:
-
-* `evidence/performance/fuse-uring.json` — environment, kernel, UAPI version,
-  the per-profile reported status, the live F2 negotiation, and the *reason* F2
-  throughput is not measured (`"f2": "not measured (F2 unavailable)"`).
-* `evidence/correctness/fuse-uring-equivalence.json` — the operation transcript
-  shared by F0, F1, and the requested-F2 fallback (`contents_identical: true`).
-* `evidence/correctness/fuse-uring-ring.json` — the ring layer's submission,
-  completion, cancellation, and shutdown counters, and the `-EOPNOTSUPP` the
-  kernel returns for `URING_CMD` on a non-`fuse` fd.
-
-What these **do not** claim: no F2 throughput number is reported, because F2 did
-not engage. Backing-I/O micro-benchmarks remain in
-`evidence/performance/backing-uring.json` (Phase 5).
+* No `ADD_QUEUE`/`ADD_BUFPOOL` and no buffer-pool `offset`; only the baseline
+  register/commit interface (queues created lazily; one entry per CPU queue).
+* Zero-copy is not exercised on this kernel; no zero-copy number is claimed.
+* A native F2 mount exposes **no** `fuser` `Notifier`, so `OrfsMount::notifier()`
+  is `None` (explicit cache invalidation is unavailable on F2).
+* `auto_unmount` is not forwarded to `fusermount3`; teardown is driven by the
+  session's own unmount path.
+* FUSE passthrough (research §28.2) is not implemented.
 
 ---
 
-## 9. `unsafe` inventory
-
-All `unsafe` in `src/fuse_uring.rs` is confined to the `io_uring` FFI contract,
-each with a stated invariant:
+## 8. `unsafe` inventory
 
 | Location | Invariant |
 |----------|-----------|
-| `FuseUringRing::push_cmd` (`squeue::SubmissionQueue::push`) | the SQE references only bytes copied into it and, when `addr` is set, a caller-owned buffer the caller keeps alive for the operation's lifetime |
-| `FuseUringRing::cancel` (`push` of `AsyncCancel`) | `AsyncCancel` references no user buffer; the target is identified by `user_data` |
-
-No raw ring setup, `mmap`, or `unsafe` transmute is used; the command/reply
-structs are encoded and decoded with checked byte arithmetic.
+| `fuse_uring.rs::entry128_set_len` | `Entry128` is `#[repr(C)]`, exactly 128 bytes, mirroring `struct io_uring_sqe`; byte 24 is `sqe->len`. Writes only within the owned value, unaligned. |
+| `fuse_uring.rs::FuseUringRing::push_cmd` | the SQE references only bytes copied into it and, when `addr` is set, a caller-owned buffer kept alive for the operation's lifetime |
+| `fuse_uring.rs::FuseUringRing::cancel` | `AsyncCancel` references no user buffer; the target is `user_data` |
+| `fuse_native.rs` mount/`recvmsg`/`poll`/`read` | valid path/data pointers that outlive each syscall; the fd handed over `SCM_RIGHTS` is taken ownership of exactly once |
+| `fuse_native.rs::EntryState` `unsafe impl Send` | the iovec bases point into allocations `EntryState` owns and moves with it |
 
 ---
 
-## 10. Explicit non-claims
+## 9. Explicit non-claims
 
-* F2 is **not** active on this host; `orfs doctor` and the evidence say so.
-* Zero-copy is implemented at the CLI/negotiation level but not exercised; no
-  zero-copy performance number is claimed.
-* FUSE passthrough (research §28.2) is not implemented in this phase.
-* The `REGISTER` iovec path is implemented but cannot be expressed through the
-  pinned `io-uring` crate (§7.2).
+* Zero-copy performance is not claimed.
+* FUSE passthrough is not implemented.
+* No performance superiority over F0/F1 is claimed; the F2 numbers exist to prove
+  the transport is real, not to win a benchmark.

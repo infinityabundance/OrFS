@@ -1475,8 +1475,18 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         }
     }
 
-    fn getxattr(&self, _req: &Request, ino: INodeNo, name: &OsStr, size: u32, reply: ReplyXattr) {
+    fn getxattr(&self, req: &Request, ino: INodeNo, name: &OsStr, size: u32, reply: ReplyXattr) {
         let core = self.inner.core.lock();
+        // Access rule: reading an attribute requires read permission on the
+        // inode, symmetric with reading its contents. No namespace (including
+        // `security.*`/`trusted.*`) bypasses this check.
+        let st = match core.getattr(ino.0, core.root()) {
+            Ok(st) => st,
+            Err(e) => return reply.error(errno(&e)),
+        };
+        if !has_permission(req.uid(), req.gid(), &st, 0o4) {
+            return reply.error(Errno::EACCES);
+        }
         match core.getxattr(ino.0, name.as_bytes(), core.root()) {
             Ok(value) => {
                 if size == 0 {
@@ -1491,8 +1501,15 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         }
     }
 
-    fn listxattr(&self, _req: &Request, ino: INodeNo, size: u32, reply: ReplyXattr) {
+    fn listxattr(&self, req: &Request, ino: INodeNo, size: u32, reply: ReplyXattr) {
         let core = self.inner.core.lock();
+        let st = match core.getattr(ino.0, core.root()) {
+            Ok(st) => st,
+            Err(e) => return reply.error(errno(&e)),
+        };
+        if !has_permission(req.uid(), req.gid(), &st, 0o4) {
+            return reply.error(Errno::EACCES);
+        }
         match core.listxattr(ino.0, core.root()) {
             Ok(names) => {
                 let mut buf = Vec::new();

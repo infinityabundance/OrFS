@@ -81,3 +81,35 @@ negotiation, records the precise reason, and continues as F1/F0 with
 exact reason rather than merely "plausible". Zero-copy is opt-in and
 capability-checked (`CAP_SYS_ADMIN`) and, because F2 does not engage here, is not
 exercised; no zero-copy performance number is claimed.
+
+## 5. Logical deletion is not secure erasure (research §29)
+
+OrFS is append-only and non-withdrawal. `unlink`, `rmdir`, truncation, and
+rename-over change only the *visible* namespace; they never physically remove or
+overwrite the underlying committed bytes, which remain in the authoritative log.
+**OrFS is therefore inappropriate for workflows that require reliable physical
+deletion** unless a separately specified data-retention and cryptographic policy
+is applied on top of it. Revoking a namespace path does not make the historical
+bytes unrecoverable, and a party able to read the backing store (or to mount an
+earlier committed root) can still read them. The **backing directory should be
+protected more strictly than the logical mount**. See `docs/SECURITY.md` §2.
+
+## 6. Trailing-segment loss is indistinguishable from a shorter log
+
+If the *trailing* committed segment files are physically removed outside OrFS,
+the surviving segments still form a contiguous chain, so recovery reconstructs
+the most recent **surviving** complete committed boundary and reports that
+(strictly earlier) root. No invalid state is produced and no byte is fabricated,
+but the removed transactions are lost without an error. Interior gaps, sequence
+breaks, and committed roots dangling past present bytes **are** refused. See
+`docs/RECOVERY.md` §5. Detecting trailing loss would require a durable
+physical-end watermark written on every commit.
+
+## 7. Extended-attribute access rule
+
+OrFS stores xattr names as bounded opaque bytes (≤ 255, no NUL) and enforces one
+uniform access rule independent of namespace: reading an attribute requires read
+permission on the inode; setting or removing one requires write permission. There
+is no special privilege for `security.*`, `trusted.*`, or `system.*` names and no
+`CAP_SYS_ADMIN`/`CAP_FOWNER` override; a caller that needs those semantics must
+enforce them above OrFS.

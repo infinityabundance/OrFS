@@ -26,6 +26,7 @@
 //! `orfs query` (and the library API here) uses it; speedups are measured
 //! against the equivalent full-scan query, never attributed to plain POSIX reads.
 
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::error::{OrfsError, Result};
@@ -466,18 +467,30 @@ impl<'a> QueryEngine<'a> {
     fn collect_dir(
         &self,
         view: &Index,
-        dir: u64,
+        root_dir: u64,
         recursive: bool,
         out: &mut Vec<u64>,
     ) -> Result<()> {
-        for (_name, child) in view.readdir(dir).unwrap_or_default() {
-            let Some(ino) = view.inode(child) else {
+        // Iterative traversal with an explicit worklist and a visited set. A
+        // hostile committed namespace that (illegally) contains a directory cycle
+        // must not drive call-stack recursion to overflow (research §28, no
+        // uncontrolled recursion); the walk is bounded by the number of distinct
+        // directories reachable from the target.
+        let mut stack = vec![root_dir];
+        let mut visited: HashSet<u64> = HashSet::new();
+        while let Some(dir) = stack.pop() {
+            if !visited.insert(dir) {
                 continue;
-            };
-            if ino.is_file() {
-                out.push(child);
-            } else if ino.is_dir() && recursive {
-                self.collect_dir(view, child, recursive, out)?;
+            }
+            for (_name, child) in view.readdir(dir).unwrap_or_default() {
+                let Some(ino) = view.inode(child) else {
+                    continue;
+                };
+                if ino.is_file() {
+                    out.push(child);
+                } else if ino.is_dir() && recursive && !visited.contains(&child) {
+                    stack.push(child);
+                }
             }
         }
         Ok(())

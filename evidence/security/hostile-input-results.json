@@ -1,0 +1,52 @@
+{
+  "all_ok": true,
+  "all_rejected": true,
+  "cases": [
+    {
+      "case": "record_short",
+      "decoder_rejected": true
+    },
+    {
+      "case": "record_bad_magic",
+      "decoder_rejected": true
+    },
+    {
+      "case": "dentry_name_traversal",
+      "decoder_rejected": true
+    },
+    {
+      "case": "xattr_nul_name",
+      "decoder_rejected": true
+    },
+    {
+      "case": "volume_meta_short",
+      "decoder_rejected": true
+    },
+    {
+      "case": "manifest_short",
+      "decoder_rejected": true
+    },
+    {
+      "case": "trigram_short",
+      "decoder_rejected": true
+    },
+    {
+      "case": "fuse_request_short",
+      "decoder_rejected": true
+    }
+  ],
+  "courts": [
+    "malformed framing (magic/version/length/CRC/end-marker)",
+    "length-overflow records",
+    "truncated/tampered committed segments",
+    "malicious filenames (NUL, '..', '/', over-long, non-UTF8)",
+    "hostile xattr names/values",
+    "hostile query inputs and roots",
+    "cross-volume snapshot references",
+    "giant/negative offsets",
+    "FUSE-over-io_uring request decode"
+  ],
+  "generator": "tests/hostile_files.rs",
+  "method": "a fixed hostile corpus is executed against every decoder at test time; the table records the real outcome (rejected = true)",
+  "schema": "orfs.evidence.hostile-input-results.v1"
+}

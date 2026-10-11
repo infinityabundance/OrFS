@@ -316,7 +316,12 @@ impl DataExtentPayload {
         let end = start.checked_add(data_len).ok_or(OrfsError::Overflow {
             what: "DATA_EXTENT data length",
         })?;
-        if end + 4 != buf.len() {
+        // Checked add: a hostile `data_len` must not overflow (or panic in a
+        // debug build) when the trailing CRC length is folded in.
+        let framed = end.checked_add(4).ok_or(OrfsError::Overflow {
+            what: "DATA_EXTENT framed length",
+        })?;
+        if framed != buf.len() {
             return Err(OrfsError::Corrupt(
                 "DATA_EXTENT payload length disagreement".into(),
             ));

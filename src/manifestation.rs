@@ -48,7 +48,7 @@
 //! authoritative commit path never blocks on it. A newer inode version cancels
 //! and supersedes older pending jobs (research §10.3).
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -1028,7 +1028,9 @@ fn decode_head(bytes: &[u8]) -> Option<Vec<u64>> {
         return None;
     }
     let count = d.u32().ok()? as usize;
-    if count > 1_000_000 {
+    // Every generation is an 8-byte u64, so a declared count that exceeds the
+    // remaining input is corrupt; enforce before allocating (research §28).
+    if count > 1_000_000 || count > d.remaining() / 8 {
         return None;
     }
     let mut out = Vec::with_capacity(count);
@@ -1042,15 +1044,42 @@ fn decode_head(bytes: &[u8]) -> Option<Vec<u64>> {
 }
 
 /// The total byte length of every regular file beneath `dir` (recursive).
+///
+/// Implemented with an explicit worklist rather than call-stack recursion, and
+/// it never follows symbolic links nor descends into the same directory twice.
+/// A concealer scanning a backing directory that an adversary has populated with
+/// a symlink loop or an extremely deep tree therefore cannot cause unbounded
+/// recursion or allocation (research §28, no uncontrolled recursion; §29 warns
+/// that the backing store may be less trusted than the logical mount).
 pub fn dir_bytes(dir: &Path) -> u64 {
     let mut total = 0u64;
-    if let Ok(entries) = fs::read_dir(dir) {
+    let mut stack: Vec<PathBuf> = vec![dir.to_path_buf()];
+    let mut visited: HashSet<(u64, u64)> = HashSet::new();
+    while let Some(cur) = stack.pop() {
+        // Refuse to walk the same physical directory twice (bounded by the real
+        // tree, not by a hostile link graph).
+        if let Ok(md) = fs::symlink_metadata(&cur) {
+            use std::os::unix::fs::MetadataExt;
+            if !visited.insert((md.dev(), md.ino())) {
+                continue;
+            }
+        }
+        let entries = match fs::read_dir(&cur) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
         for entry in entries.flatten() {
-            if let Ok(meta) = entry.metadata() {
-                if meta.is_dir() {
-                    total = total.saturating_add(dir_bytes(&entry.path()));
-                } else {
-                    total = total.saturating_add(meta.len());
+            // `file_type` does not follow the link, so a symlink (even a loop, or
+            // one pointing outside `dir`) is never treated as a directory to
+            // descend into.
+            let Ok(ft) = entry.file_type() else {
+                continue;
+            };
+            if ft.is_dir() {
+                stack.push(entry.path());
+            } else if ft.is_file() {
+                if let Ok(md) = entry.metadata() {
+                    total = total.saturating_add(md.len());
                 }
             }
         }

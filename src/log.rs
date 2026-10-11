@@ -73,6 +73,45 @@ pub struct TailInfo {
     pub abandoned_bytes: u64,
 }
 
+/// What recovery found and did when a log was opened (research §23, §35).
+///
+/// This is the *explicit* classification of the on-disk state that `Log::open`
+/// observed, distinguishing the cases the directive requires:
+///
+/// * [`RecoveryDisposition::Clean`] — the physical log is exactly the committed
+///   prefix; nothing was refused and nothing was retained.
+/// * [`RecoveryDisposition::RetainedTail`] — a harmless **uncommitted** tail (a
+///   torn record, or well-framed records after the last `TX_COMMIT`) was found.
+///   It is never exposed as authoritative content; a writable open quarantines it
+///   and continues in a fresh segment, a read-only open leaves it untouched.
+///
+/// The remaining two required distinctions are **refusals**, reported as `Err`
+/// (never as a successful recovery): an *incomplete commit* that is not a clean
+/// uncommitted tail, and a *malformed committed record* or *corruption* (a hard
+/// fault, a torn record in a non-final segment, a physical gap, a duplicate
+/// segment id, or an unsupported format version). The returned error is the
+/// classification; recovery never silently repairs (§23.1).
+///
+/// A read-only open ([`OpenMode::ReadOnly`]) is the *degraded* mode: it validates
+/// and classifies identically but never mutates a single on-disk byte, so a
+/// damaged-but-readable volume can be inspected without altering it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum RecoveryDisposition {
+    /// The log is exactly the committed prefix.
+    Clean,
+    /// A harmless uncommitted tail was retained (and quarantined on a writable
+    /// open).
+    RetainedTail {
+        /// Whether the tail is a torn record or fully-framed uncommitted records.
+        kind: TailKind,
+        /// Physical bytes beyond the committed boundary.
+        abandoned_bytes: u64,
+        /// Whether a writable open moved it aside into `quarantine/`.
+        quarantined: bool,
+    },
+}
+
 /// Aggregate record statistics for a log.
 #[derive(Debug, Clone, Default)]
 pub struct LogStats {
@@ -817,6 +856,9 @@ pub struct Log {
     /// with every read-only handle and snapshot opened over the same volume so a
     /// writer observes the pins a reader holds.
     pins: Arc<RootPins>,
+    /// What recovery observed and did when this handle was opened (research §23,
+    /// §35). [`RecoveryDisposition::Clean`] for a freshly created log.
+    recovery: RecoveryDisposition,
 }
 
 impl Log {
@@ -862,6 +904,7 @@ impl Log {
             open_bracket_records: 0,
             io: BackingEngine::Sync,
             pins: RootPins::new(),
+            recovery: RecoveryDisposition::Clean,
         })
     }
 
@@ -889,11 +932,13 @@ impl Log {
         let committed = scan.committed_end_offset;
         let mut locator = SegmentLocator::from_extents(scan.extents.clone())?;
         let mut writer = None;
+        let mut quarantined = false;
 
         if mode == OpenMode::ReadWrite {
             if scan.physical_end > committed {
                 // Retain the abandoned tail, then continue in a fresh segment.
                 quarantine_after(dir, &scan.extents, committed)?;
+                quarantined = true;
                 locator = SegmentLocator::from_extents(truncate_extents(&scan.extents, committed))?;
                 let seg = Segment::create(dir, committed)?;
                 locator.push(SegmentExtent {
@@ -931,6 +976,25 @@ impl Log {
             }
         }
 
+        let recovery = match scan.tail {
+            None => RecoveryDisposition::Clean,
+            Some(t) => RecoveryDisposition::RetainedTail {
+                kind: t.kind,
+                abandoned_bytes: t.abandoned_bytes,
+                quarantined,
+            },
+        };
+        // The committed root must be physically covered by canonical bytes. A
+        // deleted or truncated *committed* segment can otherwise leave a root
+        // pointing past the bytes that exist (research §35: the recovered root is
+        // a complete committed boundary, never a dangling position).
+        if committed > locator.total_len() {
+            return Err(OrfsError::Corrupt(format!(
+                "committed root {committed} extends beyond the canonical bytes {} \
+                 (a committed segment is missing or truncated)",
+                locator.total_len()
+            )));
+        }
         Ok(Log {
             dir: dir.to_path_buf(),
             segment_size,
@@ -947,12 +1011,20 @@ impl Log {
             open_bracket_records: 0,
             io: BackingEngine::Sync,
             pins,
+            recovery,
         })
     }
 
     /// The committed-root pin registry shared by this handle.
     pub fn root_pins(&self) -> Arc<RootPins> {
         self.pins.clone()
+    }
+
+    /// What recovery observed and did when this handle was opened (research §23,
+    /// §35). Lets a caller report a recovered tail explicitly instead of inferring
+    /// it, and lets tests assert the classification.
+    pub fn recovery(&self) -> RecoveryDisposition {
+        self.recovery
     }
 
     /// Pin a committed root so its segments cannot be quarantined or rolled over

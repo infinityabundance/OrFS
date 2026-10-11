@@ -109,9 +109,15 @@ impl SnapshotRootPayload {
                 "SNAPSHOT_ROOT payload length disagreement".into(),
             ));
         }
+        let name = buf[start..end].to_vec();
+        // The name is committed history and may later be printed or used to
+        // address a snapshot; refuse out-of-domain names at decode time (§28).
+        crate::directory::validate_name(&name).map_err(|e| {
+            OrfsError::Corrupt(format!("SNAPSHOT_ROOT payload has an invalid name: {e}"))
+        })?;
         Ok(SnapshotRootPayload {
             root: crate::record::get_u64(buf, 4),
-            name: buf[start..end].to_vec(),
+            name,
         })
     }
 }
@@ -1349,9 +1355,7 @@ impl Namespace {
 
     /// Publish a named committed snapshot of the current root.
     pub fn publish_snapshot(&mut self, name: &[u8]) -> Result<u64> {
-        if name.is_empty() {
-            return Err(OrfsError::InvalidArgument("empty snapshot name".into()));
-        }
+        validate_name(name)?;
         let snapshot_root = self.index.root();
         let payload = SnapshotRootPayload {
             root: snapshot_root,

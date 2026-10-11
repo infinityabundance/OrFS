@@ -1,0 +1,31 @@
+{
+  "all_ok": true,
+  "cargo_fuzz": {
+    "attempted": true,
+    "ran": false,
+    "reason": "`cargo-fuzz` is not installed in the pinned image and libFuzzer requires a nightly toolchain; the offline, stable-1.99.0, single-container workflow cannot run it. A bounded deterministic in-container mutation fuzzer is used instead."
+  },
+  "generator": "tests/fuzz_decode.rs",
+  "method": "seeded mutation fuzzing from valid encodings (bit flips, byte overwrites, truncation, splicing, extreme length fields, zero runs)",
+  "result": "no panic, abort, hang, or unbounded allocation observed in any iteration",
+  "schema": "orfs.evidence.fuzz-decode.v1",
+  "seed": 16723545681425,
+  "targets": [
+    {
+      "iterations": 20000,
+      "panics": 0,
+      "surface": "record framing (Record::decode / RecordHeader::decode)"
+    },
+    {
+      "iterations": 20000,
+      "panics": 0,
+      "surface": "FUSE-over-io_uring request header (FuseUringReqHeader::from_bytes)"
+    },
+    {
+      "iterations": 400,
+      "panics": 0,
+      "surface": "segment + log decode (scan_log / Volume::open)"
+    }
+  ],
+  "total_iterations": 40400
+}

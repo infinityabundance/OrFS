@@ -323,8 +323,10 @@ impl TrigramIndex {
         let logical_size = d.u64()?;
         let source_blake3 = d.arr32()?;
         let count = d.u32()? as usize;
-        // A trigram index can never hold more distinct keys than 2^24.
-        if count > (1 << 24) {
+        // A trigram index can never hold more distinct keys than 2^24, and every
+        // entry needs at least a 4-byte key, so bound the count by the bytes that
+        // actually remain before iterating (no work driven by an untrusted length).
+        if count > (1 << 24) || count > d.remaining() / 4 {
             return Err(corrupt("declares too many keys"));
         }
         let mut entries: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
@@ -338,6 +340,13 @@ impl TrigramIndex {
             // Every position lies in [0, logical_size).
             if (n as u64) > logical_size {
                 return Err(corrupt("declares an oversized posting list"));
+            }
+            // Each position is at least one LEB128 byte, so a declared count that
+            // exceeds the remaining input is corrupt. This bound is enforced
+            // *before* the allocation below, so no untrusted length can drive an
+            // unbounded `with_capacity` (research §28, bounded allocation).
+            if n > d.remaining() {
+                return Err(corrupt("declares more positions than input bytes"));
             }
             let mut positions = Vec::with_capacity(n);
             let mut prev: u64 = 0;
@@ -830,7 +839,8 @@ fn decode_head(bytes: &[u8]) -> Option<Vec<u64>> {
         return None;
     }
     let count = d.u32().ok()? as usize;
-    if count > 1_000_000 {
+    // Bound by the remaining input (8 bytes per generation) before allocating.
+    if count > 1_000_000 || count > d.remaining() / 8 {
         return None;
     }
     let mut out = Vec::with_capacity(count);

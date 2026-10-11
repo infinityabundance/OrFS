@@ -152,6 +152,25 @@ impl Snapshot {
         Snapshot::from_read_log(Arc::new(log), meta.uuid, root)
     }
 
+    /// Open a snapshot named by a [`HistoricalRoot`] reference over an already-open
+    /// [`Volume`], **refusing a reference that names a different volume**.
+    ///
+    /// A historical root is `(uuid, offset)`; the uuid is what scopes the
+    /// position so that a root offset is never accidentally reinterpreted against
+    /// another volume's log (research §2 I2, §28 secure historical-view access).
+    pub fn open_historical(volume: &Volume, reference: &HistoricalRoot) -> Result<Snapshot> {
+        check_reference_uuid(reference, &volume.meta.uuid)?;
+        Snapshot::open(volume, reference.root)
+    }
+
+    /// Open a snapshot named by a [`HistoricalRoot`] reference directly from a
+    /// backing directory, refusing a reference that names a different volume.
+    pub fn open_dir_historical(dir: &Path, reference: &HistoricalRoot) -> Result<Snapshot> {
+        let meta = Volume::read_meta(dir)?;
+        check_reference_uuid(reference, &meta.uuid)?;
+        Snapshot::open_dir(dir, reference.root)
+    }
+
     /// Build a snapshot from a read-only [`Log`] handle.
     ///
     /// Validates that `root` is a committed transaction boundary (research §2,
@@ -344,6 +363,28 @@ impl Snapshot {
 /// See [`Snapshot::open`].
 pub fn open_snapshot(volume: &Volume, root: u64) -> Result<Snapshot> {
     Snapshot::open(volume, root)
+}
+
+/// Reject a historical reference whose volume uuid does not match `actual`.
+fn check_reference_uuid(reference: &HistoricalRoot, actual: &[u8; 16]) -> Result<()> {
+    if reference.uuid != *actual {
+        return Err(OrfsError::InvalidArgument(format!(
+            "historical reference {} names volume {}, but the backing store is volume {}",
+            reference,
+            reference.uuid_string(),
+            hex_uuid(actual),
+        )));
+    }
+    Ok(())
+}
+
+/// Format a raw 16-byte uuid as the canonical hyphenated string.
+fn hex_uuid(uuid: &[u8; 16]) -> String {
+    HistoricalRoot {
+        uuid: *uuid,
+        root: 0,
+    }
+    .uuid_string()
 }
 
 /// The read-only error every snapshot mutation returns (FUSE `EROFS`).

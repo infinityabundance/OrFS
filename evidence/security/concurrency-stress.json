@@ -1,0 +1,67 @@
+{
+  "all_ok": true,
+  "generator": "tests/concurrency_stress.rs",
+  "invariants_checked": [
+    "no panic or data race under OS-thread contention",
+    "every commit advances the root to a complete transaction boundary",
+    "the recovered index equals the live index (canonical digest)",
+    "reads by inode survive unlink (non-withdrawal, open-handle semantics)",
+    "manifestation publication never changes logical read output",
+    "root pins are released and pinned roots stay valid"
+  ],
+  "model_checking": {
+    "reason": "The real shared state is a std::sync::Mutex<BTreeMap>, a parking_lot::RwLock+Condvar worker pool, and &mut-borrow serialised commits plus real fsync I/O; Loom models only substituted std::sync primitives and pure in-memory state, so modelling it would test a different program. The directive's explicit fallback (stress tests) is used instead.",
+    "tool": "none (Loom evaluated and declined)"
+  },
+  "schema": "orfs.evidence.concurrency-stress.v1",
+  "tests": [
+    {
+      "name": "overlapping_writes_to_one_inode",
+      "ops_per_writer": 40,
+      "readers": 0,
+      "writers": 4
+    },
+    {
+      "name": "writes_to_independent_inodes",
+      "ops_per_writer": 1,
+      "readers": 0,
+      "writers": 6
+    },
+    {
+      "name": "rename_unlink_races",
+      "ops_per_writer": 40,
+      "readers": 0,
+      "writers": 4
+    },
+    {
+      "name": "create_unlink_races",
+      "ops_per_writer": 50,
+      "readers": 0,
+      "writers": 4
+    },
+    {
+      "name": "open_file_during_unlink_keeps_reading_historical_bytes",
+      "ops_per_writer": 1,
+      "readers": 1,
+      "writers": 1
+    },
+    {
+      "name": "snapshot_reads_during_writes_are_stable",
+      "ops_per_writer": 200,
+      "readers": 3,
+      "writers": 1
+    },
+    {
+      "name": "bloom_publication_during_reads_never_changes_logical_output",
+      "ops_per_writer": 30,
+      "readers": 3,
+      "writers": 1
+    },
+    {
+      "name": "mount_recovery_after_concurrent_activity_is_exact",
+      "ops_per_writer": 60,
+      "readers": 0,
+      "writers": 4
+    }
+  ]
+}

@@ -168,6 +168,13 @@ impl DentryAddPayload {
         if end + 4 != buf.len() {
             return Err(OrfsError::Corrupt(format!("{what} payload trailing bytes")));
         }
+        // A *committed* record is authoritative history, so its name is treated
+        // as hostile input: an out-of-domain name (empty, `..`, embedded `/` or
+        // NUL, or longer than `NAME_MAX`) must be refused, never indexed. See
+        // research §28 (strict path traversal handling) and §35 (a malformed
+        // committed record is corruption, not silently applied content).
+        validate_name(&name)
+            .map_err(|e| OrfsError::Corrupt(format!("{what} payload has an invalid name: {e}")))?;
         Ok(DentryAddPayload {
             parent: get_u64(buf, 4),
             child: get_u64(buf, 12),
@@ -206,6 +213,8 @@ impl DentryRemovePayload {
         if end + 4 != buf.len() {
             return Err(OrfsError::Corrupt(format!("{what} payload trailing bytes")));
         }
+        validate_name(&name)
+            .map_err(|e| OrfsError::Corrupt(format!("{what} payload has an invalid name: {e}")))?;
         Ok(DentryRemovePayload {
             parent: get_u64(buf, 4),
             name,
@@ -254,6 +263,11 @@ impl DentryRenamePayload {
             return Err(OrfsError::Corrupt(
                 "DENTRY_RENAME payload trailing bytes".into(),
             ));
+        }
+        for n in [&old_name, &new_name] {
+            validate_name(n).map_err(|e| {
+                OrfsError::Corrupt(format!("DENTRY_RENAME payload has an invalid name: {e}"))
+            })?;
         }
         Ok(DentryRenamePayload {
             flags,

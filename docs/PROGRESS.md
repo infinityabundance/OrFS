@@ -767,3 +767,85 @@ changes what a query returns.
   `/dev/fuse` fd for a native ring to attach. See `docs/FUSE_URING.md` §7.
 * Zero-copy is not exercised and no zero-copy number is claimed.
 * FUSE passthrough (research §28.2) is not implemented in this phase.
+
+## Phase 11 — Security and crash-hardening
+
+**Complete.** Implements the directive's §27 (concurrency), §28 (filesystem
+security), §29 (non-withdrawal privacy), §34 (fault injection), and §35
+(recovery invariants). See `docs/SECURITY.md` (threat model, hardening per
+surface, the unsafe audit, sandbox/privilege notes, and the §29 privacy
+statement) and `docs/RECOVERY.md` (recovery states, modes, invariants).
+
+### Delivered
+
+* **Hostile-input hardening** across every decoder and the FUSE layer: names are
+  validated at decode time for `DENTRY_ADD`/`DENTRY_REMOVE`/`DENTRY_RENAME` and
+  `SNAPSHOT_ROOT`; xattr names (NUL-free) and values are bounded at decode;
+  symlink targets are bounded to `PATH_MAX`; `DATA_EXTENT` length arithmetic is
+  fully checked; the concealed `HEAD`/trigram decoders cannot allocate from an
+  untrusted count; `TrigramIndex::decode` bounds `n` by the remaining input
+  before allocating; directory walks are iterative and cycle-safe
+  (`query::collect_dir`, `manifestation::dir_bytes`, the latter symlink-safe);
+  FUSE `getxattr`/`listxattr` enforce read permission; cross-volume historical
+  references are refused; and a committed root dangling past the present bytes is
+  refused. See `docs/SECURITY.md` §6 for the full found/fixed log.
+* **`tests/hostile_files.rs`** — a hostile court: malformed framing, forged
+  but correctly-framed illegal names, tampered/truncated committed segments,
+  hostile xattr/query inputs, cross-volume snapshots, giant/negative offsets,
+  non-UTF-8 names, namespace↔backend separation, plus `proptest` fuzzing of every
+  decoder and the unsafe-block audit.
+* **Fuzzing** — `cargo fuzz` was **attempted and could not run** offline in the
+  pinned container (`cargo-fuzz` absent; libFuzzer needs nightly). A bounded,
+  deterministic, seeded in-container mutation fuzzer replaces it
+  (`tests/fuzz_decode.rs`): 20 000 record-framing, 20 000 FUSE-request, and 400
+  segment/log iterations; **no panic, abort, hang, or unbounded allocation**.
+* **Concurrency** — Loom was evaluated and **declined** (the real shared state is
+  a `std::sync::Mutex<BTreeMap>`, a `parking_lot::RwLock`+`Condvar` worker pool,
+  and `&mut`-borrow-serialised commits with real `fsync` I/O; Loom models only
+  substituted `std::sync` primitives). Per the directive's explicit fallback,
+  `tests/concurrency_stress.rs` exercises the real code under OS-thread
+  contention and covers all eight required cases (overlapping writes to one
+  inode; independent inodes; rename/unlink races; create/unlink races; open
+  during unlink; snapshot reads during writes; bloom publication during reads;
+  mount recovery after concurrent activity).
+* **Recovery/adversarial court** — `tests/recovery_adversarial.rs` covers
+  corrupted committed records, missing committed segments, physical gaps,
+  unsupported format versions, torn tails, and mid-rollover, verifying the §35
+  invariants. Recovery now reports an explicit `RecoveryDisposition`
+  (`Clean` / `RetainedTail { kind, abandoned_bytes, quarantined }`) and
+  `OpenMode::ReadOnly` is documented as the degraded/read-only mode (it never
+  mutates a byte).
+* **Unsafe audit** — all 21 `unsafe` sites enumerated from source at test time and
+  confirmed to carry a written `SAFETY:` invariant
+  (`evidence/security/unsafe-audit.json`).
+
+### Tests (inside the container)
+
+* `cargo test`: **215 passing** (92 unit + 9 `concurrency_stress` + 8
+  `ekbloom_read` + 2 `fuse_integration` + 3 `fuse_uring` + 4 `fuzz_decode` +
+  23 `hostile_files` + 10 `log_model` + 8 `manifestation` + 8 `namespace_model`
+  + 9 `query` + 8 `recovery_adversarial` + 4 `smoke` + 1 `snapshot_fuse` + 10
+  `snapshot_model` + 9 `transaction_model` + 7 `uring_integration`).
+* `cargo test --features failpoints`: **220 passing** (adds 2 `crash_recovery`
+  and the failpoints unit/transaction tests).
+* `cargo fmt -p orfs --check` and `cargo clippy --all-targets -- -D warnings`
+  pass; `sh scripts/container-fuse-test.sh` and `sh scripts/container-uring-test.sh`
+  pass.
+
+### Evidence
+
+* `evidence/security/unsafe-audit.json` — every `unsafe` site and its invariant.
+* `evidence/security/hostile-input-results.json` — real hostile-corpus outcomes.
+* `evidence/security/fuzz-decode.json` — fuzz method, seed, iterations, panics=0.
+* `evidence/security/concurrency-stress.json` — workloads, invariants, the Loom
+  decision.
+* `evidence/recovery/segment-rollover.json` — a real mid-flight rollover.
+
+### Explicitly left open
+
+* **Logical deletion is not secure erasure** (intrinsic to invariant I1; §29).
+* **Trailing-segment loss** is indistinguishable from a shorter log and recovers
+  to the last surviving valid boundary (no invalid state; documented in
+  `docs/RECOVERY.md` §5 and `docs/LIMITATIONS.md` §6).
+* **Power-loss durability** remains a separate proof obligation; the crash court
+  is a process-crash court.

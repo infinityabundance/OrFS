@@ -61,6 +61,12 @@ pub const XATTR_NAME_MAX: usize = 255;
 /// Upper bound on an extended-attribute value carried in a payload.
 pub const XATTR_VALUE_MAX: usize = 64 * 1024;
 
+/// Upper bound on a symbolic-link target (bytes), matching the Linux `PATH_MAX`.
+/// A committed `SYMLINK_CREATE` record whose target exceeds this is refused as
+/// corrupt rather than trusted (research §28, no allocation driven by an
+/// untrusted length).
+pub const SYMLINK_TARGET_MAX: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Time
 // ---------------------------------------------------------------------------
@@ -530,6 +536,12 @@ impl SymlinkCreatePayload {
                 "SYMLINK_CREATE payload trailing bytes".into(),
             ));
         }
+        if target.is_empty() || target.len() > SYMLINK_TARGET_MAX {
+            return Err(OrfsError::Corrupt(format!(
+                "SYMLINK_CREATE target is {} bytes (limit {SYMLINK_TARGET_MAX})",
+                target.len()
+            )));
+        }
         Ok(SymlinkCreatePayload {
             inode_id: get_u64(buf, 4),
             generation: get_u64(buf, 12),
@@ -724,6 +736,19 @@ impl XattrSetPayload {
                 "XATTR_SET payload trailing bytes".into(),
             ));
         }
+        // A committed record is untrusted history: enforce exactly the bounds the
+        // encoder enforces, so a hostile payload cannot smuggle a NUL-bearing
+        // name (which would corrupt the NUL-separated `listxattr` buffer) or an
+        // over-large value into the live index (§28).
+        validate_xattr_name(&name).map_err(|e| {
+            OrfsError::Corrupt(format!("XATTR_SET payload has an invalid name: {e}"))
+        })?;
+        if value.len() > XATTR_VALUE_MAX {
+            return Err(OrfsError::Corrupt(format!(
+                "XATTR_SET value is {} bytes (limit {XATTR_VALUE_MAX})",
+                value.len()
+            )));
+        }
         Ok(XattrSetPayload {
             inode_id: get_u64(buf, 4),
             name,
@@ -760,6 +785,9 @@ impl XattrRemovePayload {
                 "XATTR_REMOVE payload trailing bytes".into(),
             ));
         }
+        validate_xattr_name(&name).map_err(|e| {
+            OrfsError::Corrupt(format!("XATTR_REMOVE payload has an invalid name: {e}"))
+        })?;
         Ok(XattrRemovePayload {
             inode_id: get_u64(buf, 4),
             name,
@@ -779,6 +807,13 @@ pub fn validate_xattr_name(name: &[u8]) -> Result<()> {
             "xattr name is {} bytes, limit {XATTR_NAME_MAX}",
             name.len()
         )));
+    }
+    // A NUL byte would make the NUL-separated `listxattr` buffer ambiguous and
+    // is never a valid POSIX xattr name.
+    if name.contains(&0) {
+        return Err(OrfsError::InvalidArgument(
+            "xattr name must not contain NUL".into(),
+        ));
     }
     Ok(())
 }

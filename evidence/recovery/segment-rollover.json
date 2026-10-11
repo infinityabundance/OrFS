@@ -1,0 +1,54 @@
+{
+  "appends": 64,
+  "committed_root": 31344,
+  "committed_root_equals_reported_root": true,
+  "generator": "tests/recovery_adversarial.rs",
+  "recovered_root_is_boundary": true,
+  "reported_root": 31344,
+  "rollover_occurred": true,
+  "schema": "orfs.evidence.segment-rollover.v1",
+  "segment_count": 8,
+  "segment_size": 4096,
+  "segments": [
+    {
+      "end": 4088,
+      "segment_id": 0,
+      "valid_len": 4088
+    },
+    {
+      "end": 8156,
+      "segment_id": 4088,
+      "valid_len": 4068
+    },
+    {
+      "end": 12248,
+      "segment_id": 8156,
+      "valid_len": 4092
+    },
+    {
+      "end": 16316,
+      "segment_id": 12248,
+      "valid_len": 4068
+    },
+    {
+      "end": 20408,
+      "segment_id": 16316,
+      "valid_len": 4092
+    },
+    {
+      "end": 24476,
+      "segment_id": 20408,
+      "valid_len": 4068
+    },
+    {
+      "end": 28568,
+      "segment_id": 24476,
+      "valid_len": 4092
+    },
+    {
+      "end": 31344,
+      "segment_id": 28568,
+      "valid_len": 2776
+    }
+  ]
+}

@@ -1,0 +1,135 @@
+{
+  "all_have_safety_comment": true,
+  "entries": [
+    {
+      "file": "buffers.rs",
+      "has_safety_comment": true,
+      "line": 77,
+      "text": "unsafe impl Send for AlignedBuffer {}"
+    },
+    {
+      "file": "buffers.rs",
+      "has_safety_comment": true,
+      "line": 87,
+      "text": "let ptr = unsafe { alloc_zeroed(layout) };"
+    },
+    {
+      "file": "buffers.rs",
+      "has_safety_comment": true,
+      "line": 108,
+      "text": "unsafe { std::slice::from_raw_parts(self.ptr, self.len) }"
+    },
+    {
+      "file": "buffers.rs",
+      "has_safety_comment": true,
+      "line": 114,
+      "text": "unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }"
+    },
+    {
+      "file": "buffers.rs",
+      "has_safety_comment": true,
+      "line": 127,
+      "text": "unsafe { dealloc(self.ptr, self.layout) }"
+    },
+    {
+      "file": "buffers.rs",
+      "has_safety_comment": true,
+      "line": 155,
+      "text": "unsafe impl Send for BufferPool {}"
+    },
+    {
+      "file": "capabilities.rs",
+      "has_safety_comment": true,
+      "line": 55,
+      "text": "let mut u: libc::utsname = unsafe { std::mem::zeroed() };"
+    },
+    {
+      "file": "capabilities.rs",
+      "has_safety_comment": true,
+      "line": 56,
+      "text": "let rc = unsafe { libc::uname(&mut u) };"
+    },
+    {
+      "file": "fuse.rs",
+      "has_safety_comment": true,
+      "line": 1847,
+      "text": "let mut st: libc::statvfs = unsafe { std::mem::zeroed() };"
+    },
+    {
+      "file": "fuse.rs",
+      "has_safety_comment": true,
+      "line": 1848,
+      "text": "let rc = unsafe { libc::statvfs(c.as_ptr(), &mut st) };"
+    },
+    {
+      "file": "fuse.rs",
+      "has_safety_comment": true,
+      "line": 2066,
+      "text": "unsafe {"
+    },
+    {
+      "file": "fuse.rs",
+      "has_safety_comment": true,
+      "line": 2191,
+      "text": "let rc = unsafe { libc::umount2(c.as_ptr(), libc::MNT_DETACH) };"
+    },
+    {
+      "file": "fuse_uring.rs",
+      "has_safety_comment": true,
+      "line": 865,
+      "text": "if unsafe { self.ring.submission().push(&entry) }.is_err() {"
+    },
+    {
+      "file": "fuse_uring.rs",
+      "has_safety_comment": true,
+      "line": 1025,
+      "text": "if unsafe { self.ring.submission().push(&entry) }.is_err() {"
+    },
+    {
+      "file": "stats.rs",
+      "has_safety_comment": true,
+      "line": 134,
+      "text": "let mut st: libc::statvfs = unsafe { std::mem::zeroed() };"
+    },
+    {
+      "file": "stats.rs",
+      "has_safety_comment": true,
+      "line": 135,
+      "text": "let rc = unsafe { libc::statvfs(c.as_ptr(), &mut st) };"
+    },
+    {
+      "file": "uring.rs",
+      "has_safety_comment": true,
+      "line": 437,
+      "text": "let ok = unsafe { self.ring.submitter().register_buffers(&iov) }.is_ok();"
+    },
+    {
+      "file": "uring.rs",
+      "has_safety_comment": true,
+      "line": 586,
+      "text": "let ptr = unsafe { job.buf.as_mut_ptr().add(job.done) };"
+    },
+    {
+      "file": "uring.rs",
+      "has_safety_comment": true,
+      "line": 633,
+      "text": "let ptr = unsafe { job.buf.as_ptr().add(job.done) };"
+    },
+    {
+      "file": "uring.rs",
+      "has_safety_comment": true,
+      "line": 764,
+      "text": "if unsafe { sq.push(&entry) }.is_err() {"
+    },
+    {
+      "file": "uring.rs",
+      "has_safety_comment": true,
+      "line": 912,
+      "text": "if unsafe { sq.push(e) }.is_err() {"
+    }
+  ],
+  "generator": "tests/hostile_files.rs",
+  "method": "every `unsafe` token in src/*.rs is enumerated from the source at test time; each must be accompanied by a `SAFETY:` invariant comment within the preceding six lines",
+  "schema": "orfs.evidence.unsafe-audit.v1",
+  "unsafe_sites": 21
+}

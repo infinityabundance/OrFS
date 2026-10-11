@@ -278,17 +278,19 @@ impl BenchConfig {
             BenchConfig::E1 => {
                 opts.transport = Transport::Fuse;
                 opts.backing_io = BackingIo::Uring;
-                // Synchronous manifestation so a written object is manifested
-                // before it is read (the write cost is attributed honestly).
+                // Asynchronous manifestation (the default). Synchronous
+                // manifestation is an explicit opt-in: waiting for a whole-object
+                // rebuild on every small write amplifies writes without bound, so
+                // the measured configuration does not request it (Phase 18).
                 opts.manifest = Some(ManifestationProfile::Bloom { depth: 4 });
-                opts.manifest_sync = true;
+                opts.manifest_sync = false;
                 opts
             }
             BenchConfig::E2 => {
                 opts.transport = Transport::FuseUring;
                 opts.backing_io = BackingIo::Uring;
                 opts.manifest = Some(ManifestationProfile::Bloom { depth: 4 });
-                opts.manifest_sync = true;
+                opts.manifest_sync = false;
                 opts
             }
         }

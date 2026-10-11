@@ -1,0 +1,130 @@
+{
+  "authoritative": {
+    "allocations_per_request": {
+      "max": 10,
+      "mean": 5.7765,
+      "min": 2,
+      "p50": 2,
+      "p95": 10,
+      "p99": 10,
+      "samples": 2000
+    },
+    "assembly_ns": {
+      "max": 20808,
+      "mean": 3623.8085,
+      "min": 40,
+      "p50": 100,
+      "p95": 7152,
+      "p99": 10851,
+      "samples": 2000
+    },
+    "dispatch_ns": {
+      "max": 1793,
+      "mean": 176.139,
+      "min": 150,
+      "p50": 170,
+      "p95": 200,
+      "p99": 280,
+      "samples": 2000
+    },
+    "extent_resolve_ns": {
+      "max": 2004,
+      "mean": 427.4645,
+      "min": 160,
+      "p50": 521,
+      "p95": 681,
+      "p99": 1092,
+      "samples": 2000
+    },
+    "reply_ns": {
+      "max": 1893,
+      "mean": 424.7265,
+      "min": 60,
+      "p50": 180,
+      "p95": 800,
+      "p99": 910,
+      "samples": 2000
+    },
+    "segment_read_ns": {
+      "max": 5539,
+      "mean": 1165.1065,
+      "min": 0,
+      "p50": 481,
+      "p95": 2915,
+      "p99": 3538,
+      "samples": 2000
+    },
+    "total_ns": {
+      "max": 26389,
+      "mean": 5817.245,
+      "min": 441,
+      "p50": 1423,
+      "p95": 11862,
+      "p99": 16370,
+      "samples": 2000
+    }
+  },
+  "environment": {
+    "cgroup_memory_max": "8589934592",
+    "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "container_image": null,
+    "cores_visible": 8,
+    "cpu_max": "800000 100000",
+    "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+    "fuse_enable_uring": true,
+    "kernel_release": "7.2.9-2-cachyos",
+    "likely_container": true,
+    "machine": "x86_64",
+    "perf_counters_available": false,
+    "perf_event_paranoid": "2",
+    "ram_total_bytes": 134723346432
+  },
+  "equivalence": {
+    "equivalent": 2000,
+    "mismatches": 0,
+    "requests": 2000
+  },
+  "generated_by": "tests/latency_anatomy.rs",
+  "note": "Library-level per-request anatomy over a fragmented object. Phases: dispatch (view+inode), extent resolve (ExtentMap::plan_read), segment read (log read_range_into), assembly (destination placement), reply (residual). `planned_*` reflects the read planner; `planner_added_ns` is the authoritative-read time the planner adds on top for the same request. Absolute nanoseconds depend on the host/build; the breakdown and the O(log E + k) work bound do not.",
+  "planned": {
+    "accelerated_requests": 1005,
+    "allocations_per_request": {
+      "max": 26,
+      "mean": 21.7795,
+      "min": 18,
+      "p50": 18,
+      "p95": 26,
+      "p99": 26,
+      "samples": 2000
+    },
+    "planner_added_ns": {
+      "max": 16181,
+      "mean": 3117.304,
+      "min": 0,
+      "p50": 3076,
+      "p95": 4418,
+      "p99": 7715,
+      "samples": 2000
+    },
+    "total_ns": {
+      "max": 27221,
+      "mean": 8914.3395,
+      "min": 3737,
+      "p50": 7033,
+      "p95": 13976,
+      "p99": 20378,
+      "samples": 2000
+    }
+  },
+  "schema": "orfs.performance.latency-anatomy.v1",
+  "workload": {
+    "iterations": 2000,
+    "lengths": [
+      1,
+      4096
+    ],
+    "logical_extents": 2047,
+    "manifested_profile": "path(D=4)",
+    "object_bytes": 523840
+  }
+}

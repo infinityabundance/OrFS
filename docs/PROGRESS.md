@@ -819,7 +819,7 @@ statement) and `docs/RECOVERY.md` (recovery states, modes, invariants).
   (`Clean` / `RetainedTail { kind, abandoned_bytes, quarantined }`) and
   `OpenMode::ReadOnly` is documented as the degraded/read-only mode (it never
   mutates a byte).
-* **Unsafe audit** — all 22 `unsafe` sites enumerated from source at test time and
+* **Unsafe audit** — all 43 `unsafe` sites enumerated from source at test time and
   confirmed to carry a written `SAFETY:` invariant
   (`evidence/security/unsafe-audit.json`).
 

@@ -314,13 +314,22 @@ impl SegmentLocator {
 
     /// Locate a logical offset, returning `(segment id, physical offset)`.
     pub fn locate(&self, offset: u64) -> Option<(u64, u64)> {
+        self.locate_extent(offset).map(|(e, phys)| (e.id, phys))
+    }
+
+    /// Locate a logical offset, returning the covering [`SegmentExtent`] and the
+    /// physical offset within it. One binary search and no second lookup: callers
+    /// that also need the extent (its `valid_len`) must use this instead of
+    /// [`Self::locate`] followed by [`Self::extent_of`] — which would otherwise
+    /// repeat the search.
+    pub fn locate_extent(&self, offset: u64) -> Option<(SegmentExtent, u64)> {
         let idx = self.extents.partition_point(|e| e.id <= offset);
         if idx == 0 {
             return None;
         }
         let e = self.extents[idx - 1];
         if offset < e.end() {
-            Some((e.id, offset - e.id))
+            Some((e, offset - e.id))
         } else {
             None
         }
@@ -398,6 +407,9 @@ mod tests {
         assert_eq!(loc.locate(14), Some((10, 4)));
         assert_eq!(loc.locate(15), None);
         assert_eq!(loc.total_len(), 15);
+        // `locate_extent` returns the same answer *plus* the covering extent, from
+        // a single search.
+        assert_eq!(loc.locate_extent(12), Some((loc.extent_of(10).unwrap(), 2)));
     }
 
     #[test]

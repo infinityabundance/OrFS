@@ -28,7 +28,7 @@ methodology), and §36 (tools and metrics).
 | Compiler | `rustc 1.99.0 (b940084d7 2026-09-28)` |
 | Base image | `rust:1.99.0-slim-bookworm@sha256:2c3a22f0…` (see `evidence/receipts/container.json`) |
 | Build image id | `sha256:e40e40e85910336674268fec578991ae3c0fd985b42be22fd7641fca94cd5af5` |
-| `fuse.enable_uring` | `N` (FUSE-over-`io_uring` disabled) |
+| `fuse.enable_uring` | `Y` (FUSE-over-`io_uring` enabled; F2 mounts for real) |
 | `io_uring_disabled` | `0` (io_uring usable under `seccomp=unconfined`) |
 | `perf_event_paranoid` | `2` (hardware counters unavailable) |
 
@@ -50,26 +50,19 @@ harness is `src/bench.rs`, exposed as `orfs bench` and driven end-to-end by
 | `conventional` | none (plain directory) | conventional | none | **measured** |
 | `F0` | traditional `/dev/fuse` | synchronous `pread`/`pwrite` | none | **measured** |
 | `F1` | traditional `/dev/fuse` | `io_uring` | none | **measured** |
-| `F2` | FUSE-over-`io_uring` | `io_uring` | none | **UNAVAILABLE** |
-| `E1` | traditional `/dev/fuse` | `io_uring` | EKBLOOM (`bloom(D=4)`, synchronous) | **measured** |
-| `E2` | FUSE-over-`io_uring` | `io_uring` | EKBLOOM | **UNAVAILABLE** |
+| `F2` | FUSE-over-`io_uring` | `io_uring` | none | **measured** |
+| `E1` | traditional `/dev/fuse` | `io_uring` | EKBLOOM (`bloom(D=4)`, asynchronous) | **measured** |
+| `E2` | FUSE-over-`io_uring` | `io_uring` | EKBLOOM (`bloom(D=4)`, asynchronous) | **measured** |
 
-### 2.1 Why F2/E2 are unavailable (not a guess)
+### 2.1 F2/E2 availability (measured, not guessed)
 
-The harness asks the live system, and the answer is recorded verbatim in the
-evidence:
-
-> `fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0
-> in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer
-> FUSE_OVER_IO_URING at INIT while it is off`
-
-This is the same finding as Phase 10 (`docs/FUSE_URING.md` §7): the kernel is
-built with `CONFIG_FUSE_IO_URING=y` (see `evidence/receipts/environment.json`) but
-the `fuse.enable_uring` module parameter is `N`, so no F2/E2 mount is possible.
-No number is reported for F2/E2; they are marked unavailable with this reason in
-`fuse-baseline.json`, `sequential-read.json`, `random-read.json`, and
-`append-write.json`. A `--transport fuse-uring` mount still succeeds as F0/F1 with
-byte-identical contents and records the fallback reason.
+On this host the kernel offers `FUSE_OVER_IO_URING` (`fuse.enable_uring=Y`), so
+the native F2 session mounts for real and F2/E2 are **measured** (Phase 15;
+`evidence/performance/fuse-uring.json`, `sequential-read.json`). Where the kernel
+cannot offer it the harness records F2/E2 as **UNAVAILABLE** with the concrete
+reason from the live negotiation, and a `--transport fuse-uring` mount still
+succeeds as F0/F1 with byte-identical contents. E1/E2 request **asynchronous**
+manifestation (Phase 18): a small write never waits for a whole-object rebuild.
 
 ---
 
@@ -123,12 +116,15 @@ transport.
 ### 3.2 The EKBLOOM read-selection caveat (important)
 
 When manifestation is enabled, `Namespace::read_at` is served by the certified
-`ReadPlanner`, which uses a **measured** cost model: it only chooses a manifested
-path it has measured to be no slower than the authoritative extent read, and
-otherwise falls back. When the planner is cold (fresh mount), its prior may pick a
-manifested path that is in fact slower for the object at hand — this is visible in
-the `E1` numbers below and is a real property, not a measurement artefact. The
-frontier (section 5) measures the manifested paths directly.
+`ReadPlanner`, which keeps a **measured** cost model and only chooses a manifested
+path it has measured to be no slower than the authoritative extent read.
+**Phase 18** bounds the cold path: calibration runs under a hard time budget,
+times the authoritative read first, selects only candidates it has actually
+measured for the exact object identity, and never loads a manifested profile that
+EKBLOOM documents as non-accelerating. A cold planner can therefore no longer
+stall a foreground read, and the `E1`/`E2` figures below no longer exhibit the
+pre-Phase-18 read-selection blow-up. The frontier (section 5) measures the
+manifested paths directly.
 
 ---
 
@@ -148,57 +144,65 @@ separately as `evidence/performance/mount-replay-snapshot.json`.
 
 | Config | bytes | MB/s |
 |---|---|---|
-| conventional | 262144 | **27 256** |
-| F0 | 262144 | **2 916** |
-| F1 | 262144 | **2 475** |
-| E1 | 262144 | **1.9** |
+| conventional | 262144 | **30 532** |
+| F0 | 262144 | **294** |
+| F1 | 262144 | **322** |
+| F2 | 262144 | **553** |
+| E1 | 262144 | **290** |
+| E2 | 262144 | **287** |
 
 Reading a page-cache-resident 256 KiB file: the conventional baseline is `memcpy`
-speed; FUSE adds an ~9–11× cost; E1 is dominated by the planner serving a
-manifested path for the large read (see §5). F0 vs F1 differ within run-to-run
-noise here.
+speed; FUSE adds the transport cost. **Phase 18 removed the read-selection
+blow-up**: `E1`/`E2` now match `F0`/`F1` (previously ~1.9 MB/s). The manifested
+`bloom(D=4)` profile is one EKBLOOM documents as non-accelerating, so the read
+planner falls back to the authoritative extent read instead of loading it (§3.2).
+Absolute figures in this section are from one recorded run and are volatile under
+host contention; the committed `evidence/performance/*.json` are authoritative.
 
 ### 4.2 Random 4 KiB reads
 
 | Config | ops/s | MB/s | P50 | P95 | P99 |
 |---|---|---|---|---|---|
-| conventional | 4 366 240 | 17 884 | 160 ns | 301 ns | 421 ns |
-| F0 | 447 455 | 1 833 | 170 ns | 9 268 ns | 15 068 ns |
-| F1 | 331 497 | 1 358 | 141 ns | 12 503 ns | 25 357 ns |
-| E1 | 1 419 | 5.8 | 221 ns | 14 266 ns | 28 132 ns |
+| conventional | 3 679 853 | 15 073 | 200 ns | 331 ns | 440 ns |
+| F0 | 174 905 | 716 | 210 ns | 30 947 ns | 54 180 ns |
+| F1 | 263 224 | 1 078 | 301 ns | 19 005 ns | 31 890 ns |
+| F2 | 252 736 | 1 035 | 281 ns | 18 204 ns | 32 550 ns |
+| E1 | 177 286 | 726 | 291 ns | 30 286 ns | 55 363 ns |
+| E2 | 172 515 | 707 | 420 ns | 30 677 ns | 53 419 ns |
 
-FUSE's per-request cost shows up in the tail (P95/P99 ~9–28 µs). E1's tail is
-worse because some reads are served by a manifested path the cold cost model
-accepted.
+FUSE's per-request cost shows up in the tail (P95/P99 ~18–55 µs). `E1`/`E2` are
+now indistinguishable from `F0`/`F1` on this workload.
 
 ### 4.3 Sequential append (ordered durability)
 
 | Config | ops | MB/s |
 |---|---|---|
-| conventional | 64 | **3 918** |
-| F0 | 64 | 6.3 |
-| F1 | 64 | 3.9 |
-| E1 | 64 | 0.2 |
+| conventional | 64 | **3 349** |
+| F0 | 64 | 4.5 |
+| F1 | 64 | 2.9 |
+| F2 | 64 | 1.8 |
+| E1 | 64 | 1.4 |
+| E2 | 64 | 1.1 |
 
 The conventional baseline appends buffered small records to a real directory and
 is the fastest here; the stored configurations append through the durable
-append-only log. Write figures are **volatile** (shared backing disk): three
-recorded runs of the same configurations produced conventional 1.7/6.3/3 918 MB/s
-and F1 1.0/3.9/3.9 MB/s. E1 is slowest because synchronous manifestation rebuilds
-the object's bloom on every write.
+append-only log. Write figures are **volatile** (shared backing disk). `E1`/`E2`
+now request **asynchronous** manifestation, so a small write no longer waits for a
+whole-object rebuild: the append cost stays within ~2× of `F1` rather than the
+pre-Phase-18 ~20× (0.2 MB/s).
 
 ### 4.4 The remaining workloads (F0 shown; the matrix is in `fuse-baseline.json`)
 
 | Workload | F0 ops/s | F0 MB/s | F0 P50 | F0 P95 |
 |---|---|---|---|---|
-| random-read-1 | 374 129 | — | 151 ns | 9 968 ns |
-| random-write-4k | 372 | 1.5 | 2 684 µs | 3 192 µs |
-| metadata-lookup | 145 307 | — | 6 392 ns | 9 468 ns |
-| create-unlink | 30 | — | 33 004 µs | 35 276 µs |
-| rename | 16 | — | 20 508 µs | 22 844 µs |
-| dir-enumeration | 422 030 | — | 457 061 ns | 502 817 ns |
-| concurrent-readers (4) | 428 496 | 1 755 | — | — |
-| fsync-latency | 25 | — | 3 523 µs | 5 173 µs |
+| random-read-1 | 260 871 | — | 180 ns | 18 805 ns |
+| random-write-4k | 222 | 0.9 | 4 239 µs | 5 730 µs |
+| metadata-lookup | 96 262 | — | 8 185 ns | 11 251 ns |
+| create-unlink | 18 | — | 52 971 µs | 66 190 µs |
+| rename | 9 | — | 34 320 µs | 52 202 µs |
+| dir-enumeration | 477 530 | — | 387 551 ns | 494 590 ns |
+| concurrent-readers (4) | 247 085 | 1 012 | — | — |
+| fsync-latency | 10 | — | 3 696 µs | 5 264 µs |
 
 `create-unlink`/`rename` are dominated by the durability `fsync` each op issues
 against the append-only log; `dir-enumeration` is per-`readdir` latency.
@@ -207,17 +211,19 @@ against the append-only log; `dir-enumeration` is per-`readdir` latency.
 
 | Measurement | Value |
 |---|---|
-| F0 mount | **156 ms** |
-| F1 mount | **162 ms** |
-| E1 mount | **340 ms** |
-| `recovery-time` (`Volume::open`) | P50 **78.5 ms**, P99 79.7 ms (over a ~13 MB log) |
-| `search-latency` (typed query, 0 matches) | P50 **1.13 µs**, P99 21.1 µs |
-| `snapshot-latency` (`Snapshot::open_dir`) | P50 **140 ms**, P99 143 ms |
+| F0 mount | **335 ms** |
+| F1 mount | **310 ms** |
+| F2 mount | **881 ms** |
+| E1 mount | **1 307 ms** |
+| E2 mount | **1 752 ms** |
+| `recovery-time` (`Volume::open`) | P50 **133.6 ms**, P99 204.1 ms |
+| `search-latency` (typed query, 0 matches) | P50 **1.17 µs**, P99 21.1 µs |
+| `snapshot-latency` (`Snapshot::open_dir`) | P50 **247.4 ms**, P99 361.6 ms |
 
 `mount-time` here is measured over the volume the sweep itself populated; it
 **includes volume recovery** (a `Namespace::open` over the ~13 MB log), which is
 why a fresh volume mounts in ~1 ms (`mount_probe` in `fuse-baseline.json`) but a
-populated one takes ~156 ms. `recovery-time` and `snapshot-latency` re-scan the
+populated one takes ~335 ms. `recovery-time` and `snapshot-latency` re-scan the
 log at open; they are **library-level** (no FUSE) and scale with log size.
 `search-latency` is the typed query API and is **not** an index-backed claim (no
 trigram index was built for that corpus; §12.1).

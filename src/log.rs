@@ -876,6 +876,35 @@ impl Drop for RootPin {
 }
 
 /// The authoritative append-only log.
+/// A cache of open, validated read-only segment handles.
+///
+/// Segment files are immutable once created and a segment id is never reused
+/// (`Segment::create` uses `create_new`), so a cached descriptor can never
+/// observe different bytes than a freshly opened one. Reusing it removes one
+/// `open(2)`/`close(2)` per request from the hot read path (Phase 18).
+struct SegmentCache {
+    dir: PathBuf,
+    handles: BTreeMap<u64, Arc<ReadAt>>,
+}
+
+impl SegmentCache {
+    fn new(dir: PathBuf) -> SegmentCache {
+        SegmentCache {
+            dir,
+            handles: BTreeMap::new(),
+        }
+    }
+
+    fn get(&mut self, id: u64) -> Result<Arc<ReadAt>> {
+        if let Some(h) = self.handles.get(&id) {
+            return Ok(h.clone());
+        }
+        let h = Arc::new(ReadAt::open(&self.dir, id)?);
+        self.handles.insert(id, h.clone());
+        Ok(h)
+    }
+}
+
 pub struct Log {
     dir: PathBuf,
     segment_size: u64,
@@ -909,6 +938,9 @@ pub struct Log {
     watermark: Option<watermark::Watermark>,
     /// The watermark last written durably to disk.
     durable_watermark: Option<watermark::Watermark>,
+    /// Reusable, validated read-only segment handles (Phase 18). Purely a cache:
+    /// dropping it only costs a reopen, never correctness.
+    readers: Mutex<SegmentCache>,
 }
 
 impl Log {
@@ -957,6 +989,7 @@ impl Log {
             recovery: RecoveryDisposition::Clean,
             watermark: None,
             durable_watermark: None,
+            readers: Mutex::new(SegmentCache::new(dir.to_path_buf())),
         })
     }
 
@@ -1076,6 +1109,7 @@ impl Log {
             recovery,
             watermark: recovered_wm,
             durable_watermark: disk_watermark,
+            readers: Mutex::new(SegmentCache::new(dir.to_path_buf())),
         })
     }
 
@@ -1826,17 +1860,13 @@ impl Log {
         }
         let mut out = Vec::new();
         let mut offset = 0u64;
-        let mut reader: Option<(u64, ReadAt)> = None;
+        let mut reader: Option<(u64, Arc<ReadAt>)> = None;
         while offset < end {
-            let (sid, phys) = self.locator.locate(offset).ok_or_else(|| {
+            let (extent, phys) = self.locator.locate_extent(offset).ok_or_else(|| {
                 OrfsError::Corrupt(format!("no segment covers logical offset {offset}"))
             })?;
-            let extent = self
-                .locator
-                .extent_of(sid)
-                .ok_or_else(|| OrfsError::Corrupt(format!("missing extent for segment {sid}")))?;
-            if reader.as_ref().map(|(id, _)| *id) != Some(sid) {
-                reader = Some((sid, ReadAt::open(&self.dir, sid)?));
+            if reader.as_ref().map(|(id, _)| *id) != Some(extent.id) {
+                reader = Some((extent.id, self.cached_reader(extent.id)?));
             }
             let r = &reader.as_ref().expect("reader opened").1;
             let avail = extent
@@ -1894,17 +1924,13 @@ impl Log {
         }
         let mut out = Vec::new();
         let mut offset = 0u64;
-        let mut reader: Option<(u64, ReadAt)> = None;
+        let mut reader: Option<(u64, Arc<ReadAt>)> = None;
         while offset < end {
-            let (sid, phys) = self.locator.locate(offset).ok_or_else(|| {
+            let (extent, phys) = self.locator.locate_extent(offset).ok_or_else(|| {
                 OrfsError::Corrupt(format!("no segment covers logical offset {offset}"))
             })?;
-            let extent = self
-                .locator
-                .extent_of(sid)
-                .ok_or_else(|| OrfsError::Corrupt(format!("missing extent for segment {sid}")))?;
-            if reader.as_ref().map(|(id, _)| *id) != Some(sid) {
-                reader = Some((sid, ReadAt::open(&self.dir, sid)?));
+            if reader.as_ref().map(|(id, _)| *id) != Some(extent.id) {
+                reader = Some((extent.id, self.cached_reader(extent.id)?));
             }
             let r = &reader.as_ref().expect("reader opened").1;
             let avail = extent
@@ -1948,6 +1974,15 @@ impl Log {
         Ok(out)
     }
 
+    /// Fetch (or open and cache) a validated read-only segment handle.
+    fn cached_reader(&self, id: u64) -> Result<Arc<ReadAt>> {
+        let mut cache = self
+            .readers
+            .lock()
+            .map_err(|_| OrfsError::Corrupt("segment read cache is poisoned".to_string()))?;
+        cache.get(id)
+    }
+
     /// Read `len` canonical bytes at logical `offset`, crossing segment
     /// boundaries as needed.
     ///
@@ -1970,31 +2005,30 @@ impl Log {
         }
         // Plan the segment-by-segment reads first, so the io_uring path can issue
         // them concurrently (Ring R) while the sync path performs them in order.
-        let mut plan: Vec<(ReadAt, u64, usize)> = Vec::new();
+        // Handles come from the reusable cache, so no segment is reopened.
+        let mut plan: Vec<(Arc<ReadAt>, u64, usize)> = Vec::new();
         let mut cur = offset;
         while cur < end {
-            let (seg_id, phys) = self.locator.locate(cur).ok_or_else(|| {
+            let (extent, phys) = self.locator.locate_extent(cur).ok_or_else(|| {
                 OrfsError::Corrupt(format!("no segment covers logical offset {cur}"))
-            })?;
-            let extent = self.locator.extent_of(seg_id).ok_or_else(|| {
-                OrfsError::Corrupt(format!("missing extent for segment {seg_id}"))
             })?;
             let avail = extent.valid_len.checked_sub(phys).ok_or_else(|| {
                 OrfsError::Corrupt("read offset beyond segment extent".to_string())
             })?;
             let want = (end - cur).min(avail) as usize;
-            let reader = ReadAt::open(&self.dir, seg_id)?;
+            let reader = self.cached_reader(extent.id)?;
             plan.push((reader, phys, want));
             cur += want as u64;
         }
 
-        let mut out = Vec::with_capacity(len as usize);
+        let mut out = vec![0u8; len as usize];
         match &self.io {
             BackingEngine::Sync => {
+                // Single allocation: each segment is read directly into its slice.
+                let mut done = 0usize;
                 for (reader, phys, want) in &plan {
-                    let mut buf = vec![0u8; *want];
-                    reader.read_exact_at(*phys, &mut buf)?;
-                    out.extend_from_slice(&buf);
+                    reader.read_exact_at(*phys, &mut out[done..done + *want])?;
+                    done += *want;
                 }
             }
             BackingEngine::Uring(rings) => {
@@ -2006,12 +2040,55 @@ impl Log {
                     .map(|((reader, phys, _), buf)| ReadJob::new(reader.raw_fd(), *phys, buf))
                     .collect();
                 rings.read().lock().read_batch(&mut jobs)?;
+                let mut done = 0usize;
                 for buf in &bufs {
-                    out.extend_from_slice(buf);
+                    out[done..done + buf.len()].copy_from_slice(buf);
+                    done += buf.len();
                 }
             }
         }
         Ok(out)
+    }
+
+    /// Read `buf.len()` canonical bytes at logical `offset` **directly into the
+    /// caller's buffer**, crossing segment boundaries as needed.
+    ///
+    /// This is the allocation-free hot path (Phase 18): unlike [`Log::read_range`]
+    /// it allocates nothing and never materialises an intermediate `Vec`, so a
+    /// single-extent read writes straight into the destination. Bytes are
+    /// identical to [`Log::read_range`] for the same range.
+    pub fn read_range_into(&self, offset: u64, buf: &mut [u8]) -> Result<()> {
+        let len = buf.len() as u64;
+        if len == 0 {
+            return Ok(());
+        }
+        let end = offset.checked_add(len).ok_or(OrfsError::Overflow {
+            what: "read range end",
+        })?;
+        let limit = self.locator.total_len();
+        if end > limit {
+            return Err(OrfsError::OutOfBounds {
+                offset,
+                length: len,
+                limit,
+            });
+        }
+        let mut cur = offset;
+        let mut done = 0usize;
+        while cur < end {
+            let (extent, phys) = self.locator.locate_extent(cur).ok_or_else(|| {
+                OrfsError::Corrupt(format!("no segment covers logical offset {cur}"))
+            })?;
+            let avail = extent.valid_len.checked_sub(phys).ok_or_else(|| {
+                OrfsError::Corrupt("read offset beyond segment extent".to_string())
+            })?;
+            let want = (end - cur).min(avail) as usize;
+            let reader = self.cached_reader(extent.id)?;
+            reader.read_exact_at(phys, &mut buf[done..done + want])?;
+            cur += want as u64;
+            done += want;
+        }
+        Ok(())
     }
 
     /// Read the exact committed canonical bytes `[0, R)`.

@@ -68,11 +68,23 @@
 //! # Selection by measurement
 //!
 //! The planner keeps an exponential-moving-average latency model per
-//! (path, size class). The first request for a given generation and size class
-//! *calibrates*: every applicable candidate is executed once and timed, and the
-//! fastest is used. Subsequent requests pick the cheapest applicable candidate
-//! under the measured model. Selection is therefore justified by measurement,
-//! never by "pick the largest structure".
+//! (path, size class). That model is deliberately a **shared, aggregated
+//! workload cost model**: it may inform *which mechanism* is worth trying, but it
+//! never gates a correctness decision for one object.
+//!
+//! Per-object state — which candidates have been timed for a given object, and
+//! which have failed for it — is keyed by the **full manifestation identity**
+//! ([`ManifestIdentity`]: volume uuid, inode, inode version, committed root, and
+//! generation). A rejected candidate for one inode can therefore never suppress
+//! the same candidate for an unrelated inode, and calibration never leaks across
+//! objects (Phase 18).
+//!
+//! Calibration is **bounded**: the first requests for an identity+class time the
+//! candidates under a hard [`ReadPlannerConfig::calibration_budget_ns`] budget,
+//! timing the authoritative read first so a correct baseline always exists. A
+//! foreground read is never stalled to calibrate, and a `D`-step transition bloom
+//! whose state would require an unbounded replay is refused outright, so a
+//! manifestation can never add unbounded latency to a read (Phase 18).
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -132,6 +144,42 @@ impl ReadPathKind {
             ReadPathKind::Checkpoint => 2,
             ReadPathKind::TransitionBloom => 3,
             ReadPathKind::LogicalExtent => 4,
+        }
+    }
+}
+
+/// The **full identity** of one manifested generation.
+///
+/// Calibration and failure state are keyed by this, never by a globally-unique
+/// generation number alone. Two structures can only share planner state when
+/// every field agrees: the volume, the object (inode and its committed version),
+/// the committed root the read is evaluated at, and the generation itself. A
+/// rejected/failed candidate for one object can therefore never suppress the
+/// same candidate for an unrelated object, and calibration never leaks across
+/// objects (Phase 18).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ManifestIdentity {
+    /// The volume the generation belongs to.
+    pub volume_uuid: [u8; 16],
+    /// The inode the generation manifests.
+    pub inode: u64,
+    /// The inode's committed version (I6).
+    pub inode_version: u64,
+    /// The committed root the generation was built at.
+    pub root: u64,
+    /// The generation number.
+    pub generation: u64,
+}
+
+impl ManifestIdentity {
+    /// The full identity of a manifest.
+    pub fn of(manifest: &GenerationManifest) -> ManifestIdentity {
+        ManifestIdentity {
+            volume_uuid: manifest.volume_uuid,
+            inode: manifest.inode,
+            inode_version: manifest.inode_version,
+            root: manifest.root,
+            generation: manifest.generation,
         }
     }
 }
@@ -283,6 +331,12 @@ pub struct ReadPlannerConfig {
     pub max_payload_bytes: u64,
     /// Maximum number of parsed EKBLOOM bodies kept resident.
     pub cache_capacity: usize,
+    /// Hard upper bound (nanoseconds) on the time the planner will spend
+    /// *calibrating* candidate paths during a single foreground read. Once the
+    /// budget is exhausted, candidates not yet timed keep their prior cost and
+    /// the current request is served by the authoritative path. This guarantees
+    /// the planner can never stall a foreground read to calibrate (Phase 18).
+    pub calibration_budget_ns: u64,
 }
 
 impl Default for ReadPlannerConfig {
@@ -290,6 +344,7 @@ impl Default for ReadPlannerConfig {
         ReadPlannerConfig {
             max_payload_bytes: 512 * 1024 * 1024,
             cache_capacity: 64,
+            calibration_budget_ns: 2_000_000,
         }
     }
 }
@@ -448,16 +503,47 @@ struct Candidate {
     certified: bool,
 }
 
-/// The fastest measured candidate during calibration.
-struct BestMeasure {
-    kind: ReadPathKind,
-    certified: bool,
-    nanos: u128,
-    bytes: Vec<u8>,
-}
-
+/// The maximum number of machine symbols the planner will replay
 fn check_passed(report: &VerificationReport, name: &str) -> bool {
     report.checks.iter().any(|c| c.name == name && c.passed)
+}
+
+/// The maximum number of machine symbols the planner will replay from the
+/// machine's initial state to reach a request position. A manifested structure
+/// with no restart source (history or checkpoint) would otherwise require
+/// replaying from the object's start — an O(offset) foreground read. Beyond this
+/// bound the candidate is refused, so a manifestation can never cause unbounded
+/// foreground read latency or rebuild amplification (Phase 18).
+const MAX_REPLAY_SYMBOLS: u64 = 4096;
+
+/// Whether the machine state at `offset` can be obtained without an unbounded
+/// replay: a history covering the position, or a restart checkpoint whose
+/// interval bounds the replay. Only then is a `D`-step transition bloom a
+/// bounded-work candidate for a foreground read.
+fn has_bounded_state_source(lb: &LoadedBody, offset: u64) -> bool {
+    if let Some(h) = &lb.body.history {
+        if h.logical_len == lb.body.logical_len && h.snapshot_at(offset).is_some() {
+            return true;
+        }
+    }
+    lb.body
+        .checkpoints
+        .iter()
+        .any(|cp| cp.interval != 0 && cp.restart_point(offset).is_some())
+}
+
+/// Whether a manifested profile can provide a *bounded* read accelerator.
+///
+/// EKBLOOM's own speed ranking documents that `root`, universal and regional
+/// `D`-step blooms do **not** accelerate the release corpus and fall back to
+/// authoritative replay (their state at a large offset must be replayed from the
+/// object's start). Loading and fully verifying such a body only to discover that
+/// it cannot help would stall a foreground read for no benefit, so the planner
+/// declines it up front. This is a bounded-work safety rule, not an acceleration
+/// claim: the authoritative extent read remains available and correct (Phase 18).
+fn profile_can_accelerate(profile_kind: u8) -> bool {
+    // 0 = root, 4 = bloom(D), 5 = regional (see `ManifestationProfile::kind_code`).
+    !matches!(profile_kind, 0 | 4 | 5)
 }
 
 /// Enumerate the compatible, structurally-usable candidates for a request.
@@ -594,6 +680,15 @@ fn state_at(body: &EkbloomBody, pos: u64) -> Result<EkSnapshot> {
         body.machine_id
     )))?;
     machine.check_core(&body.core, body.logical_len)?;
+    // No restart source: the only way to reach `pos` is to replay from the initial
+    // state. Refuse an unbounded replay rather than let a manifestation cause an
+    // O(pos) foreground read (Phase 18).
+    if pos > MAX_REPLAY_SYMBOLS {
+        return Err(OrfsError::Unsupported(format!(
+            "no bounded state source for position {pos}: a from-scratch replay of {pos} \
+             symbols exceeds the {MAX_REPLAY_SYMBOLS}-symbol bound"
+        )));
+    }
     let mut omega = machine.init();
     let mut i = 0u64;
     while i < pos {
@@ -750,8 +845,11 @@ pub struct ReadPlanner {
     config: ReadPlannerConfig,
     model: RwLock<CostModel>,
     cache: Mutex<BodyCache>,
-    calibrated: RwLock<HashSet<(u64, SizeClass)>>,
-    failed: RwLock<HashSet<(u64, ReadPathKind)>>,
+    /// (identity, size class, path) triples whose candidate has been timed. Keyed
+    /// by the **full** identity, so no state leaks between objects.
+    calibrated: RwLock<HashSet<(ManifestIdentity, SizeClass, ReadPathKind)>>,
+    /// (identity, path) pairs proven unusable for that exact object.
+    failed: RwLock<HashSet<(ManifestIdentity, ReadPathKind)>>,
     chosen: RwLock<HashMap<ReadPathKind, u64>>,
 }
 
@@ -894,6 +992,18 @@ impl ReadPlanner {
                 Some("manifested structure does not cover the logical extent".into()),
             ));
         }
+        // A profile EKBLOOM documents as non-accelerating is not loaded at all:
+        // loading + verifying it cannot change the bytes and would only add
+        // unbounded foreground work (Phase 18).
+        if !profile_can_accelerate(manifest.profile_kind) {
+            return Ok(PlannedRead::fallback(
+                auth(q.offset, q.length)?,
+                Some(format!(
+                    "manifested profile {} has no bounded read accelerator",
+                    manifest.profile
+                )),
+            ));
+        }
 
         // --- load + fully validate the manifested body ---
         let loaded = match self.load_body(&manifest) {
@@ -918,13 +1028,25 @@ impl ReadPlanner {
             ));
         }
 
-        let raw = candidates(&loaded, q, eff_len);
+        let identity = ManifestIdentity::of(&manifest);
         let generation = loaded.generation;
-        // Drop candidates already proven unusable for this generation.
+        let class = classify_length(eff_len);
+
+        // Drop candidates already proven unusable for this exact identity, and any
+        // `D`-step transition bloom whose state at this offset cannot be obtained
+        // within the replay bound. Keying by the *full* identity means a candidate
+        // barred for one object never suppresses it for another (Phase 18).
         let cands: Vec<Candidate> = {
             let failed = self.failed.read();
-            raw.into_iter()
-                .filter(|c| !failed.contains(&(generation, c.kind)))
+            candidates(&loaded, q, eff_len)
+                .into_iter()
+                .filter(|c| !failed.contains(&(identity, c.kind)))
+                .filter(|c| match c.structure {
+                    Structure::Global { .. } | Structure::Regional { .. } => {
+                        has_bounded_state_source(&loaded, q.offset)
+                    }
+                    _ => true,
+                })
                 .collect()
         };
         if cands.is_empty() {
@@ -934,54 +1056,65 @@ impl ReadPlanner {
             ));
         }
 
-        let class = classify_length(eff_len);
-
-        // --- calibrate once per (generation, size class): measure every candidate ---
-        if !self.calibrated.read().contains(&(generation, class)) {
-            let mut best: Option<BestMeasure> = None;
-            let mut first_err: Option<String> = None;
-            for c in &cands {
-                let started = Instant::now();
+        // --- bounded calibration (Phase 18) -----------------------------------
+        // Time any candidate not yet timed for this identity+class. The
+        // authoritative read is timed first (it is always correct and cheap), so
+        // a valid baseline always exists; the loop then stops as soon as the
+        // configured budget is exhausted. A foreground read is therefore never
+        // stalled to calibrate, and no candidate predicted to be expensive is
+        // forced through. Successful bytes are retained so the served candidate is
+        // not executed twice.
+        let budget = self.config.calibration_budget_ns;
+        let pending: Vec<Candidate> = {
+            let cal = self.calibrated.read();
+            cands
+                .iter()
+                .filter(|c| !cal.contains(&(identity, class, c.kind)))
+                .cloned()
+                .collect()
+        };
+        let mut measured_bytes: HashMap<ReadPathKind, (Vec<u8>, bool)> = HashMap::new();
+        if !pending.is_empty() {
+            let mut order = pending;
+            order.sort_by_key(|c| u8::from(c.kind != ReadPathKind::LogicalExtent));
+            let started = Instant::now();
+            for c in &order {
+                if started.elapsed().as_nanos() as u64 > budget {
+                    break;
+                }
+                let t = Instant::now();
                 match self.execute(c, &loaded, q, eff_len, &mut auth) {
                     Ok(bytes) => {
-                        let nanos = started.elapsed().as_nanos();
+                        let nanos = t.elapsed().as_nanos();
                         self.model.write().record(c.kind, class, nanos as f64);
-                        if best.as_ref().is_none_or(|b| nanos < b.nanos) {
-                            best = Some(BestMeasure {
-                                kind: c.kind,
-                                certified: c.certified,
-                                nanos,
-                                bytes,
-                            });
-                        }
+                        self.calibrated.write().insert((identity, class, c.kind));
+                        measured_bytes.insert(c.kind, (bytes, c.certified));
                     }
-                    Err(e) => {
+                    Err(_) => {
                         // A structure that cannot serve this object is barred for
-                        // this generation; a read never retries it blindly.
-                        if first_err.is_none() {
-                            first_err = Some(e.to_string());
-                        }
-                        self.failed.write().insert((generation, c.kind));
+                        // this identity; a read never retries it blindly.
+                        self.failed.write().insert((identity, c.kind));
                     }
                 }
             }
-            self.calibrated.write().insert((generation, class));
-            if let Some(b) = best {
-                let reason = if b.kind == ReadPathKind::LogicalExtent {
-                    first_err
-                } else {
-                    None
-                };
-                return Ok(self.serve(b.bytes, b.kind, generation, &manifest, b.certified, reason));
-            }
-            return Ok(PlannedRead::fallback(
-                auth(q.offset, q.length)?,
-                Some("every candidate path failed".into()),
-            ));
         }
 
-        // --- select the cheapest applicable candidate under the measured model ---
-        let mut order: Vec<Candidate> = cands.clone();
+        // --- select the cheapest calibrated candidate under the measured model --
+        // Only candidates actually timed for this identity+class are eligible, so
+        // an unmeasured (optimistic-prior) path can never be chosen blindly.
+        let measured: Vec<Candidate> = {
+            let cal = self.calibrated.read();
+            cands
+                .iter()
+                .filter(|c| cal.contains(&(identity, class, c.kind)))
+                .cloned()
+                .collect()
+        };
+        let mut order: Vec<Candidate> = if measured.is_empty() {
+            cands.clone()
+        } else {
+            measured
+        };
         {
             let model = self.model.read();
             order.sort_by(|a, b| {
@@ -995,8 +1128,17 @@ impl ReadPlanner {
         }
         let mut last_err: Option<String> = None;
         for c in &order {
+            // Reuse bytes already produced for this exact candidate during
+            // calibration, so the authoritative fallback is executed once.
+            let produced = match measured_bytes.remove(&c.kind) {
+                Some((bytes, certified)) => {
+                    debug_assert_eq!(certified, c.certified);
+                    Ok(bytes)
+                }
+                None => self.execute(c, &loaded, q, eff_len, &mut auth),
+            };
             let started = Instant::now();
-            match self.execute(c, &loaded, q, eff_len, &mut auth) {
+            match produced {
                 Ok(bytes) => {
                     let nanos = started.elapsed().as_nanos();
                     self.model.write().record(c.kind, class, nanos as f64);
@@ -1015,7 +1157,7 @@ impl ReadPlanner {
                     ));
                 }
                 Err(e) => {
-                    self.failed.write().insert((generation, c.kind));
+                    self.failed.write().insert((identity, c.kind));
                     last_err = Some(e.to_string());
                 }
             }
@@ -1277,5 +1419,116 @@ mod tests {
         m.record(ReadPathKind::History, SizeClass::Small, 105.0);
         let after = m.predict(ReadPathKind::History, SizeClass::Small);
         assert!(after > 5.0 && after < 105.0, "ewma={after} prior={prior}");
+    }
+
+    fn identity(
+        volume: u8,
+        inode: u64,
+        version: u64,
+        root: u64,
+        generation: u64,
+    ) -> ManifestIdentity {
+        ManifestIdentity {
+            volume_uuid: [volume; 16],
+            inode,
+            inode_version: version,
+            root,
+            generation,
+        }
+    }
+
+    /// Phase 18 — the read-planner isolation defect. Calibration and failure
+    /// state must be keyed by the **full** manifestation identity, never by a
+    /// generation number alone: a rejected/failed candidate for one object must
+    /// not suppress the same candidate for an unrelated object, and calibration
+    /// must not leak across objects. This test uses two identities that share a
+    /// generation number and differ only in inode/root/version — exactly the
+    /// collision an object-keyed-by-generation design would conflate.
+    #[test]
+    fn calibration_and_failure_state_are_keyed_by_full_identity() {
+        let a = identity(1, 100, 3, 500, 7);
+        let b = identity(1, 200, 3, 500, 7); // same generation, different inode
+        let c = identity(1, 100, 4, 500, 7); // same generation, different version
+        let d = identity(1, 100, 3, 501, 7); // same generation, different root
+        let e = identity(2, 100, 3, 500, 7); // same generation, different volume
+
+        assert_ne!(a, b);
+        assert_ne!(a, c);
+        assert_ne!(a, d);
+        assert_ne!(a, e);
+
+        let mut failed: HashSet<(ManifestIdentity, ReadPathKind)> = HashSet::new();
+        failed.insert((a, ReadPathKind::PathBloom));
+        assert!(failed.contains(&(a, ReadPathKind::PathBloom)));
+        for other in [b, c, d, e] {
+            assert!(
+                !failed.contains(&(other, ReadPathKind::PathBloom)),
+                "a failure for one object leaked onto {other:?}"
+            );
+        }
+
+        let mut calibrated: HashSet<(ManifestIdentity, SizeClass, ReadPathKind)> = HashSet::new();
+        calibrated.insert((a, SizeClass::Small, ReadPathKind::History));
+        assert!(calibrated.contains(&(a, SizeClass::Small, ReadPathKind::History)));
+        for other in [b, c, d, e] {
+            assert!(!calibrated.contains(&(other, SizeClass::Small, ReadPathKind::History)));
+        }
+        // A different size class on the same object is also distinct.
+        assert!(!calibrated.contains(&(a, SizeClass::Large, ReadPathKind::History)));
+    }
+
+    /// Phase 18 — the identity really is derived from the manifest's own fields,
+    /// so two manifests that collide on generation but differ anywhere else are
+    /// distinct keys.
+    #[test]
+    fn manifest_identity_is_derived_from_every_identity_field() {
+        let base = |gen: u64, ino: u64, ver: u64, root: u64, uuid: [u8; 16]| GenerationManifest {
+            generation: gen,
+            volume_uuid: uuid,
+            inode: ino,
+            inode_version: ver,
+            root,
+            ..sample_manifest_stub()
+        };
+        let x = ManifestIdentity::of(&base(1, 1, 1, 1, [0; 16]));
+        let y = ManifestIdentity::of(&base(1, 2, 1, 1, [0; 16]));
+        assert_ne!(x, y);
+    }
+
+    /// A minimal `GenerationManifest` for identity tests. The read planner only
+    /// reads the identity fields through `ManifestIdentity::of`, so the rest of
+    /// the manifest is irrelevant here.
+    fn sample_manifest_stub() -> GenerationManifest {
+        GenerationManifest {
+            schema: crate::manifestation::MANIFEST_SCHEMA,
+            generation: 0,
+            volume_uuid: [0; 16],
+            inode: 0,
+            inode_version: 0,
+            root: 0,
+            backend: String::new(),
+            ekbloom_version: String::new(),
+            ekbloom_format: String::new(),
+            profile: String::new(),
+            profile_kind: 0,
+            logical_start: 0,
+            logical_end: 0,
+            physical_start: 0,
+            physical_end: 0,
+            interval: None,
+            depth: None,
+            region_bytes: None,
+            certification: crate::manifestation::CertificationState::Built,
+            certification_method: String::new(),
+            payload_rel_path: String::new(),
+            ekbloom_object_id: None,
+            payload_blake3: [0; 32],
+            visible_bytes: 0,
+            physical_bytes: 0,
+            concealed_bytes: 0,
+            source_bytes: 0,
+            components: Vec::new(),
+            manifest_blake3: [0; 32],
+        }
     }
 }

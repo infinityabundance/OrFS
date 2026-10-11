@@ -94,7 +94,7 @@ phase.
 | 7 | Concealed manifestation (Plane C) | **complete** |
 | 8 | EKBLOOM integration (Plane C) | **complete** |
 | 9 | Concealed query structures (Plane C) | **complete** |
-| 10 | FUSE-over-`io_uring` (Plane D) | **implemented; not active here** (see `docs/FUSE_URING.md` §7) |
+| 10 | FUSE-over-`io_uring` (Plane D) | **complete; active** — the real F2 session mounts (see `docs/FUSE_URING.md`) |
 | 11 | Security and crash-hardening (all planes) | **complete** |
 | 12 | Performance court (all planes) | **complete** |
 
@@ -102,10 +102,10 @@ phase.
 
 Phases 0–12 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
-- The `orfs` crate builds, its **220** tests (default) / **225**
-  (`--features failpoints`) pass, and `cargo fmt -p orfs --check` /
-  `clippy --all-targets -- -D warnings` are clean **inside the pinned container**
-  (`scripts/container-*.sh`).
+- The `orfs` crate builds, its **253** tests (default) pass, and
+  `cargo test --features failpoints` adds the crash-injection court; `cargo fmt
+  -p orfs --check` / `clippy --all-targets -- -D warnings` are clean **inside the
+  pinned container** (`scripts/container-*.sh`).
 - `src/capabilities.rs` + `orfs doctor` perform a **real** kernel/container
   capability probe (no mutation of host state).
 - The CLI is fully wired: `doctor`, `init`, `inspect`, `verify`, `recover`,
@@ -120,14 +120,18 @@ Phases 0–12 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 Honest non-claims (see the linked documents):
 
-- **F2** (FUSE-over-`io_uring`) is implemented and negotiated live, but is
-  **not active on this host** (`fuse.enable_uring=0`); requesting it falls back
-  to F1/F0 with byte-identical contents (`docs/FUSE_URING.md` §7,
-  `docs/LIMITATIONS.md` §4).
+- **F2** (FUSE-over-`io_uring`) is implemented and **active on this host**: the
+  kernel offers `FUSE_OVER_IO_URING` (`fuse.enable_uring=Y`) and the native session
+  mounts for real (Phase 15; `docs/FUSE_URING.md`, `evidence/performance/fuse-uring.json`).
+  Requesting it where the kernel cannot offer it still falls back to F1/F0 with
+  byte-identical contents.
+- **E1/E2** use **asynchronous** manifestation: a small write never waits for a
+  whole-object rebuild, and a manifested profile EKBLOOM documents as
+  non-accelerating is not even loaded on the read path (Phase 18). No performance
+  superiority is claimed: the manifested frontier falls back to the authoritative
+  read (`docs/PERFORMANCE.md`).
 - The **image pixel-surface pyramid** is **not materialised**; only geometry is
   implemented (`docs/QUERY.md` §9.1, `src/image.rs`).
-- No performance superiority is claimed: E1 is slower and the manifestation
-  frontier falls back to the authoritative read (`docs/PERFORMANCE.md`).
 
 ---
 
@@ -181,7 +185,7 @@ sibling working tree is required):
 
 ```sh
 scripts/container-build.sh        # cargo build
-scripts/container-test.sh         # cargo test  (220 tests)
+scripts/container-test.sh         # cargo test  (253 tests)
 scripts/container-fuse-test.sh    # real-mount FUSE + performance court
 scripts/container-uring-test.sh   # io_uring integration + backing benchmark
 scripts/container-check.sh        # cargo fmt -p orfs --check + clippy -D warnings

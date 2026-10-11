@@ -204,8 +204,9 @@ or a kind mismatch (a directory handle used for I/O, or vice versa).
 Every `unsafe` site in the crate, its purpose, and its written invariant. This
 table is regenerated from the source at test time
 (`hostile_files::every_unsafe_block_has_a_written_safety_invariant`) and written
-to `evidence/security/unsafe-audit.json`, which asserts that **all 22 sites carry
-a `SAFETY:` comment**. Focused tests exercise the safe wrappers
+to `evidence/security/unsafe-audit.json`, which asserts that **all 43 sites carry
+a `SAFETY:` comment**. The table below is a representative selection grouped by
+purpose; the committed JSON is the authoritative, source-derived inventory. Focused tests exercise the safe wrappers
 (`tests/uring_integration.rs`, `tests/fuse_uring.rs`, `tests/log_model.rs`).
 
 | File:line | Site | Safety invariant |

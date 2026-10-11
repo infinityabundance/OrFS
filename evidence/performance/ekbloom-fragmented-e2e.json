@@ -2,22 +2,22 @@
   "build_profile": "debug",
   "e2e_random_1b_direct": {
     "no_manifest": {
-      "mean_ns": 11924.10575,
-      "min_ns": 4198,
-      "p50_ns": 11181,
-      "p95_ns": 21270,
-      "p99_ns": 24967,
+      "mean_ns": 6138.46425,
+      "min_ns": 5290,
+      "p50_ns": 5850,
+      "p95_ns": 7083,
+      "p99_ns": 8897,
       "samples": 4000
     },
     "path_bloom": {
-      "mean_ns": 7227.50875,
-      "min_ns": 5540,
-      "p50_ns": 6382,
-      "p95_ns": 9447,
-      "p99_ns": 11732,
+      "mean_ns": 11354.2515,
+      "min_ns": 7053,
+      "p50_ns": 10580,
+      "p95_ns": 13315,
+      "p99_ns": 27361,
       "samples": 4000
     },
-    "speedup": 1.7519586336571609
+    "speedup": 0.552930056710775
   },
   "environment": {
     "cgroup_memory_max": "8589934592",
@@ -36,7 +36,7 @@
   },
   "fragmented_object": {
     "chunk_bytes": 64,
-    "construction_ns": 63468082,
+    "construction_ns": 82366187,
     "extent_count_manifested": 4095,
     "extent_count_no_manifest": 4095,
     "logical_bytes": 1048128,
@@ -44,17 +44,17 @@
     "manifested_profile": "path(D=4)",
     "manifested_ratio": 3.000748000244245,
     "scattered_writes": 2048,
-    "setup_ns_no_manifest": 7683642292,
+    "setup_ns_no_manifest": 7540151574,
     "stride_bytes": 512
   },
   "generated_by": "tests/ekbloom_frontier_e2e.rs",
   "library_random_1b": {
     "authoritative_extent": {
-      "mean_ns": 5708.63775,
-      "min_ns": 280,
-      "p50_ns": 5571,
-      "p95_ns": 10600,
-      "p99_ns": 15659,
+      "mean_ns": 531.43425,
+      "min_ns": 350,
+      "p50_ns": 441,
+      "p95_ns": 922,
+      "p99_ns": 1262,
       "samples": 4000
     },
     "paths_chosen_by_the_planner": [
@@ -64,11 +64,11 @@
       }
     ],
     "planned_read": {
-      "mean_ns": 16958.353,
-      "min_ns": 2044,
-      "p50_ns": 2184,
-      "p95_ns": 3457,
-      "p99_ns": 3767,
+      "mean_ns": 18539.815,
+      "min_ns": 3426,
+      "p50_ns": 3597,
+      "p95_ns": 5531,
+      "p99_ns": 6211,
       "samples": 4000
     }
   },

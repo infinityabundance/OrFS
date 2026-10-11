@@ -169,8 +169,9 @@ fn performance_court_sweep() {
     std::fs::create_dir_all(&run_root).expect("run root");
 
     // Parameters: small and bounded so the whole sweep finishes quickly; identical
-    // across configs so the comparison is fair. Kept small because E1 manifests
-    // synchronously on every write (the honest cost of an always-manifested path).
+    // across configs so the comparison is fair. E1/E2 request asynchronous
+    // manifestation, so a written object may or may not be manifested by the time
+    // it is read — the honest behaviour of an optional background plane.
     let params = BenchParams {
         data_bytes: 256 * 1024,
         iterations: 200,

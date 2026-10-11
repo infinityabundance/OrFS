@@ -58,6 +58,22 @@ use crate::volume::Volume;
 /// Encoded length of a `TX_BEGIN` record (`header + payload + footer`).
 pub const TX_BEGIN_RECORD_LEN: u64 = (HEADER_LEN + TX_BEGIN_PAYLOAD_LEN + FOOTER_LEN) as u64;
 
+/// A measured per-request latency breakdown of an authoritative read (Phase 18
+/// latency anatomy). Every field is nanoseconds; `total_ns` is the whole request.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ReadPhases {
+    /// View selection + inode lookup (the request dispatch).
+    pub dispatch_ns: u64,
+    /// Extent-map resolution ([`crate::extent::ExtentMap::plan_read`]).
+    pub extent_resolve_ns: u64,
+    /// Log segment reads into the destination.
+    pub segment_read_ns: u64,
+    /// Destination assembly (zero-fill and slice placement).
+    pub assembly_ns: u64,
+    /// Total wall time of the authoritative read.
+    pub total_ns: u64,
+}
+
 // ---------------------------------------------------------------------------
 // SNAPSHOT_ROOT / INDEX_CHECKPOINT payloads
 // ---------------------------------------------------------------------------
@@ -638,12 +654,81 @@ impl Namespace {
                     logical_offset,
                     len,
                 } => {
-                    let bytes = self.volume.log.read_range(logical_offset, len)?;
-                    out.extend_from_slice(&bytes);
+                    // Read directly into the destination: no intermediate `Vec`
+                    // (Phase 18 lean authoritative path).
+                    let start = out.len();
+                    out.resize(start + len as usize, 0);
+                    self.volume
+                        .log
+                        .read_range_into(logical_offset, &mut out[start..])?;
                 }
             }
         }
         Ok(out)
+    }
+
+    /// The authoritative read with a measured per-request phase breakdown
+    /// (Phase 18 latency anatomy). Returns the same bytes as
+    /// [`Namespace::read_extent`]; the timers are only taken on this explicit
+    /// diagnostic call, so the ordinary read path carries no timing overhead.
+    pub fn read_extent_traced(
+        &self,
+        inode: u64,
+        root: u64,
+        offset: u64,
+        length: u64,
+    ) -> Result<(Vec<u8>, ReadPhases)> {
+        let started = std::time::Instant::now();
+        let view = self.view(root)?;
+        let ino = view.inode(inode).ok_or(OrfsError::NotFound)?;
+        if ino.is_dir() {
+            return Err(OrfsError::IsADirectory);
+        }
+        if !ino.is_file() {
+            return Err(OrfsError::InvalidArgument(
+                "read_at on a non-file inode".into(),
+            ));
+        }
+        let after_dispatch = std::time::Instant::now();
+        let pieces = ino.extents.plan_read(offset, length);
+        let after_resolve = std::time::Instant::now();
+        let mut out = Vec::new();
+        let mut segment_read_ns = 0u64;
+        let mut assembly_ns = 0u64;
+        for piece in pieces {
+            match piece {
+                ReadPiece::Zero { len } => {
+                    let t = std::time::Instant::now();
+                    out.resize(out.len() + len as usize, 0);
+                    assembly_ns += t.elapsed().as_nanos() as u64;
+                }
+                ReadPiece::Data {
+                    logical_offset,
+                    len,
+                } => {
+                    let t = std::time::Instant::now();
+                    let start = out.len();
+                    out.resize(start + len as usize, 0);
+                    assembly_ns += t.elapsed().as_nanos() as u64;
+                    let t = std::time::Instant::now();
+                    self.volume
+                        .log
+                        .read_range_into(logical_offset, &mut out[start..])?;
+                    segment_read_ns += t.elapsed().as_nanos() as u64;
+                }
+            }
+        }
+        let total = started.elapsed().as_nanos() as u64;
+        Ok((
+            out,
+            ReadPhases {
+                dispatch_ns: (after_dispatch - started).as_nanos() as u64,
+                extent_resolve_ns: (after_resolve - after_dispatch).as_nanos() as u64,
+                segment_read_ns,
+                assembly_ns,
+                total_ns: total,
+            },
+        ))
     }
 
     /// The visible children of a directory in the view at `root`, sorted by name.

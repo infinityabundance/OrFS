@@ -45,7 +45,7 @@ enable it (see `docs/FUSE_URING.md`).
 | 7 | Concealed manifestation | complete |
 | 8 | EKBLOOM integration | complete |
 | 9 | Concealed query structures | complete |
-| 10 | FUSE-over-`io_uring` | implemented; not active on this host (see `docs/FUSE_URING.md`) |
+| 10 | FUSE-over-`io_uring` | implemented; **active on this host** (real F2 mount — see `docs/FUSE_URING.md`) |
 | 11 | Security and crash-hardening | complete |
 | 12 | Performance court | complete |
 | 13 | Reproducibility repair (independent-audit findings) | complete |

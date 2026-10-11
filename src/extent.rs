@@ -126,63 +126,86 @@ impl ExtentMap {
 
     /// Overwrite `[start, end)` with `kind`, extending the size as required and
     /// zero-filling any gap before `start`.
+    ///
+    /// The input invariant is that `extents` is sorted by `start`; this method
+    /// therefore performs a **single linear merge** (O(E)) instead of draining,
+    /// appending, and re-sorting (O(E log E)). Semantics are unchanged: the new
+    /// extent is the last writer over `[start, end)` and every surviving fragment
+    /// preserves its own base offset.
     fn overlay(&mut self, start: u64, end: u64, kind: ExtentKind) {
         debug_assert!(start <= end);
         let target_size = self.size.max(end);
-        let mut pieces: Vec<Extent> = Vec::with_capacity(self.extents.len() + 1);
-        for e in self.extents.drain(..) {
-            let (es, ee) = (e.start, e.end());
-            if ee <= start || es >= end {
-                pieces.push(e);
-            } else {
-                if es < start {
-                    pieces.push(Extent {
-                        start: es,
-                        len: start - es,
-                        kind: e.kind,
-                    });
-                }
-                if ee > end {
-                    pieces.push(Extent {
-                        start: end,
-                        len: ee - end,
-                        kind: shift_kind(e.kind, end - es),
-                    });
-                }
+        let mut out: Vec<Extent> = Vec::with_capacity(self.extents.len() + 2);
+        let mut i = 0usize;
+        // 1. Extents wholly before the overwrite are copied verbatim.
+        while i < self.extents.len() && self.extents[i].end() <= start {
+            out.push(self.extents[i]);
+            i += 1;
+        }
+        // 2. The left remainder of an extent straddling `start`.
+        if i < self.extents.len() {
+            let e = self.extents[i];
+            if e.start < start {
+                out.push(Extent {
+                    start: e.start,
+                    len: start - e.start,
+                    kind: e.kind,
+                });
             }
         }
+        // 3. The new (last-writer-wins) extent.
         if end > start {
-            pieces.push(Extent {
+            out.push(Extent {
                 start,
                 len: end - start,
                 kind,
             });
         }
-        pieces.sort_by_key(|e| e.start);
+        // 4. Extents wholly inside `[start, end)` are dropped.
+        while i < self.extents.len() && self.extents[i].end() <= end {
+            i += 1;
+        }
+        // 5. The right remainder of an extent straddling `end`.
+        if i < self.extents.len() {
+            let e = self.extents[i];
+            if e.start < end {
+                out.push(Extent {
+                    start: end,
+                    len: e.end() - end,
+                    kind: shift_kind(e.kind, end - e.start),
+                });
+                i += 1;
+            }
+        }
+        // 6. Everything after is copied verbatim.
+        while i < self.extents.len() {
+            out.push(self.extents[i]);
+            i += 1;
+        }
 
         // Re-establish contiguity: fill any gap with zeros.
-        let mut out: Vec<Extent> = Vec::with_capacity(pieces.len() + 2);
+        let mut filled: Vec<Extent> = Vec::with_capacity(out.len() + 2);
         let mut covered = 0u64;
-        for p in pieces {
+        for p in out {
             debug_assert!(p.start >= covered, "extent overlap while overlaying");
             if p.start > covered {
-                out.push(Extent {
+                filled.push(Extent {
                     start: covered,
                     len: p.start - covered,
                     kind: ExtentKind::Zero,
                 });
             }
             covered = p.end();
-            out.push(p);
+            filled.push(p);
         }
         if covered < target_size {
-            out.push(Extent {
+            filled.push(Extent {
                 start: covered,
                 len: target_size - covered,
                 kind: ExtentKind::Zero,
             });
         }
-        self.extents = out;
+        self.extents = filled;
         self.size = target_size;
     }
 
@@ -250,11 +273,13 @@ impl ExtentMap {
         if offset >= end {
             return out;
         }
-        for e in &self.extents {
+        // Binary-search the first extent that can overlap `[offset, end)`: since
+        // extents are ordered, disjoint and contiguous, that is the first extent
+        // whose exclusive end is strictly greater than `offset`. Only the k
+        // intersecting extents are then visited → O(log E + k).
+        let start_idx = self.extents.partition_point(|e| e.end() <= offset);
+        for e in &self.extents[start_idx..] {
             let (es, ee) = (e.start, e.end());
-            if ee <= offset {
-                continue;
-            }
             if es >= end {
                 break;
             }
@@ -270,6 +295,23 @@ impl ExtentMap {
             }
         }
         out
+    }
+
+    /// The number of extents a [`Self::plan_read`] visits for `[offset, offset +
+    /// length)`. This is the honest *work* metric for a read (independent of
+    /// wall-clock noise): with the binary-search plan it is `O(log E + k)` and
+    /// does not grow with unrelated fragmentation elsewhere in the file. A
+    /// read-only diagnostic (Phase 18 evidence).
+    pub fn plan_read_work(&self, offset: u64, length: u64) -> usize {
+        let end = offset.saturating_add(length).min(self.size);
+        if offset >= end {
+            return 0;
+        }
+        let start_idx = self.extents.partition_point(|e| e.end() <= offset);
+        self.extents[start_idx..]
+            .iter()
+            .take_while(|e| e.start < end)
+            .count()
     }
 }
 
@@ -514,5 +556,166 @@ mod tests {
         // Clamped to size (12).
         assert_eq!(m.plan_read(10, 100).len(), 1);
         assert_eq!(m.plan_read(12, 1), vec![]);
+    }
+
+    /// Build a synthetic map of `n` 4 KiB `Data` extents directly (bypassing the
+    /// O(E) `overlay`, so constructing 100k extents is cheap).
+    fn fragmented(n: u64) -> ExtentMap {
+        ExtentMap {
+            extents: (0..n)
+                .map(|i| Extent {
+                    start: i * 4096,
+                    len: 4096,
+                    kind: ExtentKind::Data {
+                        data_offset: i * 4096,
+                    },
+                })
+                .collect(),
+            size: n * 4096,
+        }
+    }
+
+    /// A naive `extents`-linear reference plan, used to prove the binary-search
+    /// plan is byte-identical.
+    fn plan_read_reference(m: &ExtentMap, offset: u64, length: u64) -> Vec<ReadPiece> {
+        let end = offset.saturating_add(length).min(m.size);
+        let mut out = Vec::new();
+        if offset >= end {
+            return out;
+        }
+        for e in m.extents() {
+            let (es, ee) = (e.start, e.end());
+            if ee <= offset {
+                continue;
+            }
+            if es >= end {
+                break;
+            }
+            let rs = es.max(offset);
+            let re = ee.min(end);
+            let len = re - rs;
+            match e.kind {
+                ExtentKind::Data { data_offset } => out.push(ReadPiece::Data {
+                    logical_offset: data_offset + (rs - es),
+                    len,
+                }),
+                ExtentKind::Zero => out.push(ReadPiece::Zero { len }),
+            }
+        }
+        out
+    }
+
+    /// Phase 18: reads must not scan the whole extent map. The work of a
+    /// single-byte or 4 KiB read stays ~constant (and byte-identical in result)
+    /// as *unrelated* fragmentation grows from 10 to 100,000 extents.
+    #[test]
+    fn read_work_is_independent_of_unrelated_fragmentation() {
+        let small = fragmented(10);
+        let large = fragmented(100_000);
+        // Read near the far end of the file, so a forward scan from the start
+        // would have to walk almost every extent.
+        let off = large.size() / 2;
+
+        for length in [1u64, 4096] {
+            let ws = small.plan_read_work(0, length);
+            let wl = large.plan_read_work(off, length);
+            // Binary search + k intersecting extents: a tiny constant, far below
+            // the number of extents a linear scan would visit. A 4 KiB read over
+            // 4 KiB extents intersects at most two.
+            assert!(ws <= 2, "small-map read visited {ws} extents");
+            assert!(wl <= 2, "large-map read visited {wl} extents");
+            // The work must not grow with total fragmentation.
+            assert_eq!(ws, wl, "read work grew with fragmentation");
+            // Result identity: the binary-search plan equals the linear reference.
+            assert_eq!(
+                large.plan_read(off, length),
+                plan_read_reference(&large, off, length)
+            );
+            assert_eq!(
+                small.plan_read(0, length),
+                plan_read_reference(&small, 0, length)
+            );
+        }
+
+        // The work a linear scan *would* have done, for the evidence ledger.
+        let linear = large
+            .extents()
+            .iter()
+            .take_while(|e| e.end() <= off)
+            .count();
+        assert!(
+            linear > 40_000,
+            "expected the fixture to be genuinely fragmented (linear ~{linear})"
+        );
+    }
+
+    /// Phase 18: the rewritten single-pass `overlay` preserves exactly the old
+    /// last-writer-wins / overwrite semantics, checked against a per-byte
+    /// reference model over a randomized write/zero/resize schedule.
+    #[test]
+    fn overlay_matches_a_reference_byte_model() {
+        let mut m = ExtentMap::default();
+        // Per-byte absolute log offset; `None` is a zero byte.
+        let mut reference: Vec<Option<u64>> = Vec::new();
+        let mut state = 0x1234_5678_9abc_def0u64;
+        let mut next = move || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            state >> 33
+        };
+        for _ in 0..3_000 {
+            match next() % 3 {
+                0 => {
+                    let start = next() % 512;
+                    let len = 1 + next() % 64;
+                    let data_offset = next() % 100_000;
+                    m.write(start, len, data_offset);
+                    let end = (start + len) as usize;
+                    if reference.len() < end {
+                        reference.resize(end, None);
+                    }
+                    for b in start..start + len {
+                        reference[b as usize] = Some(data_offset + (b - start));
+                    }
+                }
+                1 => {
+                    let start = next() % 512;
+                    let len = 1 + next() % 64;
+                    m.zero(start, len);
+                    let end = (start + len) as usize;
+                    if reference.len() < end {
+                        reference.resize(end, None);
+                    }
+                    for b in start..start + len {
+                        reference[b as usize] = None;
+                    }
+                }
+                _ => {
+                    let new_size = next() % 1024;
+                    m.resize(new_size);
+                    reference.resize(new_size as usize, None);
+                }
+            }
+            assert_eq!(m.size(), reference.len() as u64);
+            let mut covered = 0u64;
+            for e in m.extents() {
+                assert_eq!(e.start, covered, "extents must be ordered and contiguous");
+                covered = e.end();
+                match e.kind {
+                    ExtentKind::Data { data_offset } => {
+                        for b in e.start..e.end() {
+                            assert_eq!(reference[b as usize], Some(data_offset + (b - e.start)));
+                        }
+                    }
+                    ExtentKind::Zero => {
+                        for b in e.start..e.end() {
+                            assert_eq!(reference[b as usize], None);
+                        }
+                    }
+                }
+            }
+            assert_eq!(covered, m.size());
+        }
     }
 }

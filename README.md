@@ -48,6 +48,8 @@ enable it (see `docs/FUSE_URING.md`).
 | 10 | FUSE-over-`io_uring` | implemented; not active on this host (see `docs/FUSE_URING.md`) |
 | 11 | Security and crash-hardening | complete |
 | 12 | Performance court | complete |
+| 13 | Reproducibility repair (independent-audit findings) | complete |
+| 14 | POSIX court closure (§33) | complete |
 
 ## Development is Docker-only
 

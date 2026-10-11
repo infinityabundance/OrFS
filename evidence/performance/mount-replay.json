@@ -24,7 +24,7 @@
         "description": "F0 (traditional /dev/fuse, sync backing)",
         "durability": "ordered",
         "fuse_over_io_uring": "not usable: fuse-io-uring is disabled by the kernel module parameter (fuse.enable_uring=0 in /sys/module/fuse/parameters/enable_uring); the kernel does not even offer FUSE_OVER_IO_URING at INIT while it is off",
-        "mount_seconds": 0.001044395,
+        "mount_seconds": 0.001021937,
         "transport_requested": "fuse",
         "transport_used": "F0",
         "unmounted_cleanly": true
@@ -63,8 +63,8 @@
             "single cold mount; not a warm-repeat figure"
           ],
           "ops": 1,
-          "ops_per_s": 6.4152475139456415,
-          "seconds": 0.155878631
+          "ops_per_s": 6.58344771799433,
+          "seconds": 0.151896095
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None",
         "orfs_version": "0.1.0",
@@ -115,8 +115,8 @@
             "single cold mount; not a warm-repeat figure"
           ],
           "ops": 1,
-          "ops_per_s": 6.173133301591082,
-          "seconds": 0.16199229
+          "ops_per_s": 6.38633940543078,
+          "seconds": 0.156584224
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None",
         "orfs_version": "0.1.0",
@@ -167,8 +167,8 @@
             "single cold mount; not a warm-repeat figure"
           ],
           "ops": 1,
-          "ops_per_s": 2.943661700267829,
-          "seconds": 0.33971295
+          "ops_per_s": 3.2019658328344187,
+          "seconds": 0.312308142
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\")",
         "orfs_version": "0.1.0",
@@ -214,12 +214,12 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 79744264,
-            "mean_ns": 78690893.71875,
-            "min_ns": 78251552,
-            "p50_ns": 78478215,
-            "p95_ns": 79499548,
-            "p99_ns": 79744264,
+            "max_ns": 78536598,
+            "mean_ns": 77363553.4375,
+            "min_ns": 76408677,
+            "p50_ns": 77068658,
+            "p95_ns": 78379365,
+            "p99_ns": 78536598,
             "samples": 32
           },
           "mb_per_s": 0.0,
@@ -227,8 +227,8 @@
             "Volume::open (scan + validate + index) repeated read-only"
           ],
           "ops": 32,
-          "ops_per_s": 12.707244147371648,
-          "seconds": 2.5182486170000002
+          "ops_per_s": 12.925129382170855,
+          "seconds": 2.475797267
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None",
         "orfs_version": "0.1.0",
@@ -274,12 +274,12 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 21099,
-            "mean_ns": 1455.90625,
-            "min_ns": 1102,
-            "p50_ns": 1132,
-            "p95_ns": 1233,
-            "p99_ns": 21099,
+            "max_ns": 24296,
+            "mean_ns": 1496.40625,
+            "min_ns": 1082,
+            "p50_ns": 1123,
+            "p95_ns": 1202,
+            "p99_ns": 24296,
             "samples": 64
           },
           "mb_per_s": 0.0,
@@ -287,8 +287,8 @@
             "typed query API (Namespace::query), pattern \"OrFS\", 0 match(es) at root 13199656; not an index-backed claim unless a trigram index is present"
           ],
           "ops": 64,
-          "ops_per_s": 632986.5094750169,
-          "seconds": 0.000101108
+          "ops_per_s": 617736.7669201961,
+          "seconds": 0.000103604
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None",
         "orfs_version": "0.1.0",
@@ -334,12 +334,12 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 142814810,
-            "mean_ns": 140804876.078125,
-            "min_ns": 139128261,
-            "p50_ns": 140195768,
-            "p95_ns": 142572959,
-            "p99_ns": 142814810,
+            "max_ns": 142410863,
+            "mean_ns": 137890778.40625,
+            "min_ns": 135783836,
+            "p50_ns": 137367501,
+            "p95_ns": 141032821,
+            "p99_ns": 142410863,
             "samples": 64
           },
           "mb_per_s": 0.0,
@@ -347,8 +347,8 @@
             "Snapshot::open_dir(root=13199656) — pin + read handle construction"
           ],
           "ops": 64,
-          "ops_per_s": 7.082661244483411,
-          "seconds": 9.036151496
+          "ops_per_s": 7.236368410191766,
+          "seconds": 8.844215271
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None",
         "orfs_version": "0.1.0",

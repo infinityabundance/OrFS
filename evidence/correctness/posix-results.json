@@ -2,11 +2,13 @@
   "cache_profile": "write-through",
   "generated_by": "tests/fuse_integration.rs",
   "mounted": true,
-  "mountpoint": "/mnt/1tb_kingston/OrFS/target/fuse-it/it-525-1791683668006440191/mnt",
+  "mountpoint": "/mnt/1tb_kingston/OrFS/target/fuse-it/it-121-1791687982417652214/mnt",
   "notes": [
     "readdirplus is negotiated (FUSE_DO_READDIRPLUS) and exercised by ordinary readdir(3) calls",
     "POSIX record locks and flock are delegated to the kernel (ENOSYS); see docs/FUSE-SEMANTICS.md",
-    "SEEK_DATA/SEEK_HOLE and fallocate are byte-granular on OrFS, so they are asserted semantically rather than compared to the reference filesystem"
+    "SEEK_DATA/SEEK_HOLE and fallocate are byte-granular on OrFS, so they are asserted semantically rather than compared to the reference filesystem",
+    "mmap shared-writable is serviced by the kernel's page cache in write-through mode: a dirtied page is written back as an ordinary FUSE_WRITE, so it becomes an authoritative DATA_EXTENT like any other write; the FUSE writeback cache is not negotiated (docs/FUSE-SEMANTICS.md §8)",
+    "the OrFS genesis root is owned by uid 0; the court chowns it to the mounting uid before mounting, so per-inode chown behaviour is compared against the reference (docs/FUSE-SEMANTICS.md §6)"
   ],
   "operations": [
     {
@@ -115,6 +117,55 @@
       "reference": "ok:640"
     },
     {
+      "kind": "reference",
+      "matched": true,
+      "name": "pwrite",
+      "orfs": "ok:n0=2 n1=2 n2=2 n3=2 nv=5 nb=200000 size=200064 head=[65, 66, 50, 80, 80, 81, 81, 81, 56, 57, 43, 43, 0, 0, 0, 90, 90] probe=[178, 209, 240, 20, 51, 82, 113, 144]",
+      "reference": "ok:n0=2 n1=2 n2=2 n3=2 nv=5 nb=200000 size=200064 head=[65, 66, 50, 80, 80, 81, 81, 81, 56, 57, 43, 43, 0, 0, 0, 90, 90] probe=[178, 209, 240, 20, 51, 82, 113, 144]"
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "append_pwrite",
+      "orfs": "ok:n=2 data=\"AAAABB\"",
+      "reference": "ok:n=2 data=\"AAAABB\""
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "chown",
+      "orfs": "ok:r1=Ok(()) uid1=1000 gid1=1000 r2=Err(\"PermissionDenied\") uid2=1000 gid2=1000 r3=Ok(()) r4=Ok(()) luid=1000 lgid=1000",
+      "reference": "ok:r1=Ok(()) uid1=1000 gid1=1000 r2=Err(\"PermissionDenied\") uid2=1000 gid2=1000 r3=Ok(()) r4=Ok(()) luid=1000 lgid=1000"
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "utimens",
+      "orfs": "ok:e1=Ok(()) at1=1000000000.123456789 mt1=1500000000.987654321 e2=Ok(()) at2=1600000000.111222333 mt2=1700000000.444555666",
+      "reference": "ok:e1=Ok(()) at1=1000000000.123456789 mt1=1500000000.987654321 e2=Ok(()) at2=1600000000.111222333 mt2=1700000000.444555666"
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "fdatasync",
+      "orfs": "ok:sync=Ok(()) data=\"durable-data\" sync2=Ok(()) data2=\"durable-data-more\"",
+      "reference": "ok:sync=Ok(()) data=\"durable-data\" sync2=Ok(()) data2=\"durable-data-more\""
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "mmap_readonly",
+      "orfs": "ok:len=8192 matched=true munmap_ok=true",
+      "reference": "ok:len=8192 matched=true munmap_ok=true"
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "mmap_shared_write",
+      "orfs": "ok:msync_ok=true munmap_ok=true size=100 bytes_match=true",
+      "reference": "ok:msync_ok=true munmap_ok=true size=100 bytes_match=true"
+    },
+    {
       "kind": "semantic",
       "matched": true,
       "name": "seek_data_hole",
@@ -134,48 +185,235 @@
       "name": "copy_file_range",
       "orfs": "ok:copied=4 dst=\"....2345..\"",
       "reference": "copied=4 dst=....2345.."
+    },
+    {
+      "kind": "semantic",
+      "matched": true,
+      "name": "utimens_now_omit",
+      "orfs": "ok:atime_now=true mtime_fixed=true atime_kept=true mtime2=true",
+      "reference": "atime_now=true mtime_fixed=true atime_kept=true mtime2=true"
     }
   ],
   "posix33_coverage": {
     "covered": [
-      "create",
-      "open",
-      "read",
-      "write",
-      "append",
-      "truncate",
-      "fallocate",
-      "rename",
-      "unlink",
-      "link",
-      "symlink",
-      "mkdir",
-      "rmdir",
-      "stat",
-      "chmod",
-      "xattr",
-      "readdir",
-      "fsync",
-      "SEEK_DATA",
-      "SEEK_HOLE"
+      {
+        "checks": [
+          "create_write_read"
+        ],
+        "operation": "create"
+      },
+      {
+        "checks": [
+          "create_write_read",
+          "append_and_seek"
+        ],
+        "operation": "open"
+      },
+      {
+        "checks": [
+          "create_write_read"
+        ],
+        "operation": "read"
+      },
+      {
+        "checks": [
+          "create_write_read",
+          "append_and_seek"
+        ],
+        "operation": "write"
+      },
+      {
+        "checks": [
+          "pwrite",
+          "mmap_readonly"
+        ],
+        "operation": "pread"
+      },
+      {
+        "checks": [
+          "pwrite",
+          "append_pwrite"
+        ],
+        "operation": "pwrite"
+      },
+      {
+        "checks": [
+          "pwrite"
+        ],
+        "operation": "pwritev"
+      },
+      {
+        "checks": [
+          "append_and_seek",
+          "append_pwrite",
+          "fdatasync"
+        ],
+        "operation": "append"
+      },
+      {
+        "checks": [
+          "truncate"
+        ],
+        "operation": "truncate"
+      },
+      {
+        "checks": [
+          "fallocate"
+        ],
+        "operation": "fallocate"
+      },
+      {
+        "checks": [
+          "rename"
+        ],
+        "operation": "rename"
+      },
+      {
+        "checks": [
+          "unlink_while_open",
+          "unlink_dir"
+        ],
+        "operation": "unlink"
+      },
+      {
+        "checks": [
+          "hardlink"
+        ],
+        "operation": "link"
+      },
+      {
+        "checks": [
+          "symlink"
+        ],
+        "operation": "symlink"
+      },
+      {
+        "checks": [
+          "mkdir_readdir"
+        ],
+        "operation": "mkdir"
+      },
+      {
+        "checks": [
+          "rmdir_nonempty"
+        ],
+        "operation": "rmdir"
+      },
+      {
+        "checks": [
+          "create_write_read",
+          "perm_mode",
+          "chown"
+        ],
+        "operation": "stat"
+      },
+      {
+        "checks": [
+          "perm_mode"
+        ],
+        "operation": "chmod"
+      },
+      {
+        "checks": [
+          "chown"
+        ],
+        "operation": "chown"
+      },
+      {
+        "checks": [
+          "chown"
+        ],
+        "operation": "fchown"
+      },
+      {
+        "checks": [
+          "chown"
+        ],
+        "operation": "lchown"
+      },
+      {
+        "checks": [
+          "utimens",
+          "utimens_now_omit"
+        ],
+        "operation": "utimens"
+      },
+      {
+        "checks": [
+          "utimens",
+          "utimens_now_omit"
+        ],
+        "operation": "utimensat"
+      },
+      {
+        "checks": [
+          "utimens"
+        ],
+        "operation": "futimens"
+      },
+      {
+        "checks": [
+          "xattr"
+        ],
+        "operation": "xattr"
+      },
+      {
+        "checks": [
+          "mkdir_readdir"
+        ],
+        "operation": "readdir"
+      },
+      {
+        "checks": [
+          "fsync"
+        ],
+        "operation": "fsync"
+      },
+      {
+        "checks": [
+          "fdatasync"
+        ],
+        "operation": "fdatasync"
+      },
+      {
+        "checks": [
+          "mmap_readonly",
+          "mmap_shared_write"
+        ],
+        "operation": "mmap"
+      },
+      {
+        "checks": [
+          "seek_data_hole"
+        ],
+        "operation": "SEEK_DATA"
+      },
+      {
+        "checks": [
+          "seek_data_hole"
+        ],
+        "operation": "SEEK_HOLE"
+      }
     ],
     "delegated_to_kernel": [
-      "POSIX record locks (fcntl F_SETLK/F_GETLK) return ENOSYS and are delegated to the kernel; see docs/FUSE-SEMANTICS.md",
-      "flock (delegated to the kernel)"
+      {
+        "errno": "ENOSYS",
+        "operation": "POSIX record locks (fcntl F_SETLK/F_GETLK)",
+        "rationale": "OrFS does not negotiate FUSE_POSIX_LOCKS; the kernel's local lock manager services them, which is correct for a single-node mount (docs/FUSE-SEMANTICS.md §9)."
+      },
+      {
+        "errno": "ENOSYS",
+        "operation": "flock (BSD advisory locks)",
+        "rationale": "OrFS does not negotiate FUSE_FLOCK_LOCKS; delegated to the kernel for the same reason."
+      }
     ],
-    "not_yet_covered": [
-      "pwrite (exercised indirectly via append_and_seek; not a dedicated case)",
-      "chown (owner is set at setup via setattr; not a compared case)",
-      "utimens (mtime update is exercised indirectly; not a compared case)",
-      "fdatasync (fsync is covered; fdatasync is not separately asserted)",
-      "mmap (not exercised by this court)"
-    ],
-    "note": "research/OrFS prompt.md §33 lists a POSIX operation set as a *tested target*. Full POSIX compatibility is not claimed until every listed operation passes an applicable test. This table records what the court actually exercises today."
+    "intentionally_unsupported": [],
+    "note": "research/OrFS prompt.md §33 lists a POSIX operation set as a *tested target*. Full POSIX compatibility is not claimed until every listed operation passes an applicable test. This table is the §33 coverage record: each operation's status (covered, intentionally unsupported with its errno, or delegated to the kernel) and the court check(s) that prove it."
   },
   "summary": {
     "failed": 0,
-    "passed": 18,
-    "total": 18
+    "passed": 26,
+    "total": 26
   },
   "transport": "fuse (traditional /dev/fuse)"
 }

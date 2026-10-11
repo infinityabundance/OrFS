@@ -323,15 +323,20 @@ FUSE mount (`tests/fuse_integration.rs`), writing
 target**, not a standing claim; the recorded result lists what is covered:
 
 * **Covered** (compared against a trusted reference filesystem, or asserted
-  semantically where block-granular): `create`, `open`, `read`, `write`,
-  `append`, `truncate`, `fallocate`, `rename`, `unlink`, `link`, `symlink`,
-  `mkdir`, `rmdir`, `stat`, `chmod`, `xattr`, `readdir`, `fsync`, `SEEK_DATA`,
-  `SEEK_HOLE`.
-* **Not yet covered**: dedicated `pwrite`, `chown`, `utimens`, `fdatasync`, `mmap`.
+  semantically where block-granular or time-dependent): `create`, `open`,
+  `read`, `pread`, `write`, `pwrite`, `pwritev`, `append`, `truncate`,
+  `fallocate`, `rename`, `unlink`, `link`, `symlink`, `mkdir`, `rmdir`, `stat`,
+  `chmod`, `chown`, `fchown`, `lchown`, `utimens`, `utimensat`, `futimens`,
+  `xattr`, `readdir`, `fsync`, `fdatasync`, `mmap` (read-only + shared-writable),
+  `SEEK_DATA`, `SEEK_HOLE` — **26/26** checks.
+* **Not yet covered**: none — every §33 operation is served by an applicable
+  check.
 * **Delegated to the kernel**: POSIX record locks and `flock` (return `ENOSYS`).
 
 Full POSIX compatibility is **not claimed** until every listed operation passes an
-applicable test.
+applicable test; the one deliberate, documented deviation is that a non-root
+owner cannot `chgrp` to a supplementary group (the single-node daemon has no
+caller-group database) and receives `EPERM` (`docs/FUSE-SEMANTICS.md` §6).
 
 ---
 

@@ -58,25 +58,25 @@
     {
       "file": "fuse.rs",
       "has_safety_comment": true,
-      "line": 1847,
+      "line": 1860,
       "text": "let mut st: libc::statvfs = unsafe { std::mem::zeroed() };"
     },
     {
       "file": "fuse.rs",
       "has_safety_comment": true,
-      "line": 1848,
+      "line": 1861,
       "text": "let rc = unsafe { libc::statvfs(c.as_ptr(), &mut st) };"
     },
     {
       "file": "fuse.rs",
       "has_safety_comment": true,
-      "line": 2066,
+      "line": 2079,
       "text": "unsafe {"
     },
     {
       "file": "fuse.rs",
       "has_safety_comment": true,
-      "line": 2191,
+      "line": 2204,
       "text": "let rc = unsafe { libc::umount2(c.as_ptr(), libc::MNT_DETACH) };"
     },
     {

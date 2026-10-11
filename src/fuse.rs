@@ -775,11 +775,24 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             Err(e) => return reply.error(errno(&e)),
         };
         // Permission: chmod/chown/utimes require ownership or root; truncate
-        // requires write permission.
-        let privileged = req.uid() == 0 || req.uid() == st.uid;
+        // requires write permission. Beyond that, changing the *owner* (uid), or
+        // moving a file to a *different* group, additionally requires root:
+        // Linux permits only a privileged process to give a file away. (An owner
+        // may still restate the current uid/gid, which is a no-op.) This is
+        // deliberately a little stricter than Linux's "an owner may `chgrp` to a
+        // supplementary group": a single-node daemon has no group database for
+        // the caller, so it cannot verify membership. See docs/FUSE-SEMANTICS.md
+        // §6.
+        let is_root = req.uid() == 0;
+        let owner_or_root = is_root || req.uid() == st.uid;
         if (mode.is_some() || uid.is_some() || gid.is_some() || atime.is_some() || mtime.is_some())
-            && !privileged
+            && !owner_or_root
         {
+            return reply.error(Errno::EPERM);
+        }
+        let uid_changes = uid.is_some_and(|u| u != st.uid);
+        let gid_changes = gid.is_some_and(|g| g != st.gid);
+        if (uid_changes || gid_changes) && !is_root {
             return reply.error(Errno::EPERM);
         }
         if size.is_some() && !has_permission(req.uid(), req.gid(), &st, 0o2) {

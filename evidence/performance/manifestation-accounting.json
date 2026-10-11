@@ -11,7 +11,7 @@
     },
     "bloom_total_bytes": 6496,
     "capacity": {
-      "available_bytes": 107878490112,
+      "available_bytes": 105071128576,
       "block_size": 4096,
       "total_bytes": 1426376364032
     },
@@ -35,7 +35,7 @@
     "physical_overhead_bytes": 9539,
     "uncommitted_tail_bytes": 0,
     "uuid": "4f724653-0711-4022-8033-445566778899",
-    "volume": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmpwee2cA"
+    "volume": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmpjEU2WC"
   },
   "ekbloom_bytes_match": true,
   "generator": "tests/manifestation.rs",

@@ -113,7 +113,7 @@ are stable, so an unlinked child still resolves).
 | `lookup` | Resolves `.`/`..`/`name` in the live root; requires execute permission on the parent. |
 | `forget` | Decrements lookup accounting. |
 | `getattr` | Returns the version-consistent `InodeStat`. |
-| `setattr` | Applies a masked change (`mode`/`uid`/`gid`/`atime`/`mtime`/`size`). Ownership/utimes require owner or root; size requires write permission. Replies with fresh attributes. Requests an inode invalidation. |
+| `setattr` | Applies a masked change (`mode`/`uid`/`gid`/`atime`/`mtime`/`size`). `chmod`/`utimes` require owner or root; changing the owner (`uid`) or moving the file to a *different* `gid` additionally requires root (§6); `size` requires write permission. Replies with fresh attributes. Requests an inode invalidation. |
 | `readlink` | Returns the authoritative target bytes. |
 | `mknod` | Regular files and directories are created; any other node type (`S_IFIFO`/`S_IFCHR`/`S_IFBLK`/`S_IFSOCK`) returns `EOPNOTSUPP`. `umask` is already applied by the kernel (OrFS does not set `FUSE_DONT_MASK`). |
 | `mkdir` | Creates a directory; replies with the entry. |
@@ -126,7 +126,7 @@ are stable, so an unlinked child still resolves).
 | `read` | Enforces read permission; resolves logical extents. Clamped to EOF. |
 | `write` | Enforces write permission; appends an immutable `DATA_EXTENT`. For `O_APPEND` the *authoritative* end-of-file is used as the offset. Requests an inode invalidation. |
 | `flush` | **Not** a durability barrier — returns `ok` because nothing is buffered (§8). |
-| `fsync` | Durably flushes the authoritative log (`sync()`), i.e. it *is* the durability barrier. |
+| `fsync` | Durably flushes the authoritative log (`sync()`), i.e. it *is* the durability barrier. `fdatasync(2)` arrives as `fsync` with the `datasync` hint and is served by the same full `sync()` (a strictly stronger guarantee). |
 | `fsyncdir` | Same durability hook as `fsync`. |
 | `release` | Frees the file handle. |
 | `create` | Atomically creates and opens a regular file; replies with entry + handle. |
@@ -162,6 +162,16 @@ execute bit to execute a regular file.
 by default: delegating to the kernel makes the daemon's behaviour depend on the
 mount ACL and the kernel's `allow_other` policy, whereas OrFS wants identical
 semantics across transports. It is exposed for compatibility testing.
+
+**Ownership changes (`setattr` `uid`/`gid`) are stricter than mode/time**
+(verified by the mounted court). `chmod` and `utimes` require ownership or root,
+but only root may set a file's `uid` to a different user, and only root may move
+it to a different `gid`. The owner may restate its current `uid`/`gid`, which is a
+permitted no-op. This matches Linux for the privileged/unprivileged split; the
+one deliberate deviation is that a non-root owner cannot perform a Linux-style
+`chgrp` to one of its *supplementary* groups, because the single-node daemon has
+no caller-group database to verify membership against — it returns `EPERM`
+rather than guess.
 
 Note: the OrFS genesis root is owned by `uid 0`. A volume mounted by a
 non-privileged user should have its root `chown`ed to that user (the integration
@@ -217,7 +227,29 @@ to the selected `DurabilityMode` (`sync` = fsync-before-ack; `ordered` =
 ordered+published; `batched` = amortised sync). Nothing is buffered in the
 daemon, so `flush` (called on each `close`) has no work to do and returns `ok`;
 it is explicitly **not** a durability barrier. `fsync` (and `fsyncdir`) call the
-engine's `sync()` and *are* the durability barrier.
+engine's `sync()` and *are* the durability barrier. `fdatasync(2)` is delivered
+by the kernel as `fsync` with the `datasync` hint; OrFS maps it to the same full
+`sync()`, which is a strictly stronger obligation than `fdatasync` requires, so
+it is never a wrong success.
+
+## 8.2 `mmap`
+
+With the writeback cache off, `mmap` is serviced by the kernel page cache in
+*write-through* mode, and the daemon needs no separate mmap handler:
+
+* A read-only mapping reads the visible bytes; there is no second copy.
+* A `MAP_SHARED` + `PROT_WRITE` mapping is permitted. When a dirtied page is
+  flushed (`msync`, `munmap`, or background writeback), the kernel sends it back
+  as an ordinary FUSE `write` (flagged `FUSE_WRITE_CACHE`) at the page offset;
+  the daemon commits it as an authoritative `DATA_EXTENT` exactly like any other
+  write. The visible bytes and the authoritative log therefore cannot diverge,
+  and the modification is durable under the selected `DurabilityMode` before the
+  write is acknowledged.
+* Only the valid bytes up to EOF are written back, so a mapping never spuriously
+  extends a file (verified by the mounted court with a non-page-aligned file).
+* Under `--direct-io` (`FOPEN_DIRECT_IO`) the kernel rejects
+  `MAP_SHARED|VM_MAYWRITE` with `ENODEV`, as is normal for direct-I/O FUSE
+  mounts; read-only mappings remain available.
 
 ---
 

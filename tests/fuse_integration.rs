@@ -21,7 +21,7 @@ use std::ffi::CString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::{FileExt, MetadataExt};
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 
@@ -450,6 +450,340 @@ fn s_copy_file_range(orfs_root: &Path) -> Outcome {
 }
 
 // ---------------------------------------------------------------------------
+// §33 closure: pwrite/pwritev, chown/lchown/fchown, utimensat/futimens,
+// fdatasync, mmap
+// ---------------------------------------------------------------------------
+
+/// `pwrite`/`pwritev` at offset 0, middle, EOF, beyond-EOF, overlapping, and a
+/// multi-chunk (200 KiB) write; verify returned counts and subsequent `pread`
+/// bytes against the reference filesystem.
+fn s_pwrite(root: &Path) -> Outcome {
+    let d = scratch(root, "s_pwrite");
+    let f = d.join("f");
+    fs::write(&f, b"0123456789").map_err(|e| format!("{:?}", e.kind()))?;
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&f)
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    // offset 0
+    let n0 = file
+        .write_at(b"AB", 0)
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    // middle
+    let n1 = file
+        .write_at(b"xy", 4)
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    // exactly at EOF
+    let n2 = file
+        .write_at(b"++", 10)
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    // beyond EOF: the gap must be zero-filled, not left as stale bytes
+    let n3 = file
+        .write_at(b"ZZ", 15)
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    // overlapping pwritev: two iovecs ("PP" then "QQQ") in one call at offset 3
+    let nv = pwritev_fd(file.as_raw_fd(), &[b"PP", b"QQQ"], 3)?;
+    // multi-chunk pwrite: 200 KiB exceeds the 128 KiB max_write, so the kernel
+    // splits it and the daemon must reassemble it exactly.
+    let big: Vec<u8> = (0..200_000u32)
+        .map(|i| ((i * 31 + 7) % 251) as u8)
+        .collect();
+    let nb = file
+        .write_at(&big, 64)
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    // Verify via pread at the head and across the 128 KiB chunk boundary.
+    let mut head = [0u8; 17];
+    file.read_exact_at(&mut head, 0)
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    let mut probe = [0u8; 8];
+    file.read_exact_at(&mut probe, 64 + 131_072 - 4)
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    let size = file
+        .metadata()
+        .map_err(|e| format!("{:?}", e.kind()))?
+        .size();
+    Ok(format!(
+        "n0={n0} n1={n1} n2={n2} n3={n3} nv={nv} nb={nb} size={size} head={head:?} probe={probe:?}"
+    ))
+}
+
+/// `pwrite` on an `O_APPEND` handle. Linux documentation (`pwrite(2)` BUGS)
+/// states the write still lands at the end of the file regardless of the
+/// requested offset; OrFS must agree with the reference filesystem.
+fn s_append_pwrite(root: &Path) -> Outcome {
+    let d = scratch(root, "s_append_pwrite");
+    let f = d.join("f");
+    fs::write(&f, b"AAAA").map_err(|e| format!("{:?}", e.kind()))?;
+    let file = OpenOptions::new()
+        .read(true)
+        .append(true)
+        .open(&f)
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    let n = file
+        .write_at(b"BB", 0)
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    drop(file);
+    let got = fs::read(&f).map_err(|e| format!("{:?}", e.kind()))?;
+    Ok(format!("n={n} data={:?}", String::from_utf8_lossy(&got)))
+}
+
+/// `chown`/`fchown`/`lchown`: ownership changes are reflected by `stat`; the
+/// privilege rule (a non-root caller may not change to a foreign uid) holds on
+/// both filesystems. The OrFS genesis root is owned by `uid 0` and the mount
+/// test `chown`s it to the mounting user before mounting (see
+/// docs/FUSE-SEMANTICS.md §6); this scenario documents that the per-inode
+/// chown itself behaves like the reference.
+fn s_chown(root: &Path) -> Outcome {
+    let d = scratch(root, "s_chown");
+    let f = d.join("f");
+    fs::write(&f, b"x").map_err(|e| format!("{:?}", e.kind()))?;
+    // SAFETY: `geteuid`/`getegid` are pure queries.
+    let (uid, gid) = unsafe { (libc::geteuid(), libc::getegid()) };
+    // Same owner: a no-op chown that must succeed for the owner.
+    let r1 = chown_path(&f, uid, gid);
+    let st1 = fs::metadata(&f).map_err(|e| format!("{:?}", e.kind()))?;
+    // A foreign uid: EPERM for an unprivileged caller, permitted for root.
+    let r2 = chown_path(&f, uid.wrapping_add(1), gid);
+    let st2 = fs::metadata(&f).map_err(|e| format!("{:?}", e.kind()))?;
+    // fchown through an open handle.
+    let file = OpenOptions::new()
+        .write(true)
+        .open(&f)
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    let r3 = fchown_fd(file.as_raw_fd(), uid, gid);
+    drop(file);
+    // lchown changes the symlink's own ownership, not its target's.
+    let l = d.join("l");
+    std::os::unix::fs::symlink("f", &l).map_err(|e| format!("{:?}", e.kind()))?;
+    let r4 = lchown_path(&l, uid, gid);
+    let lst = fs::symlink_metadata(&l).map_err(|e| format!("{:?}", e.kind()))?;
+    Ok(format!(
+        "r1={r1:?} uid1={} gid1={} r2={r2:?} uid2={} gid2={} r3={r3:?} r4={r4:?} luid={} lgid={}",
+        st1.uid(),
+        st1.gid(),
+        st2.uid(),
+        st2.gid(),
+        lst.uid(),
+        lst.gid()
+    ))
+}
+
+/// `utimensat`/`futimens`: the requested times are reflected with nanosecond
+/// resolution where the backing supports it, on both the path and handle forms.
+fn s_utimens(root: &Path) -> Outcome {
+    let d = scratch(root, "s_utimens");
+    let f = d.join("f");
+    fs::write(&f, b"x").map_err(|e| format!("{:?}", e.kind()))?;
+    let at = libc::timespec {
+        tv_sec: 1_000_000_000,
+        tv_nsec: 123_456_789,
+    };
+    let mt = libc::timespec {
+        tv_sec: 1_500_000_000,
+        tv_nsec: 987_654_321,
+    };
+    let e1 = utimensat_path(&f, &at, &mt, 0);
+    let md1 = fs::metadata(&f).map_err(|e| format!("{:?}", e.kind()))?;
+    let file = OpenOptions::new()
+        .write(true)
+        .open(&f)
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    let at2 = libc::timespec {
+        tv_sec: 1_600_000_000,
+        tv_nsec: 111_222_333,
+    };
+    let mt2 = libc::timespec {
+        tv_sec: 1_700_000_000,
+        tv_nsec: 444_555_666,
+    };
+    let e2 = futimens_fd(file.as_raw_fd(), &at2, &mt2);
+    drop(file);
+    let md2 = fs::metadata(&f).map_err(|e| format!("{:?}", e.kind()))?;
+    Ok(format!(
+        "e1={e1:?} at1={}.{:09} mt1={}.{:09} e2={e2:?} at2={}.{:09} mt2={}.{:09}",
+        md1.atime(),
+        md1.atime_nsec(),
+        md1.mtime(),
+        md1.mtime_nsec(),
+        md2.atime(),
+        md2.atime_nsec(),
+        md2.mtime(),
+        md2.mtime_nsec()
+    ))
+}
+
+/// `UTIME_NOW`/`UTIME_OMIT` handling: the specified field is updated to a time
+/// bracketed by the call, the omitted field is left byte-identical. Asserted as
+/// an OrFS semantic (the reference works too, but "now" differs between runs).
+fn s_utimens_now(root: &Path) -> Outcome {
+    let d = scratch(root, "s_utimens_now");
+    let f = d.join("f");
+    fs::write(&f, b"x").map_err(|e| format!("{:?}", e.kind()))?;
+    let now_ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: libc::UTIME_NOW,
+    };
+    let omit_ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: libc::UTIME_OMIT,
+    };
+    let fixed = libc::timespec {
+        tv_sec: 1_500_000_000,
+        tv_nsec: 0,
+    };
+    // atime = now, mtime = fixed.
+    let before = now_secs();
+    utimensat_path(&f, &now_ts, &fixed, 0)?;
+    let after = now_secs();
+    let md = fs::metadata(&f).map_err(|e| format!("{:?}", e.kind()))?;
+    let atime_now_ok = md.atime() >= before - 1 && md.atime() <= after + 1;
+    let mtime_fixed_ok = md.mtime() == 1_500_000_000 && md.mtime_nsec() == 0;
+    // atime = OMIT, mtime = fixed2: atime must be unchanged.
+    let fixed2 = libc::timespec {
+        tv_sec: 1_600_000_000,
+        tv_nsec: 222_333_444,
+    };
+    utimensat_path(&f, &omit_ts, &fixed2, 0)?;
+    let md2 = fs::metadata(&f).map_err(|e| format!("{:?}", e.kind()))?;
+    let atime_kept_ok = md2.atime() == md.atime() && md2.atime_nsec() == md.atime_nsec();
+    let mtime2_ok = md2.mtime() == 1_600_000_000 && md2.mtime_nsec() == 222_333_444;
+    Ok(format!(
+        "atime_now={atime_now_ok} mtime_fixed={mtime_fixed_ok} atime_kept={atime_kept_ok} mtime2={mtime2_ok}"
+    ))
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// `fdatasync` returns success and the written bytes survive the flush; compare
+/// the observable bytes with the reference.
+fn s_fdatasync(root: &Path) -> Outcome {
+    let d = scratch(root, "s_fdatasync");
+    let f = d.join("f");
+    let mut file = File::create(&f).map_err(|e| format!("{:?}", e.kind()))?;
+    file.write_all(b"durable-data")
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    file.flush().map_err(|e| format!("{:?}", e.kind()))?;
+    let sync = fdatasync_fd(file.as_raw_fd());
+    drop(file);
+    let got = fs::read(&f).map_err(|e| format!("{:?}", e.kind()))?;
+    // A second round through an append handle exercises fdatasync after a
+    // metadata-affecting write.
+    let mut file = OpenOptions::new()
+        .append(true)
+        .open(&f)
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    file.write_all(b"-more")
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    let sync2 = fdatasync_fd(file.as_raw_fd());
+    drop(file);
+    let got2 = fs::read(&f).map_err(|e| format!("{:?}", e.kind()))?;
+    Ok(format!(
+        "sync={sync:?} data={:?} sync2={sync2:?} data2={:?}",
+        String::from_utf8_lossy(&got),
+        String::from_utf8_lossy(&got2)
+    ))
+}
+
+/// `mmap` read-only: the mapping returns exactly the visible bytes.
+fn s_mmap_readonly(root: &Path) -> Outcome {
+    let d = scratch(root, "s_mmap_ro");
+    let f = d.join("f");
+    let data: Vec<u8> = (0..8192u32).map(|i| ((i * 7 + 3) % 251) as u8).collect();
+    fs::write(&f, &data).map_err(|e| format!("{:?}", e.kind()))?;
+    let file = File::open(&f).map_err(|e| format!("{:?}", e.kind()))?;
+    let len = data.len();
+    // SAFETY: a read-only shared mapping of an open, readable file.
+    let ptr = unsafe {
+        libc::mmap(
+            std::ptr::null_mut(),
+            len,
+            libc::PROT_READ,
+            libc::MAP_SHARED,
+            file.as_raw_fd(),
+            0,
+        )
+    };
+    if ptr == libc::MAP_FAILED {
+        return Err(ioerr());
+    }
+    // SAFETY: `ptr`/`len` describe the mapping we just created.
+    let matched = unsafe {
+        let s = std::slice::from_raw_parts(ptr as *const u8, len);
+        s == &data[..]
+    };
+    // SAFETY: unmapping exactly the mapping we created.
+    let munmap_ok = unsafe { libc::munmap(ptr, len) == 0 };
+    Ok(format!("len={len} matched={matched} munmap_ok={munmap_ok}"))
+}
+
+/// `mmap` shared-writable: a file is mapped `MAP_SHARED` + `PROT_WRITE`; the
+/// modifications must survive `msync(MS_SYNC)` and be visible to a subsequent
+/// `read`. OrFS does **not** enable the FUSE writeback cache, so the kernel
+/// services this by sending the dirty page back through the ordinary FUSE
+/// `write` path (`FUSE_WRITE_CACHE`) — i.e. every modification becomes an
+/// authoritative `DATA_EXTENT` like any other write. A deliberately
+/// non-page-aligned file is used so the comparison also confirms the kernel
+/// writes back only the valid bytes up to EOF (the mapping must not spuriously
+/// extend the file).
+fn s_mmap_write(root: &Path) -> Outcome {
+    let d = scratch(root, "s_mmap_w");
+    let f = d.join("f");
+    let mut data = vec![0u8; 100];
+    for (i, b) in data.iter_mut().enumerate() {
+        *b = (i % 251) as u8;
+    }
+    fs::write(&f, &data).map_err(|e| format!("{:?}", e.kind()))?;
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&f)
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    let len = data.len();
+    // SAFETY: a read/write shared mapping of an open, writable file.
+    let ptr = unsafe {
+        libc::mmap(
+            std::ptr::null_mut(),
+            len,
+            libc::PROT_READ | libc::PROT_WRITE,
+            libc::MAP_SHARED,
+            file.as_raw_fd(),
+            0,
+        )
+    };
+    if ptr == libc::MAP_FAILED {
+        return Err(ioerr());
+    }
+    // SAFETY: `ptr`/`len` describe the mapping; the writes are in bounds.
+    unsafe {
+        let s = std::slice::from_raw_parts_mut(ptr as *mut u8, len);
+        s[10] = b'X';
+        s[90] = b'Y';
+    }
+    // SAFETY: flushing and unmapping exactly the mapping we created.
+    let msync_ok = unsafe { libc::msync(ptr, len, libc::MS_SYNC) == 0 };
+    let munmap_ok = unsafe { libc::munmap(ptr, len) == 0 };
+    drop(file);
+    let got = fs::read(&f).map_err(|e| format!("{:?}", e.kind()))?;
+    let expected = {
+        let mut e = data.clone();
+        e[10] = b'X';
+        e[90] = b'Y';
+        e
+    };
+    Ok(format!(
+        "msync_ok={msync_ok} munmap_ok={munmap_ok} size={} bytes_match={}",
+        got.len(),
+        got == expected
+    ))
+}
+
+// ---------------------------------------------------------------------------
 // xattr / statvfs / lseek helpers (libc)
 // ---------------------------------------------------------------------------
 
@@ -551,6 +885,94 @@ fn statvfs(path: &Path) -> Result<(u64, u64, u64), String> {
     Ok((st.f_blocks, st.f_bfree, st.f_bsize))
 }
 
+fn chown_path(path: &Path, uid: u32, gid: u32) -> Result<(), String> {
+    let p = cpath(path)?;
+    // SAFETY: `p` is a valid NUL-terminated path.
+    let rc = unsafe { libc::chown(p.as_ptr(), uid, gid) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(ioerr())
+    }
+}
+
+fn lchown_path(path: &Path, uid: u32, gid: u32) -> Result<(), String> {
+    let p = cpath(path)?;
+    // SAFETY: `p` is a valid NUL-terminated path.
+    let rc = unsafe { libc::lchown(p.as_ptr(), uid, gid) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(ioerr())
+    }
+}
+
+fn fchown_fd(fd: i32, uid: u32, gid: u32) -> Result<(), String> {
+    // SAFETY: `fd` is an open file descriptor.
+    let rc = unsafe { libc::fchown(fd, uid, gid) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(ioerr())
+    }
+}
+
+fn utimensat_path(
+    path: &Path,
+    atime: &libc::timespec,
+    mtime: &libc::timespec,
+    flags: i32,
+) -> Result<(), String> {
+    let p = cpath(path)?;
+    let times = [*atime, *mtime];
+    // SAFETY: `p` is a valid path and `times` is a valid two-element buffer.
+    let rc = unsafe { libc::utimensat(libc::AT_FDCWD, p.as_ptr(), times.as_ptr(), flags) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(ioerr())
+    }
+}
+
+fn futimens_fd(fd: i32, atime: &libc::timespec, mtime: &libc::timespec) -> Result<(), String> {
+    let times = [*atime, *mtime];
+    // SAFETY: `fd` is open and `times` is a valid two-element buffer.
+    let rc = unsafe { libc::futimens(fd, times.as_ptr()) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(ioerr())
+    }
+}
+
+fn pwritev_fd(fd: i32, bufs: &[&[u8]], offset: i64) -> Result<isize, String> {
+    let iov: Vec<libc::iovec> = bufs
+        .iter()
+        .map(|b| libc::iovec {
+            iov_base: b.as_ptr() as *mut libc::c_void,
+            iov_len: b.len(),
+        })
+        .collect();
+    // SAFETY: each `iov` entry points at a live buffer for the duration of the
+    // call, and `iov.len()` is the number of valid entries.
+    let rc = unsafe { libc::pwritev(fd, iov.as_ptr(), iov.len() as libc::c_int, offset) };
+    if rc < 0 {
+        Err(ioerr())
+    } else {
+        Ok(rc)
+    }
+}
+
+fn fdatasync_fd(fd: i32) -> Result<(), String> {
+    // SAFETY: `fd` is an open file descriptor.
+    let rc = unsafe { libc::fdatasync(fd) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(ioerr())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
@@ -598,6 +1020,13 @@ fn run_all(rec: &mut Recorder, orfs_root: &Path, ref_root: &Path) {
     rec.compare("rmdir_nonempty", orfs_root, ref_root, s_rmdir_nonempty);
     rec.compare("unlink_dir", orfs_root, ref_root, s_unlink_dir);
     rec.compare("perm_mode", orfs_root, ref_root, s_perm_mode);
+    rec.compare("pwrite", orfs_root, ref_root, s_pwrite);
+    rec.compare("append_pwrite", orfs_root, ref_root, s_append_pwrite);
+    rec.compare("chown", orfs_root, ref_root, s_chown);
+    rec.compare("utimens", orfs_root, ref_root, s_utimens);
+    rec.compare("fdatasync", orfs_root, ref_root, s_fdatasync);
+    rec.compare("mmap_readonly", orfs_root, ref_root, s_mmap_readonly);
+    rec.compare("mmap_shared_write", orfs_root, ref_root, s_mmap_write);
 
     // Semantic-only checks on the OrFS mount.
     let seek = s_seek_data_hole(orfs_root);
@@ -626,6 +1055,15 @@ fn run_all(rec: &mut Recorder, orfs_root: &Path, ref_root: &Path) {
         &fmt_outcome(&cfr),
         ok,
     );
+
+    let utn = s_utimens_now(orfs_root);
+    let ok = matches!(&utn, Ok(s) if s.contains("atime_now=true") && s.contains("mtime_fixed=true") && s.contains("atime_kept=true") && s.contains("mtime2=true"));
+    rec.assert_semantic(
+        "utimens_now_omit",
+        "atime_now=true mtime_fixed=true atime_kept=true mtime2=true",
+        &fmt_outcome(&utn),
+        ok,
+    );
 }
 
 fn write_evidence(rec: &Recorder, mountpoint: &Path) -> std::io::Result<()> {
@@ -642,30 +1080,54 @@ fn write_evidence(rec: &Recorder, mountpoint: &Path) -> std::io::Result<()> {
         "posix33_coverage": {
             "note": "research/OrFS prompt.md §33 lists a POSIX operation set as a *tested target*. \
                      Full POSIX compatibility is not claimed until every listed operation passes an \
-                     applicable test. This table records what the court actually exercises today.",
+                     applicable test. This table is the §33 coverage record: each operation's status \
+                     (covered, intentionally unsupported with its errno, or delegated to the kernel) \
+                     and the court check(s) that prove it.",
             "covered": [
-                "create", "open", "read", "write", "append", "truncate",
-                "fallocate", "rename", "unlink", "link", "symlink", "mkdir",
-                "rmdir", "stat", "chmod", "xattr", "readdir", "fsync",
-                "SEEK_DATA", "SEEK_HOLE",
+                {"operation": "create", "checks": ["create_write_read"]},
+                {"operation": "open", "checks": ["create_write_read", "append_and_seek"]},
+                {"operation": "read", "checks": ["create_write_read"]},
+                {"operation": "write", "checks": ["create_write_read", "append_and_seek"]},
+                {"operation": "pread", "checks": ["pwrite", "mmap_readonly"]},
+                {"operation": "pwrite", "checks": ["pwrite", "append_pwrite"]},
+                {"operation": "pwritev", "checks": ["pwrite"]},
+                {"operation": "append", "checks": ["append_and_seek", "append_pwrite", "fdatasync"]},
+                {"operation": "truncate", "checks": ["truncate"]},
+                {"operation": "fallocate", "checks": ["fallocate"]},
+                {"operation": "rename", "checks": ["rename"]},
+                {"operation": "unlink", "checks": ["unlink_while_open", "unlink_dir"]},
+                {"operation": "link", "checks": ["hardlink"]},
+                {"operation": "symlink", "checks": ["symlink"]},
+                {"operation": "mkdir", "checks": ["mkdir_readdir"]},
+                {"operation": "rmdir", "checks": ["rmdir_nonempty"]},
+                {"operation": "stat", "checks": ["create_write_read", "perm_mode", "chown"]},
+                {"operation": "chmod", "checks": ["perm_mode"]},
+                {"operation": "chown", "checks": ["chown"]},
+                {"operation": "fchown", "checks": ["chown"]},
+                {"operation": "lchown", "checks": ["chown"]},
+                {"operation": "utimens", "checks": ["utimens", "utimens_now_omit"]},
+                {"operation": "utimensat", "checks": ["utimens", "utimens_now_omit"]},
+                {"operation": "futimens", "checks": ["utimens"]},
+                {"operation": "xattr", "checks": ["xattr"]},
+                {"operation": "readdir", "checks": ["mkdir_readdir"]},
+                {"operation": "fsync", "checks": ["fsync"]},
+                {"operation": "fdatasync", "checks": ["fdatasync"]},
+                {"operation": "mmap", "checks": ["mmap_readonly", "mmap_shared_write"]},
+                {"operation": "SEEK_DATA", "checks": ["seek_data_hole"]},
+                {"operation": "SEEK_HOLE", "checks": ["seek_data_hole"]},
             ],
-            "not_yet_covered": [
-                "pwrite (exercised indirectly via append_and_seek; not a dedicated case)",
-                "chown (owner is set at setup via setattr; not a compared case)",
-                "utimens (mtime update is exercised indirectly; not a compared case)",
-                "fdatasync (fsync is covered; fdatasync is not separately asserted)",
-                "mmap (not exercised by this court)",
-            ],
+            "intentionally_unsupported": [],
             "delegated_to_kernel": [
-                "POSIX record locks (fcntl F_SETLK/F_GETLK) return ENOSYS and are delegated to the \
-                 kernel; see docs/FUSE-SEMANTICS.md",
-                "flock (delegated to the kernel)",
+                {"operation": "POSIX record locks (fcntl F_SETLK/F_GETLK)", "errno": "ENOSYS", "rationale": "OrFS does not negotiate FUSE_POSIX_LOCKS; the kernel's local lock manager services them, which is correct for a single-node mount (docs/FUSE-SEMANTICS.md §9)."},
+                {"operation": "flock (BSD advisory locks)", "errno": "ENOSYS", "rationale": "OrFS does not negotiate FUSE_FLOCK_LOCKS; delegated to the kernel for the same reason."},
             ],
         },
         "notes": [
             "readdirplus is negotiated (FUSE_DO_READDIRPLUS) and exercised by ordinary readdir(3) calls",
             "POSIX record locks and flock are delegated to the kernel (ENOSYS); see docs/FUSE-SEMANTICS.md",
             "SEEK_DATA/SEEK_HOLE and fallocate are byte-granular on OrFS, so they are asserted semantically rather than compared to the reference filesystem",
+            "mmap shared-writable is serviced by the kernel's page cache in write-through mode: a dirtied page is written back as an ordinary FUSE_WRITE, so it becomes an authoritative DATA_EXTENT like any other write; the FUSE writeback cache is not negotiated (docs/FUSE-SEMANTICS.md §8)",
+            "the OrFS genesis root is owned by uid 0; the court chowns it to the mounting uid before mounting, so per-inode chown behaviour is compared against the reference (docs/FUSE-SEMANTICS.md §6)",
         ],
     });
     let path = manifest_dir().join("evidence/correctness/posix-results.json");
@@ -810,7 +1272,6 @@ fn fuse_manifested_reads_match_visible_contents() {
     let whole = fs::read(&f).expect("read back");
     assert_eq!(whole, data, "manifested read changed the visible contents");
     {
-        use std::os::unix::fs::FileExt;
         let file = File::open(&f).expect("open");
         let mut buf = [0u8; 100];
         file.read_exact_at(&mut buf, 12_345).expect("pread");

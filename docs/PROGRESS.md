@@ -1354,7 +1354,9 @@ from `evidence/performance/incremental-manifestation.json`:
   leaves no committed generation and no orphan region payload; the base alone is
   recovered. **Equivalence** holds across 30 interleaved writes and historical
   snapshots (`overlay_reads_are_authoritative_across_generations_and_snapshots`).
-* All tests pass (was 275; +5 Phase-22 courts in `tests/manifestation.rs`).
+* All tests pass (was 275; +6 Phase-22 courts in `tests/manifestation.rs`,
+  including `async_incremental_generations_recover_without_rejection` — the court
+  that caught a pure-overlay (region-less shrink) recovery bug).
 
 ### Docs
 

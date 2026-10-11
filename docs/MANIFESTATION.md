@@ -404,4 +404,7 @@ build leaving no committed generation or orphan region payload
 (`crash_mid_incremental_build_leaves_no_committed_generation`); and overlay reads
 equal to the authoritative bytes across many interleaved writes and historical
 snapshots
-(`overlay_reads_are_authoritative_across_generations_and_snapshots`).
+(`overlay_reads_are_authoritative_across_generations_and_snapshots`); plus an
+async chained-overlay court
+(`async_incremental_generations_recover_without_rejection`) that every committed
+generation recovers with no rejection.

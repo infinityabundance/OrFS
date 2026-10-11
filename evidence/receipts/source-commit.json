@@ -1,0 +1,11 @@
+{
+  "schema": "orfs.evidence.source-commit.v1",
+  "captured_at_utc": "2026-10-11T02:39:09Z",
+  "orfs_git_commit": "fa380291374532d1cf4af8e9496cdc4e6260c24c",
+  "orfs_git_commit_short": "fa38029",
+  "orfs_git_branch": "master",
+  "orfs_worktree_dirty": false,
+  "ekbloom_pin_rev": "708c349128668bf26b50684ce473d8de4058dc31",
+  "ekbloom_pin_url": "https://github.com/infinityabundance/EKBLOOM",
+  "ekbloom_pin_version": "0.3.0"
+}

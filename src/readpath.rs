@@ -100,7 +100,9 @@ use ekbloom::checkpoint::CheckpointSet;
 use ekbloom::{machine_by_id, EkbloomBody, Snapshot as EkSnapshot, VerificationReport};
 
 use crate::error::{OrfsError, Result};
-use crate::manifestation::{GenerationManifest, ManifestationState, EKBLOOM_VERSION};
+use crate::manifestation::{
+    resolve_coverage, GenerationManifest, ManifestRegion, ManifestationState, EKBLOOM_VERSION,
+};
 
 /// The schema label of the read-path measurement surface.
 pub const READPATH_SCHEMA: &str = "orfs.readpath.v1";
@@ -122,6 +124,10 @@ pub enum ReadPathKind {
     History,
     /// A sparse/complete restart checkpoint.
     Checkpoint,
+    /// An incremental generational overlay / flattened region table (Phase 22):
+    /// unchanged regions reused from committed base generations, changed regions
+    /// from the overlay's own payloads.
+    Overlay,
 }
 
 impl ReadPathKind {
@@ -133,17 +139,19 @@ impl ReadPathKind {
             ReadPathKind::TransitionBloom => "transition-bloom",
             ReadPathKind::History => "history",
             ReadPathKind::Checkpoint => "checkpoint",
+            ReadPathKind::Overlay => "overlay",
         }
     }
 
     /// Deterministic tie-break priority (lower is preferred on an equal cost).
     const fn priority(self) -> u8 {
         match self {
-            ReadPathKind::PathBloom => 0,
-            ReadPathKind::History => 1,
-            ReadPathKind::Checkpoint => 2,
-            ReadPathKind::TransitionBloom => 3,
-            ReadPathKind::LogicalExtent => 4,
+            ReadPathKind::Overlay => 0,
+            ReadPathKind::PathBloom => 1,
+            ReadPathKind::History => 2,
+            ReadPathKind::Checkpoint => 3,
+            ReadPathKind::TransitionBloom => 4,
+            ReadPathKind::LogicalExtent => 5,
         }
     }
 }
@@ -374,6 +382,7 @@ impl CostModel {
             ReadPathKind::TransitionBloom => (90.0, 11.0),
             ReadPathKind::History => (45.0, 7.0),
             ReadPathKind::Checkpoint => (70.0, 9.0),
+            ReadPathKind::Overlay => (80.0, 10.0),
         };
         fixed + per_byte * class.representative_len() as f64
     }
@@ -473,6 +482,45 @@ impl BodyCache {
         }
         self.map.insert(inode, entry);
         self.order.push_back(inode);
+        while self.order.len() > self.capacity {
+            if let Some(old) = self.order.pop_front() {
+                self.map.remove(&old);
+            }
+        }
+    }
+}
+
+/// A cached, resolved region table for one overlay-backed generation.
+struct CoverageEntry {
+    generation: u64,
+    digest: [u8; 32],
+    table: Arc<Vec<ManifestRegion>>,
+}
+
+/// The bounded cache of parsed region payload bodies, keyed by payload path and
+/// digest (Phase 22). A region payload is shared by every generation that reuses
+/// it, so this cache is deliberately not keyed by the manifest identity.
+#[derive(Default)]
+struct RegionCache {
+    map: HashMap<(String, [u8; 32]), Arc<EkbloomBody>>,
+    order: VecDeque<(String, [u8; 32])>,
+    capacity: usize,
+}
+
+impl RegionCache {
+    fn get(&self, key: &(String, [u8; 32])) -> Option<Arc<EkbloomBody>> {
+        self.map.get(key).cloned()
+    }
+
+    fn insert(&mut self, key: (String, [u8; 32]), body: Arc<EkbloomBody>) {
+        if self.capacity == 0 {
+            return;
+        }
+        if self.map.contains_key(&key) {
+            self.order.retain(|k| k != &key);
+        }
+        self.order.push_back(key.clone());
+        self.map.insert(key, body);
         while self.order.len() > self.capacity {
             if let Some(old) = self.order.pop_front() {
                 self.map.remove(&old);
@@ -851,6 +899,13 @@ pub struct ReadPlanner {
     /// (identity, path) pairs proven unusable for that exact object.
     failed: RwLock<HashSet<(ManifestIdentity, ReadPathKind)>>,
     chosen: RwLock<HashMap<ReadPathKind, u64>>,
+    /// Resolved region tables for overlay-backed generations.
+    coverage: Mutex<HashMap<u64, CoverageEntry>>,
+    /// Parsed region payload bodies, shared across generations.
+    regions: Mutex<RegionCache>,
+    /// Identities whose overlay bytes have been verified once against the
+    /// authoritative read (so they are trusted thereafter).
+    overlay_verified: RwLock<HashSet<ManifestIdentity>>,
 }
 
 impl ReadPlanner {
@@ -858,6 +913,10 @@ impl ReadPlanner {
     pub fn new(state: Arc<ManifestationState>, config: ReadPlannerConfig) -> ReadPlanner {
         let cache = BodyCache {
             capacity: config.cache_capacity,
+            ..Default::default()
+        };
+        let regions = RegionCache {
+            capacity: config.cache_capacity.max(1).saturating_mul(4),
             ..Default::default()
         };
         ReadPlanner {
@@ -868,6 +927,9 @@ impl ReadPlanner {
             calibrated: RwLock::new(HashSet::new()),
             failed: RwLock::new(HashSet::new()),
             chosen: RwLock::new(HashMap::new()),
+            coverage: Mutex::new(HashMap::new()),
+            regions: Mutex::new(regions),
+            overlay_verified: RwLock::new(HashSet::new()),
         }
     }
 
@@ -896,9 +958,18 @@ impl ReadPlanner {
         self.calibrated.write().clear();
         self.failed.write().clear();
         self.chosen.write().clear();
+        self.coverage.lock().clear();
+        self.region_cache_clear();
+        self.overlay_verified.write().clear();
         let mut cache = self.cache.lock();
         cache.map.clear();
         cache.order.clear();
+    }
+
+    fn region_cache_clear(&self) {
+        let mut c = self.regions.lock();
+        c.map.clear();
+        c.order.clear();
     }
 
     /// Measure each compatible candidate path for a request, independently of the
@@ -991,6 +1062,14 @@ impl ReadPlanner {
                 auth(q.offset, q.length)?,
                 Some("manifested structure does not cover the logical extent".into()),
             ));
+        }
+
+        // --- incremental generational overlay (Phase 22) ---
+        // A region-backed generation (overlay or flattened table) has no single
+        // top-level body; it is resolved through its bounded region indirection,
+        // reusing unchanged committed content from its base.
+        if manifest.is_region_backed() {
+            return self.read_region_backed(&manifest, q, eff_len, auth);
         }
         // A profile EKBLOOM documents as non-accelerating is not loaded at all:
         // loading + verifying it cannot change the bytes and would only add
@@ -1181,6 +1260,18 @@ impl ReadPlanner {
             OrfsError::InvalidArgument("no manifested generation for the inode".into())
         })?;
         manifest.usable_for(q.inode, q.inode_version, q.root)?;
+        if manifest.is_region_backed() {
+            let expected = auth(q.offset, q.length)?;
+            let equivalent = matches!(
+                self.overlay_bytes(&manifest, q.offset, q.offset + eff_len),
+                Ok(b) if b == expected
+            );
+            return Ok(vec![PathVerdict {
+                path: ReadPathKind::Overlay,
+                certified: true,
+                equivalent,
+            }]);
+        }
         let loaded = self.load_body(&manifest)?;
         let expected = auth(q.offset, q.length)?;
         let mut out = Vec::new();
@@ -1268,6 +1359,192 @@ impl ReadPlanner {
                 c.kind.name()
             )))
         }
+    }
+
+    /// Resolve a region-backed (overlay / flattened) generation and serve the
+    /// request (Phase 22). The first read for an identity is verified against the
+    /// authoritative read; on success it is trusted, and on any disagreement the
+    /// overlay is barred for that identity and the authoritative bytes are served,
+    /// so an accelerated read is byte-identical with the authoritative one.
+    fn read_region_backed<F>(
+        &self,
+        manifest: &GenerationManifest,
+        q: &ReadQuery,
+        eff_len: u64,
+        mut auth: F,
+    ) -> Result<PlannedRead>
+    where
+        F: FnMut(u64, u64) -> Result<Vec<u8>>,
+    {
+        let identity = ManifestIdentity::of(manifest);
+        if self
+            .failed
+            .read()
+            .contains(&(identity, ReadPathKind::Overlay))
+        {
+            return Ok(PlannedRead::fallback(
+                auth(q.offset, q.length)?,
+                Some("incremental overlay previously rejected for this version".into()),
+            ));
+        }
+        let bytes = match self.overlay_bytes(manifest, q.offset, q.offset + eff_len) {
+            Ok(b) => b,
+            Err(e) => {
+                return Ok(PlannedRead::fallback(
+                    auth(q.offset, q.length)?,
+                    Some(e.to_string()),
+                ))
+            }
+        };
+        if bytes.len() as u64 != eff_len {
+            return Ok(PlannedRead::fallback(
+                auth(q.offset, q.length)?,
+                Some("incremental overlay returned the wrong length".into()),
+            ));
+        }
+        let already = self.overlay_verified.read().contains(&identity);
+        if !already {
+            let authoritative = auth(q.offset, q.length)?;
+            if authoritative != bytes {
+                self.failed
+                    .write()
+                    .insert((identity, ReadPathKind::Overlay));
+                return Ok(PlannedRead::fallback(
+                    authoritative,
+                    Some("incremental overlay disagreed with the authoritative read".into()),
+                ));
+            }
+            self.overlay_verified.write().insert(identity);
+        }
+        *self
+            .chosen
+            .write()
+            .entry(ReadPathKind::Overlay)
+            .or_insert(0) += 1;
+        Ok(PlannedRead {
+            bytes,
+            path: ReadPathKind::Overlay,
+            generation: Some(manifest.generation),
+            profile: Some(manifest.profile.clone()),
+            certified: true,
+            fallback_reason: None,
+        })
+    }
+
+    /// The bytes a region-backed generation resolves for `[off, end)`: it splits
+    /// the request across the (bounded) resolved region table, reading each region
+    /// from its own committed payload.
+    fn overlay_bytes(&self, manifest: &GenerationManifest, off: u64, end: u64) -> Result<Vec<u8>> {
+        if end <= off {
+            return Ok(Vec::new());
+        }
+        let table = self.coverage_for(manifest)?;
+        let mut out = Vec::with_capacity((end - off) as usize);
+        let mut pos = off;
+        while pos < end {
+            // Regions are disjoint and sorted, so the covering region is the
+            // first whose end exceeds `pos` (Phase 22: bounded, O(log n) lookup).
+            let idx = table.partition_point(|r| r.logical_end <= pos);
+            let r = table
+                .get(idx)
+                .filter(|r| r.logical_start <= pos && pos < r.logical_end)
+                .ok_or_else(|| {
+                    OrfsError::Corrupt(format!("incremental coverage has a gap at {pos}"))
+                })?;
+            if !profile_can_accelerate(r.profile_kind)
+                && r.logical_end.saturating_sub(r.logical_start) > MAX_REPLAY_SYMBOLS
+            {
+                return Err(OrfsError::Unsupported(
+                    "incremental region would require an unbounded replay".into(),
+                ));
+            }
+            let stop = end.min(r.logical_end);
+            let body = self.region_body(r)?;
+            let local = r.payload_offset + (pos - r.logical_start);
+            let n = stop - pos;
+            let bytes = ekbloom::read(
+                &body,
+                ekbloom::ReadRequest {
+                    offset: local,
+                    length: n,
+                },
+            )?;
+            if bytes.len() as u64 != n {
+                return Err(OrfsError::Corrupt(
+                    "incremental region read returned the wrong length".into(),
+                ));
+            }
+            out.extend_from_slice(&bytes);
+            pos = stop;
+        }
+        Ok(out)
+    }
+
+    /// The (cached) complete region table for a region-backed generation.
+    fn coverage_for(&self, manifest: &GenerationManifest) -> Result<Arc<Vec<ManifestRegion>>> {
+        if let Some(e) = self.coverage.lock().get(&manifest.inode) {
+            if e.generation == manifest.generation && e.digest == manifest.manifest_blake3 {
+                return Ok(e.table.clone());
+            }
+        }
+        let table = Arc::new(resolve_coverage(self.state.store(), manifest)?);
+        self.coverage.lock().insert(
+            manifest.inode,
+            CoverageEntry {
+                generation: manifest.generation,
+                digest: manifest.manifest_blake3,
+                table: table.clone(),
+            },
+        );
+        Ok(table)
+    }
+
+    /// Load, validate, and fully verify one region payload body, with caching.
+    fn region_body(&self, r: &ManifestRegion) -> Result<Arc<EkbloomBody>> {
+        let key = (r.payload_rel_path.clone(), r.payload_blake3);
+        if let Some(b) = self.regions.lock().get(&key) {
+            return Ok(b);
+        }
+        let path = self.state.store().volume_root().join(&r.payload_rel_path);
+        let bytes = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(OrfsError::Corrupt(format!(
+                    "incremental region payload is absent: {}",
+                    r.payload_rel_path
+                )))
+            }
+            Err(e) => return Err(e.into()),
+        };
+        if bytes.len() as u64 > self.config.max_payload_bytes {
+            return Err(OrfsError::Unsupported(format!(
+                "incremental region payload {} bytes exceeds the configured {} byte limit",
+                bytes.len(),
+                self.config.max_payload_bytes
+            )));
+        }
+        if *blake3::hash(&bytes).as_bytes() != r.payload_blake3 {
+            return Err(OrfsError::Corrupt(
+                "incremental region payload BLAKE3 does not match the committed manifest".into(),
+            ));
+        }
+        let body = ekbloom::reader::open_bytes(&bytes)?;
+        if let Some(oid) = r.ekbloom_object_id {
+            if body.object_id != oid {
+                return Err(OrfsError::Corrupt(
+                    "incremental region object identity does not match the manifest".into(),
+                ));
+            }
+        }
+        let report = ekbloom::verify(&body)?;
+        if !check_passed(&report, "core_hash") || !check_passed(&report, "decode_length") {
+            return Err(OrfsError::Corrupt(
+                "incremental region body failed EKBLOOM verification".into(),
+            ));
+        }
+        let body = Arc::new(body);
+        self.regions.lock().insert(key, body.clone());
+        Ok(body)
     }
 
     /// Load, validate, and fully verify a manifested body, with caching.
@@ -1528,6 +1805,10 @@ mod tests {
             concealed_bytes: 0,
             source_bytes: 0,
             components: Vec::new(),
+            base_generation: None,
+            base_manifest_blake3: None,
+            overlay_depth: 0,
+            regions: Vec::new(),
             manifest_blake3: [0; 32],
         }
     }

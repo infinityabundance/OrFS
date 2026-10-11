@@ -134,6 +134,10 @@ fn publish_generation(
         concealed_bytes: (payload.len() as u64).saturating_sub(source.len() as u64),
         source_bytes: source.len() as u64,
         components: vec![],
+        base_generation: None,
+        base_manifest_blake3: None,
+        overlay_depth: 0,
+        regions: Vec::new(),
         manifest_blake3: [0u8; 32],
     }
     .sealed();

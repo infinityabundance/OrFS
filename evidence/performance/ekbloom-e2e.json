@@ -39,407 +39,407 @@
       "profile_label": "none",
       "read_1b": {
         "cold_direct": {
-          "mean_ns": 5409.7145,
-          "min_ns": 3827,
-          "p50_ns": 4859,
-          "p95_ns": 7203,
-          "p99_ns": 13525,
+          "mean_ns": 5776.5915,
+          "min_ns": 4318,
+          "p50_ns": 5060,
+          "p95_ns": 7855,
+          "p99_ns": 13815,
           "samples": 4000
         },
         "direct": {
-          "mean_ns": 5071.39275,
-          "min_ns": 4018,
-          "p50_ns": 4839,
-          "p95_ns": 6272,
-          "p99_ns": 9308,
+          "mean_ns": 5688.8415,
+          "min_ns": 4299,
+          "p50_ns": 4969,
+          "p95_ns": 7244,
+          "p99_ns": 9949,
           "samples": 4000
         },
         "warm": {
-          "mean_ns": 313.18475,
+          "mean_ns": 362.92225,
           "min_ns": 100,
-          "p50_ns": 111,
-          "p95_ns": 131,
-          "p99_ns": 7604,
+          "p50_ns": 120,
+          "p95_ns": 150,
+          "p99_ns": 10801,
           "samples": 4000
         }
       },
       "read_4k": {
         "cold_direct": {
-          "mean_ns": 11868.608666666667,
-          "min_ns": 10289,
-          "p50_ns": 11251,
-          "p95_ns": 15830,
-          "p99_ns": 18826,
+          "mean_ns": 14223.303333333333,
+          "min_ns": 10990,
+          "p50_ns": 11822,
+          "p95_ns": 20469,
+          "p99_ns": 26490,
           "samples": 1500
         },
         "direct": {
-          "mean_ns": 11532.645333333334,
-          "min_ns": 10229,
-          "p50_ns": 11010,
-          "p95_ns": 14126,
-          "p99_ns": 20148,
+          "mean_ns": 13618.519333333334,
+          "min_ns": 10931,
+          "p50_ns": 11882,
+          "p95_ns": 20217,
+          "p99_ns": 26910,
           "samples": 1500
         },
         "warm": {
-          "mean_ns": 653.2993333333334,
-          "min_ns": 140,
-          "p50_ns": 160,
-          "p95_ns": 261,
-          "p99_ns": 27111,
+          "mean_ns": 749.4473333333333,
+          "min_ns": 141,
+          "p50_ns": 170,
+          "p95_ns": 211,
+          "p99_ns": 32551,
           "samples": 1500
         }
       }
     },
     {
-      "construction_ns": 27675560,
+      "construction_ns": 26672844,
       "manifested_bytes": 1573648,
       "manifested_ratio": 6.00299072265625,
       "profile": "path-1",
       "profile_label": "path(D=1)",
       "read_1b": {
         "cold_direct": {
-          "mean_ns": 20154.184,
-          "min_ns": 6823,
-          "p50_ns": 8366,
-          "p95_ns": 14267,
-          "p99_ns": 24766,
+          "mean_ns": 17687.62225,
+          "min_ns": 7233,
+          "p50_ns": 8156,
+          "p95_ns": 12583,
+          "p99_ns": 20509,
           "samples": 4000
         },
         "direct": {
-          "mean_ns": 8991.11225,
-          "min_ns": 6903,
-          "p50_ns": 7884,
-          "p95_ns": 12022,
-          "p99_ns": 17022,
+          "mean_ns": 8506.58525,
+          "min_ns": 7254,
+          "p50_ns": 7955,
+          "p95_ns": 11411,
+          "p99_ns": 13155,
           "samples": 4000
         },
         "warm": {
-          "mean_ns": 363.55375,
+          "mean_ns": 375.97225,
           "min_ns": 100,
-          "p50_ns": 111,
-          "p95_ns": 140,
-          "p99_ns": 15038,
+          "p50_ns": 120,
+          "p95_ns": 141,
+          "p99_ns": 7644,
           "samples": 4000
         }
       },
       "read_4k": {
         "cold_direct": {
-          "mean_ns": 15858.642,
-          "min_ns": 13576,
-          "p50_ns": 14667,
-          "p95_ns": 22212,
-          "p99_ns": 25728,
+          "mean_ns": 16916.256666666668,
+          "min_ns": 14467,
+          "p50_ns": 15469,
+          "p95_ns": 22543,
+          "p99_ns": 42840,
           "samples": 1500
         },
         "direct": {
-          "mean_ns": 15647.609333333334,
-          "min_ns": 13666,
-          "p50_ns": 14427,
-          "p95_ns": 21641,
-          "p99_ns": 32030,
+          "mean_ns": 17546.242,
+          "min_ns": 14647,
+          "p50_ns": 15449,
+          "p95_ns": 25577,
+          "p99_ns": 39013,
           "samples": 1500
         },
         "warm": {
-          "mean_ns": 601.2733333333333,
-          "min_ns": 131,
-          "p50_ns": 160,
-          "p95_ns": 261,
-          "p99_ns": 22192,
+          "mean_ns": 833.1006666666667,
+          "min_ns": 140,
+          "p50_ns": 161,
+          "p95_ns": 280,
+          "p99_ns": 32460,
           "samples": 1500
         }
       }
     },
     {
-      "construction_ns": 39252461,
+      "construction_ns": 19915024,
       "manifested_bytes": 787216,
       "manifested_ratio": 3.00299072265625,
       "profile": "path-4",
       "profile_label": "path(D=4)",
       "read_1b": {
         "cold_direct": {
-          "mean_ns": 12331.12,
-          "min_ns": 6853,
-          "p50_ns": 7705,
-          "p95_ns": 10700,
-          "p99_ns": 17483,
+          "mean_ns": 13520.2295,
+          "min_ns": 7113,
+          "p50_ns": 7895,
+          "p95_ns": 12122,
+          "p99_ns": 20147,
           "samples": 4000
         },
         "direct": {
-          "mean_ns": 8230.12425,
-          "min_ns": 6993,
-          "p50_ns": 7865,
-          "p95_ns": 10179,
-          "p99_ns": 14797,
+          "mean_ns": 9258.179,
+          "min_ns": 7274,
+          "p50_ns": 8156,
+          "p95_ns": 12723,
+          "p99_ns": 19547,
           "samples": 4000
         },
         "warm": {
-          "mean_ns": 325.57275,
-          "min_ns": 100,
-          "p50_ns": 120,
-          "p95_ns": 141,
-          "p99_ns": 14798,
+          "mean_ns": 383.05175,
+          "min_ns": 140,
+          "p50_ns": 170,
+          "p95_ns": 200,
+          "p99_ns": 15599,
           "samples": 4000
         }
       },
       "read_4k": {
         "cold_direct": {
-          "mean_ns": 15819.090666666667,
-          "min_ns": 13636,
-          "p50_ns": 14497,
-          "p95_ns": 23975,
-          "p99_ns": 26690,
+          "mean_ns": 21030.965333333334,
+          "min_ns": 14477,
+          "p50_ns": 16211,
+          "p95_ns": 35857,
+          "p99_ns": 58640,
           "samples": 1500
         },
         "direct": {
-          "mean_ns": 15835.736,
-          "min_ns": 13686,
-          "p50_ns": 14538,
-          "p95_ns": 22291,
-          "p99_ns": 35987,
+          "mean_ns": 16844.869333333332,
+          "min_ns": 14487,
+          "p50_ns": 15159,
+          "p95_ns": 24746,
+          "p99_ns": 44954,
           "samples": 1500
         },
         "warm": {
-          "mean_ns": 675.966,
-          "min_ns": 140,
-          "p50_ns": 160,
-          "p95_ns": 301,
-          "p99_ns": 22302,
+          "mean_ns": 657.792,
+          "min_ns": 141,
+          "p50_ns": 170,
+          "p95_ns": 200,
+          "p99_ns": 23453,
           "samples": 1500
         }
       }
     },
     {
-      "construction_ns": 20562410,
+      "construction_ns": 22292730,
       "manifested_bytes": 656144,
       "manifested_ratio": 2.50299072265625,
       "profile": "path-8",
       "profile_label": "path(D=8)",
       "read_1b": {
         "cold_direct": {
-          "mean_ns": 12867.0945,
-          "min_ns": 7063,
-          "p50_ns": 7674,
-          "p95_ns": 11752,
-          "p99_ns": 18475,
+          "mean_ns": 15268.40675,
+          "min_ns": 7143,
+          "p50_ns": 8496,
+          "p95_ns": 13285,
+          "p99_ns": 26710,
           "samples": 4000
         },
         "direct": {
-          "mean_ns": 8339.4575,
-          "min_ns": 7043,
-          "p50_ns": 7675,
-          "p95_ns": 10680,
-          "p99_ns": 13024,
+          "mean_ns": 9670.3915,
+          "min_ns": 7184,
+          "p50_ns": 8195,
+          "p95_ns": 13505,
+          "p99_ns": 23393,
           "samples": 4000
         },
         "warm": {
-          "mean_ns": 346.843,
+          "mean_ns": 330.37225,
           "min_ns": 100,
           "p50_ns": 120,
-          "p95_ns": 151,
-          "p99_ns": 14888,
+          "p95_ns": 150,
+          "p99_ns": 15368,
           "samples": 4000
         }
       },
       "read_4k": {
         "cold_direct": {
-          "mean_ns": 15887.056,
-          "min_ns": 13786,
-          "p50_ns": 14587,
-          "p95_ns": 22643,
-          "p99_ns": 29716,
+          "mean_ns": 16360.492,
+          "min_ns": 14537,
+          "p50_ns": 15249,
+          "p95_ns": 22031,
+          "p99_ns": 28804,
           "samples": 1500
         },
         "direct": {
-          "mean_ns": 17247.253333333334,
-          "min_ns": 13866,
-          "p50_ns": 14728,
-          "p95_ns": 26640,
-          "p99_ns": 42279,
+          "mean_ns": 21325.548,
+          "min_ns": 14497,
+          "p50_ns": 16410,
+          "p95_ns": 35296,
+          "p99_ns": 64661,
           "samples": 1500
         },
         "warm": {
-          "mean_ns": 822.0186666666667,
+          "mean_ns": 832.57,
           "min_ns": 140,
-          "p50_ns": 161,
-          "p95_ns": 291,
-          "p99_ns": 24015,
+          "p50_ns": 160,
+          "p95_ns": 201,
+          "p99_ns": 38982,
           "samples": 1500
         }
       }
     },
     {
-      "construction_ns": 26562239,
+      "construction_ns": 27822169,
       "manifested_bytes": 795392,
       "manifested_ratio": 3.0341796875,
       "profile": "bloom-4",
       "profile_label": "bloom(D=4)",
       "read_1b": {
         "cold_direct": {
-          "mean_ns": 5970.34925,
-          "min_ns": 4489,
-          "p50_ns": 5440,
-          "p95_ns": 7614,
-          "p99_ns": 14507,
+          "mean_ns": 6380.54025,
+          "min_ns": 4769,
+          "p50_ns": 5571,
+          "p95_ns": 8506,
+          "p99_ns": 16631,
           "samples": 4000
         },
         "direct": {
-          "mean_ns": 5659.05225,
-          "min_ns": 4508,
-          "p50_ns": 5391,
-          "p95_ns": 7103,
-          "p99_ns": 9177,
+          "mean_ns": 6083.10825,
+          "min_ns": 4779,
+          "p50_ns": 5460,
+          "p95_ns": 8275,
+          "p99_ns": 11491,
           "samples": 4000
         },
         "warm": {
-          "mean_ns": 337.53375,
+          "mean_ns": 313.831,
           "min_ns": 100,
-          "p50_ns": 120,
-          "p95_ns": 141,
-          "p99_ns": 4789,
+          "p50_ns": 111,
+          "p95_ns": 150,
+          "p99_ns": 6912,
           "samples": 4000
         }
       },
       "read_4k": {
         "cold_direct": {
-          "mean_ns": 12465.499333333333,
-          "min_ns": 10570,
-          "p50_ns": 11482,
-          "p95_ns": 16651,
-          "p99_ns": 21079,
+          "mean_ns": 13609.842,
+          "min_ns": 11401,
+          "p50_ns": 12182,
+          "p95_ns": 20689,
+          "p99_ns": 24365,
           "samples": 1500
         },
         "direct": {
-          "mean_ns": 12104.594,
-          "min_ns": 10670,
-          "p50_ns": 11501,
-          "p95_ns": 15168,
-          "p99_ns": 23634,
+          "mean_ns": 14800.274,
+          "min_ns": 11401,
+          "p50_ns": 12413,
+          "p95_ns": 22782,
+          "p99_ns": 33953,
           "samples": 1500
         },
         "warm": {
-          "mean_ns": 524.0253333333334,
-          "min_ns": 140,
-          "p50_ns": 160,
-          "p95_ns": 191,
-          "p99_ns": 18434,
+          "mean_ns": 726.5513333333333,
+          "min_ns": 200,
+          "p50_ns": 220,
+          "p95_ns": 250,
+          "p99_ns": 22532,
           "samples": 1500
         }
       }
     },
     {
-      "construction_ns": 19437658,
+      "construction_ns": 19741630,
       "manifested_bytes": 1311160,
       "manifested_ratio": 5.001678466796875,
       "profile": "full",
       "profile_label": "full",
       "read_1b": {
         "cold_direct": {
-          "mean_ns": 12505.87025,
-          "min_ns": 6693,
-          "p50_ns": 7625,
-          "p95_ns": 10059,
-          "p99_ns": 12313,
+          "mean_ns": 15306.7955,
+          "min_ns": 7214,
+          "p50_ns": 10760,
+          "p95_ns": 15319,
+          "p99_ns": 24736,
           "samples": 4000
         },
         "direct": {
-          "mean_ns": 8190.027,
-          "min_ns": 6833,
-          "p50_ns": 7684,
-          "p95_ns": 10630,
-          "p99_ns": 14687,
+          "mean_ns": 8967.3015,
+          "min_ns": 7134,
+          "p50_ns": 7975,
+          "p95_ns": 12173,
+          "p99_ns": 18404,
           "samples": 4000
         },
         "warm": {
-          "mean_ns": 298.853,
+          "mean_ns": 342.54875,
           "min_ns": 100,
           "p50_ns": 120,
-          "p95_ns": 170,
-          "p99_ns": 5821,
+          "p95_ns": 141,
+          "p99_ns": 15609,
           "samples": 4000
         }
       },
       "read_4k": {
         "cold_direct": {
-          "mean_ns": 16357.644,
-          "min_ns": 13465,
-          "p50_ns": 14587,
-          "p95_ns": 23825,
-          "p99_ns": 29154,
+          "mean_ns": 18302.020666666667,
+          "min_ns": 14487,
+          "p50_ns": 15599,
+          "p95_ns": 26649,
+          "p99_ns": 45836,
           "samples": 1500
         },
         "direct": {
-          "mean_ns": 15068.246,
-          "min_ns": 13716,
-          "p50_ns": 14407,
-          "p95_ns": 16671,
-          "p99_ns": 21761,
+          "mean_ns": 16054.449333333334,
+          "min_ns": 14217,
+          "p50_ns": 15118,
+          "p95_ns": 21551,
+          "p99_ns": 28182,
           "samples": 1500
         },
         "warm": {
-          "mean_ns": 679.1133333333333,
+          "mean_ns": 951.1093333333333,
           "min_ns": 140,
-          "p50_ns": 160,
+          "p50_ns": 170,
           "p95_ns": 201,
-          "p99_ns": 25387,
+          "p99_ns": 38783,
           "samples": 1500
         }
       }
     },
     {
-      "construction_ns": 32743559,
+      "construction_ns": 38335458,
       "manifested_bytes": 1839120,
       "manifested_ratio": 7.01568603515625,
       "profile": "max-speed",
       "profile_label": "max-speed",
       "read_1b": {
         "cold_direct": {
-          "mean_ns": 17204.4915,
-          "min_ns": 9598,
-          "p50_ns": 10520,
-          "p95_ns": 14216,
-          "p99_ns": 23605,
+          "mean_ns": 20593.09775,
+          "min_ns": 9728,
+          "p50_ns": 10669,
+          "p95_ns": 17883,
+          "p99_ns": 34554,
           "samples": 4000
         },
         "direct": {
-          "mean_ns": 12215.494,
-          "min_ns": 9688,
-          "p50_ns": 10650,
-          "p95_ns": 17122,
-          "p99_ns": 27261,
+          "mean_ns": 11703.04025,
+          "min_ns": 10039,
+          "p50_ns": 10830,
+          "p95_ns": 16070,
+          "p99_ns": 19116,
           "samples": 4000
         },
         "warm": {
-          "mean_ns": 382.97025,
+          "mean_ns": 415.69,
           "min_ns": 100,
-          "p50_ns": 120,
+          "p50_ns": 111,
           "p95_ns": 140,
-          "p99_ns": 17693,
+          "p99_ns": 18454,
           "samples": 4000
         }
       },
       "read_4k": {
         "cold_direct": {
-          "mean_ns": 18733.637333333332,
-          "min_ns": 16731,
-          "p50_ns": 17713,
-          "p95_ns": 22091,
-          "p99_ns": 36909,
+          "mean_ns": 22793.794666666665,
+          "min_ns": 17813,
+          "p50_ns": 18995,
+          "p95_ns": 34054,
+          "p99_ns": 57216,
           "samples": 1500
         },
         "direct": {
-          "mean_ns": 19091.098,
-          "min_ns": 16952,
-          "p50_ns": 17774,
-          "p95_ns": 26850,
-          "p99_ns": 40416,
+          "mean_ns": 22813.97266666667,
+          "min_ns": 17874,
+          "p50_ns": 19436,
+          "p95_ns": 32350,
+          "p99_ns": 48361,
           "samples": 1500
         },
         "warm": {
-          "mean_ns": 1006.8786666666666,
-          "min_ns": 140,
-          "p50_ns": 170,
-          "p95_ns": 210,
-          "p99_ns": 40676,
+          "mean_ns": 805.7153333333333,
+          "min_ns": 160,
+          "p50_ns": 220,
+          "p95_ns": 280,
+          "p99_ns": 28533,
           "samples": 1500
         }
       }

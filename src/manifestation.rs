@@ -78,8 +78,25 @@ pub const EKBLOOM_DIR: &str = "ekbloom";
 const MANIFEST_MAGIC: u32 = 0x3153_464D;
 /// Magic for the `HEAD` advertisement (`MHD1`).
 const HEAD_MAGIC: u32 = 0x3144_484D;
-/// On-disk schema version of a generation manifest.
-pub const MANIFEST_SCHEMA: u32 = 1;
+/// On-disk schema version of a generation manifest. Schema 2 adds the
+/// generational overlay fields (`base_generation`, `base_manifest_blake3`,
+/// `overlay_depth`, `regions`); a schema-1 document still decodes (its overlay
+/// fields default to a self-contained full base).
+pub const MANIFEST_SCHEMA: u32 = 2;
+
+/// The hard cap on the overlay indirection depth (Phase 22). A committed
+/// generation never records `overlay_depth` greater than this: an overlay whose
+/// depth would exceed it is instead published as a *flattened* generation, so a
+/// committed version resolves to its regions through at most this many hops.
+/// The bound is small and fixed so accumulated generations cannot blow up read
+/// latency.
+pub const MAX_OVERLAY_DEPTH: u16 = 8;
+
+/// The number of overlay generations after which the engine prefers to emit a
+/// flattened readable view even though the depth cap has not yet been reached
+/// (adaptive flattening: the read benefit of a compact table justifies the
+/// index-only cost).
+pub const FLATTEN_AFTER_OVERLAYS: u16 = 4;
 
 // ---------------------------------------------------------------------------
 // Manifestation profiles (research §10.1)
@@ -305,6 +322,29 @@ pub struct ManifestComponent {
     pub bytes: u64,
 }
 
+/// One manifested region of an incremental (overlay or flattened) generation.
+///
+/// A region owns the logical byte range `[logical_start, logical_end)` and maps
+/// it onto a manifested payload file (an EKBLOOM body built over exactly that
+/// slice of authoritative bytes). `payload_offset` is the local offset within
+/// that payload corresponding to `logical_start`; a consumer reads payload
+/// position `payload_offset + (pos - logical_start)` for global position `pos`.
+/// Regions in one manifest are disjoint and sorted by `logical_start`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManifestRegion {
+    pub logical_start: u64,
+    pub logical_end: u64,
+    pub owner_generation: u64,
+    pub payload_offset: u64,
+    pub payload_rel_path: String,
+    pub payload_blake3: [u8; 32],
+    pub visible_bytes: u64,
+    pub physical_bytes: u64,
+    pub profile_kind: u8,
+    pub certification: u8,
+    pub ekbloom_object_id: Option<[u8; 16]>,
+}
+
 // ---------------------------------------------------------------------------
 // The generation manifest
 // ---------------------------------------------------------------------------
@@ -364,6 +404,20 @@ pub struct GenerationManifest {
     pub source_bytes: u64,
     /// Per-component accounting.
     pub components: Vec<ManifestComponent>,
+    /// For an overlay generation: the base generation whose manifested content
+    /// supplies every byte not covered by `regions` (Phase 22). `None` for a
+    /// self-contained generation (a full base or a flattened table).
+    pub base_generation: Option<u64>,
+    /// Integrity binding to the base manifest's self-digest, when overlaying.
+    pub base_manifest_blake3: Option<[u8; 32]>,
+    /// The overlay indirection depth: `0` for a self-contained generation and
+    /// `base.overlay_depth + 1` for an overlay. Never exceeds
+    /// [`MAX_OVERLAY_DEPTH`].
+    pub overlay_depth: u16,
+    /// The manifested regions this generation owns or references. For a flattened
+    /// generation these cover `[logical_start, logical_end)` completely with no
+    /// base; for an overlay they are only the *changed* ranges.
+    pub regions: Vec<ManifestRegion>,
     /// BLAKE3 over every preceding canonical field (self-integrity).
     pub manifest_blake3: [u8; 32],
 }
@@ -401,6 +455,30 @@ impl GenerationManifest {
         self.logical_end.saturating_sub(self.logical_start)
     }
 
+    /// Whether this generation overlays a base generation (its `regions` are
+    /// only the changed ranges).
+    pub fn is_overlay(&self) -> bool {
+        self.base_generation.is_some()
+    }
+
+    /// Whether this generation is a compact *flattened* region table: no base,
+    /// with a complete region set out of its own top-level payload.
+    pub fn is_flattened_table(&self) -> bool {
+        self.base_generation.is_none() && !self.regions.is_empty()
+    }
+
+    /// Whether this generation is a plain self-contained full object (legacy
+    /// schema-1 shape): one top-level payload covering the whole extent.
+    pub fn is_plain_full(&self) -> bool {
+        self.base_generation.is_none() && self.regions.is_empty()
+    }
+
+    /// Whether any part of this generation is served by region overlays (so it
+    /// needs region resolution rather than a single top-level body).
+    pub fn is_region_backed(&self) -> bool {
+        !self.regions.is_empty() || self.base_generation.is_some()
+    }
+
     fn canonical_bytes(&self) -> Vec<u8> {
         let mut e = Enc::new();
         e.u32(MANIFEST_MAGIC);
@@ -436,6 +514,37 @@ impl GenerationManifest {
             e.str(&c.name);
             e.str(&c.kind);
             e.u64(c.bytes);
+        }
+        if self.schema >= 2 {
+            match self.base_generation {
+                Some(g) => {
+                    e.u8(1);
+                    e.u64(g);
+                }
+                None => e.u8(0),
+            }
+            match self.base_manifest_blake3 {
+                Some(d) => {
+                    e.u8(1);
+                    e.arr(&d);
+                }
+                None => e.u8(0),
+            }
+            e.u16(self.overlay_depth);
+            e.u32(self.regions.len() as u32);
+            for r in &self.regions {
+                e.u64(r.logical_start);
+                e.u64(r.logical_end);
+                e.u64(r.owner_generation);
+                e.u64(r.payload_offset);
+                e.str(&r.payload_rel_path);
+                e.arr(&r.payload_blake3);
+                e.u64(r.visible_bytes);
+                e.u64(r.physical_bytes);
+                e.u8(r.profile_kind);
+                e.u8(r.certification);
+                e.opt_arr16(r.ekbloom_object_id);
+            }
         }
         e.0
     }
@@ -499,6 +608,37 @@ impl GenerationManifest {
             let bytes = d.u64()?;
             components.push(ManifestComponent { name, kind, bytes });
         }
+        let mut base_generation = None;
+        let mut base_manifest_blake3 = None;
+        let mut overlay_depth = 0u16;
+        let mut regions = Vec::new();
+        if schema >= 2 {
+            base_generation = if d.u8()? != 0 { Some(d.u64()?) } else { None };
+            base_manifest_blake3 = if d.u8()? != 0 { Some(d.arr32()?) } else { None };
+            overlay_depth = d.u16()?;
+            let region_count = d.u32()? as usize;
+            if region_count > 1_000_000 {
+                return Err(OrfsError::Corrupt(
+                    "generation manifest region count is implausible".into(),
+                ));
+            }
+            regions.reserve(region_count.min(4096));
+            for _ in 0..region_count {
+                regions.push(ManifestRegion {
+                    logical_start: d.u64()?,
+                    logical_end: d.u64()?,
+                    owner_generation: d.u64()?,
+                    payload_offset: d.u64()?,
+                    payload_rel_path: d.string()?,
+                    payload_blake3: d.arr32()?,
+                    visible_bytes: d.u64()?,
+                    physical_bytes: d.u64()?,
+                    profile_kind: d.u8()?,
+                    certification: d.u8()?,
+                    ekbloom_object_id: d.opt_arr16()?,
+                });
+            }
+        }
         let digest_at = d.pos;
         let stored = d.arr32()?;
         if d.remaining() != 0 {
@@ -535,6 +675,10 @@ impl GenerationManifest {
             concealed_bytes,
             source_bytes,
             components,
+            base_generation,
+            base_manifest_blake3,
+            overlay_depth,
+            regions,
             manifest_blake3: stored,
         };
         let computed = *blake3::hash(&bytes[..digest_at]).as_bytes();
@@ -579,6 +723,23 @@ impl GenerationManifest {
             "physical_bytes": self.physical_bytes,
             "concealed_bytes": self.concealed_bytes,
             "source_bytes": self.source_bytes,
+            "overlay": {
+                "base_generation": self.base_generation,
+                "base_manifest_blake3": self.base_manifest_blake3.map(|a| hex(&a)),
+                "overlay_depth": self.overlay_depth,
+                "region_count": self.regions.len(),
+                "regions": self.regions.iter().map(|r| serde_json::json!({
+                    "logical_range": [r.logical_start, r.logical_end],
+                    "owner_generation": r.owner_generation,
+                    "payload_offset": r.payload_offset,
+                    "payload": r.payload_rel_path,
+                    "payload_blake3": hex(&r.payload_blake3),
+                    "visible_bytes": r.visible_bytes,
+                    "physical_bytes": r.physical_bytes,
+                    "profile_kind": r.profile_kind,
+                    "certification": r.certification,
+                })).collect::<Vec<_>>(),
+            },
             "components": self.components.iter().map(|c| serde_json::json!({
                 "name": c.name, "kind": c.kind, "bytes": c.bytes,
             })).collect::<Vec<_>>(),
@@ -802,6 +963,33 @@ impl GenerationStore {
             .join(self.payload_rel_path(generation, inode, version, root))
     }
 
+    /// The payload path for one changed region of a generation (relative to the
+    /// volume root). Region payloads are distinct files so a small write never
+    /// rewrites the whole-object payload.
+    pub fn region_payload_rel_path(
+        &self,
+        generation: u64,
+        inode: u64,
+        version: u64,
+        root: u64,
+        index: usize,
+    ) -> String {
+        format!("{BLOOM_DIR}/{EKBLOOM_DIR}/{inode}-v{version}-r{root}-g{generation}-x{index}.ekb")
+    }
+
+    /// The absolute payload path for one changed region of a generation.
+    pub fn region_payload_path(
+        &self,
+        generation: u64,
+        inode: u64,
+        version: u64,
+        root: u64,
+        index: usize,
+    ) -> PathBuf {
+        self.volume_root
+            .join(self.region_payload_rel_path(generation, inode, version, root, index))
+    }
+
     fn manifest_path(&self, generation: u64) -> PathBuf {
         self.manifest_dir()
             .join(format!("{generation:020}.manifest"))
@@ -853,8 +1041,33 @@ impl GenerationStore {
     /// Validate a manifest's payload against its recorded BLAKE3, if the payload
     /// is present. An absent payload is *not* an error during recovery; it is
     /// reported by the caller and the generation is treated as present-but-torn.
+    ///
+    /// A region-backed generation has no top-level payload body: every region
+    /// payload (and, because a flattened table reuses them, their referenced
+    /// files) must be present and match its recorded digest.
     pub fn payload_matches(&self, m: &GenerationManifest) -> Result<bool> {
-        let path = self.volume_root.join(&m.payload_rel_path);
+        if !m.payload_rel_path.is_empty() {
+            return self.file_matches(&m.payload_rel_path, &m.payload_blake3);
+        }
+        // No top-level payload: a region-backed generation.
+        if m.regions.is_empty() {
+            // A pure overlay (e.g. a shrink or a metadata-only change) reuses its
+            // base entirely; it has no payload of its own, so its validity is the
+            // base's and is established by the chain check in `recover`.
+            return Ok(m.base_generation.is_some());
+        }
+        for r in &m.regions {
+            if !self.file_matches(&r.payload_rel_path, &r.payload_blake3)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Whether the file at `rel` (relative to the volume root) is present and has
+    /// the given BLAKE3 digest.
+    fn file_matches(&self, rel: &str, digest: &[u8; 32]) -> Result<bool> {
+        let path = self.volume_root.join(rel);
         let mut f = match File::open(&path) {
             Ok(f) => f,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
@@ -869,7 +1082,22 @@ impl GenerationStore {
             }
             hasher.update(&buf[..n]);
         }
-        Ok(*hasher.finalize().as_bytes() == m.payload_blake3)
+        Ok(*hasher.finalize().as_bytes() == *digest)
+    }
+
+    /// Every payload file a generation references (its top-level payload, if any,
+    /// plus each region payload). Used by the orphan sweep.
+    pub fn referenced_payloads(m: &GenerationManifest) -> Vec<String> {
+        let mut out = Vec::new();
+        if !m.payload_rel_path.is_empty() {
+            out.push(m.payload_rel_path.clone());
+        }
+        for r in &m.regions {
+            if !r.payload_rel_path.is_empty() {
+                out.push(r.payload_rel_path.clone());
+            }
+        }
+        out
     }
 
     /// Publish a generation: write the manifest, fsync, rename, fsync the
@@ -946,22 +1174,45 @@ impl GenerationStore {
             None => (all, false, true),
         };
 
-        let mut generations = Vec::new();
+        let mut accepted: BTreeMap<u64, GenerationManifest> = BTreeMap::new();
         let mut rejected = 0usize;
-        for gen in candidates {
+        // Process ascending so a generation's base is validated before it is.
+        // An overlay is accepted only if its base generation is present, valid,
+        // for the same inode, and digest-bound; otherwise the overlay is skipped
+        // and a strictly earlier commit remains selected (crash safety).
+        let mut ordered = candidates;
+        ordered.sort_unstable();
+        ordered.dedup();
+        for gen in ordered {
             match self.load_generation(gen)? {
                 Some(m) => {
-                    if self.payload_matches(&m).unwrap_or(false) {
-                        generations.push(m);
+                    if !self.payload_matches(&m).unwrap_or(false) {
+                        rejected += 1;
+                        continue;
+                    }
+                    if m.overlay_depth > MAX_OVERLAY_DEPTH {
+                        rejected += 1;
+                        continue;
+                    }
+                    let accepted_ok = match m.base_generation {
+                        Some(bg) => accepted.get(&bg).is_some_and(|b| {
+                            b.inode == m.inode
+                                && m.base_manifest_blake3
+                                    .is_none_or(|d| d == b.manifest_blake3)
+                                && m.overlay_depth == b.overlay_depth.saturating_add(1)
+                        }),
+                        None => m.overlay_depth == 0,
+                    };
+                    if accepted_ok {
+                        accepted.insert(m.generation, m);
                     } else {
-                        // A committed manifest whose payload is torn/absent is not
-                        // usable; it is skipped, never used against bad bytes.
                         rejected += 1;
                     }
                 }
                 None => rejected += 1,
             }
         }
+        let mut generations: Vec<GenerationManifest> = accepted.into_values().collect();
         generations.sort_by_key(|m| m.generation);
         Ok(ManifestRecovery {
             generations,
@@ -983,7 +1234,9 @@ impl GenerationStore {
     pub fn sweep_orphans(&self) -> Result<u64> {
         let mut referenced: std::collections::HashSet<String> = std::collections::HashSet::new();
         for m in self.recover()?.generations {
-            referenced.insert(m.payload_rel_path);
+            for rel in GenerationStore::referenced_payloads(&m) {
+                referenced.insert(rel);
+            }
         }
         let mut removed = 0u64;
         let dir = self.payload_dir();
@@ -1270,6 +1523,18 @@ pub struct ManifestationOutcome {
     pub physical_bytes: u64,
     pub profile: String,
     pub detail: Option<String>,
+    /// Authoritative *changed* bytes the job had to build (Phase 22).
+    pub changed_bytes: u64,
+    /// Wall-clock nanoseconds spent constructing payloads (Phase 22).
+    pub build_nanos: u64,
+    /// Number of newly manifested regions in this generation.
+    pub regions: usize,
+    /// The committed overlay depth (0 for a self-contained generation).
+    pub overlay_depth: u16,
+    /// Whether this generation is a flattened readable view.
+    pub flattened: bool,
+    /// Authoritative bytes reused from the base (logical length minus changed).
+    pub reused_bytes: u64,
 }
 
 impl ManifestationOutcome {
@@ -1288,20 +1553,109 @@ impl ManifestationOutcome {
             physical_bytes: 0,
             profile: profile.label(),
             detail,
+            changed_bytes: 0,
+            build_nanos: 0,
+            regions: 0,
+            overlay_depth: 0,
+            flattened: false,
+            reused_bytes: 0,
         }
     }
 }
 
-/// A job request: the identity + the authoritative source bytes to build from.
+/// One changed region handed to an incremental job: the authoritative bytes of
+/// `[logical_start, logical_start + data.len())` at the committed root.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegionInput {
+    pub logical_start: u64,
+    pub data: Vec<u8>,
+}
+
+/// What a job must build.
+#[derive(Debug, Clone)]
+pub enum JobContent {
+    /// A self-contained base over the whole logical object.
+    Full { source: Vec<u8> },
+    /// Only the changed regions; everything else is reused from `base`.
+    Incremental { regions: Vec<RegionInput> },
+}
+
+/// A job request: the identity, plus either the full authoritative source or the
+/// authoritative changed ranges and the base generation to overlay.
 #[derive(Debug, Clone)]
 pub struct JobSpec {
     pub inode: u64,
     pub inode_version: u64,
     pub root: u64,
     pub profile: ManifestationProfile,
-    /// The authoritative logical bytes captured at enqueue time. Workers never
-    /// touch the authoritative log, so construction cannot perturb it.
-    pub source: Vec<u8>,
+    /// The logical length the resulting generation must cover.
+    pub logical_len: u64,
+    /// The base generation for an incremental job (I6-qualified by the engine).
+    pub base: Option<u64>,
+    /// Force a flattened readable view even if the depth cap is not reached.
+    pub flatten: bool,
+    pub content: JobContent,
+}
+
+impl JobSpec {
+    /// A self-contained full-base job over the whole object.
+    pub fn full(
+        inode: u64,
+        inode_version: u64,
+        root: u64,
+        profile: ManifestationProfile,
+        source: Vec<u8>,
+    ) -> JobSpec {
+        let logical_len = source.len() as u64;
+        JobSpec {
+            inode,
+            inode_version,
+            root,
+            profile,
+            logical_len,
+            base: None,
+            flatten: false,
+            content: JobContent::Full { source },
+        }
+    }
+
+    /// An incremental job overlaying `base` with the given changed regions.
+    #[allow(clippy::too_many_arguments)]
+    pub fn incremental(
+        inode: u64,
+        inode_version: u64,
+        root: u64,
+        profile: ManifestationProfile,
+        logical_len: u64,
+        base: u64,
+        regions: Vec<RegionInput>,
+        flatten: bool,
+    ) -> JobSpec {
+        JobSpec {
+            inode,
+            inode_version,
+            root,
+            profile,
+            logical_len,
+            base: Some(base),
+            flatten,
+            content: JobContent::Incremental { regions },
+        }
+    }
+
+    /// Whether this job is an incremental overlay.
+    pub fn is_incremental(&self) -> bool {
+        matches!(self.content, JobContent::Incremental { .. })
+    }
+
+    /// The authoritative source bytes this job was handed (empty when the job is
+    /// incremental).
+    pub fn source_bytes(&self) -> &[u8] {
+        match &self.content {
+            JobContent::Full { source } => source,
+            JobContent::Incremental { .. } => &[],
+        }
+    }
 }
 
 /// The queue was full; the optional construction was refused (not an error on
@@ -1475,6 +1829,22 @@ impl EngineInner {
     }
 
     fn publish_spec(&self, spec: &JobSpec, shared: &JobShared) -> ManifestationOutcome {
+        match &spec.content {
+            JobContent::Full { source } => self.publish_full(spec, source, shared),
+            JobContent::Incremental { regions } => self.publish_incremental(spec, regions, shared),
+        }
+    }
+
+    /// Build and publish a self-contained full-base generation (the Phase-7
+    /// behaviour, still used for the first manifestation of an object and by the
+    /// explicit `manifest_eligible` path).
+    fn publish_full(
+        &self,
+        spec: &JobSpec,
+        source: &[u8],
+        shared: &JobShared,
+    ) -> ManifestationOutcome {
+        let started = Instant::now();
         let generation = self.alloc_generation();
         let rel =
             self.store
@@ -1485,10 +1855,10 @@ impl EngineInner {
         let build_spec = BuildSpec {
             profile: spec.profile,
             logical_start: 0,
-            logical_end: spec.source.len() as u64,
+            logical_end: source.len() as u64,
         };
 
-        let built = match self.builder.build(&spec.source, &build_spec, &dest) {
+        let built = match self.builder.build(source, &build_spec, &dest) {
             Ok(b) => b,
             Err(e) => {
                 let _ = fs::remove_file(&dest);
@@ -1502,8 +1872,6 @@ impl EngineInner {
             }
         };
 
-        // Cancellation / supersession immediately after construction: discard the
-        // incomplete generation. It stays uncommitted and invisible.
         if shared.cancel.load(Ordering::SeqCst)
             || self.is_superseded(spec.inode, spec.inode_version)
         {
@@ -1537,6 +1905,7 @@ impl EngineInner {
         };
 
         let (interval, depth, region_bytes) = spec.profile.params();
+        let build_nanos = started.elapsed().as_nanos() as u64;
         let manifest = GenerationManifest {
             schema: MANIFEST_SCHEMA,
             generation,
@@ -1550,7 +1919,7 @@ impl EngineInner {
             profile: spec.profile.label(),
             profile_kind: spec.profile.kind_code(),
             logical_start: 0,
-            logical_end: spec.source.len() as u64,
+            logical_end: source.len() as u64,
             physical_start: 0,
             physical_end: file_len,
             interval,
@@ -1564,15 +1933,17 @@ impl EngineInner {
             visible_bytes: built.visible_bytes.min(file_len),
             physical_bytes: file_len,
             concealed_bytes: file_len.saturating_sub(built.visible_bytes),
-            source_bytes: spec.source.len() as u64,
+            source_bytes: source.len() as u64,
             components: built.components.clone(),
+            base_generation: None,
+            base_manifest_blake3: None,
+            overlay_depth: 0,
+            regions: Vec::new(),
             manifest_blake3: [0u8; 32],
         }
         .sealed();
 
         if let Err(e) = self.store.publish(&manifest) {
-            // A failed publication leaves an orphan payload; it is not committed
-            // and will be swept later. Earlier commits are untouched.
             return ManifestationOutcome::new(
                 spec.inode,
                 spec.inode_version,
@@ -1592,6 +1963,293 @@ impl EngineInner {
         );
         outcome.generation = Some(generation);
         outcome.physical_bytes = file_len;
+        outcome.changed_bytes = source.len() as u64;
+        outcome.build_nanos = build_nanos;
+        outcome.reused_bytes = 0;
+        outcome
+    }
+
+    /// Build and publish an incremental generation (Phase 22): build payloads for
+    /// only the changed regions, reuse the base for every other byte, and either
+    /// publish a compact overlay or (adaptively) a flattened readable view.
+    fn publish_incremental(
+        &self,
+        spec: &JobSpec,
+        regions: &[RegionInput],
+        shared: &JobShared,
+    ) -> ManifestationOutcome {
+        let started = Instant::now();
+        let generation = self.alloc_generation();
+        let base_gen = match spec.base {
+            Some(g) => g,
+            None => {
+                return ManifestationOutcome::new(
+                    spec.inode,
+                    spec.inode_version,
+                    spec.profile,
+                    ManifestationStatus::Failed,
+                    Some("incremental job has no base generation".into()),
+                )
+            }
+        };
+        let base = match self.store.load_generation(base_gen) {
+            Ok(Some(m)) => m,
+            _ => {
+                return ManifestationOutcome::new(
+                    spec.inode,
+                    spec.inode_version,
+                    spec.profile,
+                    ManifestationStatus::Failed,
+                    Some(format!("base generation {base_gen} is missing or invalid")),
+                )
+            }
+        };
+        if base.inode != spec.inode {
+            return ManifestationOutcome::new(
+                spec.inode,
+                spec.inode_version,
+                spec.profile,
+                ManifestationStatus::Failed,
+                Some(format!(
+                    "base generation {base_gen} is for a different inode"
+                )),
+            );
+        }
+
+        // Build one payload per changed region. Construction cost is proportional
+        // to the changed bytes, never to the unchanged object size.
+        let mut built_regions: Vec<ManifestRegion> = Vec::with_capacity(regions.len());
+        let mut changed_bytes = 0u64;
+        for (idx, r) in regions.iter().enumerate() {
+            if r.data.is_empty() {
+                continue;
+            }
+            let rel = self.store.region_payload_rel_path(
+                generation,
+                spec.inode,
+                spec.inode_version,
+                spec.root,
+                idx,
+            );
+            let dest = self.store.region_payload_path(
+                generation,
+                spec.inode,
+                spec.inode_version,
+                spec.root,
+                idx,
+            );
+            let build_spec = BuildSpec {
+                profile: spec.profile,
+                logical_start: r.logical_start,
+                logical_end: r.logical_start + r.data.len() as u64,
+            };
+            let built = match self.builder.build(&r.data, &build_spec, &dest) {
+                Ok(b) => b,
+                Err(e) => {
+                    for region in &built_regions {
+                        let _ = fs::remove_file(
+                            self.store.volume_root().join(&region.payload_rel_path),
+                        );
+                    }
+                    let _ = fs::remove_file(&dest);
+                    return ManifestationOutcome::new(
+                        spec.inode,
+                        spec.inode_version,
+                        spec.profile,
+                        ManifestationStatus::Failed,
+                        Some(e.to_string()),
+                    );
+                }
+            };
+            let (payload_blake3, file_len) = match hash_file(&dest) {
+                Ok(v) => v,
+                Err(e) => {
+                    let _ = fs::remove_file(&dest);
+                    return ManifestationOutcome::new(
+                        spec.inode,
+                        spec.inode_version,
+                        spec.profile,
+                        ManifestationStatus::Failed,
+                        Some(e.to_string()),
+                    );
+                }
+            };
+            changed_bytes += r.data.len() as u64;
+            built_regions.push(ManifestRegion {
+                logical_start: r.logical_start,
+                logical_end: r.logical_start + r.data.len() as u64,
+                owner_generation: generation,
+                payload_offset: 0,
+                payload_rel_path: rel,
+                payload_blake3,
+                visible_bytes: built.visible_bytes.min(file_len),
+                physical_bytes: file_len,
+                profile_kind: spec.profile.kind_code(),
+                certification: built.certification.code(),
+                ekbloom_object_id: built.object_id,
+            });
+        }
+
+        // Cancellation / supersession after construction: discard every region
+        // payload; nothing is committed.
+        if shared.cancel.load(Ordering::SeqCst)
+            || self.is_superseded(spec.inode, spec.inode_version)
+        {
+            for region in &built_regions {
+                let _ = fs::remove_file(self.store.volume_root().join(&region.payload_rel_path));
+            }
+            let status = if shared.cancel.load(Ordering::SeqCst) {
+                ManifestationStatus::Canceled
+            } else {
+                ManifestationStatus::Superseded
+            };
+            return ManifestationOutcome::new(
+                spec.inode,
+                spec.inode_version,
+                spec.profile,
+                status,
+                None,
+            );
+        }
+
+        let build_nanos = started.elapsed().as_nanos() as u64;
+        let would_depth = base.overlay_depth.saturating_add(1);
+        let flatten = spec.flatten
+            || would_depth > MAX_OVERLAY_DEPTH
+            || base.overlay_depth >= FLATTEN_AFTER_OVERLAYS;
+
+        let manifest = if flatten {
+            // Adaptive flattening: materialize a complete region table over the
+            // whole object. This is index-only (it references the base's existing
+            // payloads; it does not rebuild unchanged bytes), and it resets the
+            // overlay depth to 0 so a read resolves in a single hop.
+            let table = match resolve_coverage(&self.store, &base) {
+                Ok(t) => t,
+                Err(e) => {
+                    for region in &built_regions {
+                        let _ = fs::remove_file(
+                            self.store.volume_root().join(&region.payload_rel_path),
+                        );
+                    }
+                    return ManifestationOutcome::new(
+                        spec.inode,
+                        spec.inode_version,
+                        spec.profile,
+                        ManifestationStatus::Failed,
+                        Some(e.to_string()),
+                    );
+                }
+            };
+            let mut merged = table;
+            for r in &built_regions {
+                merged = overwrite_region(&merged, r);
+            }
+            let merged = clip_and_merge(merged, 0, spec.logical_len);
+            let visible: u64 = merged.iter().map(|r| r.visible_bytes).sum();
+            let physical: u64 = merged.iter().map(|r| r.physical_bytes).sum();
+            GenerationManifest {
+                schema: MANIFEST_SCHEMA,
+                generation,
+                volume_uuid: self.uuid,
+                inode: spec.inode,
+                inode_version: spec.inode_version,
+                root: spec.root,
+                backend: self.builder.backend().to_string(),
+                ekbloom_version: EKBLOOM_VERSION.to_string(),
+                ekbloom_format: ekbloom_format_version(),
+                profile: format!("flattened({})", spec.profile.label()),
+                profile_kind: spec.profile.kind_code(),
+                logical_start: 0,
+                logical_end: spec.logical_len,
+                physical_start: 0,
+                physical_end: 0,
+                interval: spec.profile.params().0,
+                depth: spec.profile.params().1,
+                region_bytes: spec.profile.params().2,
+                certification: aggregate_certification(&merged),
+                certification_method: "incremental-flattened-table".to_string(),
+                payload_rel_path: String::new(),
+                ekbloom_object_id: None,
+                payload_blake3: [0u8; 32],
+                visible_bytes: visible.min(physical),
+                physical_bytes: physical,
+                concealed_bytes: physical.saturating_sub(visible),
+                source_bytes: spec.logical_len,
+                components: Vec::new(),
+                base_generation: None,
+                base_manifest_blake3: None,
+                overlay_depth: 0,
+                regions: merged,
+                manifest_blake3: [0u8; 32],
+            }
+            .sealed()
+        } else {
+            let visible: u64 = built_regions.iter().map(|r| r.visible_bytes).sum();
+            let physical: u64 = built_regions.iter().map(|r| r.physical_bytes).sum();
+            GenerationManifest {
+                schema: MANIFEST_SCHEMA,
+                generation,
+                volume_uuid: self.uuid,
+                inode: spec.inode,
+                inode_version: spec.inode_version,
+                root: spec.root,
+                backend: self.builder.backend().to_string(),
+                ekbloom_version: EKBLOOM_VERSION.to_string(),
+                ekbloom_format: ekbloom_format_version(),
+                profile: format!("incremental({})", spec.profile.label()),
+                profile_kind: spec.profile.kind_code(),
+                logical_start: 0,
+                logical_end: spec.logical_len,
+                physical_start: 0,
+                physical_end: 0,
+                interval: spec.profile.params().0,
+                depth: spec.profile.params().1,
+                region_bytes: spec.profile.params().2,
+                certification: aggregate_certification(&built_regions),
+                certification_method: "incremental-overlay".to_string(),
+                payload_rel_path: String::new(),
+                ekbloom_object_id: None,
+                payload_blake3: [0u8; 32],
+                visible_bytes: visible.min(physical),
+                physical_bytes: physical,
+                concealed_bytes: physical.saturating_sub(visible),
+                source_bytes: changed_bytes,
+                components: Vec::new(),
+                base_generation: Some(base_gen),
+                base_manifest_blake3: Some(base.manifest_blake3),
+                overlay_depth: would_depth,
+                regions: built_regions.clone(),
+                manifest_blake3: [0u8; 32],
+            }
+            .sealed()
+        };
+
+        if let Err(e) = self.store.publish(&manifest) {
+            return ManifestationOutcome::new(
+                spec.inode,
+                spec.inode_version,
+                spec.profile,
+                ManifestationStatus::Failed,
+                Some(e.to_string()),
+            );
+        }
+        self.state.record_published(manifest.clone());
+
+        let mut outcome = ManifestationOutcome::new(
+            spec.inode,
+            spec.inode_version,
+            spec.profile,
+            ManifestationStatus::Published,
+            None,
+        );
+        outcome.generation = Some(generation);
+        outcome.physical_bytes = manifest.physical_bytes;
+        outcome.changed_bytes = changed_bytes;
+        outcome.build_nanos = build_nanos;
+        outcome.regions = built_regions.len();
+        outcome.overlay_depth = manifest.overlay_depth;
+        outcome.flattened = flatten;
+        outcome.reused_bytes = spec.logical_len.saturating_sub(changed_bytes);
         outcome
     }
 }
@@ -1603,6 +2261,177 @@ pub fn ekbloom_format_version() -> String {
         ekbloom::format::FORMAT_MAJOR,
         ekbloom::format::FORMAT_MINOR
     )
+}
+
+/// Resolve a committed generation to a *complete* sorted region table over its
+/// logical extent (Phase 22, bounded-depth lookup).
+///
+/// The table is produced by walking the overlay chain (at most
+/// [`MAX_OVERLAY_DEPTH`] hops, each base manifest digest-verified and inode-
+/// qualified) down to a self-contained base or flattened table, then applying
+/// each generation's changed regions newest-wins. This is the compact, verified
+/// indirection a reader uses: it never walks an unbounded chain and never
+/// trusts an unverified base.
+pub fn resolve_coverage(
+    store: &GenerationStore,
+    manifest: &GenerationManifest,
+) -> Result<Vec<ManifestRegion>> {
+    let mut changes: Vec<Vec<ManifestRegion>> = Vec::new();
+    let mut cur = manifest.clone();
+    let mut hops: u32 = 0;
+    let base_table: Vec<ManifestRegion> = loop {
+        match cur.base_generation {
+            Some(bg) => {
+                changes.push(cur.regions.clone());
+                hops += 1;
+                if hops > u32::from(MAX_OVERLAY_DEPTH) {
+                    return Err(OrfsError::Corrupt(
+                        "overlay indirection exceeds the depth bound".into(),
+                    ));
+                }
+                let bm = store.load_generation(bg)?.ok_or_else(|| {
+                    OrfsError::Corrupt(format!("overlay base generation {bg} is missing"))
+                })?;
+                if bm.inode != manifest.inode {
+                    return Err(OrfsError::Corrupt(
+                        "overlay base generation is for a different inode".into(),
+                    ));
+                }
+                if let Some(d) = cur.base_manifest_blake3 {
+                    if d != bm.manifest_blake3 {
+                        return Err(OrfsError::Corrupt(
+                            "overlay base manifest digest mismatch".into(),
+                        ));
+                    }
+                }
+                cur = bm;
+            }
+            None => {
+                if cur.regions.is_empty() {
+                    break vec![ManifestRegion {
+                        logical_start: cur.logical_start,
+                        logical_end: cur.logical_end,
+                        owner_generation: cur.generation,
+                        payload_offset: 0,
+                        payload_rel_path: cur.payload_rel_path.clone(),
+                        payload_blake3: cur.payload_blake3,
+                        visible_bytes: cur.visible_bytes,
+                        physical_bytes: cur.physical_bytes,
+                        profile_kind: cur.profile_kind,
+                        certification: cur.certification.code(),
+                        ekbloom_object_id: cur.ekbloom_object_id,
+                    }];
+                } else {
+                    break cur.regions.clone();
+                }
+            }
+        }
+    };
+    // Apply the changed ranges oldest-first, so the newest overlay wins on any
+    // (unusual) overlap.
+    let mut table = base_table;
+    for ch in changes.into_iter().rev() {
+        for r in &ch {
+            table = overwrite_region(&table, r);
+        }
+    }
+    Ok(clip_and_merge(
+        table,
+        manifest.logical_start,
+        manifest.logical_end,
+    ))
+}
+
+/// Carve `ch`'s logical range out of `table` and insert `ch` in its place.
+fn overwrite_region(table: &[ManifestRegion], ch: &ManifestRegion) -> Vec<ManifestRegion> {
+    let mut out: Vec<ManifestRegion> = Vec::with_capacity(table.len() + 1);
+    for r in table {
+        if r.logical_end <= ch.logical_start || r.logical_start >= ch.logical_end {
+            out.push(r.clone());
+        } else {
+            if r.logical_start < ch.logical_start {
+                let mut lo = r.clone();
+                lo.logical_end = ch.logical_start;
+                out.push(lo);
+            }
+            if r.logical_end > ch.logical_end {
+                let mut hi = r.clone();
+                hi.payload_offset = r.payload_offset + (ch.logical_end - r.logical_start);
+                hi.logical_start = ch.logical_end;
+                out.push(hi);
+            }
+        }
+    }
+    out.push(ch.clone());
+    out.sort_by_key(|r| r.logical_start);
+    out
+}
+
+/// Clip a region table to `[start, end)` and coalesce contiguous runs that map
+/// onto the same payload (so the compact table keeps read hops small).
+fn clip_and_merge(mut table: Vec<ManifestRegion>, start: u64, end: u64) -> Vec<ManifestRegion> {
+    let mut out: Vec<ManifestRegion> = Vec::with_capacity(table.len());
+    for mut r in table.drain(..) {
+        if r.logical_end <= start || r.logical_start >= end {
+            continue;
+        }
+        if r.logical_start < start {
+            r.payload_offset += start - r.logical_start;
+            r.logical_start = start;
+        }
+        if r.logical_end > end {
+            r.logical_end = end;
+        }
+        if r.logical_start >= r.logical_end {
+            continue;
+        }
+        out.push(r);
+    }
+    out.sort_by_key(|r| r.logical_start);
+    let mut merged: Vec<ManifestRegion> = Vec::with_capacity(out.len());
+    for r in out {
+        if let Some(last) = merged.last_mut() {
+            let contiguous = last.logical_end == r.logical_start
+                && last.payload_offset + (last.logical_end - last.logical_start)
+                    == r.payload_offset;
+            if last.payload_rel_path == r.payload_rel_path
+                && last.payload_blake3 == r.payload_blake3
+                && contiguous
+            {
+                last.logical_end = r.logical_end;
+                continue;
+            }
+        }
+        merged.push(r);
+    }
+    merged
+}
+
+/// The aggregate certification of a region set (conservative).
+fn aggregate_certification(regions: &[ManifestRegion]) -> CertificationState {
+    if regions.is_empty() {
+        return CertificationState::Built;
+    }
+    let mut any_unverified = false;
+    let mut any_real = false;
+    for r in regions {
+        match CertificationState::from_code(r.certification) {
+            Ok(CertificationState::Rejected) => return CertificationState::Rejected,
+            Ok(CertificationState::Certified) => any_real = true,
+            Ok(CertificationState::Unverified) => {
+                any_unverified = true;
+                any_real = true;
+            }
+            _ => {}
+        }
+    }
+    if any_unverified {
+        CertificationState::Unverified
+    } else if any_real {
+        CertificationState::Certified
+    } else {
+        CertificationState::Built
+    }
 }
 
 fn hash_file(path: &Path) -> Result<([u8; 32], u64)> {
@@ -2067,6 +2896,10 @@ mod tests {
                 kind: "core".into(),
                 bytes: 512,
             }],
+            base_generation: None,
+            base_manifest_blake3: None,
+            overlay_depth: 0,
+            regions: Vec::new(),
             manifest_blake3: [0u8; 32],
         }
         .sealed()

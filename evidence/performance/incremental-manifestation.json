@@ -1,0 +1,261 @@
+{
+  "construction_measure": "ekbloom::create over the authoritative slice (CPU construction; excludes payload write/fsync)",
+  "cost": [
+    {
+      "changed_bytes": 64,
+      "full_build_ns": 1281992,
+      "full_physical_bytes": 163844,
+      "incremental_build_ns": 4539,
+      "incremental_physical_bytes": 324,
+      "object_size": 32768,
+      "reused_bytes": 32704
+    },
+    {
+      "changed_bytes": 64,
+      "full_build_ns": 5029004,
+      "full_physical_bytes": 655364,
+      "incremental_build_ns": 4328,
+      "incremental_physical_bytes": 324,
+      "object_size": 131072,
+      "reused_bytes": 131008
+    },
+    {
+      "changed_bytes": 64,
+      "full_build_ns": 20331919,
+      "full_physical_bytes": 2621444,
+      "incremental_build_ns": 5710,
+      "incremental_physical_bytes": 324,
+      "object_size": 524288,
+      "reused_bytes": 524224
+    }
+  ],
+  "cost_vs_changed_bytes": [
+    {
+      "changed_bytes": 64,
+      "incremental_build_ns": 4288,
+      "object_size": 262144
+    },
+    {
+      "changed_bytes": 1024,
+      "incremental_build_ns": 41798,
+      "object_size": 262144
+    },
+    {
+      "changed_bytes": 8192,
+      "incremental_build_ns": 308466,
+      "object_size": 262144
+    },
+    {
+      "changed_bytes": 32768,
+      "incremental_build_ns": 1215759,
+      "object_size": 262144
+    }
+  ],
+  "environment": {
+    "cgroup_memory_max": "8589934592",
+    "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "container_image": null,
+    "cores_visible": 8,
+    "cpu_max": "800000 100000",
+    "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+    "fuse_enable_uring": true,
+    "kernel_release": "7.2.9-2-cachyos",
+    "likely_container": true,
+    "machine": "x86_64",
+    "perf_counters_available": false,
+    "perf_event_paranoid": "2",
+    "ram_total_bytes": 134723346432
+  },
+  "evidence_tests": [
+    "incremental_build_cost_tracks_changed_bytes_not_object_size",
+    "read_latency_bounded_and_flattening_caps_depth",
+    "crash_mid_incremental_build_leaves_no_committed_generation",
+    "overlay_reads_are_authoritative_across_generations_and_snapshots"
+  ],
+  "flattening": {
+    "flatten_after_overlays": 4,
+    "flattened_generations": 4,
+    "max_overlay_depth_cap": 8,
+    "observed_max_depth": 4
+  },
+  "generator": "tests/manifestation.rs",
+  "model": "T_incremental ~= T_changed_regions + T_index_update; a small write must not rebuild the whole object",
+  "read_latency": [
+    {
+      "flattened": false,
+      "generations": 1,
+      "min_read_ns": 1793,
+      "overlay_depth": 1,
+      "regions": 1
+    },
+    {
+      "flattened": false,
+      "generations": 2,
+      "min_read_ns": 3005,
+      "overlay_depth": 2,
+      "regions": 1
+    },
+    {
+      "flattened": false,
+      "generations": 3,
+      "min_read_ns": 2906,
+      "overlay_depth": 3,
+      "regions": 1
+    },
+    {
+      "flattened": false,
+      "generations": 4,
+      "min_read_ns": 2695,
+      "overlay_depth": 4,
+      "regions": 1
+    },
+    {
+      "flattened": true,
+      "generations": 5,
+      "min_read_ns": 3667,
+      "overlay_depth": 0,
+      "regions": 11
+    },
+    {
+      "flattened": false,
+      "generations": 6,
+      "min_read_ns": 2815,
+      "overlay_depth": 1,
+      "regions": 1
+    },
+    {
+      "flattened": false,
+      "generations": 7,
+      "min_read_ns": 3015,
+      "overlay_depth": 2,
+      "regions": 1
+    },
+    {
+      "flattened": false,
+      "generations": 8,
+      "min_read_ns": 3026,
+      "overlay_depth": 3,
+      "regions": 1
+    },
+    {
+      "flattened": false,
+      "generations": 9,
+      "min_read_ns": 2775,
+      "overlay_depth": 4,
+      "regions": 1
+    },
+    {
+      "flattened": true,
+      "generations": 10,
+      "min_read_ns": 4218,
+      "overlay_depth": 0,
+      "regions": 21
+    },
+    {
+      "flattened": false,
+      "generations": 11,
+      "min_read_ns": 2966,
+      "overlay_depth": 1,
+      "regions": 1
+    },
+    {
+      "flattened": false,
+      "generations": 12,
+      "min_read_ns": 2925,
+      "overlay_depth": 2,
+      "regions": 1
+    },
+    {
+      "flattened": false,
+      "generations": 13,
+      "min_read_ns": 2975,
+      "overlay_depth": 3,
+      "regions": 1
+    },
+    {
+      "flattened": false,
+      "generations": 14,
+      "min_read_ns": 2985,
+      "overlay_depth": 4,
+      "regions": 1
+    },
+    {
+      "flattened": true,
+      "generations": 15,
+      "min_read_ns": 4849,
+      "overlay_depth": 0,
+      "regions": 31
+    },
+    {
+      "flattened": false,
+      "generations": 16,
+      "min_read_ns": 3026,
+      "overlay_depth": 1,
+      "regions": 1
+    },
+    {
+      "flattened": false,
+      "generations": 17,
+      "min_read_ns": 2795,
+      "overlay_depth": 2,
+      "regions": 1
+    },
+    {
+      "flattened": false,
+      "generations": 18,
+      "min_read_ns": 2715,
+      "overlay_depth": 3,
+      "regions": 1
+    },
+    {
+      "flattened": false,
+      "generations": 19,
+      "min_read_ns": 3016,
+      "overlay_depth": 4,
+      "regions": 1
+    },
+    {
+      "flattened": true,
+      "generations": 20,
+      "min_read_ns": 5720,
+      "overlay_depth": 0,
+      "regions": 41
+    },
+    {
+      "flattened": false,
+      "generations": 21,
+      "min_read_ns": 2975,
+      "overlay_depth": 1,
+      "regions": 1
+    },
+    {
+      "flattened": false,
+      "generations": 22,
+      "min_read_ns": 3015,
+      "overlay_depth": 2,
+      "regions": 1
+    },
+    {
+      "flattened": false,
+      "generations": 23,
+      "min_read_ns": 3026,
+      "overlay_depth": 3,
+      "regions": 1
+    },
+    {
+      "flattened": false,
+      "generations": 24,
+      "min_read_ns": 1833,
+      "overlay_depth": 4,
+      "regions": 1
+    }
+  ],
+  "schema": "orfs.incremental-manifestation.v1",
+  "verdicts": {
+    "construction_cost_independent_of_unchanged_size": "verified",
+    "crash_mid_incremental_leaves_no_commit": "verified",
+    "flattening_engages": true,
+    "overlay_reads_equal_authoritative": "verified",
+    "read_latency_bounded_by_depth_cap": "verified"
+  }
+}

@@ -45,6 +45,7 @@ use crate::log::{Log, LogView, OpenMode};
 use crate::manifestation::{
     JobSpec, ManifestSummary, ManifestationBuilder, ManifestationConfig, ManifestationEngine,
     ManifestationEngineReport, ManifestationOutcome, ManifestationProfile, ManifestationState,
+    RegionInput, FLATTEN_AFTER_OVERLAYS, MAX_OVERLAY_DEPTH,
 };
 use crate::readpath::{PlannedRead, ReadPlanner, ReadPlannerConfig, ReadQuery};
 use crate::record::{RecordType, FOOTER_LEN, HEADER_LEN};
@@ -617,13 +618,7 @@ impl Namespace {
                 continue;
             }
             let source = self.read_extent(inode, root, 0, ino.size)?;
-            let spec = JobSpec {
-                inode,
-                inode_version: version,
-                root,
-                profile,
-                source,
-            };
+            let spec = JobSpec::full(inode, version, root, profile, source);
             out.push(engine.publish_now(spec));
         }
         Ok(out)
@@ -825,6 +820,7 @@ impl Namespace {
     fn commit_plan(&mut self, plan: Plan) -> Result<CommitOutcome> {
         let planned_begin = plan.begin;
         let touched: Vec<u64> = plan.touched.keys().copied().collect();
+        let changed = plan.changed.clone();
         let tx = plan.build()?;
         let outcome = {
             let mut seq = CommitSequencer::new(&mut self.volume, self.durability);
@@ -843,7 +839,7 @@ impl Namespace {
         // write never waits unless the caller explicitly opted in. A failure or a
         // full queue here is dropped — it can never affect authoritative history.
         if let Some(engine) = self.manifestation_engine.clone() {
-            self.enqueue_manifestations(&engine, &touched);
+            self.enqueue_manifestations(&engine, &touched, &changed);
         }
         // Optional background trigram indexing (research §11.1): also only after
         // a successful authoritative commit, and only if the query plane is on.
@@ -855,7 +851,17 @@ impl Namespace {
 
     /// Enqueue (or synchronously build) manifestation jobs for the regular-file
     /// inodes a transaction touched. Authority is only ever *read* here.
-    fn enqueue_manifestations(&self, engine: &Arc<ManifestationEngine>, touched: &[u64]) {
+    ///
+    /// Phase 22: when a prior generation exists, only the *changed* ranges are
+    /// read and rebuilt; every other byte is reused from the base. A metadata-only
+    /// touch produces an empty-delta overlay that keeps acceleration version-
+    /// current. The first manifestation of an object is a full self-contained base.
+    fn enqueue_manifestations(
+        &self,
+        engine: &Arc<ManifestationEngine>,
+        touched: &[u64],
+        changed: &HashMap<u64, Vec<(u64, u64)>>,
+    ) {
         let root = self.index.root();
         for &inode in touched {
             let Some(ino) = self.index.inode(inode) else {
@@ -874,16 +880,53 @@ impl Namespace {
             {
                 continue;
             }
-            let source = match self.read_extent(inode, root, 0, ino.size) {
-                Ok(b) => b,
-                Err(_) => continue,
-            };
-            let spec = JobSpec {
-                inode,
-                inode_version: version,
-                root,
-                profile: engine.config().profile,
-                source,
+            let profile = engine.config().profile;
+            let prev = engine.state().latest_for(inode);
+            let spec = match prev {
+                Some(base) if base.inode == inode => {
+                    // Incremental: read only the changed authoritative ranges.
+                    let ranges =
+                        merge_ranges(changed.get(&inode).cloned().unwrap_or_default(), ino.size);
+                    let mut regions = Vec::with_capacity(ranges.len());
+                    let mut ok = true;
+                    for (start, end) in ranges {
+                        match self.read_extent(inode, root, start, end - start) {
+                            Ok(data) => regions.push(RegionInput {
+                                logical_start: start,
+                                data,
+                            }),
+                            Err(_) => {
+                                ok = false;
+                                break;
+                            }
+                        }
+                    }
+                    if !ok {
+                        continue;
+                    }
+                    // Adaptive flattening: cap the indirection depth, and prefer a
+                    // compact table once enough overlays have accumulated.
+                    let flatten = base.overlay_depth >= FLATTEN_AFTER_OVERLAYS
+                        || base.overlay_depth.saturating_add(1) > MAX_OVERLAY_DEPTH;
+                    JobSpec::incremental(
+                        inode,
+                        version,
+                        root,
+                        profile,
+                        ino.size,
+                        base.generation,
+                        regions,
+                        flatten,
+                    )
+                }
+                _ => {
+                    // No usable base: build a full self-contained generation.
+                    let source = match self.read_extent(inode, root, 0, ino.size) {
+                        Ok(b) => b,
+                        Err(_) => continue,
+                    };
+                    JobSpec::full(inode, version, root, profile, source)
+                }
             };
             if engine.config().synchronous {
                 let _ = engine.publish_now(spec);
@@ -1142,6 +1185,7 @@ impl Namespace {
         let mut plan = self.plan()?;
         let prev = plan.prev_for(inode, &self.index);
         plan.add(RecordType::DataExtent, inode, prev, payload)?;
+        plan.note_changed(inode, offset, offset + data.len() as u64);
         self.commit_plan(plan)?;
         Ok(data.len() as u32)
     }
@@ -1156,6 +1200,7 @@ impl Namespace {
         let mut plan = self.plan()?;
         let prev = plan.prev_for(inode, &self.index);
         plan.add(RecordType::DataZeroRange, inode, prev, payload)?;
+        plan.note_changed(inode, offset, offset + len);
         self.commit_plan(plan)?;
         Ok(())
     }
@@ -1163,10 +1208,14 @@ impl Namespace {
     /// Truncate or set the logical size by appending a `FILE_RESIZE`.
     pub fn truncate(&mut self, inode: u64, new_size: u64) -> Result<()> {
         self.require_file(inode)?;
+        let old_size = self.index.inode(inode).map(|i| i.size).unwrap_or(0);
         let payload = FileResizePayload { new_size }.encode();
         let mut plan = self.plan()?;
         let prev = plan.prev_for(inode, &self.index);
         plan.add(RecordType::FileResize, inode, prev, payload)?;
+        // Growth appends new (zero) bytes above the old end; a shrink changes no
+        // byte below the new end. Either way the resize touches the inode.
+        plan.note_changed(inode, old_size.min(new_size), old_size.max(new_size));
         self.commit_plan(plan)?;
         Ok(())
     }
@@ -1207,9 +1256,15 @@ impl Namespace {
             plan.add(RecordType::InodeSetattr, inode, prev, payload)?;
         }
         if let Some(size) = attrs.size {
+            let old_size = ino.size;
             let payload = FileResizePayload { new_size: size }.encode();
             let prev = plan.prev_for(inode, &self.index);
             plan.add(RecordType::FileResize, inode, prev, payload)?;
+            plan.note_changed(inode, old_size.min(size), old_size.max(size));
+        } else {
+            // A pure metadata change still touches the inode (a metadata-only
+            // incremental generation keeps acceleration version-current).
+            plan.note_changed(inode, 0, 0);
         }
         self.commit_plan(plan)?;
         Ok(())
@@ -1661,6 +1716,11 @@ struct Plan {
     cursor: u64,
     touched: HashMap<u64, u64>,
     nlink: HashMap<u64, u32>,
+    /// The authoritative logical byte ranges each touched inode changed in this
+    /// transaction. Empty for a metadata-only change. This is the changed-range
+    /// delta an incremental manifestation job works from, so a small write never
+    /// requires reconstructing the whole object (Phase 22).
+    changed: HashMap<u64, Vec<(u64, u64)>>,
 }
 
 impl Plan {
@@ -1672,7 +1732,18 @@ impl Plan {
             cursor: begin + TX_BEGIN_RECORD_LEN,
             touched: HashMap::new(),
             nlink: HashMap::new(),
+            changed: HashMap::new(),
         })
+    }
+
+    /// Record that `inode`'s logical range `[start, end)` changed.
+    fn note_changed(&mut self, inode: u64, start: u64, end: u64) {
+        if end > start {
+            self.changed.entry(inode).or_default().push((start, end));
+        } else {
+            // Ensure a metadata-only touch is still represented.
+            self.changed.entry(inode).or_default();
+        }
     }
 
     fn prev_for(&self, inode: u64, index: &Index) -> u64 {
@@ -1712,6 +1783,28 @@ impl Plan {
     fn build(self) -> Result<Transaction> {
         self.builder.build()
     }
+}
+
+/// Sort, clamp to `[0, size)`, and coalesce overlapping or adjacent changed
+/// ranges. The result is disjoint and ascending.
+fn merge_ranges(mut ranges: Vec<(u64, u64)>, size: u64) -> Vec<(u64, u64)> {
+    for r in &mut ranges {
+        r.0 = r.0.min(size);
+        r.1 = r.1.min(size);
+    }
+    ranges.retain(|(s, e)| e > s);
+    ranges.sort_unstable();
+    let mut out: Vec<(u64, u64)> = Vec::with_capacity(ranges.len());
+    for (s, e) in ranges {
+        if let Some(last) = out.last_mut() {
+            if s <= last.1 {
+                last.1 = last.1.max(e);
+                continue;
+            }
+        }
+        out.push((s, e));
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------

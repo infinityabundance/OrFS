@@ -1,6 +1,6 @@
 {
   "construction": {
-    "elapsed_ns": 494145354,
+    "elapsed_ns": 548436784,
     "objects_attempted": 48,
     "objects_published": 48,
     "payload_bytes_on_disk": 1655124,
@@ -17,27 +17,27 @@
     "content_bytes_read": 16384,
     "indexed_candidates": 1,
     "iterations": 25,
-    "median_ns": 874595,
-    "min_ns": 864365
+    "median_ns": 932460,
+    "min_ns": 896022
   },
   "note": "indexed and scan are both `orfs query` API runs; ordinary grep -r is NOT measured here (research §12.1)",
   "scan": {
     "content_bytes_read": 786432,
     "iterations": 25,
-    "median_ns": 8719927,
-    "min_ns": 8617626
+    "median_ns": 8838091,
+    "min_ns": 8644220
   },
   "schema": "orfs.search-latency.v1",
-  "speedup_scan_over_indexed": 9.970245656561037,
+  "speedup_scan_over_indexed": 9.478252150226282,
   "suffix": {
-    "build_ns": 59351789,
-    "contains_ns": 1362,
+    "build_ns": 67323153,
+    "contains_ns": 4859,
     "contains_result": false,
-    "count_ns": 141,
+    "count_ns": 311,
     "count_result": 0,
     "memory_bytes_estimate": 11124863,
     "positions_len": 1,
-    "positions_ns": 5701,
+    "positions_ns": 12062,
     "source_len": 65536,
     "states": 95697,
     "transitions": 159223

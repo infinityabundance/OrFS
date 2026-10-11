@@ -1,21 +1,21 @@
 {
   "cached_ext4": {
     "iterations": 200,
-    "max_ns": 9468,
-    "mean_ns": 3112,
-    "min_ns": 2865,
-    "p50_ns": 3086,
-    "p90_ns": 3196
+    "max_ns": 5911,
+    "mean_ns": 4394,
+    "min_ns": 3697,
+    "p50_ns": 4288,
+    "p90_ns": 4859
   },
   "caveat": "all three arms are page-cache warm after warmup, so this measures the per-read dispatch cost, not cold storage; the passthrough arm still avoids the /dev/fuse round-trip, which is why it is reported separately",
   "claim": "a kernel-served passthrough read of an immutable snapshot file avoids the userspace daemon; measured against a daemon-served FUSE read and a cached plain-file read of the same bytes",
   "daemon_served": {
     "iterations": 200,
-    "max_ns": 776621,
-    "mean_ns": 453941,
-    "min_ns": 429242,
-    "p50_ns": 443910,
-    "p90_ns": 471592
+    "max_ns": 1123897,
+    "mean_ns": 758833,
+    "min_ns": 670882,
+    "p50_ns": 733178,
+    "p90_ns": 853523
   },
   "daemon_stats": {
     "daemon_reads": 406,
@@ -34,9 +34,9 @@
     "register_failures": 0,
     "register_sqes": 16,
     "reply_bytes": 53218608,
-    "requests_served": 1016,
-    "ring_completions": 1016,
-    "ring_submits": 1016
+    "requests_served": 1017,
+    "ring_completions": 1017,
+    "ring_submits": 1017
   },
   "environment": {
     "cgroup_memory_max": "8589934592",
@@ -58,11 +58,11 @@
   "iterations": 200,
   "passthrough": {
     "iterations": 200,
-    "max_ns": 38352,
-    "mean_ns": 17676,
-    "min_ns": 14617,
-    "p50_ns": 16491,
-    "p90_ns": 21150
+    "max_ns": 115576,
+    "mean_ns": 28864,
+    "min_ns": 21530,
+    "p50_ns": 25989,
+    "p90_ns": 36358
   },
   "passthrough_stats": {
     "daemon_reads": 0,
@@ -82,7 +82,7 @@
     "register_sqes": 16,
     "reply_bytes": 3376,
     "requests_served": 610,
-    "ring_completions": 610,
+    "ring_completions": 611,
     "ring_submits": 610
   },
   "schema": "orfs.fuse-passthrough-performance.v1"

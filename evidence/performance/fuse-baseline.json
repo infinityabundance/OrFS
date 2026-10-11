@@ -40,13 +40,13 @@
       "generated_by": "src/bench.rs",
       "measurement": {
         "bytes": 819200,
-        "mb_per_s": 1257.4291468146764,
+        "mb_per_s": 1264.4531533380975,
         "notes": [
           "4 concurrent reader thread(s)"
         ],
         "ops": 200,
-        "ops_per_s": 306989.5377965519,
-        "seconds": 0.000651488
+        "ops_per_s": 308704.383139184,
+        "seconds": 0.000647869
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -89,18 +89,18 @@
       "measurement": {
         "bytes": 0,
         "latency": {
-          "max_ns": 5548469,
-          "mean_ns": 3819281.175,
-          "min_ns": 3546117,
-          "p50_ns": 3694173,
-          "p95_ns": 5138803,
-          "p99_ns": 5407385,
+          "max_ns": 5914216,
+          "mean_ns": 3904092.13,
+          "min_ns": 3635925,
+          "p50_ns": 3770215,
+          "p95_ns": 5305310,
+          "p99_ns": 5585853,
           "samples": 200
         },
         "mb_per_s": 0.0,
         "ops": 200,
-        "ops_per_s": 261.7060049175605,
-        "seconds": 0.76421632
+        "ops_per_s": 256.0066461783012,
+        "seconds": 0.781229718
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -143,18 +143,18 @@
       "measurement": {
         "bytes": 0,
         "latency": {
-          "max_ns": 598779,
-          "mean_ns": 283553.28125,
-          "min_ns": 248244,
-          "p50_ns": 259916,
-          "p95_ns": 335627,
-          "p99_ns": 598779,
+          "max_ns": 645124,
+          "mean_ns": 322143.5625,
+          "min_ns": 271206,
+          "p50_ns": 291844,
+          "p95_ns": 508178,
+          "p99_ns": 645124,
           "samples": 32
         },
         "mb_per_s": 0.0,
         "ops": 6400,
-        "ops_per_s": 705090.2669780228,
-        "seconds": 0.009076852
+        "ops_per_s": 620581.6886706509,
+        "seconds": 0.010312905
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -197,18 +197,18 @@
       "measurement": {
         "bytes": 819200,
         "latency": {
-          "max_ns": 14434180,
-          "mean_ns": 3607168.535,
-          "min_ns": 3363034,
-          "p50_ns": 3440960,
-          "p95_ns": 4891299,
-          "p99_ns": 5184657,
+          "max_ns": 14086156,
+          "mean_ns": 3671597.09,
+          "min_ns": 3391800,
+          "p50_ns": 3469133,
+          "p95_ns": 5147907,
+          "p99_ns": 5872749,
           "samples": 200
         },
-        "mb_per_s": 1.0699743670347335,
+        "mb_per_s": 1.040522980771195,
         "ops": 200,
-        "ops_per_s": 261.22421070183924,
-        "seconds": 0.765625818
+        "ops_per_s": 254.03393085234254,
+        "seconds": 0.787296403
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -251,18 +251,18 @@
       "measurement": {
         "bytes": 0,
         "latency": {
-          "max_ns": 1609478,
-          "mean_ns": 16671.505,
-          "min_ns": 6051,
-          "p50_ns": 7394,
-          "p95_ns": 20078,
-          "p99_ns": 27642,
+          "max_ns": 89326,
+          "mean_ns": 10511.315,
+          "min_ns": 7424,
+          "p50_ns": 8756,
+          "p95_ns": 19456,
+          "p99_ns": 36338,
           "samples": 200
         },
         "mb_per_s": 0.0,
         "ops": 200,
-        "ops_per_s": 59835.34509736108,
-        "seconds": 0.003342506
+        "ops_per_s": 94737.78948315799,
+        "seconds": 0.00211109
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -305,18 +305,18 @@
       "measurement": {
         "bytes": 200,
         "latency": {
-          "max_ns": 39895,
-          "mean_ns": 3876.19,
+          "max_ns": 41647,
+          "mean_ns": 3912.03,
           "min_ns": 110,
-          "p50_ns": 131,
-          "p95_ns": 18324,
-          "p99_ns": 35547,
+          "p50_ns": 140,
+          "p95_ns": 18675,
+          "p99_ns": 24556,
           "samples": 200
         },
-        "mb_per_s": 0.25518178512417783,
+        "mb_per_s": 0.2524812595785078,
         "ops": 200,
-        "ops_per_s": 255181.78512417784,
-        "seconds": 0.000783755
+        "ops_per_s": 252481.2595785078,
+        "seconds": 0.000792138
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -359,18 +359,18 @@
       "measurement": {
         "bytes": 819200,
         "latency": {
-          "max_ns": 32942,
-          "mean_ns": 3665.575,
+          "max_ns": 55804,
+          "mean_ns": 4086.685,
           "min_ns": 130,
-          "p50_ns": 210,
-          "p95_ns": 20648,
-          "p99_ns": 29085,
+          "p50_ns": 220,
+          "p95_ns": 20037,
+          "p99_ns": 36408,
           "samples": 200
         },
-        "mb_per_s": 1105.928570946425,
+        "mb_per_s": 991.7783607811707,
         "ops": 200,
-        "ops_per_s": 270002.09251621703,
-        "seconds": 0.000740735
+        "ops_per_s": 242133.3888625905,
+        "seconds": 0.000825991
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -413,18 +413,18 @@
       "measurement": {
         "bytes": 819200,
         "latency": {
-          "max_ns": 162755,
-          "mean_ns": 50124.47,
-          "min_ns": 41418,
-          "p50_ns": 47569,
-          "p95_ns": 62046,
-          "p99_ns": 111218,
+          "max_ns": 157263,
+          "mean_ns": 58411.535,
+          "min_ns": 44513,
+          "p50_ns": 52328,
+          "p95_ns": 88014,
+          "p99_ns": 127348,
           "samples": 200
         },
-        "mb_per_s": 81.57895916122649,
+        "mb_per_s": 70.01960155667113,
         "ops": 200,
-        "ops_per_s": 19916.738076471313,
-        "seconds": 0.010041805
+        "ops_per_s": 17094.629286296662,
+        "seconds": 0.011699581
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -467,18 +467,18 @@
       "measurement": {
         "bytes": 0,
         "latency": {
-          "max_ns": 247072,
-          "mean_ns": 123661.27,
-          "min_ns": 92443,
-          "p50_ns": 116899,
-          "p95_ns": 189053,
-          "p99_ns": 240259,
+          "max_ns": 506095,
+          "mean_ns": 164136.78,
+          "min_ns": 100477,
+          "p50_ns": 162493,
+          "p95_ns": 224028,
+          "p99_ns": 281365,
           "samples": 200
         },
         "mb_per_s": 0.0,
         "ops": 200,
-        "ops_per_s": 2751.747356131459,
-        "seconds": 0.072681091
+        "ops_per_s": 2060.665157985016,
+        "seconds": 0.09705604
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -520,10 +520,10 @@
       "generated_by": "src/bench.rs",
       "measurement": {
         "bytes": 262144,
-        "mb_per_s": 53.556726073804754,
+        "mb_per_s": 46.36631197645461,
         "ops": 64,
-        "ops_per_s": 13075.372576612488,
-        "seconds": 0.004894698
+        "ops_per_s": 11319.900384876613,
+        "seconds": 0.00565376
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -565,10 +565,10 @@
       "generated_by": "src/bench.rs",
       "measurement": {
         "bytes": 262144,
-        "mb_per_s": 492.02586409151905,
+        "mb_per_s": 445.43753791360876,
         "ops": 64,
-        "ops_per_s": 120123.50197546852,
-        "seconds": 0.000532785
+        "ops_per_s": 108749.39890468965,
+        "seconds": 0.000588509
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -592,7 +592,7 @@
     "description": "F0 (traditional /dev/fuse, sync backing)",
     "durability": "ordered",
     "fuse_over_io_uring": "not usable: F2 was not requested for this mount",
-    "mount_seconds": 0.00111301,
+    "mount_seconds": 0.001339189,
     "transport_requested": "fuse",
     "transport_used": "F0",
     "unmounted_cleanly": true
@@ -637,13 +637,13 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 819200,
-          "mb_per_s": 9614.007909962562,
+          "mb_per_s": 10295.466827533337,
           "notes": [
             "4 concurrent reader thread(s)"
           ],
           "ops": 200,
-          "ops_per_s": 2347169.8998932038,
-          "seconds": 0.000085209
+          "ops_per_s": 2513541.705940756,
+          "seconds": 0.000079569
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -685,13 +685,13 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 819200,
-          "mb_per_s": 1148.9110449452542,
+          "mb_per_s": 1065.0372151981019,
           "notes": [
             "4 concurrent reader thread(s)"
           ],
           "ops": 200,
-          "ops_per_s": 280495.8605823374,
-          "seconds": 0.000713023
+          "ops_per_s": 260018.8513667241,
+          "seconds": 0.000769175
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -733,13 +733,13 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 819200,
-          "mb_per_s": 797.8037025025833,
+          "mb_per_s": 685.2133763822206,
           "notes": [
             "4 concurrent reader thread(s)"
           ],
           "ops": 200,
-          "ops_per_s": 194776.29455629474,
-          "seconds": 0.001026819
+          "ops_per_s": 167288.42196831558,
+          "seconds": 0.00119554
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -781,13 +781,13 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 819200,
-          "mb_per_s": 1257.4291468146764,
+          "mb_per_s": 1264.4531533380975,
           "notes": [
             "4 concurrent reader thread(s)"
           ],
           "ops": 200,
-          "ops_per_s": 306989.5377965519,
-          "seconds": 0.000651488
+          "ops_per_s": 308704.383139184,
+          "seconds": 0.000647869
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -829,13 +829,13 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 819200,
-          "mb_per_s": 1273.6872873819134,
+          "mb_per_s": 1303.456099846774,
           "notes": [
             "4 concurrent reader thread(s)"
           ],
           "ops": 200,
-          "ops_per_s": 310958.81039597496,
-          "seconds": 0.000643172
+          "ops_per_s": 318226.5868766538,
+          "seconds": 0.000628483
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -877,13 +877,13 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 819200,
-          "mb_per_s": 1057.9386726175717,
+          "mb_per_s": 1208.5376576321394,
           "notes": [
             "4 concurrent reader thread(s)"
           ],
           "ops": 200,
-          "ops_per_s": 258285.80874452434,
-          "seconds": 0.000774336
+          "ops_per_s": 295053.13907034654,
+          "seconds": 0.000677844
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -928,18 +928,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 1732728,
-            "mean_ns": 1147661.875,
-            "min_ns": 1096429,
-            "p50_ns": 1122247,
-            "p95_ns": 1231851,
-            "p99_ns": 1700237,
+            "max_ns": 1860722,
+            "mean_ns": 1181951.305,
+            "min_ns": 1097588,
+            "p50_ns": 1129227,
+            "p95_ns": 1763300,
+            "p99_ns": 1846846,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 870.8201790684079,
-          "seconds": 0.229668541
+          "ops_per_s": 845.3233504252361,
+          "seconds": 0.236595854
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -982,18 +982,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 17156792,
-            "mean_ns": 4003433.245,
-            "min_ns": 3665290,
-            "p50_ns": 3801214,
-            "p95_ns": 5403478,
-            "p99_ns": 5694692,
+            "max_ns": 20997392,
+            "mean_ns": 4061879.995,
+            "min_ns": 3717137,
+            "p50_ns": 3886171,
+            "p95_ns": 4979281,
+            "p99_ns": 5450711,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 249.66845558317843,
-          "seconds": 0.801062351
+          "ops_per_s": 246.06278868824558,
+          "seconds": 0.812800672
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1036,18 +1036,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 12021535,
-            "mean_ns": 3971090.69,
-            "min_ns": 3640824,
-            "p50_ns": 3758814,
-            "p95_ns": 5582512,
-            "p99_ns": 6306405,
+            "max_ns": 5592265,
+            "mean_ns": 3922443.175,
+            "min_ns": 3670619,
+            "p50_ns": 3796304,
+            "p95_ns": 5372055,
+            "p99_ns": 5515903,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 251.70438953011177,
-          "seconds": 0.794582885
+          "ops_per_s": 254.80774664421924,
+          "seconds": 0.784905493
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1090,18 +1090,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 5548469,
-            "mean_ns": 3819281.175,
-            "min_ns": 3546117,
-            "p50_ns": 3694173,
-            "p95_ns": 5138803,
-            "p99_ns": 5407385,
+            "max_ns": 5914216,
+            "mean_ns": 3904092.13,
+            "min_ns": 3635925,
+            "p50_ns": 3770215,
+            "p95_ns": 5305310,
+            "p99_ns": 5585853,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 261.7060049175605,
-          "seconds": 0.76421632
+          "ops_per_s": 256.0066461783012,
+          "seconds": 0.781229718
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -1144,18 +1144,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 5786774,
-            "mean_ns": 3911791.285,
-            "min_ns": 3656082,
-            "p50_ns": 3780855,
-            "p95_ns": 5376287,
-            "p99_ns": 5564649,
+            "max_ns": 7024307,
+            "mean_ns": 3978138.7,
+            "min_ns": 3702439,
+            "p50_ns": 3856566,
+            "p95_ns": 5156692,
+            "p99_ns": 5625758,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 255.50906806537236,
-          "seconds": 0.782751084
+          "ops_per_s": 251.22830669322605,
+          "seconds": 0.796088636
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1198,18 +1198,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 5627346,
-            "mean_ns": 3859275.51,
-            "min_ns": 3631717,
-            "p50_ns": 3729900,
-            "p95_ns": 5091014,
-            "p99_ns": 5605195,
+            "max_ns": 5702030,
+            "mean_ns": 3903957.965,
+            "min_ns": 3597664,
+            "p50_ns": 3778271,
+            "p95_ns": 5208469,
+            "p99_ns": 5509420,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 259.0002821432524,
-          "seconds": 0.772199931
+          "ops_per_s": 256.0138973355163,
+          "seconds": 0.781207591
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1254,18 +1254,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 79729,
-            "mean_ns": 35755.125,
-            "min_ns": 30366,
-            "p50_ns": 33803,
-            "p95_ns": 43631,
-            "p99_ns": 79729,
+            "max_ns": 85169,
+            "mean_ns": 35107.9375,
+            "min_ns": 32751,
+            "p50_ns": 32891,
+            "p95_ns": 39333,
+            "p99_ns": 85169,
             "samples": 32
           },
           "mb_per_s": 0.0,
           "ops": 6400,
-          "ops_per_s": 5580882.686357882,
-          "seconds": 0.001146772
+          "ops_per_s": 5686053.443571694,
+          "seconds": 0.001125561
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -1308,18 +1308,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 729343,
-            "mean_ns": 308392.1875,
-            "min_ns": 263813,
-            "p50_ns": 279813,
-            "p95_ns": 465449,
-            "p99_ns": 729343,
+            "max_ns": 761801,
+            "mean_ns": 394940.625,
+            "min_ns": 299829,
+            "p50_ns": 388004,
+            "p95_ns": 477541,
+            "p99_ns": 761801,
             "samples": 32
           },
           "mb_per_s": 0.0,
           "ops": 6400,
-          "ops_per_s": 648257.6354113974,
-          "seconds": 0.009872618
+          "ops_per_s": 506121.82020069787,
+          "seconds": 0.012645177
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1362,18 +1362,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 370242,
-            "mean_ns": 186345.6875,
-            "min_ns": 133790,
-            "p50_ns": 173554,
-            "p95_ns": 291294,
-            "p99_ns": 370242,
+            "max_ns": 270696,
+            "mean_ns": 184709.03125,
+            "min_ns": 147055,
+            "p50_ns": 163896,
+            "p95_ns": 266127,
+            "p99_ns": 270696,
             "samples": 32
           },
           "mb_per_s": 0.0,
           "ops": 6400,
-          "ops_per_s": 1072585.7310233188,
-          "seconds": 0.005966889
+          "ops_per_s": 1081795.5778225146,
+          "seconds": 0.00591609
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1416,18 +1416,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 598779,
-            "mean_ns": 283553.28125,
-            "min_ns": 248244,
-            "p50_ns": 259916,
-            "p95_ns": 335627,
-            "p99_ns": 598779,
+            "max_ns": 645124,
+            "mean_ns": 322143.5625,
+            "min_ns": 271206,
+            "p50_ns": 291844,
+            "p95_ns": 508178,
+            "p99_ns": 645124,
             "samples": 32
           },
           "mb_per_s": 0.0,
           "ops": 6400,
-          "ops_per_s": 705090.2669780228,
-          "seconds": 0.009076852
+          "ops_per_s": 620581.6886706509,
+          "seconds": 0.010312905
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -1470,18 +1470,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 589411,
-            "mean_ns": 295798.0,
-            "min_ns": 259274,
-            "p50_ns": 285313,
-            "p95_ns": 328764,
-            "p99_ns": 589411,
+            "max_ns": 662586,
+            "mean_ns": 401163.90625,
+            "min_ns": 319516,
+            "p50_ns": 403563,
+            "p95_ns": 445431,
+            "p99_ns": 662586,
             "samples": 32
           },
           "mb_per_s": 0.0,
           "ops": 6400,
-          "ops_per_s": 675951.565535511,
-          "seconds": 0.009468134
+          "ops_per_s": 498267.81864110223,
+          "seconds": 0.012844498
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1524,18 +1524,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 275715,
-            "mean_ns": 158577.21875,
-            "min_ns": 133400,
-            "p50_ns": 148307,
-            "p95_ns": 221213,
-            "p99_ns": 275715,
+            "max_ns": 1549722,
+            "mean_ns": 230005.21875,
+            "min_ns": 143518,
+            "p50_ns": 183993,
+            "p95_ns": 267900,
+            "p99_ns": 1549722,
             "samples": 32
           },
           "mb_per_s": 0.0,
           "ops": 6400,
-          "ops_per_s": 1260190.0642283433,
-          "seconds": 0.005078599
+          "ops_per_s": 868994.5854848304,
+          "seconds": 0.007364833
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1580,18 +1580,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 3812544,
-            "mean_ns": 1602673.175,
-            "min_ns": 1106868,
-            "p50_ns": 1446633,
-            "p95_ns": 2566375,
-            "p99_ns": 3540876,
+            "max_ns": 5170608,
+            "mean_ns": 1207935.825,
+            "min_ns": 1102667,
+            "p50_ns": 1132654,
+            "p95_ns": 1699020,
+            "p99_ns": 1729627,
             "samples": 200
           },
-          "mb_per_s": 2.549601117208319,
+          "mb_per_s": 3.381038331399472,
           "ops": 200,
-          "ops_per_s": 622.4612102559373,
-          "seconds": 0.321305162
+          "ops_per_s": 825.4488113768242,
+          "seconds": 0.242292432
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -1634,18 +1634,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 9307180,
-            "mean_ns": 4917109.735,
-            "min_ns": 3241447,
-            "p50_ns": 4895848,
-            "p95_ns": 6886838,
-            "p99_ns": 7767854,
+            "max_ns": 14449193,
+            "mean_ns": 4953837.545,
+            "min_ns": 3254854,
+            "p50_ns": 4806359,
+            "p95_ns": 6979705,
+            "p99_ns": 8861536,
             "samples": 200
           },
-          "mb_per_s": 0.6321330420658936,
+          "mb_per_s": 0.6126571987262358,
           "ops": 200,
-          "ops_per_s": 154.32935597311857,
-          "seconds": 1.295929726
+          "ops_per_s": 149.5745114077724,
+          "seconds": 1.337126213
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1688,18 +1688,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 18760874,
-            "mean_ns": 5017116.725,
-            "min_ns": 3250494,
-            "p50_ns": 4931263,
-            "p95_ns": 7227525,
-            "p99_ns": 8303245,
+            "max_ns": 20939805,
+            "mean_ns": 4929419.57,
+            "min_ns": 3417267,
+            "p50_ns": 4759281,
+            "p95_ns": 6989603,
+            "p99_ns": 8897534,
             "samples": 200
           },
-          "mb_per_s": 0.6281982606194728,
+          "mb_per_s": 0.625485159010479,
           "ops": 200,
-          "ops_per_s": 153.36871597155098,
-          "seconds": 1.304046909
+          "ops_per_s": 152.70633764904272,
+          "seconds": 1.309703337
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1742,18 +1742,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 14434180,
-            "mean_ns": 3607168.535,
-            "min_ns": 3363034,
-            "p50_ns": 3440960,
-            "p95_ns": 4891299,
-            "p99_ns": 5184657,
+            "max_ns": 14086156,
+            "mean_ns": 3671597.09,
+            "min_ns": 3391800,
+            "p50_ns": 3469133,
+            "p95_ns": 5147907,
+            "p99_ns": 5872749,
             "samples": 200
           },
-          "mb_per_s": 1.0699743670347335,
+          "mb_per_s": 1.040522980771195,
           "ops": 200,
-          "ops_per_s": 261.22421070183924,
-          "seconds": 0.765625818
+          "ops_per_s": 254.03393085234254,
+          "seconds": 0.787296403
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -1796,18 +1796,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 5196139,
-            "mean_ns": 3549031.735,
-            "min_ns": 3385046,
-            "p50_ns": 3450748,
-            "p95_ns": 4351080,
-            "p99_ns": 5167766,
+            "max_ns": 5330407,
+            "mean_ns": 3593918.145,
+            "min_ns": 3390537,
+            "p50_ns": 3476126,
+            "p95_ns": 4909952,
+            "p99_ns": 5192108,
             "samples": 200
           },
-          "mb_per_s": 1.0758241208057193,
+          "mb_per_s": 1.0472183894310405,
           "ops": 200,
-          "ops_per_s": 262.65237324358384,
-          "seconds": 0.761462756
+          "ops_per_s": 255.66855210718762,
+          "seconds": 0.78226281
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1850,18 +1850,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 5197992,
-            "mean_ns": 3579336.74,
-            "min_ns": 3390095,
-            "p50_ns": 3457520,
-            "p95_ns": 4663243,
-            "p99_ns": 5173357,
+            "max_ns": 6124118,
+            "mean_ns": 3607821.45,
+            "min_ns": 3343619,
+            "p50_ns": 3462421,
+            "p95_ns": 5014467,
+            "p99_ns": 5194703,
             "samples": 200
           },
-          "mb_per_s": 1.074320231709157,
+          "mb_per_s": 1.0552660259568494,
           "ops": 200,
-          "ops_per_s": 262.2852128196184,
-          "seconds": 0.762528691
+          "ops_per_s": 257.6333071183714,
+          "seconds": 0.776297142
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -1906,18 +1906,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 3567,
-            "mean_ns": 758.015,
-            "min_ns": 370,
-            "p50_ns": 771,
-            "p95_ns": 1042,
-            "p99_ns": 1153,
+            "max_ns": 3917,
+            "mean_ns": 912.62,
+            "min_ns": 511,
+            "p50_ns": 941,
+            "p95_ns": 1172,
+            "p99_ns": 1523,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 1263455.8043159652,
-          "seconds": 0.000158296
+          "ops_per_s": 1050227.1116128862,
+          "seconds": 0.000190435
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -1960,18 +1960,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 37881,
-            "mean_ns": 6834.93,
-            "min_ns": 5340,
-            "p50_ns": 6181,
-            "p95_ns": 10139,
-            "p99_ns": 15980,
+            "max_ns": 44453,
+            "mean_ns": 8186.61,
+            "min_ns": 5971,
+            "p50_ns": 7464,
+            "p95_ns": 11571,
+            "p99_ns": 23434,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 145500.15313891118,
-          "seconds": 0.001374569
+          "ops_per_s": 121634.59871833623,
+          "seconds": 0.001644269
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2014,18 +2014,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 44594,
-            "mean_ns": 6384.615,
-            "min_ns": 3707,
-            "p50_ns": 6111,
-            "p95_ns": 7675,
-            "p99_ns": 12724,
+            "max_ns": 505493,
+            "mean_ns": 9842.87,
+            "min_ns": 4409,
+            "p50_ns": 6121,
+            "p95_ns": 10880,
+            "p99_ns": 58930,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 155746.25819614684,
-          "seconds": 0.00128414
+          "ops_per_s": 101163.94173159283,
+          "seconds": 0.001976989
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2068,18 +2068,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 1609478,
-            "mean_ns": 16671.505,
-            "min_ns": 6051,
-            "p50_ns": 7394,
-            "p95_ns": 20078,
-            "p99_ns": 27642,
+            "max_ns": 89326,
+            "mean_ns": 10511.315,
+            "min_ns": 7424,
+            "p50_ns": 8756,
+            "p95_ns": 19456,
+            "p99_ns": 36338,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 59835.34509736108,
-          "seconds": 0.003342506
+          "ops_per_s": 94737.78948315799,
+          "seconds": 0.00211109
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -2122,18 +2122,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 51296,
-            "mean_ns": 7207.425,
-            "min_ns": 4970,
-            "p50_ns": 6402,
-            "p95_ns": 10359,
-            "p99_ns": 18995,
+            "max_ns": 170278,
+            "mean_ns": 10420.835,
+            "min_ns": 6292,
+            "p50_ns": 7324,
+            "p95_ns": 19276,
+            "p99_ns": 74409,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 138033.0837695179,
-          "seconds": 0.001448928
+          "ops_per_s": 95579.67880448936,
+          "seconds": 0.002092495
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2176,18 +2176,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 17482,
-            "mean_ns": 5131.24,
-            "min_ns": 3256,
-            "p50_ns": 5239,
-            "p95_ns": 6522,
-            "p99_ns": 7684,
+            "max_ns": 17452,
+            "mean_ns": 6161.165,
+            "min_ns": 5080,
+            "p50_ns": 5801,
+            "p95_ns": 7615,
+            "p99_ns": 9958,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 193588.16634256783,
-          "seconds": 0.001033121
+          "ops_per_s": 161308.14452887134,
+          "seconds": 0.001239863
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2232,18 +2232,18 @@
         "measurement": {
           "bytes": 200,
           "latency": {
-            "max_ns": 3156,
-            "mean_ns": 161.13,
-            "min_ns": 130,
-            "p50_ns": 140,
+            "max_ns": 4388,
+            "mean_ns": 191.255,
+            "min_ns": 160,
+            "p50_ns": 170,
             "p95_ns": 180,
-            "p99_ns": 201,
+            "p99_ns": 241,
             "samples": 200
           },
-          "mb_per_s": 4.8868689830425645,
+          "mb_per_s": 4.123626316983155,
           "ops": 200,
-          "ops_per_s": 4886868.983042564,
-          "seconds": 0.000040926
+          "ops_per_s": 4123626.316983155,
+          "seconds": 0.000048501
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -2286,18 +2286,18 @@
         "measurement": {
           "bytes": 200,
           "latency": {
-            "max_ns": 49392,
-            "mean_ns": 5944.65,
+            "max_ns": 56455,
+            "mean_ns": 6252.705,
             "min_ns": 150,
-            "p50_ns": 170,
-            "p95_ns": 26639,
-            "p99_ns": 40145,
+            "p50_ns": 171,
+            "p95_ns": 31008,
+            "p99_ns": 43271,
             "samples": 200
           },
-          "mb_per_s": 0.16687539997947431,
+          "mb_per_s": 0.15859761643642256,
           "ops": 200,
-          "ops_per_s": 166875.3999794743,
-          "seconds": 0.001198499
+          "ops_per_s": 158597.61643642257,
+          "seconds": 0.001261053
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2340,18 +2340,18 @@
         "measurement": {
           "bytes": 200,
           "latency": {
-            "max_ns": 60994,
-            "mean_ns": 5728.85,
-            "min_ns": 140,
-            "p50_ns": 170,
-            "p95_ns": 21219,
-            "p99_ns": 44383,
+            "max_ns": 57547,
+            "mean_ns": 5352.56,
+            "min_ns": 150,
+            "p50_ns": 171,
+            "p95_ns": 20007,
+            "p99_ns": 42249,
             "samples": 200
           },
-          "mb_per_s": 0.17310486952653223,
+          "mb_per_s": 0.18517061157223738,
           "ops": 200,
-          "ops_per_s": 173104.86952653222,
-          "seconds": 0.001155369
+          "ops_per_s": 185170.6115722374,
+          "seconds": 0.001080085
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2394,18 +2394,18 @@
         "measurement": {
           "bytes": 200,
           "latency": {
-            "max_ns": 39895,
-            "mean_ns": 3876.19,
+            "max_ns": 41647,
+            "mean_ns": 3912.03,
             "min_ns": 110,
-            "p50_ns": 131,
-            "p95_ns": 18324,
-            "p99_ns": 35547,
+            "p50_ns": 140,
+            "p95_ns": 18675,
+            "p99_ns": 24556,
             "samples": 200
           },
-          "mb_per_s": 0.25518178512417783,
+          "mb_per_s": 0.2524812595785078,
           "ops": 200,
-          "ops_per_s": 255181.78512417784,
-          "seconds": 0.000783755
+          "ops_per_s": 252481.2595785078,
+          "seconds": 0.000792138
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -2448,18 +2448,18 @@
         "measurement": {
           "bytes": 200,
           "latency": {
-            "max_ns": 40155,
-            "mean_ns": 4760.1,
+            "max_ns": 47328,
+            "mean_ns": 3881.985,
             "min_ns": 110,
-            "p50_ns": 141,
-            "p95_ns": 22823,
-            "p99_ns": 38853,
+            "p50_ns": 140,
+            "p95_ns": 15008,
+            "p99_ns": 36829,
             "samples": 200
           },
-          "mb_per_s": 0.208017623253042,
+          "mb_per_s": 0.25450926795499257,
           "ops": 200,
-          "ops_per_s": 208017.623253042,
-          "seconds": 0.000961457
+          "ops_per_s": 254509.2679549926,
+          "seconds": 0.000785826
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2502,18 +2502,18 @@
         "measurement": {
           "bytes": 200,
           "latency": {
-            "max_ns": 36939,
-            "mean_ns": 3967.585,
-            "min_ns": 110,
-            "p50_ns": 150,
-            "p95_ns": 19437,
-            "p99_ns": 33162,
+            "max_ns": 56045,
+            "mean_ns": 5334.74,
+            "min_ns": 120,
+            "p50_ns": 171,
+            "p95_ns": 19596,
+            "p99_ns": 40676,
             "samples": 200
           },
-          "mb_per_s": 0.24924603075696022,
+          "mb_per_s": 0.18570791858564847,
           "ops": 200,
-          "ops_per_s": 249246.03075696022,
-          "seconds": 0.00080242
+          "ops_per_s": 185707.91858564847,
+          "seconds": 0.00107696
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2558,18 +2558,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 3426,
-            "mean_ns": 183.075,
+            "max_ns": 3277,
+            "mean_ns": 166.565,
             "min_ns": 130,
-            "p50_ns": 140,
-            "p95_ns": 281,
-            "p99_ns": 391,
+            "p50_ns": 150,
+            "p95_ns": 171,
+            "p99_ns": 230,
             "samples": 200
           },
-          "mb_per_s": 18866.447110844983,
+          "mb_per_s": 20184.300004927805,
           "ops": 200,
-          "ops_per_s": 4606066.189171138,
-          "seconds": 0.000043421
+          "ops_per_s": 4927807.618390578,
+          "seconds": 0.000040586
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -2612,18 +2612,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 55153,
-            "mean_ns": 5421.69,
-            "min_ns": 160,
-            "p50_ns": 380,
-            "p95_ns": 26700,
-            "p99_ns": 42479,
+            "max_ns": 73467,
+            "mean_ns": 5808.675,
+            "min_ns": 190,
+            "p50_ns": 211,
+            "p95_ns": 27070,
+            "p99_ns": 56185,
             "samples": 200
           },
-          "mb_per_s": 749.3507669594123,
+          "mb_per_s": 699.2350409622676,
           "ops": 200,
-          "ops_per_s": 182946.96458970028,
-          "seconds": 0.001093213
+          "ops_per_s": 170711.67992242862,
+          "seconds": 0.001171566
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2666,18 +2666,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 104065,
-            "mean_ns": 6105.2,
-            "min_ns": 170,
-            "p50_ns": 311,
-            "p95_ns": 31249,
-            "p99_ns": 60603,
+            "max_ns": 96320,
+            "mean_ns": 5702.81,
+            "min_ns": 180,
+            "p50_ns": 211,
+            "p95_ns": 30247,
+            "p99_ns": 55284,
             "samples": 200
           },
-          "mb_per_s": 665.6212166762816,
+          "mb_per_s": 712.7971982336691,
           "ops": 200,
-          "ops_per_s": 162505.1798526078,
-          "seconds": 0.00123073
+          "ops_per_s": 174022.75347501686,
+          "seconds": 0.001149275
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2720,18 +2720,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 32942,
-            "mean_ns": 3665.575,
+            "max_ns": 55804,
+            "mean_ns": 4086.685,
             "min_ns": 130,
-            "p50_ns": 210,
-            "p95_ns": 20648,
-            "p99_ns": 29085,
+            "p50_ns": 220,
+            "p95_ns": 20037,
+            "p99_ns": 36408,
             "samples": 200
           },
-          "mb_per_s": 1105.928570946425,
+          "mb_per_s": 991.7783607811707,
           "ops": 200,
-          "ops_per_s": 270002.09251621703,
-          "seconds": 0.000740735
+          "ops_per_s": 242133.3888625905,
+          "seconds": 0.000825991
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -2774,18 +2774,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 44463,
-            "mean_ns": 3725.08,
-            "min_ns": 130,
-            "p50_ns": 161,
-            "p95_ns": 18736,
-            "p99_ns": 31228,
+            "max_ns": 54843,
+            "mean_ns": 4448.9,
+            "min_ns": 190,
+            "p50_ns": 231,
+            "p95_ns": 21991,
+            "p99_ns": 45605,
             "samples": 200
           },
-          "mb_per_s": 1088.4252511469522,
+          "mb_per_s": 910.4053148466523,
           "ops": 200,
-          "ops_per_s": 265728.82108079887,
-          "seconds": 0.000752647
+          "ops_per_s": 222266.9225699835,
+          "seconds": 0.000899819
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2828,18 +2828,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 50354,
-            "mean_ns": 3856.765,
-            "min_ns": 130,
-            "p50_ns": 201,
-            "p95_ns": 19046,
-            "p99_ns": 33423,
+            "max_ns": 221654,
+            "mean_ns": 4920.49,
+            "min_ns": 141,
+            "p50_ns": 231,
+            "p95_ns": 19116,
+            "p99_ns": 42149,
             "samples": 200
           },
-          "mb_per_s": 1047.756570541311,
+          "mb_per_s": 824.0246644101212,
           "ops": 200,
-          "ops_per_s": 255799.94397981226,
-          "seconds": 0.000781861
+          "ops_per_s": 201177.89658450225,
+          "seconds": 0.000994145
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2884,18 +2884,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 3777,
-            "mean_ns": 267.14,
-            "min_ns": 190,
-            "p50_ns": 250,
-            "p95_ns": 291,
-            "p99_ns": 441,
+            "max_ns": 3015,
+            "mean_ns": 336.135,
+            "min_ns": 191,
+            "p50_ns": 290,
+            "p95_ns": 441,
+            "p99_ns": 1513,
             "samples": 200
           },
-          "mb_per_s": 13497.215540251096,
+          "mb_per_s": 10835.835504821365,
           "ops": 200,
-          "ops_per_s": 3295218.6377566154,
-          "seconds": 0.000060694
+          "ops_per_s": 2645467.6525442787,
+          "seconds": 0.000075601
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -2938,18 +2938,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 96588492,
-            "mean_ns": 1496746.015,
-            "min_ns": 510173,
-            "p50_ns": 923746,
-            "p95_ns": 1709996,
-            "p99_ns": 2729841,
+            "max_ns": 99613950,
+            "mean_ns": 1317399.04,
+            "min_ns": 100898,
+            "p50_ns": 907073,
+            "p95_ns": 1571422,
+            "p99_ns": 3091208,
             "samples": 200
           },
-          "mb_per_s": 2.736117240218953,
+          "mb_per_s": 3.1085412049469183,
           "ops": 200,
-          "ops_per_s": 667.9973731003303,
-          "seconds": 0.299402375
+          "ops_per_s": 758.9211926139938,
+          "seconds": 0.263531974
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -2992,18 +2992,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 99345604,
-            "mean_ns": 1333014.35,
-            "min_ns": 799133,
-            "p50_ns": 821255,
-            "p95_ns": 925770,
-            "p99_ns": 1425474,
+            "max_ns": 2773154,
+            "mean_ns": 1026205.99,
+            "min_ns": 514960,
+            "p50_ns": 936457,
+            "p95_ns": 2386603,
+            "p99_ns": 2543987,
             "samples": 200
           },
-          "mb_per_s": 3.072149095235778,
+          "mb_per_s": 3.990096086647508,
           "ops": 200,
-          "ops_per_s": 750.0364002040474,
-          "seconds": 0.266653725
+          "ops_per_s": 974.1445524041768,
+          "seconds": 0.205308339
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -3046,18 +3046,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 162755,
-            "mean_ns": 50124.47,
-            "min_ns": 41418,
-            "p50_ns": 47569,
-            "p95_ns": 62046,
-            "p99_ns": 111218,
+            "max_ns": 157263,
+            "mean_ns": 58411.535,
+            "min_ns": 44513,
+            "p50_ns": 52328,
+            "p95_ns": 88014,
+            "p99_ns": 127348,
             "samples": 200
           },
-          "mb_per_s": 81.57895916122649,
+          "mb_per_s": 70.01960155667113,
           "ops": 200,
-          "ops_per_s": 19916.738076471313,
-          "seconds": 0.010041805
+          "ops_per_s": 17094.629286296662,
+          "seconds": 0.011699581
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -3100,18 +3100,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 412771,
-            "mean_ns": 81120.015,
-            "min_ns": 52698,
-            "p50_ns": 69209,
-            "p95_ns": 133860,
-            "p99_ns": 161462,
+            "max_ns": 192960,
+            "mean_ns": 79518.27,
+            "min_ns": 55674,
+            "p50_ns": 70551,
+            "p95_ns": 136094,
+            "p99_ns": 159137,
             "samples": 200
           },
-          "mb_per_s": 50.42739246490905,
+          "mb_per_s": 51.450661189984956,
           "ops": 200,
-          "ops_per_s": 12311.375113503185,
-          "seconds": 0.016245139
+          "ops_per_s": 12561.19657958617,
+          "seconds": 0.01592205
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -3154,18 +3154,18 @@
         "measurement": {
           "bytes": 819200,
           "latency": {
-            "max_ns": 104535,
-            "mean_ns": 53279.105,
-            "min_ns": 46037,
-            "p50_ns": 51686,
-            "p95_ns": 64881,
-            "p99_ns": 79358,
+            "max_ns": 152504,
+            "mean_ns": 59362.055,
+            "min_ns": 47649,
+            "p50_ns": 53370,
+            "p95_ns": 87433,
+            "p99_ns": 131004,
             "samples": 200
           },
-          "mb_per_s": 76.7972832961034,
+          "mb_per_s": 68.9053909300083,
           "ops": 200,
-          "ops_per_s": 18749.336742212745,
-          "seconds": 0.010667044
+          "ops_per_s": 16822.605207521556,
+          "seconds": 0.011888765
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -3210,18 +3210,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 4698,
-            "mean_ns": 1891.085,
-            "min_ns": 1743,
-            "p50_ns": 1803,
-            "p95_ns": 2164,
-            "p99_ns": 3035,
+            "max_ns": 11181,
+            "mean_ns": 1964.55,
+            "min_ns": 1763,
+            "p50_ns": 1834,
+            "p95_ns": 2425,
+            "p99_ns": 2655,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 157629.13175509791,
-          "seconds": 0.001268801
+          "ops_per_s": 155043.92782084984,
+          "seconds": 0.001289957
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -3264,18 +3264,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 326710,
-            "mean_ns": 158691.95,
-            "min_ns": 121767,
-            "p50_ns": 151193,
-            "p95_ns": 214320,
-            "p99_ns": 266448,
+            "max_ns": 415025,
+            "mean_ns": 201914.715,
+            "min_ns": 131525,
+            "p50_ns": 195525,
+            "p95_ns": 278820,
+            "p99_ns": 326920,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 2102.5695228805084,
-          "seconds": 0.095121706
+          "ops_per_s": 1602.1984084802439,
+          "seconds": 0.124828485
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -3318,18 +3318,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 1166629,
-            "mean_ns": 123009.515,
-            "min_ns": 105447,
-            "p50_ns": 110857,
-            "p95_ns": 173945,
-            "p99_ns": 192760,
+            "max_ns": 386081,
+            "mean_ns": 140799.915,
+            "min_ns": 109013,
+            "p50_ns": 125234,
+            "p95_ns": 195615,
+            "p99_ns": 307604,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 2622.4160875366683,
-          "seconds": 0.076265548
+          "ops_per_s": 2216.676024918675,
+          "seconds": 0.090225183
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -3372,18 +3372,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 247072,
-            "mean_ns": 123661.27,
-            "min_ns": 92443,
-            "p50_ns": 116899,
-            "p95_ns": 189053,
-            "p99_ns": 240259,
+            "max_ns": 506095,
+            "mean_ns": 164136.78,
+            "min_ns": 100477,
+            "p50_ns": 162493,
+            "p95_ns": 224028,
+            "p99_ns": 281365,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 2751.747356131459,
-          "seconds": 0.072681091
+          "ops_per_s": 2060.665157985016,
+          "seconds": 0.09705604
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -3426,18 +3426,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 310250,
-            "mean_ns": 154926.305,
-            "min_ns": 111959,
-            "p50_ns": 148938,
-            "p95_ns": 208009,
-            "p99_ns": 275795,
+            "max_ns": 389186,
+            "mean_ns": 196481.39,
+            "min_ns": 126175,
+            "p50_ns": 192539,
+            "p95_ns": 265155,
+            "p99_ns": 298116,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 2117.449256678438,
-          "seconds": 0.094453267
+          "ops_per_s": 1625.3456663262218,
+          "seconds": 0.123050748
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -3480,18 +3480,18 @@
         "measurement": {
           "bytes": 0,
           "latency": {
-            "max_ns": 185947,
-            "mean_ns": 114050.695,
-            "min_ns": 100407,
-            "p50_ns": 108573,
-            "p95_ns": 143208,
-            "p99_ns": 181188,
+            "max_ns": 2438601,
+            "mean_ns": 144894.72,
+            "min_ns": 103894,
+            "p50_ns": 117499,
+            "p95_ns": 194152,
+            "p99_ns": 303195,
             "samples": 200
           },
           "mb_per_s": 0.0,
           "ops": 200,
-          "ops_per_s": 2775.655172586075,
-          "seconds": 0.07205506
+          "ops_per_s": 2308.0819207977765,
+          "seconds": 0.086652037
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -3535,10 +3535,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 3511.6409912926993,
+          "mb_per_s": 4215.482584504551,
           "ops": 64,
-          "ops_per_s": 857334.2263898192,
-          "seconds": 0.00007465
+          "ops_per_s": 1029170.5528575563,
+          "seconds": 0.000062186
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -3580,10 +3580,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 7.015703706843871,
+          "mb_per_s": 5.853681846952024,
           "ops": 64,
-          "ops_per_s": 1712.8182878036794,
-          "seconds": 0.037365318
+          "ops_per_s": 1429.1215446660215,
+          "seconds": 0.044782755
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -3625,10 +3625,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 8.78579068345699,
+          "mb_per_s": 7.254666083032972,
           "ops": 64,
-          "ops_per_s": 2144.9684285783665,
-          "seconds": 0.029837269
+          "ops_per_s": 1771.1587116779717,
+          "seconds": 0.036134537
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -3670,10 +3670,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 53.556726073804754,
+          "mb_per_s": 46.36631197645461,
           "ops": 64,
-          "ops_per_s": 13075.372576612488,
-          "seconds": 0.004894698
+          "ops_per_s": 11319.900384876613,
+          "seconds": 0.00565376
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -3715,10 +3715,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 60.16005258129596,
+          "mb_per_s": 36.97392231560923,
           "ops": 64,
-          "ops_per_s": 14687.512837230459,
-          "seconds": 0.004357443
+          "ops_per_s": 9026.836502834285,
+          "seconds": 0.00708997
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -3760,10 +3760,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 53.183462699006355,
+          "mb_per_s": 63.70095078548484,
           "ops": 64,
-          "ops_per_s": 12984.243822999599,
-          "seconds": 0.004929051
+          "ops_per_s": 15551.98993786251,
+          "seconds": 0.004115229
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -3807,10 +3807,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 28136.095309649027,
+          "mb_per_s": 27599.91577174142,
           "ops": 64,
-          "ops_per_s": 6869163.8939572815,
-          "seconds": 9.317e-6
+          "ops_per_s": 6738260.686460308,
+          "seconds": 9.498e-6
         },
         "mount_options": "plain directory; no mount",
         "orfs_version": "0.1.0",
@@ -3852,10 +3852,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 537.9177602081542,
+          "mb_per_s": 535.7388828827357,
           "ops": 64,
-          "ops_per_s": 131327.5781758189,
-          "seconds": 0.000487331
+          "ops_per_s": 130795.62570379287,
+          "seconds": 0.000489313
         },
         "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -3897,10 +3897,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 328.2080046274444,
+          "mb_per_s": 279.03303234898715,
           "ops": 64,
-          "ops_per_s": 80128.90737974716,
-          "seconds": 0.000798713
+          "ops_per_s": 68123.29891332694,
+          "seconds": 0.000939473
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -3942,10 +3942,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 492.02586409151905,
+          "mb_per_s": 445.43753791360876,
           "ops": 64,
-          "ops_per_s": 120123.50197546852,
-          "seconds": 0.000532785
+          "ops_per_s": 108749.39890468965,
+          "seconds": 0.000588509
         },
         "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
         "orfs_version": "0.1.0",
@@ -3987,10 +3987,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 517.5627891181981,
+          "mb_per_s": 522.2335332800762,
           "ops": 64,
-          "ops_per_s": 126358.1028120601,
-          "seconds": 0.000506497
+          "ops_per_s": 127498.4212109561,
+          "seconds": 0.000501967
         },
         "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
         "orfs_version": "0.1.0",
@@ -4032,10 +4032,10 @@
         "generated_by": "src/bench.rs",
         "measurement": {
           "bytes": 262144,
-          "mb_per_s": 549.8436323440885,
+          "mb_per_s": 449.300624390478,
           "ops": 64,
-          "ops_per_s": 134239.168052756,
-          "seconds": 0.000476761
+          "ops_per_s": 109692.53525158155,
+          "seconds": 0.000583449
         },
         "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
         "orfs_version": "0.1.0",

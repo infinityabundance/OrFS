@@ -2845,12 +2845,12 @@
       "certified": true,
       "equivalent": true,
       "file": "f3",
-      "generation": 2,
+      "generation": null,
       "historical": true,
       "inode": 3,
       "length": 1,
       "offset": 0,
-      "path": "checkpoint",
+      "path": "logical-extent",
       "root": 81720
     },
     {
@@ -2928,7 +2928,7 @@
       "inode": 5,
       "length": 1,
       "offset": 0,
-      "path": "path-bloom",
+      "path": "history",
       "root": 81720
     },
     {
@@ -3000,12 +3000,11 @@
   ],
   "schema": "orfs.readpath.v1",
   "summary": {
-    "accelerated_cases": 181,
+    "accelerated_cases": 155,
     "by_path": {
-      "checkpoint": 1,
-      "history": 116,
-      "logical-extent": 308,
-      "path-bloom": 67
+      "history": 156,
+      "logical-extent": 335,
+      "path-bloom": 1
     },
     "equivalent": 492,
     "historical_cases": 12,

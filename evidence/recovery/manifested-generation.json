@@ -5,6 +5,17 @@
     "evidence_test": "cancel_mid_construction_leaves_no_committed_generation"
   },
   "generator": "tests/manifestation.rs",
+  "incremental": {
+    "applied": true,
+    "base_generation": 1,
+    "changed_bytes": 25,
+    "flatten_after_overlays": 4,
+    "is_overlay": true,
+    "max_overlay_depth_cap": 8,
+    "overlay_depth": 1,
+    "regions": 1,
+    "reused_bytes": 4071
+  },
   "manifests": [
     {
       "backend": "ekbloom",
@@ -35,7 +46,14 @@
         0,
         4096
       ],
-      "manifest_blake3": "9c34c890a6aca22620ecd7afc44be64e610ad7a4c86c58009597dc53905835c6",
+      "manifest_blake3": "081b03c636f9a785895dbb7686bee5ec166e6b78bced6a78fb6e217bbcb28c45",
+      "overlay": {
+        "base_generation": null,
+        "base_manifest_blake3": null,
+        "overlay_depth": 0,
+        "region_count": 0,
+        "regions": []
+      },
       "parameters": {
         "depth": null,
         "interval": 64,
@@ -51,7 +69,7 @@
       "profile": "sparse(K=64)",
       "profile_kind": 1,
       "root": 7070,
-      "schema": 1,
+      "schema": 2,
       "source_bytes": 4096,
       "visible_bytes": 4096,
       "volume_uuid": "4f724653071140228033445566778899"
@@ -85,7 +103,14 @@
         0,
         11
       ],
-      "manifest_blake3": "c9f5577924eef636ba3d24ad151a395d9844e869a7f2cfae0298f4d0666a1709",
+      "manifest_blake3": "efdc121c20063fba877d8d79dca6c7b6370c1bad39dc8fa0eea75d6cb0a62659",
+      "overlay": {
+        "base_generation": null,
+        "base_manifest_blake3": null,
+        "overlay_depth": 0,
+        "region_count": 0,
+        "regions": []
+      },
       "parameters": {
         "depth": null,
         "interval": 64,
@@ -101,7 +126,7 @@
       "profile": "sparse(K=64)",
       "profile_kind": 1,
       "root": 7070,
-      "schema": 1,
+      "schema": 2,
       "source_bytes": 11,
       "visible_bytes": 11,
       "volume_uuid": "4f724653071140228033445566778899"

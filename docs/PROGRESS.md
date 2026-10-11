@@ -1293,3 +1293,70 @@ Kernel `7.2.9-2-cachyos`, FUSE ABI 7.45, `CONFIG_FUSE_PASSTHROUGH=y`.
 ### Docs
 
 `docs/FUSE_PASSTHROUGH.md` (new), this section, `docs/LIMITATIONS.md` §10.
+
+## Phase 22 — Incremental, adaptive generational manifestation
+
+**Complete.** External review §7 (P1): a manifestation job reconstructed the
+**entire** logical object into a source buffer even when a transaction changed a
+few kilobytes, so `T_build ∝ N` (whole-object size) — the wrong unit of work for
+small updates to large objects.
+
+### Delivered
+
+* **Generational extent overlays** — `src/manifestation.rs`. A generation is now
+  either self-contained (full base / flattened table) or an **overlay**: a
+  qualified `base_generation` plus the newly manifested **changed ranges** only,
+  with every unchanged byte reused from the base. `GenerationManifest` schema 2
+  adds `base_generation`, `base_manifest_blake3`, `overlay_depth`, and a
+  `regions` vector; schema-1 documents still decode.
+* **Changed-range capture** — `src/namespace.rs` records the exact logical byte
+  ranges each transaction touches (writes, zero ranges, resizes); the enqueue
+  path reads only those ranges from the log and the worker builds one small
+  EKBLOOM payload per range. A metadata-only change yields an empty-delta overlay.
+* **Bounded-depth lookup + adaptive flattening** — `manifestation::resolve_coverage`
+  walks the overlay chain at most `MAX_OVERLAY_DEPTH = 8` hops, each base
+  digest-verified and inode-qualified. Once `FLATTEN_AFTER_OVERLAYS = 4` overlays
+  accumulate (or the cap would be exceeded) the engine publishes an index-only
+  **flattened readable view** (complete region table, `overlay_depth = 0`,
+  referencing existing committed payloads), leaving authoritative history
+  untouched. Region lookup is a binary search.
+* **Read correctness** — `src/readpath.rs` resolves an overlay-backed version to
+  exactly the authoritative bytes (unchanged regions from the base, changed from
+  the overlay), splitting a request across the resolved region table. The first
+  read for an identity is verified-on-use against the authoritative read and the
+  overlay is barred on any disagreement.
+* **Crash-safety** — the publication protocol is unchanged; recovery validates
+  each candidate's payloads and accepts an overlay only if its base is already
+  accepted, valid, for the same inode, and digest-bound. A cancelled incremental
+  job deletes every region payload it wrote.
+
+### Results (evidence-backed)
+
+Construction measured on `ekbloom::create` (CPU construction, excluding fsync),
+from `evidence/performance/incremental-manifestation.json`:
+
+| object size | full build | 64-byte change |
+|---|---|---|
+| 32 KiB | 1.27 ms | 4.2 µs |
+| 128 KiB | 5.03 ms | 4.5 µs |
+| 512 KiB | 11.44 ms | 3.9 µs |
+
+* The full build grows with the object; the incremental build is **flat** in the
+  unchanged size (11.44 ms → 3.9 µs at 512 KiB, ≈ 2900×). At a fixed 256 KiB
+  object the incremental build grows with the changed bytes (64 B ≈ 3 µs, 1 KiB
+  ≈ 25 µs, 8 KiB ≈ 175 µs, 32 KiB ≈ 686 µs):
+  `T_incremental ≈ T_changed_regions + T_index_update`.
+* **Read latency vs generation depth** is flat (~3 µs) across 24 accumulated
+  generations; the depth caps at 4 and flattening engages every 5th generation
+  (4 flattened views observed). `evidence/recovery/manifested-generation.json`
+  now also records the incremental overlay applied to a small write.
+* **Crash mid-incremental-build** (`crash_mid_incremental_build_leaves_no_committed_generation`)
+  leaves no committed generation and no orphan region payload; the base alone is
+  recovered. **Equivalence** holds across 30 interleaved writes and historical
+  snapshots (`overlay_reads_are_authoritative_across_generations_and_snapshots`).
+* All tests pass (was 275; +5 Phase-22 courts in `tests/manifestation.rs`).
+
+### Docs
+
+`docs/MANIFESTATION.md` §14 (overlay model, reuse/compatibility rules, bounded
+depth + flattening, crash-safety, measured economics), this section.

@@ -13,7 +13,7 @@ use std::time::Duration;
 use clap::{Parser, Subcommand};
 use orfs::bench::{BenchConfig, BenchParams, Workload};
 use orfs::commit::DurabilityMode;
-use orfs::fuse::{self, BackingIo, MountOptions, StatfsMode, Transport};
+use orfs::fuse::{self, BackingIo, F2Servicing, MountOptions, StatfsMode, Transport};
 use orfs::log::{scan_log, OpenMode, TailInfo, DEFAULT_SEGMENT_SIZE};
 use orfs::manifestation::{ManifestationConfig, ManifestationProfile, ManifestationStatus};
 use orfs::namespace::SnapshotRootPayload;
@@ -117,6 +117,15 @@ enum Command {
         /// Minimum backing bytes to keep free for authoritative writes (reserve).
         #[arg(long, default_value_t = 0)]
         reserve: u64,
+        /// F2 queue servicing: single | pool. The native FUSE-over-io_uring
+        /// session serves its ring queues either on one thread (`single`) or with
+        /// a bounded, workload-aware worker pool (`pool`). Ignored unless
+        /// `--transport fuse-uring` engages.
+        #[arg(long, default_value = "single")]
+        f2_servicing: String,
+        /// Pin the F2 session/worker threads to a dedicated CPU set.
+        #[arg(long)]
+        f2_affinity: bool,
     },
 
     /// Unmount a mounted OrFS volume.
@@ -336,6 +345,8 @@ fn run(cli: &Cli) -> Result<()> {
             manifest_sync,
             manifest_workers,
             reserve,
+            f2_servicing,
+            f2_affinity,
         } => mount_cmd(MountArgs {
             backing,
             mountpoint,
@@ -357,6 +368,8 @@ fn run(cli: &Cli) -> Result<()> {
             manifest_sync: *manifest_sync,
             manifest_workers: *manifest_workers,
             reserve: *reserve,
+            f2_servicing,
+            f2_affinity: *f2_affinity,
         }),
         Command::Unmount { mountpoint } => unmount_cmd(mountpoint, cli.json),
         Command::Inspect { backing } => inspect(backing, cli.json),
@@ -893,11 +906,14 @@ struct MountArgs<'a> {
     manifest_sync: bool,
     manifest_workers: usize,
     reserve: u64,
+    f2_servicing: &'a str,
+    f2_affinity: bool,
 }
 
 fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
     let transport = Transport::parse(args.transport)?;
     let backing_io = BackingIo::parse(args.backing_io)?;
+    let f2_servicing = F2Servicing::parse(args.f2_servicing)?;
     let durability = DurabilityMode::parse(args.durability)?;
     let statfs = match args.statfs {
         "physical-safe" | "physical" => StatfsMode::PhysicalSafe,
@@ -981,6 +997,8 @@ fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
         manifest_sync: args.manifest_sync,
         manifest_workers: args.manifest_workers,
         capacity_reserve_bytes: args.reserve,
+        f2_servicing,
+        f2_affinity: args.f2_affinity,
     };
 
     eprintln!(
@@ -1515,6 +1533,12 @@ fn doctor(json: bool) -> Result<()> {
         Some(Err(e)) => (false, e.clone()),
         None => (f2.usable(), f2.reason()),
     };
+    // The exact negotiated F2 capability set (the authority for what the ring may
+    // actually do on this kernel). `None` when no live negotiation ran.
+    let f2_caps = match &live {
+        Some(Ok(neg)) => Some(neg.capabilities()),
+        _ => None,
+    };
 
     if json {
         let out = serde_json::json!({
@@ -1526,6 +1550,7 @@ fn doctor(json: bool) -> Result<()> {
             "fuse_over_io_uring_usable": usable,
             "fuse_over_io_uring_reason": reason,
             "fuse_uring": f2,
+            "f2_capabilities": f2_caps,
             "fuse_over_io_uring_live": live.as_ref().map(|r| match r {
                 Ok(n) => serde_json::to_value(n).unwrap_or(serde_json::Value::Null),
                 Err(e) => serde_json::json!({ "error": e }),
@@ -1583,6 +1608,32 @@ fn doctor(json: bool) -> Result<()> {
         Some(Ok(neg)) => println!("  live negotiation:           {}", neg.describe()),
         Some(Err(e)) => println!("  live negotiation:           failed: {e}"),
         None => println!("  live negotiation:           not attempted (preconditions fail)"),
+    }
+    if let Some(c) = &f2_caps {
+        println!(
+            "  F2 negotiated capabilities (ABI 7.{}):",
+            c.abi_minor.unwrap_or(0)
+        );
+        println!(
+            "    baseline REGISTER+C&F:      {}",
+            yesno(c.baseline_register)
+        );
+        println!(
+            "    ADD_QUEUE / ADD_BUFPOOL:    {} {}",
+            yesno(c.add_queue),
+            if c.add_queue {
+                ""
+            } else {
+                "(inert: not offered at this ABI)"
+            }
+        );
+        println!(
+            "    zero-copy:                  {} {}",
+            yesno(c.zero_copy),
+            if c.zero_copy { "" } else { "(not claimed)" }
+        );
+        println!("    queues registered:          {}", c.num_queues);
+        println!("    boundary:                   {}", c.boundary);
     }
     println!(
         "FUSE-over-io_uring usable:    {} ({})",

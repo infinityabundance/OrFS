@@ -23,12 +23,12 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{FileExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use orfs::commit::DurabilityMode;
-use orfs::fuse::{self, BackingIo, MountOptions, Transport};
+use orfs::fuse::{self, BackingIo, F2Servicing, Metrics, MountOptions, Transport};
 use orfs::fuse_uring::{self, FuseUringRing, TransportProfile};
 use orfs::log::DEFAULT_SEGMENT_SIZE;
 use orfs::namespace::{Namespace, SetAttr};
@@ -546,8 +546,26 @@ fn f2_real_mount_engages_and_carries_requests() {
 }
 
 // ---------------------------------------------------------------------------
-// Measurements: real F0 / F1 / F2 numbers
+// Rigorous paired-run F0 / F1 / F2 court (Phase 26)
+//
+// Design (see docs/FUSE_URING.md §6.2):
+//   * PAIRED runs. Each of `PAIRS` repetitions runs the identical workload under
+//     F0, F1, and F2 back to back, so machine drift affects every profile alike.
+//   * Per-op samples are recorded (not just batch means), so p50/p95/p99/p99.9 are
+//     meaningful; the mean is reported with a two-sided 95% Student-t interval.
+//     Significance is judged on the PAIRED differences (F2-F0, F2-F1) with a
+//     paired-t interval: a difference is significant only when that interval
+//     excludes zero.
+//   * Application-level syscall time (what the caller waits for) is reported
+//     alongside the number of requests that ACTUALLY REACHED THE DAEMON, from the
+//     shared daemon-operation counters (uniform across transports) and, for F2,
+//     the native ring's own `requests_served` counter.
 // ---------------------------------------------------------------------------
+
+/// Repetitions per (workload, profile).
+const PAIRS: usize = 15;
+/// 4 MiB bench file, matching the historical court's size.
+const BENCH_SIZE: u64 = 4 * 1024 * 1024;
 
 /// Deterministic PRNG so the read workloads are identical across profiles.
 struct Lcg(u64);
@@ -564,218 +582,841 @@ impl Lcg {
     }
 }
 
-fn perf_opts(transport: Transport, backing_io: BackingIo) -> MountOptions {
-    MountOptions {
+/// Student's t critical value for a two-sided 95% interval, by degrees of freedom.
+fn t_crit95(df: usize) -> f64 {
+    const T: [f64; 31] = [
+        0.0, 12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179,
+        2.160, 2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086, 2.080, 2.074, 2.069, 2.064, 2.060,
+        2.056, 2.052, 2.048, 2.045, 2.042,
+    ];
+    if df == 0 {
+        f64::INFINITY
+    } else if df < T.len() {
+        T[df]
+    } else {
+        1.96
+    }
+}
+
+fn mean(v: &[f64]) -> f64 {
+    if v.is_empty() {
+        0.0
+    } else {
+        v.iter().sum::<f64>() / v.len() as f64
+    }
+}
+
+fn sd(v: &[f64], m: f64) -> f64 {
+    if v.len() < 2 {
+        0.0
+    } else {
+        (v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (v.len() as f64 - 1.0)).sqrt()
+    }
+}
+
+fn ci95(v: &[f64]) -> (f64, f64) {
+    let m = mean(v);
+    let s = sd(v, m);
+    let n = v.len();
+    if n < 2 {
+        return (m, m);
+    }
+    let hw = t_crit95(n - 1) * s / (n as f64).sqrt();
+    (m - hw, m + hw)
+}
+
+fn percentile_of_sorted(s: &[f64], p: f64) -> f64 {
+    if s.is_empty() {
+        return 0.0;
+    }
+    let rank = (p / 100.0 * (s.len() as f64 - 1.0)).round() as usize;
+    s[rank.min(s.len() - 1)]
+}
+
+/// Per-op summary in microseconds: mean with a 95% CI and the tail percentiles.
+fn summarize_us(mut samples: Vec<f64>) -> serde_json::Value {
+    if samples.is_empty() {
+        return serde_json::json!({ "n": 0 });
+    }
+    let m = mean(&samples);
+    let (lo, hi) = ci95(&samples);
+    let s = sd(&samples, m);
+    samples.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    serde_json::json!({
+        "n": samples.len(),
+        "mean_us": m,
+        "sd_us": s,
+        "ci95_low_us": lo,
+        "ci95_high_us": hi,
+        "p50_us": percentile_of_sorted(&samples, 50.0),
+        "p95_us": percentile_of_sorted(&samples, 95.0),
+        "p99_us": percentile_of_sorted(&samples, 99.0),
+        "p999_us": percentile_of_sorted(&samples, 99.9),
+        "min_us": samples.first().copied(),
+        "max_us": samples.last().copied(),
+    })
+}
+
+/// Paired comparison of per-pair means: `b - a`, with a 95% paired-t interval.
+/// Significant only when the interval excludes zero. `metric` names the units.
+fn paired_compare(a: &[f64], b: &[f64], metric: &str) -> serde_json::Value {
+    let n = a.len().min(b.len());
+    let d: Vec<f64> = (0..n).map(|i| b[i] - a[i]).collect();
+    let m = mean(&d);
+    let s = sd(&d, m);
+    let (lo, hi) = ci95(&d);
+    let significant = n >= 2 && s > 0.0 && (lo > 0.0 || hi < 0.0);
+    let t = if s > 0.0 {
+        m / (s / (n as f64).sqrt())
+    } else {
+        0.0
+    };
+    serde_json::json!({
+        "metric": metric,
+        "pairs": n,
+        "mean_diff": m,
+        "ci95_low": lo,
+        "ci95_high": hi,
+        "t": t,
+        "t_crit95": t_crit95(n.saturating_sub(1)),
+        "significant": significant,
+    })
+}
+
+/// A daemon-operation delta: requests that actually reached the daemon, by kind.
+#[derive(Debug, Default, Clone, Copy)]
+struct DaemonCounts {
+    lookups: u64,
+    opens: u64,
+    reads: u64,
+    writes: u64,
+    create: u64,
+    unlink: u64,
+    fsyncs: u64,
+}
+
+impl DaemonCounts {
+    fn total(&self) -> u64 {
+        self.lookups
+            + self.opens
+            + self.reads
+            + self.writes
+            + self.create
+            + self.unlink
+            + self.fsyncs
+    }
+    fn into_json(self) -> serde_json::Value {
+        serde_json::json!({
+            "lookups": self.lookups,
+            "opens": self.opens,
+            "reads": self.reads,
+            "writes": self.writes,
+            "create": self.create,
+            "unlink": self.unlink,
+            "fsyncs": self.fsyncs,
+            "total": self.total(),
+        })
+    }
+}
+
+fn metrics_counts(m: &Metrics) -> DaemonCounts {
+    DaemonCounts {
+        lookups: m.lookups,
+        opens: m.opens,
+        reads: m.reads,
+        writes: m.writes,
+        create: m.create,
+        unlink: m.unlink,
+        fsyncs: m.fsyncs,
+    }
+}
+
+fn delta(before: DaemonCounts, after: DaemonCounts) -> DaemonCounts {
+    DaemonCounts {
+        lookups: after.lookups.saturating_sub(before.lookups),
+        opens: after.opens.saturating_sub(before.opens),
+        reads: after.reads.saturating_sub(before.reads),
+        writes: after.writes.saturating_sub(before.writes),
+        create: after.create.saturating_sub(before.create),
+        unlink: after.unlink.saturating_sub(before.unlink),
+        fsyncs: after.fsyncs.saturating_sub(before.fsyncs),
+    }
+}
+
+/// A live mount under test, with its scratch paths and servicing topology.
+struct Mounted {
+    label: &'static str,
+    mount: fuse::OrfsMount,
+    root: PathBuf,
+    bench: PathBuf,
+    servicing: F2Servicing,
+    affinity: bool,
+}
+
+impl Mounted {
+    fn daemon(&self) -> DaemonCounts {
+        metrics_counts(&self.mount.daemon_metrics())
+    }
+    fn ring_requests(&self) -> u64 {
+        self.mount
+            .f2_stats()
+            .map(|s| s.requests_served)
+            .unwrap_or(0)
+    }
+}
+
+fn mount_for(
+    scratch: &Path,
+    label: &'static str,
+    transport: Transport,
+    backing: BackingIo,
+    servicing: F2Servicing,
+    affinity: bool,
+) -> Result<Mounted, String> {
+    let mnt = scratch.join(format!("{label}-mnt"));
+    let back = scratch.join(format!("{label}-backing"));
+    fs::create_dir_all(&mnt).map_err(|e| e.to_string())?;
+    init_volume(&back)?;
+    let opts = MountOptions {
         transport,
-        backing_io,
-        // Bypass the page cache so every read is a real transport round-trip,
-        // and disable attribute/entry caching so every lookup reaches the daemon.
+        backing_io: backing,
         direct_io: true,
         attr_ttl: Duration::from_millis(0),
         entry_ttl: Duration::from_millis(0),
+        f2_servicing: servicing,
+        f2_affinity: affinity,
         ..Default::default()
+    };
+    let mount = fuse::spawn(&back, &mnt, &opts).map_err(|e| e.to_string())?;
+    let bench = mnt.join("bench.bin");
+    let data: Vec<u8> = (0..BENCH_SIZE).map(|i| (i % 251) as u8).collect();
+    let mut h = io_err(File::create(&bench))?;
+    io_err(h.write_all(&data))?;
+    io_err(h.sync_all())?;
+    Ok(Mounted {
+        label,
+        mount,
+        root: mnt,
+        bench,
+        servicing,
+        affinity,
+    })
+}
+
+/// The single-threaded latency workloads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Latency {
+    Read1,
+    Read64,
+    Read4k,
+    Read64k,
+    Lookup,
+    CreateUnlink,
+    Fsync,
+}
+
+impl Latency {
+    fn name(&self) -> &'static str {
+        match self {
+            Latency::Read1 => "read_1b",
+            Latency::Read64 => "read_64b",
+            Latency::Read4k => "read_4k",
+            Latency::Read64k => "read_64k",
+            Latency::Lookup => "lookup",
+            Latency::CreateUnlink => "create_unlink",
+            Latency::Fsync => "fsync",
+        }
+    }
+    fn ops(&self) -> u64 {
+        match self {
+            Latency::Read1 | Latency::Read64 | Latency::Read4k | Latency::Lookup => 400,
+            Latency::Read64k => 200,
+            Latency::CreateUnlink => 80,
+            Latency::Fsync => 30,
+        }
+    }
+    fn read_len(&self) -> usize {
+        match self {
+            Latency::Read1 => 1,
+            Latency::Read64 => 64,
+            Latency::Read4k => 4096,
+            Latency::Read64k => 64 * 1024,
+            _ => 0,
+        }
+    }
+    fn all() -> [Latency; 7] {
+        [
+            Latency::Read1,
+            Latency::Read64,
+            Latency::Read4k,
+            Latency::Read64k,
+            Latency::Lookup,
+            Latency::CreateUnlink,
+            Latency::Fsync,
+        ]
     }
 }
 
-/// Measure a fixed workload through `root`; returns microseconds-per-op metrics.
-fn measure(root: &Path) -> Result<serde_json::Value, String> {
-    let path = root.join("bench.bin");
-    let size: usize = 4 * 1024 * 1024;
-    let data: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
-    {
-        let mut h = io_err(File::create(&path))?;
-        io_err(h.write_all(&data))?;
-        io_err(h.sync_all())?;
-    }
-
-    // Sequential read (2 passes over the whole file in 128 KiB chunks).
-    let seq_start = Instant::now();
-    let mut seq_bytes: u64 = 0;
-    for _ in 0..2 {
-        let mut h = io_err(File::open(&path))?;
-        let mut buf = vec![0u8; 128 * 1024];
-        loop {
-            let n = io_err(h.read(&mut buf))?;
-            if n == 0 {
-                break;
-            }
-            seq_bytes += n as u64;
-        }
-    }
-    let seq = seq_start.elapsed();
-
+/// Run one latency workload, returning per-op microsecond samples.
+fn latency_samples(m: &Mounted, w: Latency) -> Result<Vec<f64>, String> {
+    let n = w.ops();
     let mut rng = Lcg(0x1234_5678_9abc_def0);
-    let reads_4k: u64 = 1000;
-    let r4_start = Instant::now();
-    {
-        let mut h = io_err(File::open(&path))?;
-        let mut buf = [0u8; 4096];
-        for _ in 0..reads_4k {
-            let off = rng.below((size - 4096) as u64);
-            io_err(h.seek(SeekFrom::Start(off)))?;
-            io_err(h.read_exact(&mut buf))?;
+    match w {
+        Latency::Read1 | Latency::Read64 | Latency::Read4k | Latency::Read64k => {
+            let len = w.read_len();
+            let f = io_err(File::open(&m.bench))?;
+            let mut buf = vec![0u8; len];
+            let mut v = Vec::with_capacity(n as usize);
+            for _ in 0..n {
+                let off = rng.below(BENCH_SIZE - len as u64);
+                let t = Instant::now();
+                io_err(f.read_exact_at(&mut buf, off))?;
+                v.push(t.elapsed().as_secs_f64() * 1e6);
+            }
+            Ok(v)
+        }
+        Latency::Lookup => {
+            let mut v = Vec::with_capacity(n as usize);
+            for _ in 0..n {
+                let t = Instant::now();
+                io_err(fs::symlink_metadata(&m.bench))?;
+                v.push(t.elapsed().as_secs_f64() * 1e6);
+            }
+            Ok(v)
+        }
+        Latency::CreateUnlink => {
+            let mut v = Vec::with_capacity(n as usize);
+            for i in 0..n {
+                let p = m.root.join(format!("tmp-{i}"));
+                let t = Instant::now();
+                {
+                    let h = io_err(File::create(&p))?;
+                    drop(h);
+                }
+                io_err(fs::remove_file(&p))?;
+                v.push(t.elapsed().as_secs_f64() * 1e6);
+            }
+            Ok(v)
+        }
+        Latency::Fsync => {
+            let f = io_err(OpenOptions::new().read(true).write(true).open(&m.bench))?;
+            let mut v = Vec::with_capacity(n as usize);
+            for i in 0..n {
+                let off = (i * 4096) % BENCH_SIZE;
+                let t = Instant::now();
+                io_err(f.write_at(&[0x5a], off))?;
+                io_err(f.sync_data())?;
+                v.push(t.elapsed().as_secs_f64() * 1e6);
+            }
+            Ok(v)
         }
     }
-    let r4 = r4_start.elapsed();
+}
 
-    let reads_1b: u64 = 1000;
-    let r1_start = Instant::now();
-    {
-        let mut h = io_err(File::open(&path))?;
-        let mut b = [0u8; 1];
-        for _ in 0..reads_1b {
-            let off = rng.below((size - 1) as u64);
-            io_err(h.seek(SeekFrom::Start(off)))?;
-            io_err(h.read_exact(&mut b))?;
+/// A concurrent run's observations.
+struct ConcResult {
+    wall: Duration,
+    ops: u64,
+    latencies: Vec<f64>,
+}
+
+impl ConcResult {
+    fn ops_per_sec(&self) -> f64 {
+        self.ops as f64 / self.wall.as_secs_f64().max(1e-9)
+    }
+}
+
+/// `threads` concurrent readers of 4 KiB at deterministic offsets.
+fn concurrency_readers(
+    m: &Mounted,
+    threads: usize,
+    ops_per_thread: u64,
+) -> Result<ConcResult, String> {
+    let f = io_err(File::open(&m.bench))?;
+    let start = Instant::now();
+    let lanes = std::thread::scope(|scope| -> Result<Vec<Vec<f64>>, String> {
+        let mut handles = Vec::new();
+        for t in 0..threads {
+            let f = &f;
+            handles.push(scope.spawn(move || -> Result<Vec<f64>, String> {
+                let mut rng = Lcg(0x9e37_79b9_7f4a_7c15u64.wrapping_add(t as u64 * 0x100));
+                let mut buf = [0u8; 4096];
+                let mut v = Vec::with_capacity(ops_per_thread as usize);
+                for _ in 0..ops_per_thread {
+                    let off = rng.below(BENCH_SIZE - 4096);
+                    let s = Instant::now();
+                    io_err(f.read_exact_at(&mut buf, off))?;
+                    v.push(s.elapsed().as_secs_f64() * 1e6);
+                }
+                Ok(v)
+            }));
         }
-    }
-    let r1 = r1_start.elapsed();
-
-    // Metadata lookup: stat the file 1000 times (LOOKUP + GETATTR, uncached).
-    let lk_n: u64 = 1000;
-    let lk_start = Instant::now();
-    for _ in 0..lk_n {
-        io_err(fs::symlink_metadata(&path))?;
-    }
-    let lk = lk_start.elapsed();
-
-    // create + unlink.
-    let cu_n: u64 = 300;
-    let cu_start = Instant::now();
-    for i in 0..cu_n {
-        let p = root.join(format!("tmp-{i}"));
-        {
-            let h = io_err(File::create(&p))?;
-            drop(h);
+        let mut out = Vec::new();
+        for h in handles {
+            out.push(
+                h.join()
+                    .map_err(|_| "worker thread panicked".to_string())??,
+            );
         }
-        io_err(fs::remove_file(&p))?;
+        Ok(out)
+    })?;
+    let wall = start.elapsed();
+    let mut latencies = Vec::new();
+    for mut lane in lanes {
+        latencies.append(&mut lane);
     }
-    let cu = cu_start.elapsed();
+    Ok(ConcResult {
+        wall,
+        ops: threads as u64 * ops_per_thread,
+        latencies,
+    })
+}
 
-    // fsync latency: write 1 byte then fsync, 300 times.
-    let fs_n: u64 = 300;
-    let fs_start = Instant::now();
-    {
-        let mut h = io_err(OpenOptions::new().read(true).write(true).open(&path))?;
-        for i in 0..fs_n {
-            io_err(h.seek(SeekFrom::Start((i * 4096) % size as u64)))?;
-            io_err(h.write_all(&[0x5a]))?;
-            io_err(h.sync_data())?;
+/// A sustained mixed workload: `threads` workers each loop a read/lookup/create
+/// mix until `dur` elapses. Returns total ops and per-op latencies.
+fn mixed_workload(m: &Mounted, threads: usize, dur: Duration) -> Result<ConcResult, String> {
+    let start = Instant::now();
+    let deadline = start + dur;
+    let lanes = std::thread::scope(|scope| -> Result<Vec<(u64, Vec<f64>)>, String> {
+        let mut handles = Vec::new();
+        for t in 0..threads {
+            let bench = m.bench.clone();
+            let root = m.root.clone();
+            handles.push(scope.spawn(move || -> Result<(u64, Vec<f64>), String> {
+                let f = io_err(File::open(&bench))?;
+                let mut rng = Lcg(0xc0ff_ee00_1234_5678u64.wrapping_add(t as u64 * 0x1000));
+                let mut buf = [0u8; 4096];
+                let mut ops = 0u64;
+                let mut v = Vec::new();
+                loop {
+                    if Instant::now() >= deadline {
+                        break;
+                    }
+                    let s = Instant::now();
+                    match rng.below(100) {
+                        0..=69 => {
+                            let off = rng.below(BENCH_SIZE - 4096);
+                            io_err(f.read_exact_at(&mut buf, off))?;
+                        }
+                        70..=89 => {
+                            io_err(fs::symlink_metadata(&bench))?;
+                        }
+                        _ => {
+                            let p = root.join(format!("mix-{t}-{ops}"));
+                            {
+                                let h = io_err(File::create(&p))?;
+                                drop(h);
+                            }
+                            io_err(fs::remove_file(&p))?;
+                        }
+                    }
+                    v.push(s.elapsed().as_secs_f64() * 1e6);
+                    ops += 1;
+                }
+                Ok((ops, v))
+            }));
         }
+        let mut out = Vec::new();
+        for h in handles {
+            out.push(
+                h.join()
+                    .map_err(|_| "mixed worker panicked".to_string())??,
+            );
+        }
+        Ok(out)
+    })?;
+    let wall = start.elapsed();
+    let mut ops = 0u64;
+    let mut latencies = Vec::new();
+    for (n, mut v) in lanes {
+        ops += n;
+        latencies.append(&mut v);
     }
-    let fsd = fs_start.elapsed();
+    Ok(ConcResult {
+        wall,
+        ops,
+        latencies,
+    })
+}
 
-    let us = |d: Duration, n: u64| (d.as_micros() as f64) / (n as f64);
-    Ok(serde_json::json!({
-        "sequential_read": {
-            "bytes": seq_bytes,
-            "seconds": seq.as_secs_f64(),
-            "mib_per_s": (seq_bytes as f64 / (1024.0 * 1024.0)) / seq.as_secs_f64().max(1e-9),
-        },
-        "random_4k_read": { "ops": reads_4k, "us_per_op": us(r4, reads_4k) },
-        "random_1b_read": { "ops": reads_1b, "us_per_op": us(r1, reads_1b) },
-        "metadata_lookup": { "ops": lk_n, "us_per_op": us(lk, lk_n) },
-        "create_unlink": { "ops": cu_n, "us_per_op": us(cu, cu_n) },
-        "fsync": { "ops": fs_n, "us_per_op": us(fsd, fs_n) },
-    }))
+fn add_daemon(a: DaemonCounts, b: DaemonCounts) -> DaemonCounts {
+    DaemonCounts {
+        lookups: a.lookups + b.lookups,
+        opens: a.opens + b.opens,
+        reads: a.reads + b.reads,
+        writes: a.writes + b.writes,
+        create: a.create + b.create,
+        unlink: a.unlink + b.unlink,
+        fsyncs: a.fsyncs + b.fsyncs,
+    }
+}
+
+fn workload_desc(w: Latency) -> &'static str {
+    match w {
+        Latency::Read1 => "400 pread of 1 B at deterministic offsets (direct_io)",
+        Latency::Read64 => "400 pread of 64 B at deterministic offsets",
+        Latency::Read4k => "400 pread of 4096 B at deterministic offsets",
+        Latency::Read64k => "200 pread of 64 KiB at deterministic offsets",
+        Latency::Lookup => "400 stat() of one file (LOOKUP+GETATTR; TTL=0)",
+        Latency::CreateUnlink => "80 create+unlink pairs",
+        Latency::Fsync => "30 write(1 B)+fdatasync",
+    }
 }
 
 #[test]
-fn f2_performance_f0_f1_f2() {
+fn f2_court_f0_f1_f2() {
     let required = fuse_test_required();
-    let scratch = unique_scratch("perf");
+    let scratch = unique_scratch("f2court");
     let caps = orfs::capabilities::probe();
 
-    let mut results = serde_json::Map::new();
-    let mut profile_meta = serde_json::Map::new();
-    let mut measured_f2 = false;
-
-    for (name, opts) in [
-        ("F0", perf_opts(Transport::Fuse, BackingIo::Sync)),
-        ("F1", perf_opts(Transport::Fuse, BackingIo::Uring)),
-        ("F2", perf_opts(Transport::FuseUring, BackingIo::Uring)),
-    ] {
-        let mnt = scratch.join(format!("{name}-mnt"));
-        let backing = scratch.join(format!("{name}-backing"));
-        fs::create_dir_all(&mnt).unwrap();
-        if let Err(e) = init_volume(&backing) {
-            if required {
-                panic!("{name} init failed: {e}");
-            }
-            eprintln!("perf: skipped — {e}");
-            let _ = fs::remove_dir_all(&scratch);
-            return;
-        }
-        let mount = match fuse::spawn(&backing, &mnt, &opts) {
-            Ok(m) => m,
+    // Mount F0, F1, and F2 (single-loop) once each and keep them alive for the
+    // whole court, so every pair sees identical mount state.
+    let specs: [(&'static str, Transport, BackingIo, F2Servicing, bool); 3] = [
+        (
+            "F0",
+            Transport::Fuse,
+            BackingIo::Sync,
+            F2Servicing::Single,
+            false,
+        ),
+        (
+            "F1",
+            Transport::Fuse,
+            BackingIo::Uring,
+            F2Servicing::Single,
+            false,
+        ),
+        (
+            "F2",
+            Transport::FuseUring,
+            BackingIo::Uring,
+            F2Servicing::Single,
+            false,
+        ),
+    ];
+    let mut mounts: Vec<Mounted> = Vec::new();
+    for (label, t, b, s, a) in specs {
+        match mount_for(&scratch, label, t, b, s, a) {
+            Ok(m) => mounts.push(m),
             Err(e) => {
                 if required {
-                    panic!("{name} mount failed: {e}");
+                    panic!("{label} mount failed under ORFS_FUSE_TEST=1: {e}");
                 }
-                eprintln!("perf: skipped — {name} mount unavailable: {e}");
+                eprintln!("f2 court: skipped — {label} mount unavailable: {e}");
                 let _ = fs::remove_dir_all(&scratch);
                 return;
             }
-        };
-        let used = mount.transport_used();
-        let neg = mount.fuse_uring_negotiation();
-        let env = mount.f2_environment();
-        let value = match measure(&mnt) {
-            Ok(v) => v,
-            Err(e) => {
-                let _ = mount.unmount();
-                let _ = fs::remove_dir_all(&scratch);
-                panic!("{name} measurement failed: {e}");
-            }
-        };
-        let unmount = mount.unmount();
-        if name == "F2" {
-            measured_f2 = used == TransportProfile::F2;
         }
-        results.insert(name.to_string(), value);
+    }
+
+    let measured_f2 = mounts[2].mount.transport_used() == TransportProfile::F2;
+    if required {
+        assert!(measured_f2, "F2 must have engaged for the court");
+    }
+    let labels: Vec<String> = mounts.iter().map(|m| m.label.to_string()).collect();
+
+    // ---- profile metadata ----
+    let mut profile_meta = serde_json::Map::new();
+    for (i, name) in labels.iter().enumerate() {
+        let m = &mounts[i];
+        let used = m.mount.transport_used();
+        let neg = m.mount.fuse_uring_negotiation();
+        let env = m.mount.f2_environment();
         profile_meta.insert(
-            name.to_string(),
+            name.clone(),
             serde_json::json!({
                 "reported_profile": used.name(),
-                "backing_io": format!("{:?}", opts.backing_io),
-                "direct_io": opts.direct_io,
-                "attr_ttl_ms": opts.attr_ttl.as_millis(),
-                "entry_ttl_ms": opts.entry_ttl.as_millis(),
+                "servicing": m.servicing.describe(),
+                "affinity": m.affinity,
                 "f2_engaged": neg.engaged,
+                "f2_capabilities": if neg.engaged { Some(neg.capabilities()) } else { None },
                 "f2_environment": env,
             }),
         );
-        unmount.expect("unmount");
     }
 
-    if required {
-        assert!(measured_f2, "F2 must have engaged for the F2 measurements");
+    // ---- latency workloads: a cold first-touch pass, then PAIRS warm paired runs ----
+    let mut workload_json = serde_json::Map::new();
+    for w in Latency::all() {
+        // Cold: the first touch after mount, per profile (planner caches cold).
+        let mut cold = serde_json::Map::new();
+        for m in &mounts {
+            let before = m.daemon();
+            let ring_before = m.ring_requests();
+            let samples = latency_samples(m, w).expect("cold latency run");
+            let after = m.daemon();
+            cold.insert(
+                m.label.to_string(),
+                serde_json::json!({
+                    "latency": summarize_us(samples),
+                    "app_ops": w.ops(),
+                    "daemon_requests": delta(before, after).into_json(),
+                    "f2_ring_requests": m.ring_requests().saturating_sub(ring_before),
+                }),
+            );
+        }
+        // Warm paired runs.
+        let mut pair_means: Vec<Vec<f64>> = vec![Vec::new(); mounts.len()];
+        let mut pooled: Vec<Vec<f64>> = vec![Vec::new(); mounts.len()];
+        let mut daemon_totals = vec![DaemonCounts::default(); mounts.len()];
+        let mut ring_totals = vec![0u64; mounts.len()];
+        for _ in 0..PAIRS {
+            for (pi, m) in mounts.iter().enumerate() {
+                let before = m.daemon();
+                let ring_before = m.ring_requests();
+                let samples = latency_samples(m, w).expect("warm latency run");
+                let after = m.daemon();
+                daemon_totals[pi] = add_daemon(daemon_totals[pi], delta(before, after));
+                ring_totals[pi] += m.ring_requests().saturating_sub(ring_before);
+                pair_means[pi].push(mean(&samples));
+                pooled[pi].extend_from_slice(&samples);
+            }
+        }
+        let mut warm = serde_json::Map::new();
+        for (pi, name) in labels.iter().enumerate() {
+            let lat = summarize_us(std::mem::take(&mut pooled[pi]));
+            let (lo, hi) = ci95(&pair_means[pi]);
+            warm.insert(
+                name.clone(),
+                serde_json::json!({
+                    "latency": lat,
+                    "pair_mean_ci95_low_us": lo,
+                    "pair_mean_ci95_high_us": hi,
+                    "app_ops_total": w.ops() * PAIRS as u64,
+                    "daemon_requests_total": daemon_totals[pi].into_json(),
+                    "f2_ring_requests_total": ring_totals[pi],
+                }),
+            );
+        }
+        let f2f0 = paired_compare(&pair_means[0], &pair_means[2], "us_per_op");
+        let f2f1 = paired_compare(&pair_means[1], &pair_means[2], "us_per_op");
+        let f1f0 = paired_compare(&pair_means[0], &pair_means[1], "us_per_op");
+        let mut paired = serde_json::Map::new();
+        paired.insert("F2_minus_F0".into(), f2f0);
+        paired.insert("F2_minus_F1".into(), f2f1);
+        paired.insert("F1_minus_F0".into(), f1f0);
+        workload_json.insert(
+            w.name().to_string(),
+            serde_json::json!({
+                "workload": workload_desc(w),
+                "pairs": PAIRS,
+                "cold_first_touch": cold,
+                "warm_paired": warm,
+                "paired_difference_of_pair_means": paired,
+            }),
+        );
     }
 
+    // ---- concurrency: 1..16 readers, paired ----
+    let conc_levels = [1usize, 2, 4, 8, 16];
+    let conc_pairs = 8usize;
+    let ops_per_thread = 80u64;
+    let mut conc_json = serde_json::Map::new();
+    for &threads in &conc_levels {
+        let mut pair_vals: Vec<Vec<f64>> = vec![Vec::new(); mounts.len()];
+        let mut lat_pooled: Vec<Vec<f64>> = vec![Vec::new(); mounts.len()];
+        let mut daemon_reads = vec![0u64; mounts.len()];
+        let mut ring_totals = vec![0u64; mounts.len()];
+        for _ in 0..conc_pairs {
+            for (pi, m) in mounts.iter().enumerate() {
+                let d0 = m.daemon();
+                let r0 = m.ring_requests();
+                let r = concurrency_readers(m, threads, ops_per_thread).expect("concurrency run");
+                daemon_reads[pi] += delta(d0, m.daemon()).reads;
+                ring_totals[pi] += m.ring_requests().saturating_sub(r0);
+                pair_vals[pi].push(r.ops_per_sec());
+                lat_pooled[pi].extend_from_slice(&r.latencies);
+            }
+        }
+        let mut entry = serde_json::Map::new();
+        for (pi, name) in labels.iter().enumerate() {
+            let (lo, hi) = ci95(&pair_vals[pi]);
+            entry.insert(
+                name.clone(),
+                serde_json::json!({
+                    "threads": threads,
+                    "ops_per_thread": ops_per_thread,
+                    "pairs": conc_pairs,
+                    "ops_per_sec_mean": mean(&pair_vals[pi]),
+                    "ops_per_sec_ci95_low": lo,
+                    "ops_per_sec_ci95_high": hi,
+                    "latency": summarize_us(std::mem::take(&mut lat_pooled[pi])),
+                    "daemon_reads_total": daemon_reads[pi],
+                    "f2_ring_requests_total": ring_totals[pi],
+                }),
+            );
+        }
+        entry.insert(
+            "paired_ops_per_sec".into(),
+            serde_json::json!({
+                "F2_minus_F0": paired_compare(&pair_vals[0], &pair_vals[2], "ops_per_sec"),
+                "F2_minus_F1": paired_compare(&pair_vals[1], &pair_vals[2], "ops_per_sec"),
+            }),
+        );
+        conc_json.insert(
+            format!("readers_{threads}"),
+            serde_json::Value::Object(entry),
+        );
+    }
+
+    // ---- sustained mixed workload ----
+    let mixed_pairs = 5usize;
+    let mut mixed_pair_vals: Vec<Vec<f64>> = vec![Vec::new(); mounts.len()];
+    let mut mixed_lat: Vec<Vec<f64>> = vec![Vec::new(); mounts.len()];
+    for _ in 0..mixed_pairs {
+        for (pi, m) in mounts.iter().enumerate() {
+            let r = mixed_workload(m, 4, Duration::from_millis(200)).expect("mixed run");
+            mixed_pair_vals[pi].push(r.ops_per_sec());
+            mixed_lat[pi].extend_from_slice(&r.latencies);
+        }
+    }
+    let mut mixed_json = serde_json::Map::new();
+    for (pi, name) in labels.iter().enumerate() {
+        let (lo, hi) = ci95(&mixed_pair_vals[pi]);
+        mixed_json.insert(
+            name.clone(),
+            serde_json::json!({
+                "threads": 4,
+                "duration_ms": 200,
+                "pairs": mixed_pairs,
+                "ops_per_sec_mean": mean(&mixed_pair_vals[pi]),
+                "ops_per_sec_ci95_low": lo,
+                "ops_per_sec_ci95_high": hi,
+                "latency": summarize_us(std::mem::take(&mut mixed_lat[pi])),
+            }),
+        );
+    }
+    mixed_json.insert(
+        "paired_ops_per_sec".into(),
+        serde_json::json!({
+            "F2_minus_F0": paired_compare(&mixed_pair_vals[0], &mixed_pair_vals[2], "ops_per_sec"),
+            "F2_minus_F1": paired_compare(&mixed_pair_vals[1], &mixed_pair_vals[2], "ops_per_sec"),
+            "F1_minus_F0": paired_compare(&mixed_pair_vals[0], &mixed_pair_vals[1], "ops_per_sec"),
+        }),
+    );
+
+    // ---- servicing topology benchmark: single vs pool vs pool+affinity ----
+    let serv_modes: [(&'static str, F2Servicing, bool); 3] = [
+        ("SVC-single", F2Servicing::Single, false),
+        ("SVC-pool", F2Servicing::Pool { fast: 2, bulk: 6 }, false),
+        ("SVC-pool-aff", F2Servicing::Pool { fast: 2, bulk: 6 }, true),
+    ];
+    let mut serv: Vec<Mounted> = Vec::new();
+    let mut serv_ok = true;
+    for (label, s, a) in serv_modes {
+        match mount_for(
+            &scratch,
+            label,
+            Transport::FuseUring,
+            BackingIo::Uring,
+            s,
+            a,
+        ) {
+            Ok(m) => serv.push(m),
+            Err(e) => {
+                eprintln!("f2 court: servicing mount {label} unavailable: {e}");
+                serv_ok = false;
+                break;
+            }
+        }
+    }
+    let serv_pairs = 8usize;
+    let mut serv_json = serde_json::Map::new();
+    if serv_ok {
+        // Paired across modes: read_4k latency and reader scaling.
+        let mut lat_means: Vec<Vec<f64>> = vec![Vec::new(); serv.len()];
+        let mut r8: Vec<Vec<f64>> = vec![Vec::new(); serv.len()];
+        let mut r16: Vec<Vec<f64>> = vec![Vec::new(); serv.len()];
+        for _ in 0..serv_pairs {
+            for (pi, m) in serv.iter().enumerate() {
+                let s = latency_samples(m, Latency::Read4k).expect("serv latency");
+                lat_means[pi].push(mean(&s));
+                let a = concurrency_readers(m, 8, ops_per_thread).expect("serv r8");
+                r8[pi].push(a.ops_per_sec());
+                let b = concurrency_readers(m, 16, ops_per_thread).expect("serv r16");
+                r16[pi].push(b.ops_per_sec());
+            }
+        }
+        let mode_name = |m: &Mounted| m.servicing.describe();
+        for (pi, m) in serv.iter().enumerate() {
+            serv_json.insert(
+                mode_name(m),
+                serde_json::json!({
+                    "affinity": m.affinity,
+                    "read_4k_mean_us": mean(&lat_means[pi]),
+                    "read_4k_ci95": ci95(&lat_means[pi]),
+                    "readers_8_ops_per_sec_mean": mean(&r8[pi]),
+                    "readers_8_ci95": ci95(&r8[pi]),
+                    "readers_16_ops_per_sec_mean": mean(&r16[pi]),
+                    "readers_16_ci95": ci95(&r16[pi]),
+                    "f2_stats": m.mount.f2_stats(),
+                }),
+            );
+        }
+        // Decide the default topology: the pool is chosen only when it beats the
+        // single loop on 16-reader throughput by a significant paired margin.
+        let pool_vs_single_r16 = paired_compare(&r16[0], &r16[1], "ops_per_sec");
+        let aff_vs_single_r16 = paired_compare(&r16[0], &r16[2], "ops_per_sec");
+        let pool_vs_single_lat = paired_compare(&lat_means[0], &lat_means[1], "us_per_op");
+        let pool_r16_significant = pool_vs_single_r16["significant"].as_bool().unwrap_or(false)
+            && pool_vs_single_r16["mean_diff"].as_f64().unwrap_or(0.0) > 0.0;
+        let pool_lat_regression = pool_vs_single_lat["significant"].as_bool().unwrap_or(false)
+            && pool_vs_single_lat["mean_diff"].as_f64().unwrap_or(0.0) > 0.0;
+        let chosen = if pool_r16_significant && !pool_lat_regression {
+            "pool"
+        } else {
+            "single-loop"
+        };
+        serv_json.insert(
+            "comparisons".into(),
+            serde_json::json!({
+                "pool_minus_single_readers_16": pool_vs_single_r16,
+                "pool_affinity_minus_single_readers_16": aff_vs_single_r16,
+                "pool_minus_single_read_4k_latency": pool_vs_single_lat,
+            }),
+        );
+        serv_json.insert("chosen_default".into(), serde_json::json!(chosen));
+        serv_json.insert(
+            "decision_rule".into(),
+            serde_json::json!(
+                "pool default only if 16-reader throughput gain is a significant positive \
+                 paired margin AND read_4k latency has no significant regression"
+            ),
+        );
+    }
+
+    // ---- write evidence ----
     let doc = serde_json::json!({
-        "schema": "orfs.fuse-uring.v2",
-        "generated_by": "tests/fuse_uring.rs::f2_performance_f0_f1_f2",
-        "method": "POSIX syscalls through a real mount; direct_io=on and attr/entry TTL=0 so every \
-                   operation is a real transport round-trip. Identical workloads and deterministic \
-                   offsets for all three profiles. Numbers are observations, not models.",
+        "schema": "orfs.fuse-uring.v3",
+        "generated_by": "tests/fuse_uring.rs::f2_court_f0_f1_f2",
+        "method": "REPEATED PAIRED runs: each repetition runs the identical workload under F0, \
+                   F1 and F2 back to back. direct_io=on and attr/entry TTL=0 so every read and \
+                   lookup is a real transport round-trip. Per-op samples are recorded; the mean \
+                   carries a two-sided 95% Student-t interval and significance is judged on the \
+                   paired difference of per-pair means. Numbers are observations, not models.",
+        "statistics": {
+            "pairs": PAIRS,
+            "mean_interval": "two-sided 95% Student-t (n-1 df)",
+            "percentiles": "nearest-rank over pooled per-op samples",
+            "significance": "paired-t interval of (F2-F0) and (F2-F1) pair means excluding 0",
+        },
         "environment": {
             "kernel_release": caps.kernel_release,
             "machine": caps.machine,
             "container": caps.likely_container,
             "image_digest": image_digest(),
             "orfs_version": orfs::VERSION,
-        },
-        "workloads": {
-            "sequential_read": "2 passes over 4 MiB in 128 KiB reads (page cache bypassed by direct_io)",
-            "random_4k_read": "1000 pread of 4096 B at deterministic offsets",
-            "random_1b_read": "1000 pread of 1 B at deterministic offsets",
-            "metadata_lookup": "1000 stat() of one file (LOOKUP + GETATTR, uncached)",
-            "create_unlink": "300 create+unlink pairs",
-            "fsync": "300 write(1B)+fdatasync",
+            "cpu_count": std::thread::available_parallelism().map(|n| n.get()).unwrap_or(0),
         },
         "profiles": profile_meta,
-        "measurements": results,
+        "workloads": workload_json,
+        "concurrency": conc_json.clone(),
+        "mixed_workload": mixed_json.clone(),
+        "servicing_benchmark": serv_json.clone(),
         "f2_measured": measured_f2,
+        "daemon_reaching_requests": "Each workload reports application-level syscall time AND the \
+            requests that actually reached the daemon, from the shared daemon-operation counters \
+            (uniform across F0/F1/F2) and, for F2, the native ring's requests_served counter.",
     });
     let path = manifest_dir().join("evidence/performance/fuse-uring.json");
     if let Some(p) = path.parent() {
@@ -786,5 +1427,106 @@ fn f2_performance_f0_f1_f2() {
         let _ = fs::write(&path, s);
     }
 
+    // A focused concurrency/servicing evidence file.
+    let conc_doc = serde_json::json!({
+        "schema": "orfs.f2-concurrency.v1",
+        "generated_by": "tests/fuse_uring.rs::f2_court_f0_f1_f2",
+        "method": "paired F0/F1/F2 reader-scaling (1,2,4,8,16 threads) and a sustained mixed \
+                   workload; per-op latency samples and daemon-reaching counts recorded.",
+        "environment": {
+            "kernel_release": caps.kernel_release,
+            "machine": caps.machine,
+            "image_digest": image_digest(),
+            "cpu_count": std::thread::available_parallelism().map(|n| n.get()).unwrap_or(0),
+        },
+        "concurrency": conc_json,
+        "mixed_workload": mixed_json,
+        "servicing_benchmark": serv_json,
+        "f2_measured": measured_f2,
+    });
+    let cpath = manifest_dir().join("evidence/performance/f2-concurrency.json");
+    if let Some(p) = cpath.parent() {
+        let _ = fs::create_dir_all(p);
+    }
+    if let Ok(mut s) = serde_json::to_string_pretty(&conc_doc) {
+        s.push('\n');
+        let _ = fs::write(&cpath, s);
+    }
+
+    if required {
+        // Prove the ring really carried the traffic for the F2 profile.
+        let st = mounts[2].mount.f2_stats().expect("F2 stats");
+        assert!(
+            st.requests_served > 0,
+            "the F2 ring must have served requests, got {st:?}"
+        );
+    }
+
+    // Unmount everything.
+    for m in serv.drain(..) {
+        let _ = m.mount.unmount();
+    }
+    for m in mounts.drain(..) {
+        let _ = m.mount.unmount();
+    }
+    let _ = fs::remove_dir_all(&scratch);
+}
+
+/// The worker-pool path must be byte-identical to F0. This exercises writes,
+/// mkdir, rename, readdir, symlink, hard links, truncate and unlink through the
+/// pool, alongside F0, and compares the transcripts.
+#[test]
+fn f2_pool_servicing_preserves_semantics() {
+    let required = fuse_test_required();
+    let scratch = unique_scratch("f2pool");
+    let mut mounts: Vec<Mounted> = Vec::new();
+    for (label, t, b, s, a) in [
+        (
+            "EV-F0",
+            Transport::Fuse,
+            BackingIo::Sync,
+            F2Servicing::Single,
+            false,
+        ),
+        (
+            "EV-pool",
+            Transport::FuseUring,
+            BackingIo::Uring,
+            F2Servicing::Pool { fast: 2, bulk: 6 },
+            false,
+        ),
+    ] {
+        match mount_for(&scratch, label, t, b, s, a) {
+            Ok(m) => mounts.push(m),
+            Err(e) => {
+                if required {
+                    panic!("{label} mount failed under ORFS_FUSE_TEST=1: {e}");
+                }
+                eprintln!("f2 pool equivalence: skipped — {e}");
+                let _ = fs::remove_dir_all(&scratch);
+                return;
+            }
+        }
+    }
+    let t0 = apply_ops(&mounts[0].root).expect("F0 ops");
+    let tp = apply_ops(&mounts[1].root).expect("F2 pool ops");
+    assert_eq!(tp, t0, "F2 worker-pool transcripts differ from F0");
+    if required {
+        assert_eq!(
+            mounts[1].mount.transport_used(),
+            TransportProfile::F2,
+            "the pool mount must be real F2"
+        );
+        let st = mounts[1].mount.f2_stats().expect("F2 stats");
+        assert!(st.requests_served > 0, "pool served no requests: {st:?}");
+        assert!(
+            st.workers_fast >= 1 && st.workers_bulk >= 1,
+            "the pool must have started both lanes: {st:?}"
+        );
+        assert_eq!(st.register_failures, 0, "REGISTER must not have failed");
+    }
+    for m in mounts.drain(..) {
+        let _ = m.mount.unmount();
+    }
     let _ = fs::remove_dir_all(&scratch);
 }

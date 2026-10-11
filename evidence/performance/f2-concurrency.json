@@ -1,0 +1,698 @@
+{
+  "concurrency": {
+    "readers_1": {
+      "F0": {
+        "daemon_reads_total": 640,
+        "f2_ring_requests_total": 0,
+        "latency": {
+          "ci95_high_us": 12.052921410673598,
+          "ci95_low_us": 11.715116089326404,
+          "max_us": 47.648999999999994,
+          "mean_us": 11.884018750000001,
+          "min_us": 10.699,
+          "n": 640,
+          "p50_us": 11.460999999999999,
+          "p95_us": 13.415,
+          "p999_us": 27.191000000000003,
+          "p99_us": 21.38,
+          "sd_us": 2.180069839147418
+        },
+        "ops_per_sec_ci95_high": 85647.41752766904,
+        "ops_per_sec_ci95_low": 75762.60418080758,
+        "ops_per_sec_mean": 80705.01085423831,
+        "ops_per_thread": 80,
+        "pairs": 8,
+        "threads": 1
+      },
+      "F1": {
+        "daemon_reads_total": 640,
+        "f2_ring_requests_total": 0,
+        "latency": {
+          "ci95_high_us": 12.048403218327918,
+          "ci95_low_us": 11.788703031672105,
+          "max_us": 31.718999999999998,
+          "mean_us": 11.918553125000011,
+          "min_us": 10.76,
+          "n": 640,
+          "p50_us": 11.511000000000001,
+          "p95_us": 15.268999999999998,
+          "p999_us": 27.081,
+          "p99_us": 18.985,
+          "sd_us": 1.6760083644963986
+        },
+        "ops_per_sec_ci95_high": 85000.05744408246,
+        "ops_per_sec_ci95_low": 77221.47034158595,
+        "ops_per_sec_mean": 81110.7638928342,
+        "ops_per_thread": 80,
+        "pairs": 8,
+        "threads": 1
+      },
+      "F2": {
+        "daemon_reads_total": 640,
+        "f2_ring_requests_total": 664,
+        "latency": {
+          "ci95_high_us": 11.53931381527084,
+          "ci95_low_us": 11.286017434729159,
+          "max_us": 35.156,
+          "mean_us": 11.412665624999999,
+          "min_us": 10.51,
+          "n": 640,
+          "p50_us": 10.981,
+          "p95_us": 13.345,
+          "p999_us": 28.173,
+          "p99_us": 16.782,
+          "sd_us": 1.634680582833598
+        },
+        "ops_per_sec_ci95_high": 87177.6498100158,
+        "ops_per_sec_ci95_low": 81906.90454010977,
+        "ops_per_sec_mean": 84542.27717506279,
+        "ops_per_thread": 80,
+        "pairs": 8,
+        "threads": 1
+      },
+      "paired_ops_per_sec": {
+        "F2_minus_F0": {
+          "ci95_high": 8163.201087556315,
+          "ci95_low": -488.6684459073522,
+          "mean_diff": 3837.266320824481,
+          "metric": "ops_per_sec",
+          "pairs": 8,
+          "significant": false,
+          "t": 2.0978436657300783,
+          "t_crit95": 2.365
+        },
+        "F2_minus_F1": {
+          "ci95_high": 7057.9020631900075,
+          "ci95_low": -194.8754987328416,
+          "mean_diff": 3431.513282228583,
+          "metric": "ops_per_sec",
+          "pairs": 8,
+          "significant": false,
+          "t": 2.237909226687773,
+          "t_crit95": 2.365
+        }
+      }
+    },
+    "readers_16": {
+      "F0": {
+        "daemon_reads_total": 10240,
+        "f2_ring_requests_total": 0,
+        "latency": {
+          "ci95_high_us": 43.64581383766487,
+          "ci95_low_us": 39.923772099835084,
+          "max_us": 1813.392,
+          "mean_us": 41.784792968749976,
+          "min_us": 11.181000000000001,
+          "n": 10240,
+          "p50_us": 26.137999999999998,
+          "p95_us": 64.57,
+          "p999_us": 1445.2160000000001,
+          "p99_us": 455.95,
+          "sd_us": 96.08268928778288
+        },
+        "ops_per_sec_ci95_high": 327365.1346283226,
+        "ops_per_sec_ci95_low": 271403.7635763018,
+        "ops_per_sec_mean": 299384.4491023122,
+        "ops_per_thread": 80,
+        "pairs": 8,
+        "threads": 16
+      },
+      "F1": {
+        "daemon_reads_total": 10240,
+        "f2_ring_requests_total": 0,
+        "latency": {
+          "ci95_high_us": 45.18776155104915,
+          "ci95_low_us": 40.83473395676343,
+          "max_us": 3180.712,
+          "mean_us": 43.01124775390629,
+          "min_us": 11.341000000000001,
+          "n": 10240,
+          "p50_us": 26.419,
+          "p95_us": 75.511,
+          "p999_us": 1730.227,
+          "p99_us": 489.38300000000004,
+          "sd_us": 112.37128094290787
+        },
+        "ops_per_sec_ci95_high": 337250.0474427083,
+        "ops_per_sec_ci95_low": 249616.81331459153,
+        "ops_per_sec_mean": 293433.4303786499,
+        "ops_per_thread": 80,
+        "pairs": 8,
+        "threads": 16
+      },
+      "F2": {
+        "daemon_reads_total": 10240,
+        "f2_ring_requests_total": 10266,
+        "latency": {
+          "ci95_high_us": 201.1603959575053,
+          "ci95_low_us": 196.55933646437055,
+          "max_us": 808.778,
+          "mean_us": 198.85986621093792,
+          "min_us": 17.933,
+          "n": 10240,
+          "p50_us": 163.936,
+          "p95_us": 442.44500000000005,
+          "p999_us": 729.0400000000001,
+          "p99_us": 569.763,
+          "sd_us": 118.77410325098576
+        },
+        "ops_per_sec_ci95_high": 88848.37038847609,
+        "ops_per_sec_ci95_low": 57520.80865301646,
+        "ops_per_sec_mean": 73184.58952074627,
+        "ops_per_thread": 80,
+        "pairs": 8,
+        "threads": 16
+      },
+      "paired_ops_per_sec": {
+        "F2_minus_F0": {
+          "ci95_high": -208733.57677529354,
+          "ci95_low": -243666.1423878383,
+          "mean_diff": -226199.85958156592,
+          "metric": "ops_per_sec",
+          "pairs": 8,
+          "significant": true,
+          "t": -30.628306769331083,
+          "t_crit95": 2.365
+        },
+        "F2_minus_F1": {
+          "ci95_high": -188013.80555884307,
+          "ci95_low": -252483.8761569641,
+          "mean_diff": -220248.8408579036,
+          "metric": "ops_per_sec",
+          "pairs": 8,
+          "significant": true,
+          "t": -16.159079827163193,
+          "t_crit95": 2.365
+        }
+      }
+    },
+    "readers_2": {
+      "F0": {
+        "daemon_reads_total": 1280,
+        "f2_ring_requests_total": 0,
+        "latency": {
+          "ci95_high_us": 17.66471000665646,
+          "ci95_low_us": 17.28426811834355,
+          "max_us": 45.846000000000004,
+          "mean_us": 17.474489062500005,
+          "min_us": 10.97,
+          "n": 1280,
+          "p50_us": 18.504,
+          "p95_us": 21.22,
+          "p999_us": 45.304,
+          "p99_us": 24.485,
+          "sd_us": 3.4722200969634285
+        },
+        "ops_per_sec_ci95_high": 116370.85088659398,
+        "ops_per_sec_ci95_low": 102782.58182904334,
+        "ops_per_sec_mean": 109576.71635781866,
+        "ops_per_thread": 80,
+        "pairs": 8,
+        "threads": 2
+      },
+      "F1": {
+        "daemon_reads_total": 1280,
+        "f2_ring_requests_total": 0,
+        "latency": {
+          "ci95_high_us": 17.269136353854233,
+          "ci95_low_us": 16.87164177114578,
+          "max_us": 44.422999999999995,
+          "mean_us": 17.070389062500006,
+          "min_us": 10.94,
+          "n": 1280,
+          "p50_us": 18.014,
+          "p95_us": 20.988999999999997,
+          "p999_us": 43.762,
+          "p99_us": 23.153,
+          "sd_us": 3.6278567658123038
+        },
+        "ops_per_sec_ci95_high": 117069.49071899135,
+        "ops_per_sec_ci95_low": 107208.0092651142,
+        "ops_per_sec_mean": 112138.74999205278,
+        "ops_per_thread": 80,
+        "pairs": 8,
+        "threads": 2
+      },
+      "F2": {
+        "daemon_reads_total": 1280,
+        "f2_ring_requests_total": 1304,
+        "latency": {
+          "ci95_high_us": 27.33858730128425,
+          "ci95_low_us": 26.704498636215746,
+          "max_us": 59.089999999999996,
+          "mean_us": 27.021542968749998,
+          "min_us": 16.901,
+          "n": 1280,
+          "p50_us": 30.718,
+          "p95_us": 32.4,
+          "p999_us": 47.699,
+          "p99_us": 33.673,
+          "sd_us": 5.787205546348041
+        },
+        "ops_per_sec_ci95_high": 87409.52793116779,
+        "ops_per_sec_ci95_low": 62635.55003232581,
+        "ops_per_sec_mean": 75022.5389817468,
+        "ops_per_thread": 80,
+        "pairs": 8,
+        "threads": 2
+      },
+      "paired_ops_per_sec": {
+        "F2_minus_F0": {
+          "ci95_high": -26602.799390901902,
+          "ci95_low": -42505.55536124187,
+          "mean_diff": -34554.177376071886,
+          "metric": "ops_per_sec",
+          "pairs": 8,
+          "significant": true,
+          "t": -10.277543043083368,
+          "t_crit95": 2.365
+        },
+        "F2_minus_F1": {
+          "ci95_high": -24785.611204811546,
+          "ci95_low": -49446.81081580046,
+          "mean_diff": -37116.211010306004,
+          "metric": "ops_per_sec",
+          "pairs": 8,
+          "significant": true,
+          "t": -7.118862052457449,
+          "t_crit95": 2.365
+        }
+      }
+    },
+    "readers_4": {
+      "F0": {
+        "daemon_reads_total": 2560,
+        "f2_ring_requests_total": 0,
+        "latency": {
+          "ci95_high_us": 18.080027716115193,
+          "ci95_low_us": 17.86815744013482,
+          "max_us": 45.014,
+          "mean_us": 17.974092578125006,
+          "min_us": 10.83,
+          "n": 2560,
+          "p50_us": 18.043,
+          "p95_us": 21.34,
+          "p999_us": 37.189,
+          "p99_us": 24.626,
+          "sd_us": 2.734663839128305
+        },
+        "ops_per_sec_ci95_high": 214451.07849803884,
+        "ops_per_sec_ci95_low": 209864.95328483064,
+        "ops_per_sec_mean": 212158.01589143474,
+        "ops_per_thread": 80,
+        "pairs": 8,
+        "threads": 4
+      },
+      "F1": {
+        "daemon_reads_total": 2560,
+        "f2_ring_requests_total": 0,
+        "latency": {
+          "ci95_high_us": 17.894014884426173,
+          "ci95_low_us": 17.700454646823967,
+          "max_us": 32.03,
+          "mean_us": 17.79723476562507,
+          "min_us": 10.69,
+          "n": 2560,
+          "p50_us": 18.064,
+          "p95_us": 20.999,
+          "p999_us": 25.728,
+          "p99_us": 22.352,
+          "sd_us": 2.498331490882981
+        },
+        "ops_per_sec_ci95_high": 217016.5075245485,
+        "ops_per_sec_ci95_low": 211490.1378097096,
+        "ops_per_sec_mean": 214253.32266712905,
+        "ops_per_thread": 80,
+        "pairs": 8,
+        "threads": 4
+      },
+      "F2": {
+        "daemon_reads_total": 2560,
+        "f2_ring_requests_total": 2584,
+        "latency": {
+          "ci95_high_us": 53.57063519002557,
+          "ci95_low_us": 52.76881637247445,
+          "max_us": 96.259,
+          "mean_us": 53.16972578125001,
+          "min_us": 19.026,
+          "n": 2560,
+          "p50_us": 59.0,
+          "p95_us": 61.615,
+          "p999_us": 84.568,
+          "p99_us": 63.699,
+          "sd_us": 10.349280547936923
+        },
+        "ops_per_sec_ci95_high": 92510.62273743926,
+        "ops_per_sec_ci95_low": 62090.97634782225,
+        "ops_per_sec_mean": 77300.79954263076,
+        "ops_per_thread": 80,
+        "pairs": 8,
+        "threads": 4
+      },
+      "paired_ops_per_sec": {
+        "F2_minus_F0": {
+          "ci95_high": -119370.02449238986,
+          "ci95_low": -150344.40820521823,
+          "mean_diff": -134857.21634880404,
+          "metric": "ops_per_sec",
+          "pairs": 8,
+          "significant": true,
+          "t": -20.593618237694287,
+          "t_crit95": 2.365
+        },
+        "F2_minus_F1": {
+          "ci95_high": -122977.95746396281,
+          "ci95_low": -150927.08878503376,
+          "mean_diff": -136952.5231244983,
+          "metric": "ops_per_sec",
+          "pairs": 8,
+          "significant": true,
+          "t": -23.177301181110735,
+          "t_crit95": 2.365
+        }
+      }
+    },
+    "readers_8": {
+      "F0": {
+        "daemon_reads_total": 5120,
+        "f2_ring_requests_total": 0,
+        "latency": {
+          "ci95_high_us": 20.914474202260422,
+          "ci95_low_us": 20.463757047739648,
+          "max_us": 447.515,
+          "mean_us": 20.689115625000035,
+          "min_us": 10.981,
+          "n": 5120,
+          "p50_us": 19.276,
+          "p95_us": 28.964,
+          "p999_us": 79.789,
+          "p99_us": 49.772999999999996,
+          "sd_us": 8.227217927622291
+        },
+        "ops_per_sec_ci95_high": 365433.184969185,
+        "ops_per_sec_ci95_low": 339877.23022425344,
+        "ops_per_sec_mean": 352655.2075967192,
+        "ops_per_thread": 80,
+        "pairs": 8,
+        "threads": 8
+      },
+      "F1": {
+        "daemon_reads_total": 5120,
+        "f2_ring_requests_total": 0,
+        "latency": {
+          "ci95_high_us": 20.3486947115252,
+          "ci95_low_us": 20.024270522849864,
+          "max_us": 151.593,
+          "mean_us": 20.186482617187533,
+          "min_us": 10.92,
+          "n": 5120,
+          "p50_us": 19.035999999999998,
+          "p95_us": 26.119,
+          "p999_us": 76.122,
+          "p99_us": 49.883,
+          "sd_us": 5.921914607536941
+        },
+        "ops_per_sec_ci95_high": 375408.308852569,
+        "ops_per_sec_ci95_low": 361515.4047993761,
+        "ops_per_sec_mean": 368461.85682597256,
+        "ops_per_thread": 80,
+        "pairs": 8,
+        "threads": 8
+      },
+      "F2": {
+        "daemon_reads_total": 5120,
+        "f2_ring_requests_total": 5144,
+        "latency": {
+          "ci95_high_us": 82.89575938629525,
+          "ci95_low_us": 80.89463084808014,
+          "max_us": 290.592,
+          "mean_us": 81.8951951171877,
+          "min_us": 11.872,
+          "n": 5120,
+          "p50_us": 71.38300000000001,
+          "p95_us": 165.138,
+          "p999_us": 212.316,
+          "p99_us": 197.147,
+          "sd_us": 36.527832189092194
+        },
+        "ops_per_sec_ci95_high": 108708.0714650489,
+        "ops_per_sec_ci95_low": 81175.01429314345,
+        "ops_per_sec_mean": 94941.54287909617,
+        "ops_per_thread": 80,
+        "pairs": 8,
+        "threads": 8
+      },
+      "paired_ops_per_sec": {
+        "F2_minus_F0": {
+          "ci95_high": -236095.09121499117,
+          "ci95_low": -279332.238220255,
+          "mean_diff": -257713.6647176231,
+          "metric": "ops_per_sec",
+          "pairs": 8,
+          "significant": true,
+          "t": -28.193017313699105,
+          "t_crit95": 2.365
+        },
+        "F2_minus_F1": {
+          "ci95_high": -254915.120339359,
+          "ci95_low": -292125.5075543936,
+          "mean_diff": -273520.3139468763,
+          "metric": "ops_per_sec",
+          "pairs": 8,
+          "significant": true,
+          "t": -34.768546682739,
+          "t_crit95": 2.365
+        }
+      }
+    }
+  },
+  "environment": {
+    "cpu_count": 8,
+    "image_digest": "sha256:a41df86df391732ab467b5bedc8b4a17c0df437fa180b5230417a6a8339d97ac",
+    "kernel_release": "7.2.9-2-cachyos",
+    "machine": "x86_64"
+  },
+  "f2_measured": true,
+  "generated_by": "tests/fuse_uring.rs::f2_court_f0_f1_f2",
+  "method": "paired F0/F1/F2 reader-scaling (1,2,4,8,16 threads) and a sustained mixed workload; per-op latency samples and daemon-reaching counts recorded.",
+  "mixed_workload": {
+    "F0": {
+      "duration_ms": 200,
+      "latency": {
+        "ci95_high_us": 207.3895450866015,
+        "ci95_low_us": 191.69121949952594,
+        "max_us": 3082.479,
+        "mean_us": 199.54038229306371,
+        "min_us": 7.284,
+        "n": 20139,
+        "p50_us": 19.316,
+        "p95_us": 1893.051,
+        "p999_us": 2806.2540000000004,
+        "p99_us": 2408.552,
+        "sd_us": 568.3112015079435
+      },
+      "ops_per_sec_ci95_high": 23636.768324400968,
+      "ops_per_sec_ci95_low": 16296.289778031307,
+      "ops_per_sec_mean": 19966.529051216137,
+      "pairs": 5,
+      "threads": 4
+    },
+    "F1": {
+      "duration_ms": 200,
+      "latency": {
+        "ci95_high_us": 220.0312285584784,
+        "ci95_low_us": 202.7941385061623,
+        "max_us": 4289.62,
+        "mean_us": 211.41268353232036,
+        "min_us": 7.344,
+        "n": 19013,
+        "p50_us": 19.105999999999998,
+        "p95_us": 1993.829,
+        "p999_us": 3080.575,
+        "p99_us": 2518.538,
+        "sd_us": 606.3218338591921
+      },
+      "ops_per_sec_ci95_high": 21563.4450741055,
+      "ops_per_sec_ci95_low": 16137.548873045069,
+      "ops_per_sec_mean": 18850.496973575286,
+      "pairs": 5,
+      "threads": 4
+    },
+    "F2": {
+      "duration_ms": 200,
+      "latency": {
+        "ci95_high_us": 220.6101433355598,
+        "ci95_low_us": 210.4953441146176,
+        "max_us": 5029.289,
+        "mean_us": 215.5527437250887,
+        "min_us": 11.600999999999999,
+        "n": 18566,
+        "p50_us": 52.648,
+        "p95_us": 1068.352,
+        "p999_us": 2389.747,
+        "p99_us": 1699.84,
+        "sd_us": 351.58502783862855
+      },
+      "ops_per_sec_ci95_high": 20056.306721562956,
+      "ops_per_sec_ci95_low": 16950.94194617179,
+      "ops_per_sec_mean": 18503.624333867374,
+      "pairs": 5,
+      "threads": 4
+    },
+    "paired_ops_per_sec": {
+      "F1_minus_F0": {
+        "ci95_high": 59.49203978209607,
+        "ci95_low": -2291.5561950637966,
+        "mean_diff": -1116.0320776408503,
+        "metric": "ops_per_sec",
+        "pairs": 5,
+        "significant": false,
+        "t": -2.6355095583430903,
+        "t_crit95": 2.776
+      },
+      "F2_minus_F0": {
+        "ci95_high": 1903.998855969591,
+        "ci95_low": -4829.808290667119,
+        "mean_diff": -1462.904717348764,
+        "metric": "ops_per_sec",
+        "pairs": 5,
+        "significant": false,
+        "t": -1.2061597271577644,
+        "t_crit95": 2.776
+      },
+      "F2_minus_F1": {
+        "ci95_high": 2015.7674850968006,
+        "ci95_low": -2709.5127645126286,
+        "mean_diff": -346.8726397079139,
+        "metric": "ops_per_sec",
+        "pairs": 5,
+        "significant": false,
+        "t": -0.40756035492657167,
+        "t_crit95": 2.776
+      }
+    }
+  },
+  "schema": "orfs.f2-concurrency.v1",
+  "servicing_benchmark": {
+    "chosen_default": "single-loop",
+    "comparisons": {
+      "pool_affinity_minus_single_readers_16": {
+        "ci95_high": 16377.579573726605,
+        "ci95_low": -12321.667421768227,
+        "mean_diff": 2027.9560759791893,
+        "metric": "ops_per_sec",
+        "pairs": 8,
+        "significant": false,
+        "t": 0.33423288913773036,
+        "t_crit95": 2.365
+      },
+      "pool_minus_single_read_4k_latency": {
+        "ci95_high": 7.719511942889357,
+        "ci95_low": 3.244171807110636,
+        "mean_diff": 5.481841874999996,
+        "metric": "us_per_op",
+        "pairs": 8,
+        "significant": true,
+        "t": 5.793774614236835,
+        "t_crit95": 2.365
+      },
+      "pool_minus_single_readers_16": {
+        "ci95_high": 51692.30934159934,
+        "ci95_low": 12363.655368149863,
+        "mean_diff": 32027.982354874603,
+        "metric": "ops_per_sec",
+        "pairs": 8,
+        "significant": true,
+        "t": 3.8519588450911235,
+        "t_crit95": 2.365
+      }
+    },
+    "decision_rule": "pool default only if 16-reader throughput gain is a significant positive paired margin AND read_4k latency has no significant regression",
+    "pool(fast=2,bulk=6)": {
+      "affinity": true,
+      "f2_stats": {
+        "bulk_routed": 32,
+        "daemon_reads": 18560,
+        "fast_routed": 18662,
+        "forgets_classical": 0,
+        "interrupts_classical": 0,
+        "negative_completions": 0,
+        "passthrough_bytes": 0,
+        "passthrough_fallbacks": 0,
+        "passthrough_last_error": null,
+        "passthrough_negotiated": false,
+        "passthrough_opens": 0,
+        "passthrough_registered": 0,
+        "passthrough_releases": 0,
+        "passthrough_requested": false,
+        "passthrough_reused": 0,
+        "register_failures": 0,
+        "register_sqes": 16,
+        "reply_bytes": 76025624,
+        "requests_served": 18694,
+        "ring_completions": 18694,
+        "ring_submits": 18694,
+        "workers_bulk": 6,
+        "workers_fast": 2
+      },
+      "read_4k_ci95": [
+        20.820573357806257,
+        34.46590414219374
+      ],
+      "read_4k_mean_us": 27.64323875,
+      "readers_16_ci95": [
+        84664.95314288256,
+        109110.96734177586
+      ],
+      "readers_16_ops_per_sec_mean": 96887.96024232921,
+      "readers_8_ci95": [
+        83641.330034996,
+        91373.65112232816
+      ],
+      "readers_8_ops_per_sec_mean": 87507.49057866208
+    },
+    "single-loop": {
+      "affinity": false,
+      "f2_stats": {
+        "bulk_routed": 0,
+        "daemon_reads": 18560,
+        "fast_routed": 0,
+        "forgets_classical": 0,
+        "interrupts_classical": 0,
+        "negative_completions": 0,
+        "passthrough_bytes": 0,
+        "passthrough_fallbacks": 0,
+        "passthrough_last_error": null,
+        "passthrough_negotiated": false,
+        "passthrough_opens": 0,
+        "passthrough_registered": 0,
+        "passthrough_releases": 0,
+        "passthrough_requested": false,
+        "passthrough_reused": 0,
+        "register_failures": 0,
+        "register_sqes": 16,
+        "reply_bytes": 76025624,
+        "requests_served": 18694,
+        "ring_completions": 18694,
+        "ring_submits": 18694,
+        "workers_bulk": 0,
+        "workers_fast": 0
+      },
+      "read_4k_ci95": [
+        12.917270394370693,
+        17.981212730629313
+      ],
+      "read_4k_mean_us": 15.449241562500003,
+      "readers_16_ci95": [
+        80068.84300969775,
+        109651.16532300231
+      ],
+      "readers_16_ops_per_sec_mean": 94860.00416635003,
+      "readers_8_ci95": [
+        69771.62130484318,
+        104061.07762663842
+      ],
+      "readers_8_ops_per_sec_mean": 86916.3494657408
+    }
+  }
+}

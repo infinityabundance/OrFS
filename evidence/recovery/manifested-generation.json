@@ -41,12 +41,12 @@
       "ekbloom_version": "0.3.0",
       "generation": 1,
       "inode": 2,
-      "inode_version": 3,
+      "inode_version": 4,
       "logical_range": [
         0,
         4096
       ],
-      "manifest_blake3": "081b03c636f9a785895dbb7686bee5ec166e6b78bced6a78fb6e217bbcb28c45",
+      "manifest_blake3": "28698462c9449ae04053aa9bcb03f796084b4378a05946df1c0efee11ef9b040",
       "overlay": {
         "base_generation": null,
         "base_manifest_blake3": null,
@@ -59,7 +59,7 @@
         "interval": 64,
         "region_bytes": null
       },
-      "payload": ".or_bloom/ekbloom/2-v3-r7070-g1.ekb",
+      "payload": ".or_bloom/ekbloom/2-v4-r7790-g1.ekb",
       "payload_blake3": "4e5a8be6ef4bde6ae046e8ddd0181f936ec81777c104e9095ccbc38b1c13736e",
       "physical_bytes": 5280,
       "physical_range": [
@@ -68,7 +68,7 @@
       ],
       "profile": "sparse(K=64)",
       "profile_kind": 1,
-      "root": 7070,
+      "root": 7790,
       "schema": 2,
       "source_bytes": 4096,
       "visible_bytes": 4096,
@@ -98,12 +98,12 @@
       "ekbloom_version": "0.3.0",
       "generation": 2,
       "inode": 4,
-      "inode_version": 3,
+      "inode_version": 4,
       "logical_range": [
         0,
         11
       ],
-      "manifest_blake3": "efdc121c20063fba877d8d79dca6c7b6370c1bad39dc8fa0eea75d6cb0a62659",
+      "manifest_blake3": "60147bf7c2011fc5739b0c7b2ac83ce97432e41e4d2a13cfda0879d3d76a5802",
       "overlay": {
         "base_generation": null,
         "base_manifest_blake3": null,
@@ -116,7 +116,7 @@
         "interval": 64,
         "region_bytes": null
       },
-      "payload": ".or_bloom/ekbloom/4-v3-r7070-g2.ekb",
+      "payload": ".or_bloom/ekbloom/4-v4-r7790-g2.ekb",
       "payload_blake3": "b5bfccbfb9ebd8e30b52b32aaf35ed28f17a84921f5e34e019a152555ca28848",
       "physical_bytes": 432,
       "physical_range": [
@@ -125,7 +125,7 @@
       ],
       "profile": "sparse(K=64)",
       "profile_kind": 1,
-      "root": 7070,
+      "root": 7790,
       "schema": 2,
       "source_bytes": 11,
       "visible_bytes": 11,

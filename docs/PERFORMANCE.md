@@ -64,6 +64,12 @@ reason from the live negotiation, and a `--transport fuse-uring` mount still
 succeeds as F0/F1 with byte-identical contents. E1/E2 request **asynchronous**
 manifestation (Phase 18): a small write never waits for a whole-object rebuild.
 
+The negotiated FUSE ABI here is **7.45**, which supports the baseline
+`REGISTER`/`COMMIT_AND_FETCH` interface only: `ADD_QUEUE`, `ADD_BUFPOOL` and
+zero-copy are compiled but capability-gated and **inert** (never reported),
+because the kernel does not offer the buffer-pool extension. `orfs doctor`
+reports the exact negotiated set. See `docs/FUSE_URING.md` §7.
+
 ---
 
 ## 3. Workload definitions (§30, §36)
@@ -227,6 +233,37 @@ populated one takes ~335 ms. `recovery-time` and `snapshot-latency` re-scan the
 log at open; they are **library-level** (no FUSE) and scale with log size.
 `search-latency` is the typed query API and is **not** an index-backed claim (no
 trigram index was built for that corpus; §12.1).
+
+### 4.6 F2 transport servicing and concurrency (Phase 26)
+
+The FUSE-over-`io_uring` (F2) transport is measured by a **paired** court
+(`tests/fuse_uring.rs::f2_court_f0_f1_f2`): 15 repetitions each run the same
+workload under F0, F1 and F2 back to back, with per-op samples, 95% Student-t
+intervals on the mean, paired-t significance on the F2−F0/F2−F1 differences, and
+explicit **daemon-reaching request counts**. Full data, per-workload tables and the
+servicing benchmark are in `evidence/performance/fuse-uring.json` and
+`f2-concurrency.json`; the discussion is in `docs/FUSE_URING.md` §6.
+
+Headline (16 queues, 8 CPUs, warm, 15 pairs):
+
+| metric | F0 | F1 | F2 | significant? |
+|---|---:|---:|---:|---|
+| read 4 KiB, 1 thread (µs) | 14.24 | 15.77 | 13.93 | no |
+| `stat` lookup (µs) | 11.40 | 9.81 | 13.97 | F2 − F1 = +4.16 µs, yes |
+| 16 concurrent 4 KiB readers (ops/s) | 383 490 | 382 577 | 108 094 | F2 slower, yes |
+| 4-thread mixed workload (ops/s) | 20 323 | 19 071 | 19 570 | no |
+
+**Servicing topology (chosen by measurement):** single session loop. A bounded
+worker pool (latency lane + bulk lane) was implemented and benchmarked; it is
+**significantly slower** on 16 readers (−21 651 ops/s, 95% CI [−32 033, −11 268])
+and adds a significant ~5.2 µs to read-4K latency, because F2's concurrency
+bottleneck at ABI 7.45 is the per-request `COMMIT_AND_FETCH` ring round-trip, not
+dispatch work. The pool remains selectable (`--f2-servicing pool`) and is proven
+byte-equivalent to F0.
+
+**Honest conclusion.** Under ABI 7.45, F2 is latency-neutral single-threaded and
+markedly slower under reader concurrency than F0/F1. It is recorded as a real
+transport (the ring carried every request the daemon served), not as a win.
 
 ---
 

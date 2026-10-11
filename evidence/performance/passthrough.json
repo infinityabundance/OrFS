@@ -1,24 +1,26 @@
 {
   "cached_ext4": {
     "iterations": 200,
-    "max_ns": 5911,
-    "mean_ns": 4394,
-    "min_ns": 3697,
-    "p50_ns": 4288,
-    "p90_ns": 4859
+    "max_ns": 6372,
+    "mean_ns": 4869,
+    "min_ns": 4078,
+    "p50_ns": 4889,
+    "p90_ns": 5110
   },
   "caveat": "all three arms are page-cache warm after warmup, so this measures the per-read dispatch cost, not cold storage; the passthrough arm still avoids the /dev/fuse round-trip, which is why it is reported separately",
   "claim": "a kernel-served passthrough read of an immutable snapshot file avoids the userspace daemon; measured against a daemon-served FUSE read and a cached plain-file read of the same bytes",
   "daemon_served": {
     "iterations": 200,
-    "max_ns": 1123897,
-    "mean_ns": 758833,
-    "min_ns": 670882,
-    "p50_ns": 733178,
-    "p90_ns": 853523
+    "max_ns": 1188236,
+    "mean_ns": 698173,
+    "min_ns": 443447,
+    "p50_ns": 773082,
+    "p90_ns": 878128
   },
   "daemon_stats": {
+    "bulk_routed": 0,
     "daemon_reads": 406,
+    "fast_routed": 0,
     "forgets_classical": 0,
     "interrupts_classical": 0,
     "negative_completions": 0,
@@ -34,9 +36,11 @@
     "register_failures": 0,
     "register_sqes": 16,
     "reply_bytes": 53218608,
-    "requests_served": 1017,
-    "ring_completions": 1017,
-    "ring_submits": 1017
+    "requests_served": 1016,
+    "ring_completions": 1016,
+    "ring_submits": 1016,
+    "workers_bulk": 0,
+    "workers_fast": 0
   },
   "environment": {
     "cgroup_memory_max": "8589934592",
@@ -58,14 +62,16 @@
   "iterations": 200,
   "passthrough": {
     "iterations": 200,
-    "max_ns": 115576,
-    "mean_ns": 28864,
-    "min_ns": 21530,
-    "p50_ns": 25989,
-    "p90_ns": 36358
+    "max_ns": 1694581,
+    "mean_ns": 97001,
+    "min_ns": 27321,
+    "p50_ns": 29495,
+    "p90_ns": 53610
   },
   "passthrough_stats": {
+    "bulk_routed": 0,
     "daemon_reads": 0,
+    "fast_routed": 0,
     "forgets_classical": 0,
     "interrupts_classical": 0,
     "negative_completions": 0,
@@ -83,7 +89,9 @@
     "reply_bytes": 3376,
     "requests_served": 610,
     "ring_completions": 611,
-    "ring_submits": 610
+    "ring_submits": 610,
+    "workers_bulk": 0,
+    "workers_fast": 0
   },
   "schema": "orfs.fuse-passthrough-performance.v1"
 }

@@ -2,32 +2,32 @@
   "build_profile": "debug",
   "defensive_no_extent_map_baseline": {
     "authoritative_extent_o1": {
-      "mean_ns": 667.875,
-      "min_ns": 561,
-      "p50_ns": 631,
-      "p95_ns": 1032,
-      "p99_ns": 1202,
+      "mean_ns": 939.28125,
+      "min_ns": 882,
+      "p50_ns": 922,
+      "p95_ns": 1012,
+      "p99_ns": 1253,
       "samples": 32
     },
     "decode_from_start_prefix": {
-      "mean_ns": 216595.125,
-      "min_ns": 10419,
-      "p50_ns": 248364,
-      "p95_ns": 401719,
-      "p99_ns": 410426,
+      "mean_ns": 333299.5625,
+      "min_ns": 15058,
+      "p50_ns": 387082,
+      "p95_ns": 618524,
+      "p99_ns": 634394,
       "samples": 32
     },
     "measured_paths": [
       {
         "certified": true,
-        "mean_ns": 60.71,
-        "min_ns": 50,
+        "mean_ns": 113.11,
+        "min_ns": 100,
         "path": "path-bloom"
       },
       {
         "certified": true,
-        "mean_ns": 573.352,
-        "min_ns": 531,
+        "mean_ns": 940.352,
+        "min_ns": 841,
         "path": "logical-extent"
       }
     ],
@@ -43,11 +43,11 @@
       }
     ],
     "planned_read": {
-      "mean_ns": 5229.3125,
-      "min_ns": 3717,
-      "p50_ns": 3897,
-      "p95_ns": 6171,
-      "p99_ns": 35927,
+      "mean_ns": 21926.71875,
+      "min_ns": 5750,
+      "p50_ns": 5831,
+      "p95_ns": 8726,
+      "p99_ns": 517115,
       "samples": 32
     }
   },
@@ -56,19 +56,19 @@
   "profile": "path(D=4)",
   "real_log_4k_planned_vs_authoritative": {
     "authoritative_extent": {
-      "mean_ns": 7279.606666666667,
-      "min_ns": 7003,
-      "p50_ns": 7094,
-      "p95_ns": 8305,
-      "p99_ns": 12203,
+      "mean_ns": 11052.92,
+      "min_ns": 10840,
+      "p50_ns": 10991,
+      "p95_ns": 11371,
+      "p99_ns": 12503,
       "samples": 300
     },
     "planned_read": {
-      "mean_ns": 11093.723333333333,
-      "min_ns": 10499,
-      "p50_ns": 10620,
-      "p95_ns": 12183,
-      "p99_ns": 17793,
+      "mean_ns": 17025.263333333332,
+      "min_ns": 16360,
+      "p50_ns": 16551,
+      "p95_ns": 16721,
+      "p99_ns": 18735,
       "samples": 300
     }
   },

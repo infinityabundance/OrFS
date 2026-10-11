@@ -39,7 +39,7 @@
 //! "ready" once *every* queue has at least one registered entry
 //! (`is_ring_ready`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::ffi::CString;
 use std::fs::OpenOptions;
 use std::io;
@@ -48,15 +48,16 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 use std::time::Duration;
 
-use parking_lot::Mutex;
+use parking_lot::{Condvar, Mutex};
 
 use crate::buffers::AlignedBuffer;
 use crate::error::OrfsError;
-use crate::fuse::{MountOptions, OrfsFuse, StatfsMode, Transport};
-use crate::fuse_uring::{FuseUringNegotiation, FuseUringRing, RingCompletion};
+use crate::fuse::{F2Servicing, MountOptions, OrfsFuse, StatfsMode, Transport};
+use crate::fuse_uring::{FuseUringNegotiation, FuseUringRing, QueuePlan, RingCompletion};
 use crate::inode::{has_permission, InodeStat, InodeType, Timespec};
 use crate::namespace::{CoreRead, OrfsCore, RenameMode, SetAttr};
 
@@ -284,69 +285,56 @@ fn write_attr(v: &mut Vec<u8>, a: &Attr) {
     put_u32(v, a.flags);
 }
 
-fn encode_entry_out(a: &Attr, entry_ttl: Duration, attr_ttl: Duration) -> Vec<u8> {
-    let mut v = Vec::with_capacity(128);
-    put_u64(&mut v, a.ino); // nodeid
-    put_u64(&mut v, 1); // generation (GENERATION)
-    put_u64(&mut v, entry_ttl.as_secs()); // entry_valid
-    put_u64(&mut v, attr_ttl.as_secs()); // attr_valid
-    put_u32(&mut v, entry_ttl.subsec_nanos()); // entry_valid_nsec
-    put_u32(&mut v, attr_ttl.subsec_nanos()); // attr_valid_nsec
-    write_attr(&mut v, a);
-    debug_assert_eq!(v.len(), 128);
-    v
+fn write_entry_out(v: &mut Vec<u8>, a: &Attr, entry_ttl: Duration, attr_ttl: Duration) {
+    put_u64(v, a.ino); // nodeid
+    put_u64(v, 1); // generation (GENERATION)
+    put_u64(v, entry_ttl.as_secs()); // entry_valid
+    put_u64(v, attr_ttl.as_secs()); // attr_valid
+    put_u32(v, entry_ttl.subsec_nanos()); // entry_valid_nsec
+    put_u32(v, attr_ttl.subsec_nanos()); // attr_valid_nsec
+    write_attr(v, a);
 }
 
-fn encode_attr_out(a: &Attr, attr_ttl: Duration) -> Vec<u8> {
-    let mut v = Vec::with_capacity(104);
-    put_u64(&mut v, attr_ttl.as_secs());
-    put_u32(&mut v, attr_ttl.subsec_nanos());
-    put_u32(&mut v, 0); // dummy
-    write_attr(&mut v, a);
-    debug_assert_eq!(v.len(), 104);
-    v
+fn write_attr_out(v: &mut Vec<u8>, a: &Attr, attr_ttl: Duration) {
+    put_u64(v, attr_ttl.as_secs());
+    put_u32(v, attr_ttl.subsec_nanos());
+    put_u32(v, 0); // dummy
+    write_attr(v, a);
 }
 
-fn encode_open_out(fh: u64, open_flags: u32, backing_id: i32) -> Vec<u8> {
-    let mut v = Vec::with_capacity(16);
-    put_u64(&mut v, fh);
-    put_u32(&mut v, open_flags);
-    put_u32(&mut v, backing_id as u32);
-    debug_assert_eq!(v.len(), 16);
-    v
+fn write_open_out(v: &mut Vec<u8>, fh: u64, open_flags: u32, backing_id: i32) {
+    put_u64(v, fh);
+    put_u32(v, open_flags);
+    put_u32(v, backing_id as u32);
 }
 
-fn encode_write_out(n: u32) -> Vec<u8> {
-    let mut v = Vec::with_capacity(8);
-    put_u32(&mut v, n);
-    put_u32(&mut v, 0);
-    v
+fn write_write_out(v: &mut Vec<u8>, n: u32) {
+    put_u32(v, n);
+    put_u32(v, 0);
 }
 
 #[allow(clippy::too_many_arguments)]
-fn encode_statfs(
+fn write_statfs(
+    v: &mut Vec<u8>,
     blocks: u64,
     bfree: u64,
     bavail: u64,
     files: u64,
     ffree: u64,
     bsize: u32,
-) -> Vec<u8> {
-    let mut v = Vec::with_capacity(80);
-    put_u64(&mut v, blocks);
-    put_u64(&mut v, bfree);
-    put_u64(&mut v, bavail);
-    put_u64(&mut v, files);
-    put_u64(&mut v, ffree);
-    put_u32(&mut v, bsize); // bsize
-    put_u32(&mut v, 255); // namelen
-    put_u32(&mut v, bsize); // frsize
-    put_u32(&mut v, 0); // padding
+) {
+    put_u64(v, blocks);
+    put_u64(v, bfree);
+    put_u64(v, bavail);
+    put_u64(v, files);
+    put_u64(v, ffree);
+    put_u32(v, bsize); // bsize
+    put_u32(v, 255); // namelen
+    put_u32(v, bsize); // frsize
+    put_u32(v, 0); // padding
     for _ in 0..6 {
-        put_u32(&mut v, 0); // spare[6]
+        put_u32(v, 0); // spare[6]
     }
-    debug_assert_eq!(v.len(), 80);
-    v
 }
 
 // ---------------------------------------------------------------------------
@@ -355,13 +343,11 @@ fn encode_statfs(
 
 /// A parsed request as delivered by either transport.
 struct Req<'a> {
-    unique: u64,
     opcode: u32,
     nodeid: u64,
     uid: u32,
     gid: u32,
     pid: u32,
-    commit_id: u64,
     /// The per-opcode input header (`op_in`, 128 bytes).
     op: &'a [u8],
     /// The variable-length request payload.
@@ -400,29 +386,70 @@ enum Reply {
 }
 
 impl Reply {
-    fn encode(self, entry_ttl: Duration, attr_ttl: Duration) -> (i32, Vec<u8>) {
+    /// Encode the reply body into `out` (cleared first), returning the wire error
+    /// code.
+    ///
+    /// This writes into a caller-owned, reusable buffer instead of allocating a
+    /// fresh `Vec` per request. For `Data` replies the buffer takes ownership of
+    /// the core's `Vec` when it is large enough that copying would be wasteful,
+    /// and otherwise reuses the existing capacity. Byte-for-byte identical to the
+    /// previous per-reply allocation.
+    fn encode_into(self, out: &mut Vec<u8>, entry_ttl: Duration, attr_ttl: Duration) -> i32 {
+        out.clear();
         match self {
-            Reply::Empty => (0, Vec::new()),
-            Reply::Err(e) => (e, Vec::new()),
-            Reply::Data(d) => (0, d),
-            Reply::Entry(a) => (0, encode_entry_out(&a, entry_ttl, attr_ttl)),
-            Reply::Attr(a) => (0, encode_attr_out(&a, attr_ttl)),
+            Reply::Empty => 0,
+            Reply::Err(e) => e,
+            Reply::Data(d) => {
+                // Reuse capacity when possible; otherwise take the core's buffer
+                // wholesale (no second copy for a large read).
+                if out.capacity() >= d.len() {
+                    out.extend_from_slice(&d);
+                } else {
+                    *out = d;
+                }
+                0
+            }
+            Reply::Entry(a) => {
+                let before = out.len();
+                write_entry_out(out, &a, entry_ttl, attr_ttl);
+                debug_assert_eq!(out.len() - before, 128);
+                0
+            }
+            Reply::Attr(a) => {
+                let before = out.len();
+                write_attr_out(out, &a, attr_ttl);
+                debug_assert_eq!(out.len() - before, 104);
+                0
+            }
             Reply::Open {
                 fh,
                 open_flags,
                 backing_id,
-            } => (0, encode_open_out(fh, open_flags, backing_id)),
-            Reply::Write(n) => (0, encode_write_out(n)),
+            } => {
+                write_open_out(out, fh, open_flags, backing_id);
+                0
+            }
+            Reply::Write(n) => {
+                write_write_out(out, n);
+                0
+            }
             Reply::Create {
                 attr,
                 fh,
                 open_flags,
             } => {
-                let mut v = encode_entry_out(&attr, entry_ttl, attr_ttl);
-                v.extend_from_slice(&encode_open_out(fh, open_flags, 0));
-                (0, v)
+                write_entry_out(out, &attr, entry_ttl, attr_ttl);
+                write_open_out(out, fh, open_flags, 0);
+                0
             }
-            Reply::Dir(d) => (0, d),
+            Reply::Dir(d) => {
+                if out.capacity() >= d.len() {
+                    out.extend_from_slice(&d);
+                } else {
+                    *out = d;
+                }
+                0
+            }
             Reply::Statfs {
                 blocks,
                 bfree,
@@ -430,7 +457,10 @@ impl Reply {
                 files,
                 ffree,
                 bsize,
-            } => (0, encode_statfs(blocks, bfree, bavail, files, ffree, bsize)),
+            } => {
+                write_statfs(out, blocks, bfree, bavail, files, ffree, bsize);
+                0
+            }
         }
     }
 }
@@ -1306,6 +1336,12 @@ pub struct NativeEnvironment {
     pub max_write: u32,
     pub payload_buf: usize,
     pub mount_options: String,
+    /// The chosen queue-servicing topology (`single-loop` or `pool(...)`).
+    pub servicing: String,
+    /// Whether F2 threads were pinned to a dedicated CPU set.
+    pub affinity: bool,
+    /// The exact negotiated F2 capability set (ABI boundary included).
+    pub capabilities: crate::fuse_uring::F2Capabilities,
 }
 
 /// Counters for F2 evidence. Every field is a real observation.
@@ -1320,6 +1356,16 @@ pub struct NativeStats {
     pub negative_completions: u64,
     pub forgets_classical: u64,
     pub interrupts_classical: u64,
+
+    // -- queue servicing (Phase 26) ----------------------------------------
+    /// Requests routed to the latency lane (metadata + small reads).
+    pub fast_routed: u64,
+    /// Requests routed to the bulk lane (large reads/writes).
+    pub bulk_routed: u64,
+    /// Worker threads in the latency lane (`0` for single-loop).
+    pub workers_fast: u64,
+    /// Worker threads in the bulk lane (`0` for single-loop).
+    pub workers_bulk: u64,
 
     // -- FUSE passthrough (Phase 21) ---------------------------------------
     /// The mount requested kernel passthrough (`--passthrough`).
@@ -1857,6 +1903,12 @@ pub struct Prepared {
     passthrough: bool,
     /// The kernel offered `FUSE_PASSTHROUGH` at `INIT`, so passthrough is usable.
     passthrough_enabled: bool,
+    /// The kernel offered `FUSE_HAS_IO_URING_BUFPOOL` at `INIT` (FUSE ABI 7.46+).
+    /// This is the runtime gate for the forward-compatible `ADD_QUEUE`/
+    /// `ADD_BUFPOOL`/zero-copy commands.
+    kernel_offered_bufpool: bool,
+    /// Whether the process holds `CAP_SYS_ADMIN` (needed for zero-copy).
+    cap_sys_admin: bool,
 }
 
 /// Perform the whole F2 setup *except* dispatch: open, mount, `INIT`, ring,
@@ -1899,6 +1951,12 @@ pub fn prepare(mountpoint: &Path, opts: &MountOptions) -> Result<Prepared, Strin
              fuse_uring_enabled() is false for this connection"
         )));
     }
+    // Forward-compat capability (Phase 26): the buffer-pool extension is present
+    // iff the kernel sets FUSE_HAS_IO_URING_BUFPOOL at INIT. When it is absent
+    // (FUSE ABI 7.45 does not set it) the ADD_QUEUE / ADD_BUFPOOL / zero-copy
+    // commands stay inert and are never reported as available.
+    let kernel_offered_bufpool = offered_flags & crate::fuse_uring::FUSE_HAS_IO_URING_BUFPOOL != 0;
+    let cap_sys_admin = crate::fuse_uring::has_cap_sys_admin();
     // FUSE passthrough (Phase 21): engage only when requested and offered. The
     // kernel sets the capability bit iff CONFIG_FUSE_PASSTHROUGH is enabled.
     let passthrough = opts.passthrough;
@@ -1913,6 +1971,17 @@ pub fn prepare(mountpoint: &Path, opts: &MountOptions) -> Result<Prepared, Strin
     write_all(raw, &reply).map_err(|e| fail(format!("write FUSE_INIT reply: {e}")))?;
 
     let num_queues = possible_cpu_count();
+    let capabilities = FuseUringNegotiation {
+        kernel_offered: true,
+        kernel_offered_bufpool,
+        kernel_abi: Some((7, kernel_minor)),
+        accepted: true,
+        engaged: false,
+        cap_sys_admin,
+        num_queues,
+        ..Default::default()
+    }
+    .capabilities();
     let environment = Arc::new(Mutex::new(NativeEnvironment {
         kernel_release: crate::capabilities::probe().kernel_release,
         fuse_abi_major: 7,
@@ -1921,6 +1990,9 @@ pub fn prepare(mountpoint: &Path, opts: &MountOptions) -> Result<Prepared, Strin
         max_write: MAX_WRITE,
         payload_buf: PAYLOAD_BUF,
         mount_options,
+        servicing: opts.f2_servicing.describe(),
+        affinity: opts.f2_affinity,
+        capabilities,
     }));
     Ok(Prepared {
         fd,
@@ -1936,6 +2008,8 @@ pub fn prepare(mountpoint: &Path, opts: &MountOptions) -> Result<Prepared, Strin
         stop: Arc::new(AtomicBool::new(false)),
         passthrough,
         passthrough_enabled,
+        kernel_offered_bufpool,
+        cap_sys_admin,
     })
 }
 
@@ -1956,13 +2030,27 @@ pub fn negotiate_live() -> Result<FuseUringNegotiation, String> {
     let result = (|| -> Result<FuseUringNegotiation, String> {
         let prepared = prepare(&dir, &opts)?;
         let raw = prepared.fd.as_raw_fd();
-        let (_ring, _entries, _probe, num_queues) = register_all_entries(raw)?;
-        Ok(FuseUringNegotiation {
+        // Probe-only negotiation: build the capability view, pick the queue plan,
+        // and register over the plan the kernel actually offered.
+        let probe_neg = FuseUringNegotiation {
             kernel_offered: true,
-            kernel_offered_bufpool: false,
+            kernel_offered_bufpool: prepared.kernel_offered_bufpool,
             kernel_abi: Some((7, prepared.kernel_minor)),
             accepted: true,
             engaged: true,
+            cap_sys_admin: prepared.cap_sys_admin,
+            ..Default::default()
+        };
+        let plan = crate::fuse_uring::plan_queues(&probe_neg, false);
+        let (_ring, _entries, _probe, num_queues) = register_all_entries(raw, plan)?;
+        Ok(FuseUringNegotiation {
+            kernel_offered: true,
+            kernel_offered_bufpool: prepared.kernel_offered_bufpool,
+            kernel_abi: Some((7, prepared.kernel_minor)),
+            accepted: true,
+            engaged: true,
+            cap_sys_admin: prepared.cap_sys_admin,
+            num_queues,
             reason: Some(format!(
                 "live probe: INIT offered FUSE_OVER_IO_URING and {num_queues} ring entries registered"
             )),
@@ -1981,12 +2069,19 @@ pub struct NativeMount {
     negotiation: Arc<Mutex<FuseUringNegotiation>>,
     stats: Arc<Mutex<NativeStats>>,
     environment: Arc<Mutex<NativeEnvironment>>,
+    metrics: Arc<Mutex<crate::fuse::Metrics>>,
 }
 
 impl NativeMount {
     /// The live negotiation result (always `engaged == true` for a native mount).
     pub fn negotiation(&self) -> FuseUringNegotiation {
         self.negotiation.lock().clone()
+    }
+
+    /// The shared daemon-operation counters (same ones the classical transport
+    /// uses), so the mount can report daemon-reaching requests uniformly.
+    pub fn metrics_cell(&self) -> Arc<Mutex<crate::fuse::Metrics>> {
+        Arc::clone(&self.metrics)
     }
 
     /// The shared negotiation cell, so the mount can report live updates.
@@ -2045,6 +2140,7 @@ impl Prepared {
         let options = self.options;
         let fs = Arc::new(OrfsFuse::new(core, backing, options));
         let negotiation = fs.negotiation_cell();
+        let metrics = fs.metrics_cell();
         let stats = Arc::clone(&self.stats);
         // The passthrough controller holds its own `/dev/fuse` duplicate so the
         // ioctls do not race with the session's reads on the original fd.
@@ -2089,6 +2185,13 @@ impl Prepared {
             pending: Vec::new(),
             reader_fd,
             setup_tx: Some(setup_tx),
+            servicing: options.f2_servicing,
+            affinity: options.f2_affinity,
+            inflight: Vec::new(),
+            pool: None,
+            scratch: Vec::new(),
+            kernel_offered_bufpool: self.kernel_offered_bufpool,
+            cap_sys_admin: self.cap_sys_admin,
         };
         let thread = std::thread::Builder::new()
             .name("orfs-f2".to_string())
@@ -2105,6 +2208,7 @@ impl Prepared {
                 negotiation,
                 stats,
                 environment,
+                metrics,
             }),
             Ok(Err(e)) => {
                 stop.store(true, Ordering::SeqCst);
@@ -2147,11 +2251,19 @@ fn dup_owned(fd: RawFd) -> io::Result<OwnedFd> {
 /// Create the SQE128 ring bound to `fd`, register one entry per CPU queue, and
 /// probe for an immediate `REGISTER` rejection.
 ///
+/// `plan` selects the queue-creation interface. On FUSE ABI 7.45 the kernel never
+/// offers the buffer-pool extension, so `plan` is always [`QueuePlan::Baseline`]
+/// and the single-entry-per-queue `REGISTER` path below is the only one executed.
+/// The [`QueuePlan::Modern`] branch issues `ADD_QUEUE`/`ADD_BUFPOOL` and **degrades
+/// to the baseline** on any rejection, so a mis-detected capability can never
+/// break a mount and can never silently claim zero-copy.
+///
 /// Must be called on the thread that will wait for completions: the kernel
 /// delivers `URING_CMD` completions as task-work to the task that submitted the
 /// command, so the submitting and waiting tasks must be the same.
 fn register_all_entries(
     fd: RawFd,
+    plan: QueuePlan,
 ) -> Result<(FuseUringRing, Vec<EntryState>, Vec<RingCompletion>, usize), String> {
     let num_queues = possible_cpu_count();
     let mut ring =
@@ -2160,9 +2272,41 @@ fn register_all_entries(
     for qid in 0..num_queues {
         entries.push(EntryState::new(qid as u16, (qid + 1) as u64));
     }
-    // Register one entry per queue: the kernel creates each queue lazily and
-    // only starts routing requests once every queue has an available entry
-    // (`is_ring_ready`).
+    // Forward-compat (guarded): only a kernel that offered FUSE_HAS_IO_URING_BUFPOOL
+    // reaches this branch. Every command is runtime-checked; a rejection degrades
+    // to the baseline path below rather than failing the mount.
+    if let QueuePlan::Modern { zero_copy } = plan {
+        let mut ok = true;
+        for e in &entries {
+            match ring.add_queue(e.qid, zero_copy) {
+                Ok(res) if res >= 0 => {}
+                _ => {
+                    ok = false;
+                    break;
+                }
+            }
+            if zero_copy {
+                // The payload buffer backs the per-queue buffer pool.
+                let base = e.payload.as_ptr() as u64;
+                match ring.add_bufpool(e.qid, base, e.payload.len() as u32, None) {
+                    Ok(res) if res >= 0 => {}
+                    _ => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+        }
+        if !ok {
+            eprintln!(
+                "orfs: forward-compat ADD_QUEUE/ADD_BUFPOOL was rejected by the kernel; \
+                 degrading to the baseline REGISTER interface"
+            );
+        }
+    }
+    // Baseline register: one entry per queue (the kernel creates each queue lazily
+    // and only starts routing requests once every queue has an available entry,
+    // `is_ring_ready`).
     for e in &entries {
         ring.submit_register(e.qid, e.iov.as_ptr() as u64, e.ud)
             .map_err(|err| format!("queue REGISTER SQE for qid {}: {err}", e.qid))?;
@@ -2189,6 +2333,242 @@ fn register_all_entries(
 }
 
 // ---------------------------------------------------------------------------
+// Queue servicing: a bounded, workload-aware dispatch worker pool (Phase 26)
+// ---------------------------------------------------------------------------
+
+/// The route a request takes through the pool: the *latency* lane (metadata and
+/// small reads) or the *bulk* lane (large reads and writes). The lanes have
+/// dedicated workers, so a small metadata op never queues behind a large read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Lane {
+    Fast,
+    Bulk,
+}
+
+/// A read or write at least this large is routed to the bulk lane.
+const BULK_THRESHOLD: usize = 64 * 1024;
+
+/// A stable pointer to one registered ring entry, handed to a dispatch worker.
+///
+/// # Safety invariant
+///
+/// The pointed-to `EntryState` lives in the session's `entries: Vec<EntryState>`
+/// for the whole mount; the `Vec` is never resized after setup, so its buffer
+/// address is stable (as are the `AlignedBuffer` allocations it owns). A pointer
+/// is handed out **only** while `inflight[idx]` is `true`, and the session thread
+/// then neither reads nor writes `entries[idx]` — and never submits
+/// `COMMIT_AND_FETCH` for it — until the matching [`Done`] returns. The kernel
+/// does not touch the entry's buffers again until that `COMMIT_AND_FETCH`, so the
+/// worker has exclusive access for the whole job. The `mpsc` handoff of `Done`
+/// supplies the happens-before edge for the worker's reply writes.
+struct EntryPtr(*mut EntryState);
+// SAFETY: see the type-level invariant. The session transfers exclusive access
+// for the duration of one job and reclaims it only after the job returns.
+unsafe impl Send for EntryPtr {}
+
+/// One unit of dispatch work: which entry, and the lane it runs on.
+struct Job {
+    idx: usize,
+    entry: EntryPtr,
+    lane: Lane,
+}
+
+/// What a worker hands back: everything the session thread needs to re-arm the
+/// entry after the reply has been staged into its registered buffers.
+struct Done {
+    idx: usize,
+    qid: u16,
+    ud: u64,
+    commit_id: u64,
+    destroy: bool,
+    reply_len: u64,
+}
+
+/// Two-lane job queues with condition variables (one waiter set per lane).
+struct JobQueue {
+    fast: Mutex<VecDeque<Job>>,
+    bulk: Mutex<VecDeque<Job>>,
+    fast_cv: Condvar,
+    bulk_cv: Condvar,
+    closed: AtomicBool,
+}
+
+impl JobQueue {
+    fn new() -> JobQueue {
+        JobQueue {
+            fast: Mutex::new(VecDeque::new()),
+            bulk: Mutex::new(VecDeque::new()),
+            fast_cv: Condvar::new(),
+            bulk_cv: Condvar::new(),
+            closed: AtomicBool::new(false),
+        }
+    }
+
+    fn push(&self, job: Job) {
+        match job.lane {
+            Lane::Fast => {
+                self.fast.lock().push_back(job);
+                self.fast_cv.notify_one();
+            }
+            Lane::Bulk => {
+                self.bulk.lock().push_back(job);
+                self.bulk_cv.notify_one();
+            }
+        }
+    }
+
+    /// Block until a job is available on `lane`, or `None` once the queue closes.
+    fn pop(&self, lane: Lane) -> Option<Job> {
+        let (queue, cv) = match lane {
+            Lane::Fast => (&self.fast, &self.fast_cv),
+            Lane::Bulk => (&self.bulk, &self.bulk_cv),
+        };
+        let mut guard = queue.lock();
+        loop {
+            if let Some(job) = guard.pop_front() {
+                return Some(job);
+            }
+            if self.closed.load(Ordering::SeqCst) {
+                return None;
+            }
+            cv.wait(&mut guard);
+        }
+    }
+
+    fn close(&self) {
+        self.closed.store(true, Ordering::SeqCst);
+        self.fast_cv.notify_all();
+        self.bulk_cv.notify_all();
+    }
+}
+
+/// A bounded pool of dispatch workers. The workers run the filesystem dispatch
+/// and stage the reply into the entry's registered buffers; they never touch the
+/// ring (the session thread alone submits SQEs, because the kernel delivers
+/// URING_CMD completions as task-work to the submitting task).
+struct WorkerPool<C: OrfsCore + Send + 'static> {
+    queue: Arc<JobQueue>,
+    done_rx: Receiver<Done>,
+    threads: Vec<std::thread::JoinHandle<()>>,
+    _marker: std::marker::PhantomData<C>,
+}
+
+impl<C: OrfsCore + Send + 'static> WorkerPool<C> {
+    fn try_done(&self) -> Option<Done> {
+        self.done_rx.try_recv().ok()
+    }
+
+    fn wait_done(&self, timeout: Duration) -> Option<Done> {
+        self.done_rx.recv_timeout(timeout).ok()
+    }
+}
+
+impl<C: OrfsCore + Send + 'static> Drop for WorkerPool<C> {
+    fn drop(&mut self) {
+        // Close the queues (waking every worker) and wait for in-flight jobs to
+        // finish, so no worker still holds an `EntryPtr` when the session tears
+        // the ring and entries down.
+        self.queue.close();
+        for h in self.threads.drain(..) {
+            let _ = h.join();
+        }
+    }
+}
+
+/// The dispatch worker entry point: pop jobs for `lane` until the queue closes,
+/// serving each and reporting the result on `done_tx`.
+fn worker_loop<C: OrfsCore + Send + 'static>(
+    lane: Lane,
+    queue: Arc<JobQueue>,
+    done_tx: Sender<Done>,
+    dispatcher: Arc<Dispatcher<C>>,
+    affinity: Option<usize>,
+) {
+    if let Some(cpu) = affinity {
+        pin_to_cpu(cpu);
+    }
+    // Reused across jobs so reply encoding allocates at most once per worker.
+    let mut scratch = Vec::with_capacity(8 * 1024);
+    while let Some(job) = queue.pop(lane) {
+        let done = serve_job(&dispatcher, &job, &mut scratch);
+        if done_tx.send(done).is_err() {
+            break;
+        }
+    }
+}
+
+/// Serve one job: parse the request out of the entry's registered buffers,
+/// dispatch it, encode the reply into a reusable buffer, and write it back into
+/// the entry — byte-for-byte as the single-loop path does.
+fn serve_job<C: OrfsCore + Send + 'static>(
+    dispatcher: &Dispatcher<C>,
+    job: &Job,
+    scratch: &mut Vec<u8>,
+) -> Done {
+    // SAFETY: the session handed us exclusive access to this entry for the whole
+    // job (see `EntryPtr`); no other thread touches it until `Done` returns.
+    let e = unsafe { &mut *job.entry.0 };
+    let (qid, ud, commit_id, unique, opcode, payload_sz) = {
+        let hdr = e.header.as_slice();
+        (
+            e.qid,
+            e.ud,
+            get_u64(hdr, 264),
+            get_u64(hdr, 8),
+            get_u32(hdr, 4),
+            (get_u32(hdr, 272) as usize).min(e.payload.len()),
+        )
+    };
+    let destroy = opcode == FUSE_DESTROY;
+    let reply = if destroy {
+        Reply::Empty
+    } else {
+        let hdr = e.header.as_slice();
+        let req = Req {
+            opcode,
+            nodeid: get_u64(hdr, 16),
+            uid: get_u32(hdr, 24),
+            gid: get_u32(hdr, 28),
+            pid: get_u32(hdr, 32),
+            op: &hdr[128..256],
+            payload: &e.payload.as_slice()[..payload_sz],
+        };
+        dispatcher.serve(&req)
+    };
+    let err = reply.encode_into(scratch, dispatcher.entry_ttl, dispatcher.attr_ttl);
+    let reply_len = scratch.len() as u64;
+    write_reply(e, unique, err, scratch);
+    Done {
+        idx: job.idx,
+        qid,
+        ud,
+        commit_id,
+        destroy,
+        reply_len,
+    }
+}
+
+/// Pin the calling thread to `cpu` (best-effort; failures are ignored). Used to
+/// dedicate a CPU set to F2 so background manifestation does not share it.
+fn pin_to_cpu(cpu: usize) {
+    // A CPU mask covers `MAX_CPUS` bits (the kernel's `CPU_SETSIZE`); the byte
+    // array below is exactly that size, so the kernel accepts it as a `cpu_set_t`.
+    const MAX_CPUS: usize = 1024;
+    if cpu >= MAX_CPUS {
+        return;
+    }
+    let mut mask = [0u8; MAX_CPUS / 8];
+    mask[cpu / 8] |= 1 << (cpu % 8);
+    // SAFETY: `mask` is a live, fully-owned byte array of exactly `MAX_CPUS / 8`
+    // bytes; the kernel interprets it as a little-endian bitmask of that size and
+    // never retains the pointer past the call. `sched_setaffinity` reads only
+    // `mask.len()` bytes.
+    unsafe {
+        let _ = libc::sched_setaffinity(0, mask.len(), mask.as_ptr().cast::<libc::cpu_set_t>());
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The request loop
 // ---------------------------------------------------------------------------
 
@@ -2207,6 +2587,20 @@ struct SessionLoop<C: OrfsCore + Send + 'static> {
     environment: Arc<Mutex<NativeEnvironment>>,
     reader_fd: Option<RawFd>,
     setup_tx: Option<std::sync::mpsc::Sender<Result<(), String>>>,
+    /// The chosen queue-servicing topology (single loop vs bounded worker pool).
+    servicing: F2Servicing,
+    /// Whether to pin the F2 session/worker threads to a dedicated CPU set.
+    affinity: bool,
+    /// Per-entry busy flag: `true` while a dispatch worker owns the entry.
+    inflight: Vec<bool>,
+    /// The dispatch worker pool (absent for [`F2Servicing::Single`]).
+    pool: Option<WorkerPool<C>>,
+    /// A reusable reply-encoding buffer for the single-loop path.
+    scratch: Vec<u8>,
+    /// Whether the kernel offered the buffer-pool extension (`FUSE_HAS_IO_URING_BUFPOOL`).
+    kernel_offered_bufpool: bool,
+    /// Whether the process holds `CAP_SYS_ADMIN`.
+    cap_sys_admin: bool,
 }
 
 impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
@@ -2214,24 +2608,97 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
     /// immediate `REGISTER` rejection. Runs on the session thread.
     fn setup(&mut self) -> Result<(), String> {
         let raw = self.fd.as_raw_fd();
-        let (ring, entries, probe, num_queues) = register_all_entries(raw)?;
-        self.stats.lock().register_sqes = num_queues as u64;
-        {
-            let mut env = self.environment.lock();
-            env.num_queues = num_queues;
-        }
-        self.dispatcher.fs.record_negotiation(FuseUringNegotiation {
+        // Decide the queue-creation interface from the negotiated capabilities.
+        // At FUSE ABI 7.45 the buffer-pool extension is absent, so this is always
+        // the baseline interface; `ADD_QUEUE`/`ADD_BUFPOOL` stay inert.
+        let plan_neg = FuseUringNegotiation {
             kernel_offered: true,
-            kernel_offered_bufpool: false,
+            kernel_offered_bufpool: self.kernel_offered_bufpool,
+            kernel_abi: Some((7, self.kernel_minor)),
+            accepted: true,
+            engaged: true,
+            cap_sys_admin: self.cap_sys_admin,
+            ..Default::default()
+        };
+        let plan = crate::fuse_uring::plan_queues(&plan_neg, self.dispatcher.fs.options.zero_copy);
+        let (ring, entries, probe, num_queues) = register_all_entries(raw, plan)?;
+        let negotiation = FuseUringNegotiation {
+            kernel_offered: true,
+            kernel_offered_bufpool: self.kernel_offered_bufpool,
             kernel_abi: Some((7, self.kernel_minor)),
             accepted: true,
             engaged: true,
             reason: None,
-        });
+            cap_sys_admin: self.cap_sys_admin,
+            num_queues,
+        };
+        let capabilities = negotiation.capabilities();
+        self.stats.lock().register_sqes = num_queues as u64;
+        {
+            let mut env = self.environment.lock();
+            env.num_queues = num_queues;
+            env.capabilities = capabilities.clone();
+            env.servicing = self.servicing.describe();
+            env.affinity = self.affinity;
+        }
+        self.dispatcher.fs.record_negotiation(negotiation);
+        self.inflight = vec![false; entries.len()];
         self.ring = Some(ring);
         self.entries = entries;
         self.pending = probe;
         Ok(())
+    }
+
+    /// Start the dispatch worker pool, if the chosen topology uses one.
+    fn start_pool(&mut self) {
+        let (fast, bulk) = match self.servicing {
+            F2Servicing::Single => return,
+            F2Servicing::Pool { fast, bulk } => {
+                let nq = self.entries.len().max(1);
+                (fast.clamp(1, nq), bulk.clamp(1, nq))
+            }
+        };
+        let queue = Arc::new(JobQueue::new());
+        let (done_tx, done_rx) = std::sync::mpsc::channel::<Done>();
+        let cpus = possible_cpu_count().max(1);
+        let mut cpu = 0usize;
+        let mut threads = Vec::new();
+        for (lane, count) in [(Lane::Fast, fast), (Lane::Bulk, bulk)] {
+            for _ in 0..count {
+                let q = Arc::clone(&queue);
+                let tx = done_tx.clone();
+                let dispatcher = Arc::clone(&self.dispatcher);
+                let affinity = if self.affinity {
+                    let c = cpu % cpus;
+                    cpu += 1;
+                    Some(c)
+                } else {
+                    None
+                };
+                let name = match lane {
+                    Lane::Fast => "orfs-f2-fast",
+                    Lane::Bulk => "orfs-f2-bulk",
+                };
+                if let Ok(h) = std::thread::Builder::new()
+                    .name(name.to_string())
+                    .spawn(move || worker_loop(lane, q, tx, dispatcher, affinity))
+                {
+                    threads.push(h);
+                }
+            }
+        }
+        drop(done_tx);
+        {
+            let mut s = self.stats.lock();
+            s.workers_fast = fast as u64;
+            s.workers_bulk = bulk as u64;
+        }
+        self.pool = Some(WorkerPool {
+            queue,
+            done_rx,
+            threads,
+            _marker: std::marker::PhantomData,
+        });
     }
 
     fn run(mut self) -> Result<(), String> {
@@ -2243,6 +2710,9 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
         if !ok {
             return Ok(());
         }
+        if self.affinity {
+            pin_to_cpu(0);
+        }
         // Only now (ring ready) start the classical reader for FORGET/INTERRUPT.
         if let Some(reader_fd) = self.reader_fd.take() {
             let stop = Arc::clone(&self.stop);
@@ -2252,38 +2722,76 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
                 .name("orfs-f2-classical".to_string())
                 .spawn(move || classical_reader(reader_fd, stop, stats, fs));
         }
+        self.start_pool();
 
         loop {
             if self.stop.load(Ordering::SeqCst) {
                 break;
             }
-            let comps = if !self.pending.is_empty() {
-                std::mem::take(&mut self.pending)
-            } else {
-                let ring = self.ring.as_mut().expect("ring initialized");
-                match ring.submit_and_wait_timeout(1, Duration::from_millis(200)) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        eprintln!("orfs: F2 ring wait failed: {e}");
-                        break;
-                    }
+            // 1. Reap ring completions and route them (non-blocking when a pool
+            //    is active, so the session thread stays responsive to workers).
+            let routed = match self.pump_ring() {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("orfs: F2 ring wait failed: {e}");
+                    break;
                 }
             };
-            if comps.is_empty() {
-                continue;
-            }
-            for c in comps {
-                if let Err(e) = self.handle_completion(c) {
-                    eprintln!("orfs: F2 request handling failed: {e}");
+            // 2. Collect finished jobs and re-arm their entries.
+            let finished = match self.drain_done() {
+                Ok(f) => f,
+                Err(e) => {
+                    eprintln!("orfs: F2 re-arm failed: {e}");
+                    break;
                 }
-            }
+            };
+            // 3. Submit any queued SQEs (REGISTER / COMMIT_AND_FETCH).
             if let Some(ring) = self.ring.as_mut() {
                 if let Err(e) = ring.submit() {
                     eprintln!("orfs: F2 submit failed: {e}");
                     break;
                 }
             }
+            // 4. Block appropriately when the pass made no progress.
+            if self.pool.is_none() || routed || finished {
+                continue;
+            }
+            if self.inflight_count() > 0 {
+                // Entries are busy in workers: wait briefly for one to finish,
+                // then loop to pick up the result and any new ring completion.
+                if let Some(pool) = self.pool.as_ref() {
+                    if let Some(d) = pool.wait_done(Duration::from_micros(250)) {
+                        if let Err(e) = self.finish(d) {
+                            eprintln!("orfs: F2 commit failed: {e}");
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // Nothing in flight: block on the ring for the next request.
+                let comps = match self
+                    .ring
+                    .as_mut()
+                    .expect("ring initialized")
+                    .submit_and_wait_timeout(1, Duration::from_millis(200))
+                {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("orfs: F2 ring wait failed: {e}");
+                        break;
+                    }
+                };
+                for c in comps {
+                    if let Err(e) = self.handle_completion(c) {
+                        eprintln!("orfs: F2 request handling failed: {e}");
+                    }
+                }
+            }
         }
+
+        // Dropping the pool closes the queues and joins the workers before the
+        // ring and entries are torn down (so no worker still holds an EntryPtr).
+        self.pool = None;
         if let Some(ring) = self.ring.as_mut() {
             ring.shutdown();
         }
@@ -2294,6 +2802,71 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
         }
         // `self.fd` drops here, closing /dev/fuse.
         Ok(())
+    }
+
+    /// Submit and reap ring completions, routing each. Non-blocking when a worker
+    /// pool is active; otherwise blocks up to 200 ms for the next request.
+    /// Returns whether any completion was observed.
+    fn pump_ring(&mut self) -> Result<bool, String> {
+        let comps = if !self.pending.is_empty() {
+            std::mem::take(&mut self.pending)
+        } else {
+            let timeout = if self.pool.is_some() {
+                Duration::ZERO
+            } else {
+                Duration::from_millis(200)
+            };
+            self.ring
+                .as_mut()
+                .expect("ring initialized")
+                .submit_and_wait_timeout(1, timeout)?
+        };
+        if comps.is_empty() {
+            return Ok(false);
+        }
+        for c in comps {
+            self.handle_completion(c)?;
+        }
+        Ok(true)
+    }
+
+    /// Drain finished dispatch jobs, re-arming each entry. Returns whether any
+    /// completed.
+    fn drain_done(&mut self) -> Result<bool, String> {
+        // Collect first (immutable borrow of the pool), then re-arm (mutable
+        // borrow of the ring), so the two borrows never overlap.
+        let dones: Vec<Done> = match self.pool.as_ref() {
+            Some(pool) => std::iter::from_fn(|| pool.try_done()).collect(),
+            None => Vec::new(),
+        };
+        let mut any = false;
+        for done in dones {
+            self.finish(done)?;
+            any = true;
+        }
+        Ok(any)
+    }
+
+    fn inflight_count(&self) -> usize {
+        self.inflight.iter().filter(|b| **b).count()
+    }
+
+    /// The lane a request on entry `idx` runs on: large reads and writes go to
+    /// the bulk lane, everything else (metadata, small reads) to the latency lane.
+    fn lane_for(&self, idx: usize) -> Lane {
+        let e = &self.entries[idx];
+        let hdr = e.header.as_slice();
+        let opcode = get_u32(hdr, 4);
+        let big = match opcode {
+            FUSE_READ => get_u32(hdr, 128 + 16) as usize >= BULK_THRESHOLD,
+            FUSE_WRITE => (get_u32(hdr, 272) as usize).min(e.payload.len()) >= BULK_THRESHOLD,
+            _ => false,
+        };
+        if big {
+            Lane::Bulk
+        } else {
+            Lane::Fast
+        }
     }
 
     fn handle_completion(&mut self, c: RingCompletion) -> Result<(), String> {
@@ -2309,51 +2882,99 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
             self.stats.lock().negative_completions += 1;
             return Ok(());
         }
-        self.serve_entry(idx)
+        if self.pool.is_some() {
+            let lane = self.lane_for(idx);
+            // Mark the entry busy BEFORE handing its pointer to a worker; the
+            // session will not touch it again until `finish` re-arms it.
+            self.inflight[idx] = true;
+            let entry = EntryPtr(&mut self.entries[idx] as *mut EntryState);
+            if let Some(pool) = self.pool.as_ref() {
+                pool.queue.push(Job { idx, entry, lane });
+            }
+            let mut s = self.stats.lock();
+            match lane {
+                Lane::Fast => s.fast_routed += 1,
+                Lane::Bulk => s.bulk_routed += 1,
+            }
+            Ok(())
+        } else {
+            self.serve_entry(idx)
+        }
     }
 
-    fn serve_entry(&mut self, idx: usize) -> Result<(), String> {
-        let (qid, ud, commit_id, unique, destroy, reply) = {
-            let e = &self.entries[idx];
-            let hdr = e.header.as_slice();
-            let payload_sz = (get_u32(hdr, 272) as usize).min(e.payload.len());
-            let req = Req {
-                unique: get_u64(hdr, 8),
-                opcode: get_u32(hdr, 4),
-                nodeid: get_u64(hdr, 16),
-                uid: get_u32(hdr, 24),
-                gid: get_u32(hdr, 28),
-                pid: get_u32(hdr, 32),
-                commit_id: get_u64(hdr, 264),
-                op: &hdr[128..256],
-                payload: &e.payload.as_slice()[..payload_sz],
-            };
-            let destroy = req.opcode == FUSE_DESTROY;
-            let reply = if destroy {
-                Reply::Empty
-            } else {
-                self.dispatcher.serve(&req)
-            };
-            (e.qid, e.ud, req.commit_id, req.unique, destroy, reply)
-        };
-
-        let (err, data) = reply.encode(self.dispatcher.entry_ttl, self.dispatcher.attr_ttl);
-        {
-            let e = &mut self.entries[idx];
-            write_reply(e, unique, err, &data);
-        }
+    /// Re-arm a finished job's entry with `COMMIT_AND_FETCH` and account for it.
+    fn finish(&mut self, d: Done) -> Result<(), String> {
+        self.inflight[d.idx] = false;
         {
             let mut s = self.stats.lock();
             s.requests_served += 1;
-            s.reply_bytes += data.len() as u64;
+            s.reply_bytes += d.reply_len;
+            s.ring_submits += 1;
+        }
+        self.ring
+            .as_mut()
+            .ok_or_else(|| "F2 ring not initialized".to_string())?
+            .submit_commit_and_fetch(d.qid, d.commit_id, d.ud)
+            .map_err(|e| format!("queue COMMIT_AND_FETCH for qid {}: {e}", d.qid))?;
+        if d.destroy {
+            self.stop.store(true, Ordering::SeqCst);
+        }
+        Ok(())
+    }
+
+    /// Single-loop path: dispatch the request on this thread and re-arm the entry
+    /// inline, using a reusable reply buffer (no per-request allocation).
+    fn serve_entry(&mut self, idx: usize) -> Result<(), String> {
+        let (qid, ud, commit_id, destroy, reply_len) = {
+            let (qid, ud, commit_id, unique, opcode) = {
+                let e = &self.entries[idx];
+                let hdr = e.header.as_slice();
+                (
+                    e.qid,
+                    e.ud,
+                    get_u64(hdr, 264),
+                    get_u64(hdr, 8),
+                    get_u32(hdr, 4),
+                )
+            };
+            let destroy = opcode == FUSE_DESTROY;
+            let reply = if destroy {
+                Reply::Empty
+            } else {
+                let e = &self.entries[idx];
+                let hdr = e.header.as_slice();
+                let payload_sz = (get_u32(hdr, 272) as usize).min(e.payload.len());
+                let req = Req {
+                    opcode,
+                    nodeid: get_u64(hdr, 16),
+                    uid: get_u32(hdr, 24),
+                    gid: get_u32(hdr, 28),
+                    pid: get_u32(hdr, 32),
+                    op: &hdr[128..256],
+                    payload: &e.payload.as_slice()[..payload_sz],
+                };
+                self.dispatcher.serve(&req)
+            };
+            let err = reply.encode_into(
+                &mut self.scratch,
+                self.dispatcher.entry_ttl,
+                self.dispatcher.attr_ttl,
+            );
+            let reply_len = self.scratch.len() as u64;
+            write_reply(&mut self.entries[idx], unique, err, &self.scratch);
+            (qid, ud, commit_id, destroy, reply_len)
+        };
+        {
+            let mut s = self.stats.lock();
+            s.requests_served += 1;
+            s.reply_bytes += reply_len;
+            s.ring_submits += 1;
         }
         self.ring
             .as_mut()
             .ok_or_else(|| "F2 ring not initialized".to_string())?
             .submit_commit_and_fetch(qid, commit_id, ud)
             .map_err(|e| format!("queue COMMIT_AND_FETCH for qid {qid}: {e}"))?;
-        self.stats.lock().ring_submits += 1;
-
         if destroy {
             self.stop.store(true, Ordering::SeqCst);
         }
@@ -2509,9 +3130,41 @@ mod tests {
 
     #[test]
     fn open_out_carries_the_backing_id() {
-        let bytes = encode_open_out(7, FOPEN_PASSTHROUGH, 42);
+        let mut bytes = Vec::new();
+        write_open_out(&mut bytes, 7, FOPEN_PASSTHROUGH, 42);
         assert_eq!(get_u64(&bytes, 0), 7);
         assert_eq!(get_u32(&bytes, 8), FOPEN_PASSTHROUGH);
         assert_eq!(get_u32(&bytes, 12), 42);
+    }
+
+    #[test]
+    fn reply_encode_into_reuses_one_buffer() {
+        // The reused-buffer encoding is byte-identical to a fresh encoding and
+        // leaves no trailing bytes from a previous, larger reply.
+        let mut buf = Vec::new();
+        let a = Attr {
+            ino: 3,
+            mode: libc::S_IFREG | 0o644,
+            nlink: 1,
+            blksize: 4096,
+            ..Default::default()
+        };
+        let err =
+            Reply::Attr(a).encode_into(&mut buf, Duration::from_secs(1), Duration::from_secs(2));
+        assert_eq!(err, 0);
+        assert_eq!(buf.len(), 104, "fuse_attr_out is 104 bytes");
+        let first = buf.clone();
+        // A second, smaller reply must replace (not append to) the buffer.
+        let err = Reply::Err(libc::EACCES).encode_into(
+            &mut buf,
+            Duration::from_secs(1),
+            Duration::from_secs(2),
+        );
+        assert_eq!(err, libc::EACCES);
+        assert!(buf.is_empty(), "an error reply carries no body");
+        let err =
+            Reply::Attr(a).encode_into(&mut buf, Duration::from_secs(1), Duration::from_secs(2));
+        assert_eq!(err, 0);
+        assert_eq!(buf, first, "reusing the buffer is byte-identical");
     }
 }

@@ -8,16 +8,30 @@
     "machine": "x86_64"
   },
   "f2_environment": {
+    "affinity": false,
+    "capabilities": {
+      "abi_minor": 45,
+      "add_bufpool": false,
+      "add_queue": false,
+      "baseline_register": true,
+      "boundary": "FUSE ABI 7.45 exposes only the baseline REGISTER + COMMIT_AND_FETCH interface; ADD_QUEUE/ADD_BUFPOOL and zero-copy are inert (not offered)",
+      "cap_sys_admin": false,
+      "num_queues": 16,
+      "over_io_uring": true,
+      "zero_copy": false
+    },
     "fuse_abi_major": 7,
     "fuse_abi_minor": 45,
     "kernel_release": "7.2.9-2-cachyos",
     "max_write": 131072,
     "mount_options": "fsname=orfs,subtype=orfs,max_read=131072,rw",
     "num_queues": 16,
-    "payload_buf": 262144
+    "payload_buf": 262144,
+    "servicing": "single-loop"
   },
   "f2_negotiation": {
     "accepted": true,
+    "cap_sys_admin": false,
     "engaged": true,
     "kernel_abi": [
       7,
@@ -25,6 +39,7 @@
     ],
     "kernel_offered": true,
     "kernel_offered_bufpool": false,
+    "num_queues": 16,
     "reason": null
   },
   "f2_report": {
@@ -40,6 +55,7 @@
     },
     "negotiation": {
       "accepted": true,
+      "cap_sys_admin": false,
       "engaged": true,
       "kernel_abi": [
         7,
@@ -47,6 +63,7 @@
       ],
       "kernel_offered": true,
       "kernel_offered_bufpool": false,
+      "num_queues": 16,
       "reason": null
     },
     "preconditions": {
@@ -54,7 +71,9 @@
     }
   },
   "f2_stats_after_transcript": {
+    "bulk_routed": 0,
     "daemon_reads": 4,
+    "fast_routed": 0,
     "forgets_classical": 0,
     "interrupts_classical": 0,
     "negative_completions": 0,
@@ -72,10 +91,14 @@
     "reply_bytes": 1479,
     "requests_served": 59,
     "ring_completions": 59,
-    "ring_submits": 59
+    "ring_submits": 59,
+    "workers_bulk": 0,
+    "workers_fast": 0
   },
   "f2_stats_before_transcript": {
+    "bulk_routed": 0,
     "daemon_reads": 0,
+    "fast_routed": 0,
     "forgets_classical": 0,
     "interrupts_classical": 0,
     "negative_completions": 0,
@@ -93,7 +116,9 @@
     "reply_bytes": 0,
     "requests_served": 0,
     "ring_completions": 0,
-    "ring_submits": 0
+    "ring_submits": 0,
+    "workers_bulk": 0,
+    "workers_fast": 0
   },
   "generated_by": "tests/fuse_uring.rs::transport_equivalence_across_f0_f1_f2",
   "profiles": {

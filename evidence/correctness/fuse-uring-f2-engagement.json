@@ -1,12 +1,25 @@
 {
   "environment": {
+    "affinity": false,
+    "capabilities": {
+      "abi_minor": 45,
+      "add_bufpool": false,
+      "add_queue": false,
+      "baseline_register": true,
+      "boundary": "FUSE ABI 7.45 exposes only the baseline REGISTER + COMMIT_AND_FETCH interface; ADD_QUEUE/ADD_BUFPOOL and zero-copy are inert (not offered)",
+      "cap_sys_admin": false,
+      "num_queues": 16,
+      "over_io_uring": true,
+      "zero_copy": false
+    },
     "fuse_abi_major": 7,
     "fuse_abi_minor": 45,
     "kernel_release": "7.2.9-2-cachyos",
     "max_write": 131072,
     "mount_options": "fsname=orfs,subtype=orfs,max_read=131072,rw",
     "num_queues": 16,
-    "payload_buf": 262144
+    "payload_buf": 262144,
+    "servicing": "single-loop"
   },
   "generated_by": "tests/fuse_uring.rs::f2_real_mount_engages_and_carries_requests",
   "image_digest": "sha256:a41df86df391732ab467b5bedc8b4a17c0df437fa180b5230417a6a8339d97ac",
@@ -21,7 +34,9 @@
   },
   "schema": "orfs.fuse-uring-engagement.v1",
   "stats_after": {
+    "bulk_routed": 0,
     "daemon_reads": 4,
+    "fast_routed": 0,
     "forgets_classical": 0,
     "interrupts_classical": 0,
     "negative_completions": 0,
@@ -39,10 +54,14 @@
     "reply_bytes": 1479,
     "requests_served": 59,
     "ring_completions": 59,
-    "ring_submits": 59
+    "ring_submits": 59,
+    "workers_bulk": 0,
+    "workers_fast": 0
   },
   "stats_before": {
+    "bulk_routed": 0,
     "daemon_reads": 0,
+    "fast_routed": 0,
     "forgets_classical": 0,
     "interrupts_classical": 0,
     "negative_completions": 0,
@@ -60,7 +79,9 @@
     "reply_bytes": 0,
     "requests_served": 0,
     "ring_completions": 0,
-    "ring_submits": 0
+    "ring_submits": 0,
+    "workers_bulk": 0,
+    "workers_fast": 0
   },
   "transcript_len": 9
 }

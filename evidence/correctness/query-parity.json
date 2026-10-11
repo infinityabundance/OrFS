@@ -212,7 +212,7 @@
     }
   ],
   "pattern_count": 11,
-  "pinned_root": 20557,
+  "pinned_root": 23797,
   "schema": "orfs.query.v1",
   "title": "indexed vs full-scan byte-identical match parity"
 }

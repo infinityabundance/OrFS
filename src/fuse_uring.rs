@@ -607,6 +607,38 @@ pub struct FuseUringNegotiation {
     pub engaged: bool,
     /// A human-readable reason when F2 did not engage.
     pub reason: Option<String>,
+    /// Whether the process holds `CAP_SYS_ADMIN` (required for zero-copy).
+    pub cap_sys_admin: bool,
+    /// The number of baseline queue entries registered over the ring.
+    pub num_queues: usize,
+}
+
+/// The **exact** F2 feature set negotiated for one live mount.
+///
+/// Everything here is derived from the `INIT` flags and the process's own capability
+/// set; nothing is assumed from the compile-time UAPI model. Zero-copy in particular
+/// is `true` only when the kernel offered the buffer-pool extension *and* the process
+/// holds `CAP_SYS_ADMIN`; at FUSE ABI 7.45 it is always `false`.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct F2Capabilities {
+    /// `FUSE_OVER_IO_URING` was offered by the kernel and accepted by the server.
+    pub over_io_uring: bool,
+    /// The negotiated FUSE ABI minor version.
+    pub abi_minor: Option<u32>,
+    /// The baseline two-command interface (`REGISTER` + `COMMIT_AND_FETCH`) is in force.
+    pub baseline_register: bool,
+    /// `FUSE_IO_URING_CMD_ADD_QUEUE` is available (requires the buffer-pool extension).
+    pub add_queue: bool,
+    /// `FUSE_IO_URING_CMD_ADD_BUFPOOL` is available (requires the buffer-pool extension).
+    pub add_bufpool: bool,
+    /// The process holds `CAP_SYS_ADMIN`.
+    pub cap_sys_admin: bool,
+    /// Zero-copy is actually available (`add_bufpool && cap_sys_admin`).
+    pub zero_copy: bool,
+    /// Queue entries registered over the baseline interface.
+    pub num_queues: usize,
+    /// The ABI boundary in words, for `orfs doctor`.
+    pub boundary: String,
 }
 
 impl FuseUringNegotiation {
@@ -618,9 +650,55 @@ impl FuseUringNegotiation {
         }
     }
 
+    /// The negotiated FUSE ABI minor version, when known.
+    pub fn abi_minor(&self) -> Option<u32> {
+        self.kernel_abi.map(|(_, minor)| minor)
+    }
+
     /// Whether the modern `ADD_QUEUE`/`ADD_BUFPOOL` interface was negotiated.
+    ///
+    /// This is the *runtime* gate for the forward-compatible commands: the kernel
+    /// must have offered `FUSE_HAS_IO_URING_BUFPOOL` (its own signal that the
+    /// extension exists) **and** a real ring must be engaged. On FUSE ABI 7.45 the
+    /// kernel never sets that flag, so the modern commands stay inert.
     pub fn add_queue_available(&self) -> bool {
-        self.kernel_offered && self.kernel_offered_bufpool
+        self.engaged && self.kernel_offered_bufpool && self.kernel_offered
+    }
+
+    /// The exact negotiated capability set (the authority for `orfs doctor` and
+    /// for deciding whether the zero-copy / buffer-pool commands may be used).
+    pub fn capabilities(&self) -> F2Capabilities {
+        let add_queue = self.add_queue_available();
+        let zero_copy = add_queue && self.cap_sys_admin;
+        let abi_minor = self.abi_minor();
+        let boundary = if add_queue {
+            format!(
+                "FUSE ABI 7.{} exposes ADD_QUEUE/ADD_BUFPOOL (buffer pools); zero-copy {}",
+                abi_minor.unwrap_or(0),
+                if zero_copy {
+                    "available (CAP_SYS_ADMIN held)"
+                } else {
+                    "unavailable (CAP_SYS_ADMIN not held)"
+                }
+            )
+        } else {
+            format!(
+                "FUSE ABI 7.{} exposes only the baseline REGISTER + COMMIT_AND_FETCH \
+                 interface; ADD_QUEUE/ADD_BUFPOOL and zero-copy are inert (not offered)",
+                abi_minor.unwrap_or(0)
+            )
+        };
+        F2Capabilities {
+            over_io_uring: self.engaged && self.kernel_offered && self.accepted,
+            abi_minor,
+            baseline_register: self.engaged,
+            add_queue,
+            add_bufpool: add_queue,
+            cap_sys_admin: self.cap_sys_admin,
+            zero_copy,
+            num_queues: self.num_queues,
+            boundary,
+        }
     }
 
     /// A one-line honest description.
@@ -632,6 +710,31 @@ impl FuseUringNegotiation {
         } else {
             "FUSE-over-io_uring not active".to_string()
         }
+    }
+}
+
+/// Which queue-creation interface a session may use, decided from the negotiated
+/// capability set. `Modern` is reachable only on a kernel that offers the buffer
+/// pool; the baseline path is the only one executed at FUSE ABI 7.45.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueuePlan {
+    /// Register one entry per CPU queue with `FUSE_IO_URING_CMD_REGISTER` (ABI 7.45).
+    Baseline,
+    /// Create queues with `ADD_QUEUE`, allocate pools with `ADD_BUFPOOL`, and
+    /// (when `zero_copy`) request the zero-copy flag (ABI 7.46+).
+    Modern { zero_copy: bool },
+}
+
+/// Decide the queue-creation plan from the negotiated capabilities and the mount's
+/// zero-copy request. Never returns `Modern` unless the kernel truly offered the
+/// buffer-pool extension.
+pub fn plan_queues(neg: &FuseUringNegotiation, zero_copy_requested: bool) -> QueuePlan {
+    if neg.add_queue_available() {
+        QueuePlan::Modern {
+            zero_copy: zero_copy_requested && neg.cap_sys_admin,
+        }
+    } else {
+        QueuePlan::Baseline
     }
 }
 
@@ -1379,15 +1482,47 @@ mod tests {
         let legacy = FuseUringNegotiation {
             kernel_offered: true,
             kernel_offered_bufpool: false,
+            engaged: true,
+            kernel_abi: Some((7, FUSE_KERNEL_MINOR_BASELINE)),
+            num_queues: 16,
             ..Default::default()
         };
         assert!(!legacy.add_queue_available(), "ABI 7.45 has no ADD_QUEUE");
+        let caps = legacy.capabilities();
+        assert!(caps.baseline_register);
+        assert!(!caps.add_queue && !caps.add_bufpool && !caps.zero_copy);
+        assert_eq!(plan_queues(&legacy, true), QueuePlan::Baseline);
 
-        let modern = FuseUringNegotiation {
+        // A modern kernel that offers the buffer pool: the commands become usable,
+        // and zero-copy is still gated on CAP_SYS_ADMIN.
+        let modern_no_cap = FuseUringNegotiation {
             kernel_offered: true,
             kernel_offered_bufpool: true,
+            engaged: true,
+            kernel_abi: Some((7, FUSE_KERNEL_MINOR_ADD_QUEUE)),
+            cap_sys_admin: false,
             ..Default::default()
         };
-        assert!(modern.add_queue_available());
+        assert!(modern_no_cap.add_queue_available());
+        assert!(!modern_no_cap.capabilities().zero_copy, "no CAP_SYS_ADMIN");
+        assert_eq!(
+            plan_queues(&modern_no_cap, true),
+            QueuePlan::Modern { zero_copy: false }
+        );
+
+        let modern_cap = FuseUringNegotiation {
+            kernel_offered: true,
+            kernel_offered_bufpool: true,
+            engaged: true,
+            cap_sys_admin: true,
+            ..Default::default()
+        };
+        assert!(modern_cap.capabilities().zero_copy);
+        assert_eq!(
+            plan_queues(&modern_cap, true),
+            QueuePlan::Modern { zero_copy: true }
+        );
+        // Requesting zero-copy never changes the plan on a baseline kernel.
+        assert_eq!(plan_queues(&legacy, true), QueuePlan::Baseline);
     }
 }

@@ -1,6 +1,6 @@
 {
   "accounting": {
-    "authoritative_canonical_bytes": 7447,
+    "authoritative_canonical_bytes": 8287,
     "bloom_subdir_bytes": {
       "directory": 0,
       "ekbloom": 6160,
@@ -11,11 +11,26 @@
     },
     "bloom_total_bytes": 7438,
     "capacity": {
-      "available_bytes": 104104042496,
+      "available_bytes": 103206789120,
       "block_size": 4096,
       "total_bytes": 1426376364032
     },
-    "committed_root": 7447,
+    "capacity_policy": {
+      "authoritative_capacity_bytes": 103206797407,
+      "authoritative_headroom_bytes": 103206789120,
+      "authoritative_used_bytes": 8287,
+      "degraded": false,
+      "degraded_reason": null,
+      "optional_throttled": false,
+      "optional_used_bytes": 0,
+      "policy": {
+        "authoritative_capacity_bytes": null,
+        "hard_quota_bytes": null,
+        "reserve_bytes": 0,
+        "soft_quota_bytes": null
+      }
+    },
+    "committed_root": 8287,
     "generation_manifest_bytes": 1278,
     "index_bytes": 0,
     "logical_directory_count": 2,
@@ -26,22 +41,22 @@
     "m_checkpoints": 0,
     "m_ekbloom": 6160,
     "m_indexes": 0,
-    "m_log": 7483,
+    "m_log": 8323,
     "m_other": 1322,
     "m_passthrough": 0,
-    "m_total": 14965,
+    "m_total": 15805,
     "manifested_bytes": 6160,
     "manifested_generations": 3,
     "manifested_inodes": 2,
-    "physical_overhead_bytes": 10858,
+    "physical_overhead_bytes": 11698,
     "uncommitted_tail_bytes": 0,
     "uuid": "4f724653-0711-4022-8033-445566778899",
-    "volume": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmpCPhZUM"
+    "volume": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmpKCx2Tb"
   },
   "ekbloom_bytes_match": true,
   "generator": "tests/manifestation.rs",
   "model": "logical bytes/counts vs physical categories M_log, M_ekbloom, M_indexes, M_checkpoints, M_other; M_total equals the measured on-disk total",
-  "on_disk_total_bytes": 14965,
+  "on_disk_total_bytes": 15805,
   "schema": "orfs.manifestation-accounting.v1",
   "totals_match": true
 }

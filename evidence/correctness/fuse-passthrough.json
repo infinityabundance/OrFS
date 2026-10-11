@@ -1,6 +1,6 @@
 {
   "backing_images": [
-    "/mnt/1tb_kingston/OrFS/target/passthrough-it/engage-515-1791730483395737704/backing/.or_passthrough/0adcf73a-1850-4c79-ab81-3027ec541136/263477/2-3/image"
+    "/mnt/1tb_kingston/OrFS/target/passthrough-it/engage-20-1791741501808223654/backing/.or_passthrough/4926411b-36b4-49ea-adfa-f46deb3f0b75/263717/2-4/image"
   ],
   "bytes_equal_authoritative_replay": true,
   "claim": "an immutable snapshot read is served by the kernel via FUSE passthrough and is byte-identical to an independent authoritative replay",
@@ -24,6 +24,7 @@
   "generated_by": "tests/fuse_passthrough.rs::passthrough_reads_are_kernel_served_and_byte_exact",
   "negotiation": {
     "accepted": true,
+    "cap_sys_admin": true,
     "engaged": true,
     "kernel_abi": [
       7,
@@ -31,11 +32,14 @@
     ],
     "kernel_offered": true,
     "kernel_offered_bufpool": false,
+    "num_queues": 16,
     "reason": null
   },
   "schema": "orfs.fuse-passthrough-correctness.v1",
   "stats_after_first_read": {
+    "bulk_routed": 0,
     "daemon_reads": 0,
+    "fast_routed": 0,
     "forgets_classical": 0,
     "interrupts_classical": 0,
     "negative_completions": 0,
@@ -53,10 +57,14 @@
     "reply_bytes": 144,
     "requests_served": 3,
     "ring_completions": 3,
-    "ring_submits": 3
+    "ring_submits": 3,
+    "workers_bulk": 0,
+    "workers_fast": 0
   },
   "stats_after_release": {
+    "bulk_routed": 0,
     "daemon_reads": 0,
+    "fast_routed": 0,
     "forgets_classical": 0,
     "interrupts_classical": 0,
     "negative_completions": 0,
@@ -74,10 +82,14 @@
     "reply_bytes": 160,
     "requests_served": 8,
     "ring_completions": 8,
-    "ring_submits": 8
+    "ring_submits": 8,
+    "workers_bulk": 0,
+    "workers_fast": 0
   },
   "stats_after_second_read": {
+    "bulk_routed": 0,
     "daemon_reads": 0,
+    "fast_routed": 0,
     "forgets_classical": 0,
     "interrupts_classical": 0,
     "negative_completions": 0,
@@ -95,10 +107,14 @@
     "reply_bytes": 160,
     "requests_served": 4,
     "ring_completions": 4,
-    "ring_submits": 4
+    "ring_submits": 4,
+    "workers_bulk": 0,
+    "workers_fast": 0
   },
   "stats_before": {
+    "bulk_routed": 0,
     "daemon_reads": 0,
+    "fast_routed": 0,
     "forgets_classical": 0,
     "interrupts_classical": 0,
     "negative_completions": 0,
@@ -116,7 +132,9 @@
     "reply_bytes": 0,
     "requests_served": 0,
     "ring_completions": 0,
-    "ring_submits": 0
+    "ring_submits": 0,
+    "workers_bulk": 0,
+    "workers_fast": 0
   },
   "transport": "F2 (native /dev/fuse session)"
 }

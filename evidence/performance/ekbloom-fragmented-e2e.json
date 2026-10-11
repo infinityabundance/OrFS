@@ -2,22 +2,22 @@
   "build_profile": "debug",
   "e2e_random_1b_direct": {
     "no_manifest": {
-      "mean_ns": 5260.26175,
-      "min_ns": 4107,
-      "p50_ns": 4909,
-      "p95_ns": 6923,
-      "p99_ns": 9488,
+      "mean_ns": 5230.34125,
+      "min_ns": 4018,
+      "p50_ns": 4849,
+      "p95_ns": 6603,
+      "p99_ns": 9117,
       "samples": 4000
     },
     "path_bloom": {
-      "mean_ns": 9178.35375,
-      "min_ns": 7273,
-      "p50_ns": 8155,
-      "p95_ns": 12403,
-      "p99_ns": 17813,
+      "mean_ns": 10260.15325,
+      "min_ns": 7173,
+      "p50_ns": 10990,
+      "p95_ns": 12102,
+      "p99_ns": 14668,
       "samples": 4000
     },
-    "speedup": 0.6019619865113427
+    "speedup": 0.44121929026387624
   },
   "environment": {
     "cgroup_memory_max": "8589934592",
@@ -36,7 +36,7 @@
   },
   "fragmented_object": {
     "chunk_bytes": 64,
-    "construction_ns": 60320695,
+    "construction_ns": 76274964,
     "extent_count_manifested": 4095,
     "extent_count_no_manifest": 4095,
     "logical_bytes": 1048128,
@@ -44,17 +44,17 @@
     "manifested_profile": "path(D=4)",
     "manifested_ratio": 3.000748000244245,
     "scattered_writes": 2048,
-    "setup_ns_no_manifest": 156531585,
+    "setup_ns_no_manifest": 215218044,
     "stride_bytes": 512
   },
   "generated_by": "tests/ekbloom_frontier_e2e.rs",
   "library_random_1b": {
     "authoritative_extent": {
-      "mean_ns": 513.2455,
-      "min_ns": 330,
-      "p50_ns": 430,
-      "p95_ns": 902,
-      "p99_ns": 1202,
+      "mean_ns": 516.325,
+      "min_ns": 340,
+      "p50_ns": 421,
+      "p95_ns": 912,
+      "p99_ns": 1263,
       "samples": 4000
     },
     "paths_chosen_by_the_planner": [
@@ -64,11 +64,11 @@
       }
     ],
     "planned_read": {
-      "mean_ns": 19766.3225,
-      "min_ns": 3556,
-      "p50_ns": 3676,
+      "mean_ns": 18179.5455,
+      "min_ns": 3386,
+      "p50_ns": 3567,
       "p95_ns": 3747,
-      "p99_ns": 5340,
+      "p99_ns": 5190,
       "samples": 4000
     }
   },

@@ -1,6 +1,6 @@
 {
   "all_verified": true,
-  "committed_root": 3815,
+  "committed_root": 5015,
   "format_version": 1,
   "generator": "tests/snapshot_model.rs",
   "note": "Each verdict reconstructs L[0:R] and compares the historical\n                 content, size, metadata, and digest to the live state captured\n                 at R; a snapshot never observes a write committed after its root.",
@@ -11,100 +11,100 @@
       "dentry_count": 1,
       "historical_bytes": "0000000000",
       "historical_size": 10,
-      "index_digest_blake3": "7cafc9001f06465b0fbd5f134b083a3d932f3814b624fc2818e49d8a01206e96",
+      "index_digest_blake3": "b73fe8aee914a4720f7ce1070f1f020b5741399142f92b65dc10d05241cec5ad",
       "inode_count": 2,
       "is_committed_boundary": true,
       "later_writes_hidden": true,
       "reconstruction_verified": true,
-      "root": 983
+      "root": 1223
     },
     {
       "dentry_count": 1,
       "historical_bytes": "0001000000",
       "historical_size": 10,
-      "index_digest_blake3": "c85980817e202862b7e9e573fcdb9d849323913c444466657c0915cee74d5600",
+      "index_digest_blake3": "9e8c96bdab0aff9fb5bb9e68e047d78a356507a5264094afa7e1bd98a0cfb198",
       "inode_count": 2,
       "is_committed_boundary": true,
       "later_writes_hidden": true,
       "reconstruction_verified": true,
-      "root": 1337
+      "root": 1697
     },
     {
       "dentry_count": 1,
       "historical_bytes": "0001020000",
       "historical_size": 10,
-      "index_digest_blake3": "60b2d30a3b317558aa6deaaf0f9740a103958ffe6d2ceba5771269009ddf70c8",
+      "index_digest_blake3": "d7cf05031d154c0db9497cf115e6fdf688fe2c20d50446641fd0ef611cad020a",
       "inode_count": 2,
       "is_committed_boundary": true,
       "later_writes_hidden": true,
       "reconstruction_verified": true,
-      "root": 1691
+      "root": 2171
     },
     {
       "dentry_count": 1,
       "historical_bytes": "0001020300",
       "historical_size": 10,
-      "index_digest_blake3": "4e92c9cc34298abde8253cc62dd2bcc2c602b4559f45450e816acafe2022cfcc",
+      "index_digest_blake3": "a82c3b06a1be0f1633b2b18b281e9d4447296c90afef6baee6a95e27c9b430a6",
       "inode_count": 2,
       "is_committed_boundary": true,
       "later_writes_hidden": true,
       "reconstruction_verified": true,
-      "root": 2045
+      "root": 2645
     },
     {
       "dentry_count": 1,
       "historical_bytes": "0401020300",
       "historical_size": 10,
-      "index_digest_blake3": "cb85f622b081528c8770c826b7103af76c3f81bfe5b32320245445b37ed69385",
+      "index_digest_blake3": "75b8b009fed0f800fa5dd8434a9caa60c4235099df80335e5ab10c0b2735d284",
       "inode_count": 2,
       "is_committed_boundary": true,
       "later_writes_hidden": true,
       "reconstruction_verified": true,
-      "root": 2399
+      "root": 3119
     },
     {
       "dentry_count": 1,
       "historical_bytes": "0405020300",
       "historical_size": 10,
-      "index_digest_blake3": "9e5ba684285b9cc61f32730507b5d70dbc4d0c4e267c8da1fb2a03d71b376c1f",
+      "index_digest_blake3": "1dac3781a4bcee41da1a9aa87fc31a6a37358fb53bbeebec5fd1ff15baf96e45",
       "inode_count": 2,
       "is_committed_boundary": true,
       "later_writes_hidden": true,
       "reconstruction_verified": true,
-      "root": 2753
+      "root": 3593
     },
     {
       "dentry_count": 1,
       "historical_bytes": "0405060300",
       "historical_size": 10,
-      "index_digest_blake3": "e21ee216a9f53173dd1e5f4666fc9a9f4efce1638ea9a0dd3d9c83d0b8cb1343",
+      "index_digest_blake3": "65164518f1ba67db1daa11da5b8661528fd64c6047e4579380f5d924de388f7f",
       "inode_count": 2,
       "is_committed_boundary": true,
       "later_writes_hidden": true,
       "reconstruction_verified": true,
-      "root": 3107
+      "root": 4067
     },
     {
       "dentry_count": 1,
       "historical_bytes": "0405060700",
       "historical_size": 10,
-      "index_digest_blake3": "cc3e4720de5deb5834c993cadd778be07c298cb44ee1bc683bca7109e3107183",
+      "index_digest_blake3": "a1f293965565448e7b565f4f178decb15d3d224928b1a6972c55803b12d4ce8b",
       "inode_count": 2,
       "is_committed_boundary": true,
       "later_writes_hidden": true,
       "reconstruction_verified": true,
-      "root": 3461
+      "root": 4541
     },
     {
       "dentry_count": 1,
       "historical_bytes": "0805060700",
       "historical_size": 10,
-      "index_digest_blake3": "656307890cb0642a1eaaa71017bb32d5a4181ae9ab162f1229ce982bcebaef4b",
+      "index_digest_blake3": "3ba81d7502bd8d86b97f22c5c60718e419946f1a012f6dea6c39ff9f27222cef",
       "inode_count": 2,
       "is_committed_boundary": true,
       "later_writes_hidden": true,
       "reconstruction_verified": true,
-      "root": 3815
+      "root": 5015
     }
   ]
 }

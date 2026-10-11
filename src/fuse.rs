@@ -130,6 +130,52 @@ impl Transport {
     }
 }
 
+/// How the native F2 session services its ring queues (Phase 26).
+///
+/// The kernel registers one entry per CPU queue; every request delivered into an
+/// entry must be dispatched and then re-armed with `COMMIT_AND_FETCH`. This
+/// chooses *where* that dispatch runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum F2Servicing {
+    /// One session loop services every queue inline, on the thread that owns the
+    /// ring (the Phase 15..25 behaviour). Lowest overhead and lowest latency for
+    /// a single in-flight request; no cross-thread handoff.
+    Single,
+    /// A bounded worker pool dispatches requests off the session thread. It is
+    /// split into a *latency* lane (metadata and small reads) and a *bulk* lane
+    /// (large reads and writes) so a small metadata op never queues behind a
+    /// large read. The session thread alone owns the ring and submits
+    /// `COMMIT_AND_FETCH` (the kernel delivers URING_CMD completions as task-work
+    /// to the submitting task).
+    Pool { fast: usize, bulk: usize },
+}
+
+impl F2Servicing {
+    /// Parse the `--f2-servicing` value.
+    pub fn parse(s: &str) -> Result<F2Servicing> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "single" | "loop" => Ok(F2Servicing::Single),
+            "pool" => Ok(F2Servicing::pool_default()),
+            other => Err(OrfsError::InvalidArgument(format!(
+                "unknown f2-servicing {other:?} (expected single|pool)"
+            ))),
+        }
+    }
+
+    /// The measured-default worker-pool split (see `docs/FUSE_URING.md` §6.2).
+    pub fn pool_default() -> F2Servicing {
+        F2Servicing::Pool { fast: 2, bulk: 6 }
+    }
+
+    /// A one-line description for diagnostics and evidence.
+    pub fn describe(&self) -> String {
+        match self {
+            F2Servicing::Single => "single-loop".to_string(),
+            F2Servicing::Pool { fast, bulk } => format!("pool(fast={fast},bulk={bulk})"),
+        }
+    }
+}
+
 /// How `statfs` reports free space (research §30).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatfsMode {
@@ -192,6 +238,12 @@ pub struct MountOptions {
     /// capacity reserve; Phase 23, research §31). `0` leaves the device-derived
     /// default in place.
     pub capacity_reserve_bytes: u64,
+    /// F2 queue-servicing topology (single session loop vs bounded worker pool).
+    /// Ignored unless the mount engages the native F2 transport.
+    pub f2_servicing: F2Servicing,
+    /// Reserve a dedicated CPU set for the F2 session/worker threads (leaves the
+    /// remaining CPUs for background manifestation). No effect on F0/F1.
+    pub f2_affinity: bool,
 }
 
 impl Default for MountOptions {
@@ -216,6 +268,8 @@ impl Default for MountOptions {
             manifest_sync: false,
             manifest_workers: 0,
             capacity_reserve_bytes: 0,
+            f2_servicing: F2Servicing::Single,
+            f2_affinity: false,
         }
     }
 }
@@ -356,7 +410,7 @@ pub(crate) struct Inner<C: OrfsCore + Send + 'static> {
     read: ReadCell,
     handles: Mutex<HandleTable>,
     lookups: Mutex<LookupTable>,
-    pub(crate) metrics: Mutex<Metrics>,
+    pub(crate) metrics: Arc<Mutex<Metrics>>,
     pub(crate) backing: PathBuf,
     pub(crate) root_inode: u64,
 }
@@ -365,6 +419,12 @@ impl<C: OrfsCore + Send + 'static> Inner<C> {
     /// Clone the current immutable read view (a cheap `Arc` bump, no I/O).
     pub(crate) fn read_view(&self) -> Arc<dyn CoreRead> {
         self.read.read().clone()
+    }
+
+    /// A shared handle to the operation counters, so a mount can report the
+    /// number of requests that reached the daemon regardless of transport.
+    pub(crate) fn metrics_cell(&self) -> Arc<Mutex<Metrics>> {
+        Arc::clone(&self.metrics)
     }
 
     pub(crate) fn stat(&self, view: &dyn CoreRead, ino: u64) -> Result<InodeStat> {
@@ -499,7 +559,7 @@ impl<C: OrfsCore + Send + 'static> OrfsFuse<C> {
             read,
             handles: Mutex::new(HandleTable::default()),
             lookups: Mutex::new(LookupTable::default()),
-            metrics: Mutex::new(Metrics::default()),
+            metrics: Arc::new(Mutex::new(Metrics::default())),
             backing,
             root_inode: ROOT_INODE,
         });
@@ -559,6 +619,12 @@ impl<C: OrfsCore + Send + 'static> OrfsFuse<C> {
     /// A snapshot of the operation counters.
     pub fn metrics(&self) -> Metrics {
         self.inner.metrics.lock().clone()
+    }
+
+    /// A shared handle to the operation counters, so the mount can expose the
+    /// daemon-request count for every transport (F0/F1/F2).
+    pub(crate) fn metrics_cell(&self) -> Arc<Mutex<Metrics>> {
+        self.inner.metrics_cell()
     }
 
     /// The number of outstanding kernel lookup references for `ino`.
@@ -640,6 +706,8 @@ impl<C: OrfsCore + Send + 'static> OrfsFuse<C> {
             accepted,
             engaged: false,
             reason,
+            cap_sys_admin: crate::fuse_uring::has_cap_sys_admin(),
+            num_queues: 0,
         };
         eprintln!("orfs: {}", neg.describe());
         *self.negotiation.lock() = neg;
@@ -2057,6 +2125,10 @@ pub struct OrfsMount {
     pub durability: DurabilityMode,
     /// The live FUSE-over-`io_uring` negotiation result from `INIT`.
     negotiation: Arc<Mutex<FuseUringNegotiation>>,
+    /// The shared daemon-operation counters. Present for every transport, so the
+    /// number of requests that actually reached the daemon can be compared with
+    /// the application-level syscall count.
+    daemon_metrics: Arc<Mutex<Metrics>>,
 }
 
 impl OrfsMount {
@@ -2111,6 +2183,14 @@ impl OrfsMount {
         } else {
             base
         }
+    }
+
+    /// A snapshot of the daemon-operation counters: how many requests of each
+    /// kind actually reached the daemon, for every transport. This is the
+    /// daemon-side counter against which the application-level syscall count is
+    /// compared in the performance court.
+    pub fn daemon_metrics(&self) -> Metrics {
+        self.daemon_metrics.lock().clone()
     }
 
     /// The live FUSE-over-`io_uring` negotiation result.
@@ -2264,6 +2344,7 @@ pub fn spawn(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<O
                 match prepared.launch(core, backing.to_path_buf()) {
                     Ok(native) => {
                         let negotiation = native.negotiation_cell();
+                        let daemon_metrics = native.metrics_cell();
                         return Ok(OrfsMount {
                             session: MountSession::Native(native),
                             notifier: Arc::new(Mutex::new(None)),
@@ -2271,6 +2352,7 @@ pub fn spawn(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<O
                             backing_io_used,
                             durability: opts.durability,
                             negotiation,
+                            daemon_metrics,
                         });
                     }
                     Err(e) => eprintln!(
@@ -2293,6 +2375,7 @@ pub fn spawn(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<O
     };
     let fs = OrfsFuse::new(core, backing.to_path_buf(), *opts);
     let negotiation = fs.negotiation_cell();
+    let daemon_metrics = fs.metrics_cell();
     let config = build_config(opts);
     let (session, notifier) = attach(fs, mountpoint, &config)?;
     let session = session.spawn()?;
@@ -2303,6 +2386,7 @@ pub fn spawn(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<O
         backing_io_used,
         durability: opts.durability,
         negotiation,
+        daemon_metrics,
     })
 }
 
@@ -2459,6 +2543,7 @@ pub fn spawn_snapshot_native(
         OrfsError::Unsupported(format!("native F2 snapshot session did not start: {e}"))
     })?;
     let negotiation = native.negotiation_cell();
+    let daemon_metrics = native.metrics_cell();
     Ok(OrfsMount {
         session: MountSession::Native(native),
         notifier: Arc::new(Mutex::new(None)),
@@ -2466,6 +2551,7 @@ pub fn spawn_snapshot_native(
         backing_io_used: BackingIo::Sync,
         durability: opts.durability,
         negotiation,
+        daemon_metrics,
     })
 }
 
@@ -2482,6 +2568,7 @@ pub fn spawn_snapshot(
     };
     let snap = Snapshot::open_dir(backing, root)?;
     let fs = OrfsFuse::new(snap, backing.to_path_buf(), opts);
+    let daemon_metrics = fs.metrics_cell();
     let config = build_config(&opts);
     let (session, notifier) = attach(fs, mountpoint, &config)?;
     let session = session.spawn()?;
@@ -2492,6 +2579,7 @@ pub fn spawn_snapshot(
         backing_io_used: BackingIo::Sync,
         durability: opts.durability,
         negotiation: Arc::new(Mutex::new(FuseUringNegotiation::not_requested())),
+        daemon_metrics,
     })
 }
 

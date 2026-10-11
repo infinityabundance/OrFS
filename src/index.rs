@@ -51,6 +51,24 @@ pub struct Checkpoint {
     pub digest: [u8; 32],
 }
 
+/// The work performed by an [`Index::apply_range`] call (Phase 20).
+///
+/// `bytes` is the canonical byte span actually decoded from the log: because
+/// committed records are contiguous, a suffix replay over `[start, end)` decodes
+/// exactly `end - start` bytes, independent of how much history precedes
+/// `start`. This is the measurable statement of the suffix-replay fix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct RangeApplyStats {
+    /// The committed boundary the replay began at.
+    pub start: u64,
+    /// The committed boundary the replay ended at.
+    pub end: u64,
+    /// Number of records decoded.
+    pub records: u64,
+    /// Canonical bytes decoded (equal to `end - start` for a contiguous replay).
+    pub bytes: u64,
+}
+
 /// The derived namespace index.
 ///
 /// # Structural sharing (Phase 19)
@@ -130,25 +148,70 @@ impl Index {
     /// live index after a commit (`start = previous root`). Because both paths
     /// call the identical [`Index::apply_record`], a live index is always equal
     /// to a rebuild over the same records.
+    ///
+    /// # Suffix replay (Phase 20)
+    ///
+    /// The suffix is iterated **directly** with [`Log::records_from`], which seeks
+    /// to `start` and decodes no bytes before it. Iterating `records_upto(end)`
+    /// while skipping records with `offset < start` would decode the entire
+    /// preceding stream on every call — so a live index extended by one small
+    /// commit would `O(|L|)`-decode the whole history each time. Here the work is
+    /// proportional to `end - start`, not to `end`.
+    ///
+    /// `start` must be a committed transaction boundary so iteration begins
+    /// exactly at a framed record; a non-boundary start would apply a garbled
+    /// record and is rejected.
     pub fn apply_range(&mut self, log: &Log, start: u64, end: u64) -> Result<()> {
+        self.apply_range_traced(log, start, end).map(|_| ())
+    }
+
+    /// [`Index::apply_range`] with the records and canonical bytes it actually
+    /// decoded. The log-wins invariant (equal to full replay over the same
+    /// records) is unchanged; the statistics exist so tests/evidence can prove
+    /// that a suffix replay is proportional to the suffix, not to total history.
+    pub fn apply_range_traced(
+        &mut self,
+        log: &Log,
+        start: u64,
+        end: u64,
+    ) -> Result<RangeApplyStats> {
         if end > log.committed_end_offset() {
             return Err(OrfsError::InvalidArgument(format!(
                 "apply end {end} exceeds the committed root {}",
                 log.committed_end_offset()
             )));
         }
-        let mut offset = 0u64;
-        for record in log.records_upto(end) {
+        if start > end {
+            return Err(OrfsError::InvalidArgument(format!(
+                "apply start {start} is beyond end {end}"
+            )));
+        }
+        if start != 0 && !log.is_boundary(start) {
+            return Err(OrfsError::InvalidArgument(format!(
+                "apply start {start} is not a committed transaction boundary"
+            )));
+        }
+        let mut offset = start;
+        let mut records = 0u64;
+        let mut bytes = 0u64;
+        for record in log.records_from(start, end) {
             let record = record?;
             let total = record.header.total_len().map_err(OrfsError::from)?;
-            if offset >= start {
-                self.apply_record(&record, offset)?;
-            }
+            self.apply_record(&record, offset)?;
+            records += 1;
+            bytes = bytes.checked_add(total).ok_or(OrfsError::Overflow {
+                what: "index replay bytes",
+            })?;
             offset = offset.checked_add(total).ok_or(OrfsError::Overflow {
                 what: "index offset",
             })?;
         }
-        Ok(())
+        Ok(RangeApplyStats {
+            start,
+            end,
+            records,
+            bytes,
+        })
     }
 
     /// Apply a single authoritative record at the given logical `offset`.

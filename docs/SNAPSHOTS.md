@@ -39,11 +39,13 @@ rejects it (`Snapshot root R is not a committed transaction boundary`).
 `Log::is_boundary(R)` is the authority.
 
 A snapshot is reconstructed by **replaying/committed-prefix interpretation**, not
-by reading live state: `Snapshot::from_read_log` builds the namespace index with
-`Index::from_log(log, R)`, i.e. it applies the committed records in `[0, R)`.
-Lookups, `getattr`, `readdir`, `readlink`, `read`, and extended-attribute queries
-are all answered from that reconstructed state. Extent bytes are immutable and
-read from the retained log at the offsets recorded in the reconstructed index.
+by reading live state: `Snapshot::from_read_log` builds the namespace index from
+the committed prefix `L[0:R]`. Since Phase 20 this is *materialized once* (see
+§6.1): a validated persisted accelerator is reused when present, otherwise the
+index is rebuilt from the log, preferring an in-log checkpoint so the replay is a
+suffix. Lookups, `getattr`, `readdir`, `readlink`, `read`, and extended-attribute
+queries are all answered from that reconstructed state. Extent bytes are immutable
+and read from the retained log at the offsets recorded in the reconstructed index.
 
 Consequences:
 
@@ -148,6 +150,50 @@ the same records (proved by the test `checkpoint_load_and_replay_equals_full_rep
 `Namespace::open` now uses this path and records the measured `MountReport`
 (`Namespace::mount_report`).
 
+### Historical-root indexes: suffix replay, caching, and persistence (Phase 20)
+
+Two costs made repeated historical reads waste work (external review §3D):
+
+1. `Index::apply_range(start, end)` extended an index by iterating
+   `Log::records_upto(end)` and *skipping* records before `start`. Because the
+   live index is extended by exactly one commit per transaction, every commit
+   decoded the **entire** preceding stream — `O(|L|)` per commit, `O(|L|²)` to
+   build a history.
+2. `Namespace::view(root)` reconstructed a historical index with `Index::from_log`
+   on **every** non-current-root request.
+
+Both are fixed:
+
+* **Suffix replay.** `Index::apply_range` (via `apply_range_traced`) iterates the
+   suffix directly with `Log::records_from(start, end)`, which seeks to `start`
+   and decodes no byte before it. The decoded span is exactly `end - start`,
+   independent of how much history precedes `start`. `start` must be a committed
+   boundary (a non-boundary start is rejected rather than silently applying a
+   garbled record). The same primitive backs `checkpoint::mount_index_at`.
+* **Materialize once, reuse.** A root is immutable, so the index reconstructed
+   from `L[0:R]` never changes and needs **no invalidation**. `Namespace` carries a
+   bounded **in-memory LRU cache** keyed by `(volume uuid, root)`
+   (`historical::HistoricalIndexCache`, default capacity 8, evicting the
+   least-recently-used entry). The first access materializes the index —
+   preferring the newest valid in-log checkpoint at or before `R` and replaying
+   only `[checkpoint_root, R)` (`checkpoint::mount_index_at`) — and every later
+   lookup/read is a pure cache hit with no replay, independent of history size.
+* **Persisted accelerator.** On materialization the index is written (best-effort,
+   temp-file + rename) to `index/historical/<root>.v1.json` as a **derived**
+   accelerator, so a **remount** can reuse it without any replay. The document
+   binds a schema tag, the volume UUID, the root, a BLAKE3 digest over the inner
+   snapshot, and the snapshot text; on load the UUID, root, envelope digest, the
+   inner snapshot's own self-digest, and the committed-boundary property are all
+   re-checked. A `Snapshot` opened over a volume also reuses a valid persisted
+   accelerator (`materialize_index`).
+
+**The log always wins.** Neither layer is authoritative. A historical index is
+only ever *produced* by the same replay the log yields. A persisted accelerator
+that is absent, torn, tampered, foreign (wrong UUID), or names a non-boundary is
+dropped and the index is rebuilt from the log; a derived file never overrides
+committed history. Because roots are immutable, a cache entry is never stale: any
+later commit lands beyond `R` and cannot change `L[0:R]`.
+
 ### Mount cost — measured, not claimed
 
 Mount is **not constant-time**. The two costs are:
@@ -196,10 +242,17 @@ extended-attribute size and access rules (they are computed, not stored). See
   an earlier checkpoint, and to full replay.
 * (e) Concurrent readers on one `Arc<Log>` + root pinning under concurrent writes.
 * (f) Snapshot stability across remount.
+* (g) **Phase 20** — suffix replay is proportional to the suffix (decoded bytes
+  equal `end - start`, independent of preceding history); a cached historical
+  index equals full replay for many roots; the in-memory cache is a hard LRU
+  bound; an absent, torn, or tampered persisted accelerator falls back to correct
+  replay; and a remount reuses a persisted historical index without replaying.
 
 Evidence: `evidence/correctness/snapshot-equivalence.json` (per-root
-reconstruction verdicts) and `evidence/performance/mount-replay-snapshot.json` (measured
-mount time vs retained history size, with and without checkpoints).
+reconstruction verdicts), `evidence/performance/mount-replay-snapshot.json`
+(measured mount time vs retained history size, with and without checkpoints), and
+`evidence/performance/historical-index.json` (first-materialization vs
+repeated-access cost, and exact decoded-byte proportionality of suffix replay).
 
 ## 9. CLI
 

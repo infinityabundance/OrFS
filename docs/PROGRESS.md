@@ -1176,3 +1176,57 @@ only spines; documented with the plan in `docs/CONCURRENCY.md` §4.1.
 ### Docs
 
 `docs/CONCURRENCY.md` (new), `docs/NAMESPACE.md` §6.1, this section.
+
+## Phase 20 — Persistent historical-root indexes and suffix replay
+
+**Complete.** External review §3D: historical reads paid a full replay per
+request, and the live index was re-extended by decoding the whole preceding
+stream on every commit.
+
+### Delivered
+
+* **Suffix replay fix** — `Index::apply_range(start, end)` now iterates the suffix
+  directly with `Log::records_from(start, end)` (which seeks to `start` and reads
+  no byte before it) instead of walking `records_upto(end)` and skipping earlier
+  records. `start` must be a committed boundary. `apply_range_traced` reports the
+  records and canonical bytes decoded. `checkpoint::mount_index_at` materializes
+  an arbitrary committed boundary by loading the newest valid in-log checkpoint at
+  or before it and replaying only `[checkpoint_root, root)`.
+* **Immutable historical-root cache** — `src/historical.rs`
+  (`HistoricalIndexCache`): a bounded in-memory LRU keyed by `(volume uuid, root)`
+  (default capacity 8; least-recently-used eviction). A root is materialized once,
+  then reused across arbitrarily many lookups/reads. `Namespace::view(root)` now
+  resolves non-current roots through it.
+* **Persisted derived accelerator** — on materialization the index is written to
+  `index/historical/<root>.v1.json` (temp-file + rename), binding schema + uuid +
+  root + a BLAKE3 digest over the inner snapshot. On load the uuid, root, envelope
+  digest, the inner snapshot's self-digest, and the committed-boundary property are
+  re-checked, so the accelerator survives a remount. `Snapshot::from_read_log`
+  reuses it too.
+* **Log-wins / no invalidation** — snapshots are immutable, so a cached historical
+  index is never stale; any absent, torn, tampered, or foreign accelerator is
+  dropped and the index rebuilt from the log. Nothing derived ever overrides
+  committed history.
+
+### Results (evidence-backed)
+
+All 265 tests pass (was 255; +6 in `tests/snapshot_model.rs`, +4 unit tests in
+`src/historical.rs`). `evidence/performance/historical-index.json` records, for a
+600-commit history with a historical root ~60% in:
+
+* a cold materialization that used an in-log checkpoint and replayed only
+  145 KB (the suffix), not the 2.37 MB prefix;
+* 4000 repeated accesses at ≈ 0.39 µs/access with **zero** replays, versus the
+  pre-Phase-20 path's ≈ 4084 µs full replay **per** access — a measured ≈ 1675×
+  aggregate speedup (≈ 21000× per access);
+* deterministic suffix-replay rows proving `decoded_bytes == end - start` at every
+  depth, independent of the preceding history.
+
+Equivalence to full replay is proved directly: the cached index is compared with
+`Index::from_log` (byte-identical names/metadata/extents/xattrs/versions) at many
+sampled roots, and corrupt/absent/tampered accelerators are shown to fall back to
+correct replay.
+
+### Docs
+
+`docs/SNAPSHOTS.md` §6.1 (new), `docs/NAMESPACE.md` §5.1 and §6, this section.

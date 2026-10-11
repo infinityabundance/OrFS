@@ -20,7 +20,6 @@
 //! from-scratch rebuild, the live index is always equal to a rebuild over the
 //! log — and the log always wins.
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -35,6 +34,7 @@ use crate::error::{OrfsError, Result};
 use crate::extent::{
     DataExtentPayload, DataZeroRangePayload, ExtentKind, FileResizePayload, ReadPiece,
 };
+use crate::historical::{HistoricalIndexCache, DEFAULT_CACHE_CAPACITY};
 use crate::index::{Index, ROOT_INODE};
 use crate::inode::{
     validate_xattr_name, Inode, InodeCreatePayload, InodeMetadataPayload, InodeSetattrPayload,
@@ -294,6 +294,37 @@ pub struct Namespace {
     /// one. The same cell is shared with the FUSE layer so it need not publish
     /// independently.
     read_pub: ReadCell,
+    /// Cache of immutable historical-root indexes (Phase 20).
+    ///
+    /// A historical root is resolved once (preferring an in-log checkpoint and a
+    /// suffix replay), verified, then reused across arbitrarily many lookups and
+    /// reads; a persisted accelerator under `index/` lets the same index survive a
+    /// remount. Snapshots are immutable, so nothing here is ever invalidated.
+    historical: HistoricalIndexCache,
+}
+
+/// A resolved index view: the live writer index, or an immutable cached
+/// historical index (`Arc`-shared across all readers of that root).
+///
+/// Dereferences to [`Index`], so every read method is written once against the
+/// common surface and the two sources are byte-identical by construction.
+#[derive(Debug)]
+pub(crate) enum IndexView<'a> {
+    /// The live, mutable writer index (borrowed; no clone).
+    Live(&'a Index),
+    /// An immutable historical index resolved from a snapshot/cache.
+    Historical(Arc<Index>),
+}
+
+impl std::ops::Deref for IndexView<'_> {
+    type Target = Index;
+
+    fn deref(&self) -> &Index {
+        match self {
+            IndexView::Live(index) => index,
+            IndexView::Historical(index) => index,
+        }
+    }
 }
 
 impl Namespace {
@@ -334,6 +365,13 @@ impl Namespace {
             None,
             None,
         ));
+        // A per-volume historical-index cache. Persisted accelerators live under
+        // `index/historical/` in the volume's own directory.
+        let historical = HistoricalIndexCache::new(
+            volume.meta.uuid,
+            Some(volume.root_dir.join("index")),
+            DEFAULT_CACHE_CAPACITY,
+        );
         Ok(Namespace {
             volume,
             index,
@@ -345,6 +383,7 @@ impl Namespace {
             trigram: None,
             trigram_engine: None,
             read_pub: Arc::new(parking_lot::RwLock::new(initial)),
+            historical,
         })
     }
 
@@ -356,6 +395,13 @@ impl Namespace {
     /// The live derived index.
     pub fn index(&self) -> &Index {
         &self.index
+    }
+
+    /// The historical-root index cache (Phase 20). Exposed for tests/evidence:
+    /// it reports how historical roots were resolved (memory hit, persisted
+    /// accelerator, or a cold materialization).
+    pub fn historical_cache(&self) -> &HistoricalIndexCache {
+        &self.historical
     }
 
     /// The live committed root.
@@ -585,16 +631,21 @@ impl Namespace {
 
     // -- views -------------------------------------------------------------
 
-    fn view(&self, root: u64) -> Result<Cow<'_, Index>> {
+    /// Resolve the index view at `root`: the live index when `root` is the
+    /// current committed root, otherwise an immutable historical index from the
+    /// cache (materialized once, replayed as a suffix, then reused).
+    fn view(&self, root: u64) -> Result<IndexView<'_>> {
         if root == self.index.root() {
-            Ok(Cow::Borrowed(&self.index))
+            Ok(IndexView::Live(&self.index))
         } else {
-            Ok(Cow::Owned(Index::from_log(&self.volume.log, root)?))
+            Ok(IndexView::Historical(
+                self.historical.resolve(&self.volume.log, root)?,
+            ))
         }
     }
 
     /// The index view at `root` (the query engine's discovery surface).
-    pub(crate) fn search_view(&self, root: u64) -> Result<Cow<'_, Index>> {
+    pub(crate) fn search_view(&self, root: u64) -> Result<IndexView<'_>> {
         self.view(root)
     }
 

@@ -209,6 +209,13 @@ root                -> named committed snapshots / checkpoints
   extended after each commit by replaying exactly the records just committed
   (`apply_range`), so **the live index is provably equal to a rebuild over the
   same records**.
+* Since Phase 20, `apply_range(start, end)` iterates the suffix directly with
+  `Log::records_from`, decoding exactly `end - start` bytes rather than walking
+  and skipping the whole preceding stream (see `docs/SNAPSHOTS.md` §6.1).
+* A historical root's index is immutable: `Namespace::view(root)` resolves it once
+  into a bounded in-memory LRU cache (keyed by `(uuid, root)`) and a persisted
+  accelerator under `index/historical/`, then reuses it across every later
+  lookup/read — no invalidation, because committed history is never withdrawn.
 * `Namespace::index_matches_log()` rebuilds and compares; the evidence file
   `evidence/correctness/namespace-rebuild.json` records this.
 * A persisted snapshot under `index/namespace.v1.json` is an **accelerator
@@ -233,8 +240,9 @@ acceleration/verification aids; `SNAPSHOT_ROOT` is emitted by
 length)`, `write_at(inode, offset, data)`, `create`, `mkdir`, `unlink`, `rmdir`,
 `rename`, `link`, `symlink`, `readlink`, `getattr`, `setattr`, `getxattr`,
 `setxattr`, `listxattr`, `removexattr`, and `readdir`. Reads take a `root`
-parameter: the live committed root, or a pinned historical root (rebuilt on
-demand — research §7.4). Mutations always append authoritative transactions.
+parameter: the live committed root, or a pinned historical root (materialized
+once into the Phase 20 historical-index cache — research §7.4). Mutations always
+append authoritative transactions.
 
 Mapping to the FUSE operations of research §14 follows directly: `lookup` →
 `lookup`; `getattr`/`setattr`; `read`/`write`; `opendir`/`readdir`; `create`;

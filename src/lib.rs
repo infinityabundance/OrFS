@@ -37,6 +37,7 @@ pub mod failpoints;
 pub mod fuse;
 pub mod fuse_native;
 pub mod fuse_uring;
+pub mod historical;
 pub mod image;
 pub mod index;
 pub mod inode;

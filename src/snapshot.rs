@@ -178,6 +178,15 @@ impl Snapshot {
     /// Validates that `root` is a committed transaction boundary (research §2,
     /// I3): an offset inside a record or an incomplete transaction is not a
     /// valid snapshot.
+    ///
+    /// # Materialization (Phase 20)
+    ///
+    /// The index is materialized once and cached for the snapshot's lifetime. A
+    /// persisted historical accelerator under the volume's `index/` directory is
+    /// reused when present and valid (so a remounted snapshot need not replay at
+    /// all); otherwise the index is rebuilt from the log, preferring an in-log
+    /// checkpoint so the replay is a suffix. The log is authoritative: an absent
+    /// or invalid accelerator is ignored and never overrides committed history.
     pub fn from_read_log(log: Arc<Log>, uuid: [u8; 16], root: u64) -> Result<Snapshot> {
         if root > log.committed_end_offset() {
             return Err(OrfsError::InvalidArgument(format!(
@@ -191,7 +200,7 @@ impl Snapshot {
             )));
         }
         let pin = log.pin_root(root)?;
-        let index = Index::from_log(&log, root)?;
+        let index = materialize_index(&log, &uuid, root)?;
         Ok(Snapshot {
             identity: HistoricalRoot { uuid, root },
             index,
@@ -365,6 +374,18 @@ impl Snapshot {
 /// See [`Snapshot::open`].
 pub fn open_snapshot(volume: &Volume, root: u64) -> Result<Snapshot> {
     Snapshot::open(volume, root)
+}
+
+/// Materialize the index at `root`: reuse a validated persisted historical
+/// accelerator when one exists, otherwise rebuild from the log, preferring an
+/// in-log checkpoint so the replay is a suffix (Phase 20).
+fn materialize_index(log: &Log, uuid: &[u8; 16], root: u64) -> Result<Index> {
+    if let Some(index_dir) = log.dir().parent().map(|d| d.join("index")) {
+        if let Some(index) = crate::historical::load_persisted_historical(&index_dir, uuid, root)? {
+            return Ok(index);
+        }
+    }
+    Ok(crate::checkpoint::mount_index_at(log, root)?.0)
 }
 
 /// Reject a historical reference whose volume uuid does not match `actual`.

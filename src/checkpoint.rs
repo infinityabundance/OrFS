@@ -260,6 +260,117 @@ pub fn mount_index(log: &Log) -> Result<(Index, MountReport)> {
     Ok((index, report))
 }
 
+/// A truthful account of a **historical** index materialization (Phase 20).
+///
+/// Unlike [`MountReport`] this targets an arbitrary committed boundary `root`
+/// (not necessarily the head), so it deliberately omits a record count: the
+/// point of the historical path is that the work is proportional to the suffix
+/// `[checkpoint_root, root)`, which `bytes_replayed` reports directly.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct HistoricalMountReport {
+    /// The historical root that was materialized.
+    pub root: u64,
+    /// Whether a valid in-log checkpoint at or before `root` supplied the base.
+    pub used_checkpoint: bool,
+    /// The root of the checkpoint used as the base, if any.
+    pub checkpoint_root: Option<u64>,
+    /// Number of `INDEX_CHECKPOINT` records discovered in the prefix `[0, root)`.
+    pub checkpoints_found: usize,
+    /// Number of discovered checkpoints that failed validation and were skipped.
+    pub checkpoints_rejected: usize,
+    /// Number of committed canonical bytes replayed (`root - checkpoint_root`, or
+    /// `root` on a full-replay fallback).
+    pub bytes_replayed: u64,
+    /// Whether reconstruction fell back to a full replay from genesis.
+    pub full_replay_fallback: bool,
+    /// The measured wall-clock cost of materialization, in microseconds.
+    pub wall_micros: u128,
+    /// The materialized index's live inode count.
+    pub index_inode_count: usize,
+    /// The materialized index's live dentry count.
+    pub index_dentry_count: usize,
+}
+
+/// Materialize the committed index at an arbitrary committed boundary `root`
+/// (not necessarily the head), preferring the newest valid checkpoint at or
+/// before `root` and replaying only the suffix `[checkpoint_root, root)`.
+///
+/// This is the historical-root analogue of [`mount_index`]: discovery scans only
+/// the prefix `[0, root)` (records committed *after* `root` can never contribute
+/// to a historical view), and replay begins at a checkpoint boundary via
+/// [`Log::records_from`], so the work is proportional to the distance from the
+/// nearest checkpoint, never to the total retained history.
+///
+/// The result is bit-identical to a full replay of `L[0:root]` (proved by the
+/// Phase 20 tests); a corrupt checkpoint is a discarded accelerator and the log
+/// always wins.
+pub fn mount_index_at(log: &Log, root: u64) -> Result<(Index, HistoricalMountReport)> {
+    let started = Instant::now();
+    let target = log.committed_end_offset();
+    if root > target {
+        return Err(OrfsError::InvalidArgument(format!(
+            "historical index root {root} exceeds the committed root {target}"
+        )));
+    }
+    if root != 0 && !log.is_boundary(root) {
+        return Err(OrfsError::InvalidArgument(format!(
+            "historical index root {root} is not a committed transaction boundary"
+        )));
+    }
+    // Scan only [0, root): a historical view can never depend on later records.
+    let offsets = log.scan_record_offsets_of_types(root, &[RecordType::IndexCheckpoint])?;
+    let checkpoints_found = offsets.len();
+    let mut checkpoints_rejected = 0usize;
+
+    for &offset in offsets.iter().rev() {
+        let record = match log.read_record_at(offset, root) {
+            Ok(r) => r,
+            Err(_) => {
+                checkpoints_rejected += 1;
+                continue;
+            }
+        };
+        let Ok(payload) = IndexCheckpointPayload::decode(&record.payload) else {
+            checkpoints_rejected += 1;
+            continue;
+        };
+        match load_checkpoint(log, &payload, root) {
+            Ok(mut index) => {
+                let (_, bytes_replayed) = replay_from(log, &mut index, payload.root, root)?;
+                let report = HistoricalMountReport {
+                    root,
+                    used_checkpoint: true,
+                    checkpoint_root: Some(payload.root),
+                    checkpoints_found,
+                    checkpoints_rejected,
+                    bytes_replayed,
+                    full_replay_fallback: false,
+                    wall_micros: started.elapsed().as_micros(),
+                    index_inode_count: index.inode_count(),
+                    index_dentry_count: index.dentry_count(),
+                };
+                return Ok((index, report));
+            }
+            Err(_) => checkpoints_rejected += 1,
+        }
+    }
+
+    let index = Index::from_log(log, root)?;
+    let report = HistoricalMountReport {
+        root,
+        used_checkpoint: false,
+        checkpoint_root: None,
+        checkpoints_found,
+        checkpoints_rejected,
+        bytes_replayed: root,
+        full_replay_fallback: true,
+        wall_micros: started.elapsed().as_micros(),
+        index_inode_count: index.inode_count(),
+        index_dentry_count: index.dentry_count(),
+    };
+    Ok((index, report))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

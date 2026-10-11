@@ -34,6 +34,7 @@ use std::time::Instant;
 
 use orfs::checkpoint;
 use orfs::commit::DurabilityMode;
+use orfs::historical::{historical_index_path, load_persisted_historical, HistoricalIndexCache};
 use orfs::index::{Index, ROOT_INODE};
 use orfs::inode::InodeType;
 use orfs::log::{Log, OpenMode};
@@ -613,6 +614,306 @@ proptest! {
 }
 
 // ---------------------------------------------------------------------------
+// (g) Phase 20 — persistent/cached historical-root indexes + suffix replay
+// ---------------------------------------------------------------------------
+
+/// Build a structurally rich, deterministic history and return the committed
+/// roots sampled before each round (each a committed boundary). The tree holds a
+/// directory, a file with evolving data and an xattr, and a symlink, and an index
+/// checkpoint is written periodically so the suffix-replay base is exercised.
+fn build_history(ns: &mut Namespace, rounds: u64) -> Vec<u64> {
+    let dir = ns.mkdir(ROOT_INODE, b"dir", 0o755, 0, 0).unwrap();
+    let f = ns.create(dir, b"f", 0o644, 123, 456).unwrap();
+    ns.symlink(ROOT_INODE, b"link", b"dir/f", 0, 0).unwrap();
+    let mut roots = Vec::new();
+    for i in 0..rounds {
+        ns.write_at(f, (i % 8) * 4, &[(i as u8).wrapping_add(1); 4])
+            .unwrap();
+        ns.setxattr(f, b"user.k", format!("v{i}").as_bytes(), false)
+            .unwrap();
+        if i % 4 == 0 {
+            let name = format!("g{}", i / 4);
+            let gf = ns.create(ROOT_INODE, name.as_bytes(), 0o600, 0, 0).unwrap();
+            ns.write_at(gf, 0, b"leaf").unwrap();
+        }
+        if i % 8 == 7 {
+            ns.write_index_checkpoint().unwrap();
+        }
+        roots.push(ns.root());
+    }
+    roots
+}
+
+#[test]
+fn suffix_replay_is_proportional_to_the_suffix_not_history() {
+    let td = TempDir::new().unwrap();
+    let mut ns = Namespace::init(td.path(), 1 << 20, DurabilityMode::Ordered).unwrap();
+    let f = ns.create(ROOT_INODE, b"f", 0o644, 0, 0).unwrap();
+    // A long prefix.
+    for i in 0..400u64 {
+        ns.write_at(f, (i % 4) * 8, &[i as u8; 8]).unwrap();
+    }
+    let suffix_start = ns.root();
+    // A short suffix.
+    for i in 0..5u64 {
+        ns.write_at(f, (i % 4) * 8, &[0xEE; 8]).unwrap();
+    }
+    let suffix_end = ns.root();
+    ns.sync().unwrap();
+    drop(ns);
+
+    let vol = Volume::open(td.path(), OpenMode::ReadOnly).unwrap();
+    let log = &vol.log;
+
+    // Extending a full prefix with the suffix must equal a full replay.
+    let mut partial = Index::from_log(log, suffix_start).unwrap();
+    let stats = partial
+        .apply_range_traced(log, suffix_start, suffix_end)
+        .unwrap();
+    let full = Index::from_log(log, suffix_end).unwrap();
+    assert_eq!(partial, full, "suffix replay must equal full replay");
+
+    // The decoded byte span equals exactly the suffix, not the whole history.
+    assert_eq!(stats.start, suffix_start);
+    assert_eq!(stats.end, suffix_end);
+    assert_eq!(stats.bytes, suffix_end - suffix_start);
+    assert!(stats.records > 0);
+    // The prefix dominates; decoding it would have been the old behaviour.
+    assert!(
+        stats.bytes < suffix_end / 4,
+        "suffix {} bytes should be a small fraction of the {} total history bytes",
+        stats.bytes,
+        suffix_end
+    );
+
+    // Independence from preceding history: the same short suffix replayed at
+    // increasing depths always decodes the same small byte span.
+    let mut last_bytes = None;
+    for &depth in &[0u64, suffix_start / 3, suffix_start / 2, suffix_start] {
+        let start = if depth == 0 {
+            0
+        } else {
+            log_boundary_at_or_below(log, depth)
+        };
+        if start >= suffix_end {
+            continue;
+        }
+        let mut probe = Index::from_log(log, start).unwrap();
+        let s = probe.apply_range_traced(log, start, suffix_end).unwrap();
+        assert_eq!(s.bytes, suffix_end - start);
+        last_bytes = Some(s.bytes);
+    }
+    assert!(last_bytes.is_some());
+}
+
+/// The greatest committed boundary `<= target` (0 when none). Used to pick a
+/// replay start at an arbitrary depth while remaining a valid boundary.
+fn log_boundary_at_or_below(log: &Log, target: u64) -> u64 {
+    let end = log.committed_end_offset();
+    // Walk boundaries is not exposed; since every sampled root is a boundary we
+    // can rely on `is_boundary` by scanning candidate offsets downward in a
+    // bounded window around `target`.
+    let mut candidate = target.min(end);
+    while candidate > 0 && !log.is_boundary(candidate) {
+        candidate -= 1;
+    }
+    candidate
+}
+
+#[test]
+fn cached_historical_index_equals_full_replay_for_many_roots() {
+    let td = TempDir::new().unwrap();
+    let mut ns = Namespace::init(td.path(), 1 << 20, DurabilityMode::Ordered).unwrap();
+    let roots = build_history(&mut ns, 48);
+    ns.sync().unwrap();
+
+    let log = &ns.volume().log;
+    let head = ns.root();
+    let cache = ns.historical_cache();
+    let dir = td.path().join("index");
+
+    let mut checked = 0usize;
+    for &root in &roots {
+        if root == head {
+            continue; // the head is served live, not from the cache
+        }
+        let full = Index::from_log(log, root).unwrap();
+        // First access materializes (cold); second is a pure in-memory hit.
+        let first = cache.resolve(log, root).unwrap();
+        let second = cache.resolve(log, root).unwrap();
+        assert_eq!(
+            *first, full,
+            "cached index must equal full replay at {root}"
+        );
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "second access must be a cache hit"
+        );
+        assert_eq!(first.canonical_digest(), full.canonical_digest());
+
+        // The public read surface must agree with the rebuilt index.
+        for inode in 1..=3u64 {
+            let a = ns.getattr(inode, root);
+            let b = full.inode(inode).map(|i| i.stat());
+            match (a, b) {
+                (Ok(a), Some(b)) => assert_eq!(a, b),
+                (Err(_), None) => {}
+                (a, b) => panic!("getattr disagreement at {root}/{inode}: {a:?} vs {b:?}"),
+            }
+        }
+        // A persisted accelerator now exists for this root.
+        assert!(historical_index_path(&dir, root).exists());
+        checked += 1;
+    }
+    assert!(
+        checked >= 16,
+        "expected many historical roots, got {checked}"
+    );
+    let counts = cache.counts();
+    assert!(
+        counts.memory_hits >= checked as u64,
+        "every repeated access after the first is a pure in-memory hit"
+    );
+    assert_eq!(counts.materializations, checked as u64);
+    assert_eq!(counts.persisted_hits, 0, "every root is first seen cold");
+    assert_eq!(cache.resident(), checked.min(cache.capacity()));
+}
+
+#[test]
+fn historical_cache_is_bounded_and_evicts_lru() {
+    let cache = HistoricalIndexCache::new([3u8; 16], None, 2);
+    let td = TempDir::new().unwrap();
+    let mut ns = Namespace::init(td.path(), 1 << 16, DurabilityMode::Ordered).unwrap();
+    let f = ns.create(ROOT_INODE, b"f", 0o644, 0, 0).unwrap();
+    ns.write_at(f, 0, b"a").unwrap();
+    let r1 = ns.root();
+    ns.write_at(f, 1, b"b").unwrap();
+    let r2 = ns.root();
+    ns.write_at(f, 2, b"c").unwrap();
+    let r3 = ns.root();
+    let log = &ns.volume().log;
+
+    let a = cache.resolve(log, r1).unwrap(); // materialize r1
+    cache.resolve(log, r2).unwrap(); // materialize r2
+    assert_eq!(cache.resident(), 2);
+    // Touch r1 so r2 becomes least-recently-used.
+    assert!(Arc::ptr_eq(&cache.resolve(log, r1).unwrap(), &a));
+    // Loading r3 evicts r2; capacity stays a hard bound.
+    let c = cache.resolve(log, r3).unwrap();
+    assert_eq!(cache.resident(), 2, "capacity is a hard bound");
+    // r1 and r3 are still resident: pure memory hits, no materialization.
+    let mat = cache.counts().materializations;
+    assert!(Arc::ptr_eq(&cache.resolve(log, r1).unwrap(), &a));
+    assert!(Arc::ptr_eq(&cache.resolve(log, r3).unwrap(), &c));
+    assert_eq!(cache.counts().materializations, mat);
+    // r2 was evicted, so resolving it now materializes a fresh index.
+    cache.resolve(log, r2).unwrap();
+    assert_eq!(cache.counts().materializations, mat + 1);
+}
+
+#[test]
+fn historical_cache_absent_or_corrupt_accelerator_falls_back_to_replay() {
+    let td = TempDir::new().unwrap();
+    let mut ns = Namespace::init(td.path(), 1 << 16, DurabilityMode::Ordered).unwrap();
+    let f = ns.create(ROOT_INODE, b"f", 0o644, 0, 0).unwrap();
+    ns.write_at(f, 0, b"hello").unwrap();
+    let root = ns.root();
+    ns.write_at(f, 0, b"world").unwrap();
+    let _after = ns.root();
+    let log = &ns.volume().log;
+    let uuid = ns.volume().meta.uuid;
+    let dir = td.path().join("index");
+
+    let full = Index::from_log(log, root).unwrap();
+    // Materialize via the namespace cache so an accelerator is persisted.
+    let cached = ns.historical_cache().resolve(log, root).unwrap();
+    assert_eq!(*cached, full);
+    let path = historical_index_path(&dir, root);
+    assert!(path.exists());
+
+    // A valid accelerator loads (no replay).
+    let loaded = load_persisted_historical(&dir, &uuid, root).unwrap();
+    assert_eq!(loaded.unwrap(), full);
+
+    // Corrupt accelerator: a fresh cache must reject it and replay correctly.
+    std::fs::write(&path, b"{ not a valid accelerator").unwrap();
+    let fresh = HistoricalIndexCache::with_default_capacity(uuid, Some(dir.clone()));
+    let idx = fresh.resolve(log, root).unwrap();
+    assert_eq!(*idx, full, "corrupt accelerator must fall back to replay");
+    assert_eq!(fresh.counts().persisted_hits, 0);
+    assert_eq!(fresh.counts().materializations, 1);
+
+    // Tampered but well-formed JSON is also rejected.
+    let mut tampered = orfs::historical::encode_historical(&full, &uuid).unwrap();
+    let m = tampered.len() / 2;
+    tampered[m] ^= 0xFF;
+    std::fs::write(&path, &tampered).unwrap();
+    let fresh2 = HistoricalIndexCache::with_default_capacity(uuid, Some(dir.clone()));
+    assert_eq!(*fresh2.resolve(log, root).unwrap(), full);
+
+    // Absent accelerator: still correct.
+    std::fs::remove_file(&path).unwrap();
+    let fresh3 = HistoricalIndexCache::with_default_capacity(uuid, Some(dir));
+    assert_eq!(*fresh3.resolve(log, root).unwrap(), full);
+    assert_eq!(fresh3.counts().materializations, 1);
+}
+
+#[test]
+fn remount_reuses_persisted_historical_index() {
+    let td = TempDir::new().unwrap();
+    let (hist_root, uuid, digest, file_inode);
+    {
+        let mut ns = Namespace::init(td.path(), 1 << 20, DurabilityMode::Ordered).unwrap();
+        let dir = ns.mkdir(ROOT_INODE, b"dir", 0o755, 0, 0).unwrap();
+        let f = ns.create(dir, b"f", 0o644, 0, 0).unwrap();
+        file_inode = f;
+        ns.write_at(f, 0, b"v0").unwrap();
+        // The historical root we will revisit after the remount.
+        hist_root = ns.root();
+        for i in 1..40u64 {
+            ns.write_at(f, 0, format!("v{i}").as_bytes()).unwrap();
+        }
+        ns.sync().unwrap();
+        uuid = ns.volume().meta.uuid;
+        // Materialize the historical root once; this persists an accelerator.
+        let idx = ns
+            .historical_cache()
+            .resolve(&ns.volume().log, hist_root)
+            .unwrap();
+        digest = idx.canonical_digest();
+    }
+    let dir = td.path().join("index");
+    assert!(historical_index_path(&dir, hist_root).exists());
+
+    // Remount: reopen the volume read-only.
+    let ns = Namespace::open(td.path(), OpenMode::ReadOnly, DurabilityMode::Ordered).unwrap();
+    assert_eq!(ns.volume().meta.uuid, uuid);
+    let log = &ns.volume().log;
+    let full = Index::from_log(log, hist_root).unwrap();
+
+    let before = ns.historical_cache().counts();
+    let idx = ns.historical_cache().resolve(log, hist_root).unwrap();
+    let after = ns.historical_cache().counts();
+
+    assert_eq!(
+        *idx, full,
+        "remounted historical index must equal full replay"
+    );
+    assert_eq!(idx.canonical_digest(), digest);
+    assert_eq!(
+        after.persisted_hits,
+        before.persisted_hits + 1,
+        "the persisted accelerator must be reused, not replayed"
+    );
+    assert_eq!(
+        after.materializations, before.materializations,
+        "no log replay on a persisted hit"
+    );
+    // The historical read is byte-identical through the public API too.
+    assert_eq!(ns.read_at(file_inode, hist_root, 0, 8).unwrap(), b"v0");
+}
+
+// ---------------------------------------------------------------------------
 // Machine-generated evidence
 // ---------------------------------------------------------------------------
 
@@ -785,6 +1086,169 @@ fn mount_replay_evidence() {
     });
     write_json(
         &manifest_dir().join("evidence/performance/mount-replay-snapshot.json"),
+        &doc,
+    );
+}
+
+/// Environment metadata for evidence documents (mirrors `tests/concurrency_stress.rs`).
+fn evidence_environment() -> serde_json::Value {
+    serde_json::json!({
+        "cpus": std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1),
+        "os": std::env::consts::OS,
+        "arch": std::env::consts::ARCH,
+        "toolchain": std::env::var("RUSTUP_TOOLCHAIN").unwrap_or_else(|_| "unknown".into()),
+        "image_digest": std::env::var("ORFS_IMAGE_DIGEST").unwrap_or_else(|_| "unknown".into()),
+        "profile": if cfg!(debug_assertions) { "debug" } else { "release" },
+    })
+}
+
+/// Phase 20 evidence: historical-index first-materialization vs repeated-access
+/// cost, and the deterministic proof that suffix replay is proportional to the
+/// suffix rather than to total history.
+#[test]
+fn historical_index_evidence() {
+    let td = TempDir::new().unwrap();
+    let mut ns = Namespace::init(td.path(), 1 << 20, DurabilityMode::Ordered).unwrap();
+    let files: Vec<u64> = (0..4u64)
+        .map(|i| {
+            ns.create(ROOT_INODE, format!("f{i}").as_bytes(), 0o644, 0, 0)
+                .unwrap()
+        })
+        .collect();
+    let mut samples = Vec::new();
+    for w in 0..600u64 {
+        let f = files[(w as usize) % files.len()];
+        ns.write_at(f, (w % 8) * 4096, &[w as u8; 4096]).unwrap();
+        if w % 25 == 24 {
+            ns.write_index_checkpoint().unwrap();
+        }
+        samples.push(ns.root());
+    }
+    ns.sync().unwrap();
+    let committed = ns.root();
+    let uuid = ns.volume().meta.uuid;
+    let log = &ns.volume().log;
+
+    let hist = samples[(samples.len() * 6) / 10];
+    let suffix_end = committed;
+
+    // --- A. suffix replay is proportional to the suffix (deterministic bytes) --
+    let mut suffix_rows = Vec::new();
+    for &frac_num in &[0u64, 1, 2, 3] {
+        let idx = ((samples.len().saturating_sub(1)) * frac_num as usize) / 4;
+        let start = samples[idx];
+        if start >= suffix_end {
+            continue;
+        }
+        // Extend a full prefix to the end: this decodes exactly [start, end).
+        let mut probe = Index::from_log(log, start).unwrap();
+        let stats = probe.apply_range_traced(log, start, suffix_end).unwrap();
+        assert_eq!(probe, Index::from_log(log, suffix_end).unwrap());
+        assert_eq!(stats.bytes, suffix_end - start);
+        suffix_rows.push(serde_json::json!({
+            "start": start,
+            "end": suffix_end,
+            "start_fraction_of_history": start as f64 / suffix_end as f64,
+            "suffix_bytes": suffix_end - start,
+            "decoded_bytes": stats.bytes,
+            "records": stats.records,
+            "total_history_bytes": suffix_end,
+            "decoded_is_exactly_the_suffix": stats.bytes == suffix_end - start,
+            "decoded_fraction_of_a_full_replay": stats.bytes as f64 / suffix_end as f64,
+        }));
+    }
+    let suffix_proportional = suffix_rows
+        .iter()
+        .all(|r| r["decoded_is_exactly_the_suffix"] == true);
+    assert!(suffix_proportional);
+
+    // --- B. first materialization vs repeated access for one historical root ---
+    // A fresh cache forces a cold materialization; the volume owns the persisted
+    // accelerator directory, so the first resolution also writes it.
+    let cache = HistoricalIndexCache::new(uuid, Some(td.path().join("index")), 8);
+    let t = Instant::now();
+    let (idx, access) = cache.resolve_traced(log, hist).unwrap();
+    let first_micros = t.elapsed().as_micros();
+    let mat = access
+        .materialization
+        .clone()
+        .expect("cold miss materializes");
+
+    // Repeated access through the immutable cached index: no replay at all.
+    let accesses = 4000u64;
+    let t = Instant::now();
+    let mut acc = 0u64;
+    for _ in 0..accesses {
+        let view = cache.resolve(log, hist).unwrap();
+        acc = acc.wrapping_add(view.inode(3).map(|i| i.size).unwrap_or(0));
+    }
+    let repeated_micros = t.elapsed().as_micros();
+    let repeated_nanos_per_access = (repeated_micros as f64 * 1000.0) / accesses as f64;
+    std::hint::black_box(acc);
+
+    // Reference: a full replay of the same root (what every access used to cost).
+    let t = Instant::now();
+    let full = Index::from_log(log, hist).unwrap();
+    let full_replay_micros = t.elapsed().as_micros();
+    assert_eq!(*idx, full, "the cached index must equal a full replay");
+
+    let counts = cache.counts();
+    assert_eq!(counts.materializations, 1);
+    assert!(counts.memory_hits >= accesses);
+
+    let materialize_to_repeated_speedup = if repeated_nanos_per_access > 0.0 {
+        serde_json::json!((first_micros as f64 * 1000.0) / repeated_nanos_per_access)
+    } else {
+        serde_json::Value::Null
+    };
+    // What the pre-Phase-20 path cost: a full replay on *every* access.
+    let uncached_total_micros = full_replay_micros.saturating_mul(accesses as u128);
+    let cached_total_micros = first_micros.saturating_add(repeated_micros);
+    let speedup_vs_uncached_total = if cached_total_micros > 0 {
+        serde_json::json!(uncached_total_micros as f64 / cached_total_micros as f64)
+    } else {
+        serde_json::Value::Null
+    };
+
+    let doc = serde_json::json!({
+        "schema": "orfs.evidence.historical-index.v1",
+        "generator": "tests/snapshot_model.rs",
+        "format_version": orfs::FORMAT_VERSION,
+        "environment": evidence_environment(),
+        "build_profile": "debug (unoptimized); absolute times are indicative, byte counts are exact",
+        "suffix_replay": {
+            "method": "Index::apply_range_traced replays [start,end) via Log::records_from; decoded bytes must equal end-start",
+            "rows": suffix_rows,
+            "all_proportional_to_the_suffix": suffix_proportional,
+        },
+        "historical_index": {
+            "method": "resolve (uuid,root) once via the cache: in-log checkpoint + suffix replay, then reuse; persisted under index/historical/",
+            "cache_capacity": cache.capacity(),
+            "history_commits": samples.len(),
+            "committed_root": committed,
+            "historical_root": hist,
+            "history_bytes_before_root": hist,
+            "first_materialize_micros": first_micros,
+            "first_materialize_used_checkpoint": mat.used_checkpoint,
+            "first_materialize_checkpoint_root": mat.checkpoint_root,
+            "first_materialize_bytes_replayed": mat.bytes_replayed,
+            "full_replay_micros": full_replay_micros,
+            "repeated_accesses": accesses,
+            "repeated_total_micros": repeated_micros,
+            "repeated_nanos_per_access": repeated_nanos_per_access,
+            "materialize_to_repeated_speedup": materialize_to_repeated_speedup,
+            "uncached_total_micros": uncached_total_micros,
+            "cached_total_micros": cached_total_micros,
+            "speedup_vs_uncached_total": speedup_vs_uncached_total,
+            "cached_equals_full_replay": true,
+        },
+        "note": "A historical root is immutable: it is materialized once (preferably as a checkpoint suffix replay of just [checkpoint_root, root)), then every subsequent lookup/read is an in-memory hit independent of how much earlier history exists. The decoded-byte rows are exact and deterministic; the timings are indicative. `uncached_total_micros` is what the pre-Phase-20 path would cost (a full replay on every access); the log is authoritative and a stale/corrupt accelerator is always dropped and rebuilt.",
+    });
+    assert!(doc["suffix_replay"]["all_proportional_to_the_suffix"] == true);
+    write_json(
+        &manifest_dir().join("evidence/performance/historical-index.json"),
         &doc,
     );
 }

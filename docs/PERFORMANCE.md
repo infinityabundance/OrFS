@@ -142,13 +142,13 @@ the full config × workload matrix) are in
 
 | Config | bytes | MB/s |
 |---|---|---|
-| conventional | 262144 | **22 558** |
-| F0 | 262144 | **2 753** |
-| F1 | 262144 | **2 236** |
-| E1 | 262144 | **1.8** |
+| conventional | 262144 | **27 256** |
+| F0 | 262144 | **2 916** |
+| F1 | 262144 | **2 475** |
+| E1 | 262144 | **1.9** |
 
 Reading a page-cache-resident 256 KiB file: the conventional baseline is `memcpy`
-speed; FUSE adds an ~8–10× cost; E1 is dominated by the planner serving a
+speed; FUSE adds an ~9–11× cost; E1 is dominated by the planner serving a
 manifested path for the large read (see §5). F0 vs F1 differ within run-to-run
 noise here.
 
@@ -156,12 +156,12 @@ noise here.
 
 | Config | ops/s | MB/s | P50 | P95 | P99 |
 |---|---|---|---|---|---|
-| conventional | 5 126 628 | 20 999 | 150 ns | 171 ns | 280 ns |
-| F0 | 533 239 | 2 184 | 150 ns | 7 724 ns | 15 529 ns |
-| F1 | 455 992 | 1 868 | 150 ns | 9 557 ns | 13 114 ns |
-| E1 | 1 448 | 5.9 | 150 ns | 18 254 ns | 30 737 ns |
+| conventional | 4 366 240 | 17 884 | 160 ns | 301 ns | 421 ns |
+| F0 | 447 455 | 1 833 | 170 ns | 9 268 ns | 15 068 ns |
+| F1 | 331 497 | 1 358 | 141 ns | 12 503 ns | 25 357 ns |
+| E1 | 1 419 | 5.8 | 221 ns | 14 266 ns | 28 132 ns |
 
-FUSE's per-request cost shows up in the tail (P95/P99 ~8–15 µs). E1's tail is
+FUSE's per-request cost shows up in the tail (P95/P99 ~9–28 µs). E1's tail is
 worse because some reads are served by a manifested path the cold cost model
 accepted.
 
@@ -169,52 +169,52 @@ accepted.
 
 | Config | ops | MB/s |
 |---|---|---|
-| conventional | 64 | **3 762** |
-| F0 | 64 | 6.4 |
+| conventional | 64 | **3 918** |
+| F0 | 64 | 6.3 |
 | F1 | 64 | 3.9 |
 | E1 | 64 | 0.2 |
 
 The conventional baseline appends buffered small records to a real directory and
 is the fastest here; the stored configurations append through the durable
-append-only log. Write figures are **volatile** (shared backing disk): an earlier
-recorded run of the same configuration measured conventional 1.7 MB/s and F1
-1.0 MB/s. E1 is slowest because synchronous manifestation rebuilds the object's
-bloom on every write.
+append-only log. Write figures are **volatile** (shared backing disk): three
+recorded runs of the same configurations produced conventional 1.7/6.3/3 918 MB/s
+and F1 1.0/3.9/3.9 MB/s. E1 is slowest because synchronous manifestation rebuilds
+the object's bloom on every write.
 
 ### 4.4 The remaining workloads (F0 shown; the matrix is in `fuse-baseline.json`)
 
 | Workload | F0 ops/s | F0 MB/s | F0 P50 | F0 P95 |
 |---|---|---|---|---|
-| random-read-1 | 502 148 | — | 141 ns | 7 764 ns |
-| random-write-4k | 369 | 1.5 | 2 686 µs | 3 243 µs |
-| metadata-lookup | 77 105 | — | 6 702 ns | 10 729 ns |
-| create-unlink | 20 | — | 50 206 µs | 69 005 µs |
-| rename | 16 | — | 20 730 µs | 22 298 µs |
-| dir-enumeration | 709 357 | — | 254 523 ns | 311 759 ns |
-| concurrent-readers (4) | 357 629 | 1 465 | — | — |
-| fsync-latency | 25 | — | 3 600 µs | 5 353 µs |
+| random-read-1 | 374 129 | — | 151 ns | 9 968 ns |
+| random-write-4k | 372 | 1.5 | 2 684 µs | 3 192 µs |
+| metadata-lookup | 145 307 | — | 6 392 ns | 9 468 ns |
+| create-unlink | 30 | — | 33 004 µs | 35 276 µs |
+| rename | 16 | — | 20 508 µs | 22 844 µs |
+| dir-enumeration | 422 030 | — | 457 061 ns | 502 817 ns |
+| concurrent-readers (4) | 428 496 | 1 755 | — | — |
+| fsync-latency | 25 | — | 3 523 µs | 5 173 µs |
 
 `create-unlink`/`rename` are dominated by the durability `fsync` each op issues
-against the append-only log; `dir-enumeration` is per-`readdir` latency (P50
-255 µs over 200 entries).
+against the append-only log; `dir-enumeration` is per-`readdir` latency.
 
 ### 4.5 Mount, recovery, search, snapshot
 
 | Measurement | Value |
 |---|---|
-| F0 cold mount | **1.24 ms** |
-| F1 cold mount | **155 ms** |
-| E1 cold mount | **324 ms** |
-| `recovery-time` (`Volume::open`) | P50 **77.3 ms**, P99 80.6 ms (over a ~13 MB log) |
-| `search-latency` (typed query, 0 matches) | P50 **1.14 µs**, P99 19.3 µs |
-| `snapshot-latency` (`Snapshot::open_dir`) | P50 **138 ms**, P99 193 ms |
+| F0 mount | **156 ms** |
+| F1 mount | **162 ms** |
+| E1 mount | **340 ms** |
+| `recovery-time` (`Volume::open`) | P50 **78.5 ms**, P99 79.7 ms (over a ~13 MB log) |
+| `search-latency` (typed query, 0 matches) | P50 **1.13 µs**, P99 21.1 µs |
+| `snapshot-latency` (`Snapshot::open_dir`) | P50 **140 ms**, P99 143 ms |
 
-These are single cold mounts in the same run; mount time is dominated by
-first-touch rather than steady state. `recovery-time` and `snapshot-latency`
-re-scan the log at open; they are **library-level** (no FUSE) and are proportional
-to the log size the benchmarks themselves produced. `search-latency` is the typed
-query API and is **not** an index-backed claim (no trigram index was built for
-that corpus; §12.1).
+`mount-time` here is measured over the volume the sweep itself populated; it
+**includes volume recovery** (a `Namespace::open` over the ~13 MB log), which is
+why a fresh volume mounts in ~1 ms (`mount_probe` in `fuse-baseline.json`) but a
+populated one takes ~156 ms. `recovery-time` and `snapshot-latency` re-scan the
+log at open; they are **library-level** (no FUSE) and scale with log size.
+`search-latency` is the typed query API and is **not** an index-backed claim (no
+trigram index was built for that corpus; §12.1).
 
 ---
 

@@ -302,8 +302,11 @@ impl BenchConfig {
 pub enum Workload {
     SequentialRead,
     SequentialAppend,
+    #[serde(rename = "random-read-4k")]
     RandomRead4k,
+    #[serde(rename = "random-write-4k")]
     RandomWrite4k,
+    #[serde(rename = "random-read-1")]
     RandomRead1,
     MetadataLookup,
     CreateUnlink,

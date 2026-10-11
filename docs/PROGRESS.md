@@ -1120,3 +1120,59 @@ The model is a **simulation with assumed device semantics**, not an instrumented
 power-loss rig. It does not prove real-hardware durability; `sync` still promises
 only what the backing device documents. See `docs/POWERLOSS.md` §5 and
 `docs/LIMITATIONS.md` §9.
+
+## Phase 19 — Concurrent immutable read views (remove the global read lock)
+
+**Complete.** External review P0: the FUSE adaptor held `Mutex<core>` across
+`getattr()`/`read_at()`, so a read doing physical I/O serialised every other FUSE
+request. Reads now go through an **immutable, reference-counted read view** and
+hold no lock across I/O.
+
+### Delivered
+
+* **Read view** — `CoreRead` (read-only, `Send + Sync`), `ReadState` (a frozen
+  committed root: `Arc<Index>` + `LogView` + the manifested state/planner), and
+  `ReadCell = Arc<RwLock<Arc<dyn CoreRead>>>` (`src/namespace.rs`, `src/log.rs`).
+  A reader clones the `Arc` out of the cell, drops the guard, and does all I/O
+  with no lock held.
+* **Publication at the commit boundary** — `Namespace::commit_plan` builds a new
+  complete view after extending the index and swaps it in with one store; the
+  publication lock is held only for the swap. Readers observe a whole old or new
+  state, never a partial one.
+* **Index sharing** — inode nodes are `Arc`-shared (`HashMap<u64, Arc<Inode>>`),
+  the dentry map is a single `Arc<HashMap<..>>`, and per-directory child maps are
+  `Arc<BTreeMap<..>>`. Publication copies only spines (pointer-sized entries), not
+  inode payloads; a data-only commit shares the directory structures wholesale.
+  See `docs/CONCURRENCY.md` §4.
+* **`LogView`** — a captured segment locator plus a shared read-handle cache; the
+  cache lock covers only the handle lookup, never the `pread`. Both the live
+  engine and the view call the *same* byte-assembly helpers, so they are
+  byte-identical.
+* **Both transports** — the classical `fuser` read handlers and the native F2
+  `Dispatcher` read handlers serve through the view; `Config::n_threads` is set
+  from `available_parallelism` so the classical dispatch loop is concurrent.
+  Snapshot mounts build a frozen view over the snapshot's own log.
+
+### Results (evidence-backed)
+
+Reader-scaling (`evidence/performance/reader-scaling.json`, 4 MiB file, 16 KiB
+reads, 8 CPUs): concurrent-view throughput rises from **1 reader** to **8–16
+readers** (e.g. 553 → 1808–2178 MB/s in one run; 343 → 1802–1870 MB/s in
+another), while the same workload behind the global core lock stays flat
+(≈ 520–634 MB/s). p50/p95/p99 are recorded per reader count. A deterministic
+check holds the core lock for ~200 ms while a view read completes in **~20 µs**,
+whereas a read taking the core lock waits the whole hold. Three readers spinning
+across 150 concurrent commits always observe whole committed versions (size is a
+whole number of committed rows; every row carries its own index) and the writer
+makes progress. All existing equivalence/model/snapshot/perf courts stay
+byte-identical.
+
+### Deferred
+
+Full path-copying of the index map spines (persistent/HAMT maps) — the current
+representation is a bounded, measured intermediate that shares nodes and copies
+only spines; documented with the plan in `docs/CONCURRENCY.md` §4.1.
+
+### Docs
+
+`docs/CONCURRENCY.md` (new), `docs/NAMESPACE.md` §6.1, this section.

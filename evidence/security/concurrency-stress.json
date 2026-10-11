@@ -7,7 +7,10 @@
     "the recovered index equals the live index (canonical digest)",
     "reads by inode survive unlink (non-withdrawal, open-handle semantics)",
     "manifestation publication never changes logical read output",
-    "root pins are released and pinned roots stay valid"
+    "root pins are released and pinned roots stay valid",
+    "a reader never observes a torn/partial state: every read returns a whole committed version",
+    "readers are not blocked by another reader's physical I/O",
+    "concurrent reads scale past a single reader (throughput)"
   ],
   "model_checking": {
     "reason": "The real shared state is a std::sync::Mutex<BTreeMap>, a parking_lot::RwLock+Condvar worker pool, and &mut-borrow serialised commits plus real fsync I/O; Loom models only substituted std::sync primitives and pure in-memory state, so modelling it would test a different program. The directive's explicit fallback (stress tests) is used instead.",
@@ -62,6 +65,20 @@
       "ops_per_writer": 60,
       "readers": 0,
       "writers": 4
+    },
+    {
+      "name": "readers_scale_and_are_not_blocked_by_other_readers_io",
+      "note": "throughput vs 1/2/4/8/16 readers, concurrent immutable read views vs the global core lock; evidence/performance/reader-scaling.json",
+      "ops_per_writer": 0,
+      "readers": 16,
+      "writers": 0
+    },
+    {
+      "name": "concurrent_readers_and_writer_never_observe_partial_state",
+      "note": "readers observe only whole committed versions while the writer makes progress",
+      "ops_per_writer": 150,
+      "readers": 3,
+      "writers": 1
     }
   ]
 }

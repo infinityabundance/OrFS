@@ -41,7 +41,7 @@ use crate::inode::{
     InodeStat, InodeType, PermissionChangePayload, SymlinkCreatePayload, Timespec,
     XattrRemovePayload, XattrSetPayload,
 };
-use crate::log::OpenMode;
+use crate::log::{Log, LogView, OpenMode};
 use crate::manifestation::{
     JobSpec, ManifestSummary, ManifestationBuilder, ManifestationConfig, ManifestationEngine,
     ManifestationEngineReport, ManifestationOutcome, ManifestationProfile, ManifestationState,
@@ -285,6 +285,15 @@ pub struct Namespace {
     trigram: Option<Arc<TrigramState>>,
     /// The background trigram build engine, when the query plane is on.
     trigram_engine: Option<Arc<TrigramEngine>>,
+    /// The published immutable read view (Phase 19).
+    ///
+    /// Readers clone the `Arc<dyn CoreRead>` out of this cell (under a short
+    /// read-lock) and then serve the request with **no lock held across physical
+    /// I/O**. A new, complete view is installed only at the authoritative commit
+    /// boundary, so a reader observes a whole committed state, never a partial
+    /// one. The same cell is shared with the FUSE layer so it need not publish
+    /// independently.
+    read_pub: ReadCell,
 }
 
 impl Namespace {
@@ -317,6 +326,14 @@ impl Namespace {
         // load and validate it, then replay only the records committed after it;
         // fall back to an earlier checkpoint or to full replay (research §24).
         let (index, mount_report) = crate::checkpoint::mount_index(&volume.log)?;
+        // Publish the initial immutable read view before the namespace is shared.
+        let initial: Arc<dyn CoreRead> = Arc::new(ReadState::new_interior(
+            index.root(),
+            Arc::new(index.clone()),
+            volume.log.read_view(),
+            None,
+            None,
+        ));
         Ok(Namespace {
             volume,
             index,
@@ -327,6 +344,7 @@ impl Namespace {
             read_planner: None,
             trigram: None,
             trigram_engine: None,
+            read_pub: Arc::new(parking_lot::RwLock::new(initial)),
         })
     }
 
@@ -392,6 +410,32 @@ impl Namespace {
 
     // -- concealed manifestation (Plane C; research §9, §10, §33) ----------
 
+    /// Build and publish a fresh immutable read view of the current committed
+    /// index. Called only at a commit boundary (or when a concealed plane that
+    /// affects derived reads is (re)enabled), never per read.
+    fn publish_read_state(&self) {
+        let state: Arc<dyn CoreRead> = Arc::new(ReadState::new_interior(
+            self.index.root(),
+            Arc::new(self.index.clone()),
+            self.volume.log.read_view(),
+            self.manifestation.clone(),
+            self.read_planner.clone(),
+        ));
+        *self.read_pub.write() = state;
+    }
+
+    /// A short-lived cell holding the current immutable read view.
+    pub fn read_cell(&self) -> ReadCell {
+        self.read_pub.clone()
+    }
+
+    /// Clone the current immutable read view (a cheap `Arc` bump). A reader can
+    /// hold this and do physical I/O with no lock held; it is the same object the
+    /// FUSE layer serves reads from.
+    pub fn read_view(&self) -> Arc<dyn CoreRead> {
+        self.read_pub.read().clone()
+    }
+
     /// Enable concealed manifestation with the production EKBLOOM builder.
     ///
     /// This recovers the published generation set and starts a bounded worker
@@ -424,6 +468,9 @@ impl Namespace {
         self.manifestation = Some(engine.state());
         self.manifestation_engine = Some(engine);
         self.read_planner = Some(planner);
+        // The manifested state feeds derived `user.orfs.*` attributes, so refresh
+        // the published read view to include it.
+        self.publish_read_state();
         Ok(report)
     }
 
@@ -457,6 +504,7 @@ impl Namespace {
         let (engine, report) = TrigramEngine::start(store, self.volume.meta.uuid, cfg)?;
         self.trigram = Some(engine.state());
         self.trigram_engine = Some(engine);
+        self.publish_read_state();
         Ok(report)
     }
 
@@ -591,31 +639,15 @@ impl Namespace {
         length: u32,
     ) -> Result<PlannedRead> {
         let view = self.view(root)?;
-        let ino = view.inode(inode).ok_or(OrfsError::NotFound)?;
-        if ino.is_dir() {
-            return Err(OrfsError::IsADirectory);
-        }
-        if !ino.is_file() {
-            return Err(OrfsError::InvalidArgument(
-                "read_at on a non-file inode".into(),
-            ));
-        }
-        let Some(planner) = &self.read_planner else {
-            let bytes = self.read_extent(inode, root, offset, length as u64)?;
-            return Ok(PlannedRead::fallback(
-                bytes,
-                Some("manifestation disabled".to_string()),
-            ));
-        };
-        let query = ReadQuery {
+        planned_read_from(
+            &view,
+            self.read_planner.as_deref(),
+            &self.volume.log,
             inode,
-            inode_version: ino.current_version(),
             root,
-            logical_len: ino.size,
             offset,
-            length: length as u64,
-        };
-        planner.read(&query, |off, len| self.read_extent(inode, root, off, len))
+            length,
+        )
     }
 
     /// The number of logical extents mapping this regular file at `root`.
@@ -634,37 +666,7 @@ impl Namespace {
     /// manifested structure.
     pub fn read_extent(&self, inode: u64, root: u64, offset: u64, length: u64) -> Result<Vec<u8>> {
         let view = self.view(root)?;
-        let ino = view.inode(inode).ok_or(OrfsError::NotFound)?;
-        if ino.is_dir() {
-            return Err(OrfsError::IsADirectory);
-        }
-        if !ino.is_file() {
-            return Err(OrfsError::InvalidArgument(
-                "read_at on a non-file inode".into(),
-            ));
-        }
-        let pieces = ino.extents.plan_read(offset, length);
-        let mut out = Vec::new();
-        for piece in pieces {
-            match piece {
-                ReadPiece::Zero { len } => {
-                    out.resize(out.len() + len as usize, 0);
-                }
-                ReadPiece::Data {
-                    logical_offset,
-                    len,
-                } => {
-                    // Read directly into the destination: no intermediate `Vec`
-                    // (Phase 18 lean authoritative path).
-                    let start = out.len();
-                    out.resize(start + len as usize, 0);
-                    self.volume
-                        .log
-                        .read_range_into(logical_offset, &mut out[start..])?;
-                }
-            }
-        }
-        Ok(out)
+        read_extent_from(&view, &self.volume.log, inode, offset, length)
     }
 
     /// The authoritative read with a measured per-request phase breakdown
@@ -756,28 +758,13 @@ impl Namespace {
     /// Read an extended attribute (including the derived `user.orfs.*` set).
     pub fn getxattr(&self, inode: u64, name: &[u8], root: u64) -> Result<Vec<u8>> {
         let view = self.view(root)?;
-        let ino = view.inode(inode).ok_or(OrfsError::NotFound)?;
-        let summary = self
-            .manifestation
-            .as_ref()
-            .and_then(|s| s.summary(inode, ino.current_version()));
-        if let Some(v) = derived_xattr(ino, name, summary.as_ref()) {
-            return Ok(v);
-        }
-        ino.xattrs.get(name).cloned().ok_or(OrfsError::NoData)
+        getxattr_from(&view, self.manifestation.as_deref(), inode, name)
     }
 
     /// List extended attribute names (stored plus the derived `user.orfs.*` set).
     pub fn listxattr(&self, inode: u64, root: u64) -> Result<Vec<Vec<u8>>> {
         let view = self.view(root)?;
-        let ino = view.inode(inode).ok_or(OrfsError::NotFound)?;
-        let mut names: Vec<Vec<u8>> = ino.xattrs.keys().cloned().collect();
-        for d in DERIVED_XATTRS {
-            names.push(d.as_bytes().to_vec());
-        }
-        names.sort();
-        names.dedup();
-        Ok(names)
+        listxattr_from(&view, inode)
     }
 
     // -- mutations ---------------------------------------------------------
@@ -795,6 +782,11 @@ impl Namespace {
         debug_assert_eq!(outcome.begin_offset, planned_begin);
         self.index
             .apply_range(&self.volume.log, outcome.begin_offset, outcome.root)?;
+        // Publish a complete new immutable read view at the commit boundary. The
+        // view is built *before* the publication lock is taken, and the swap is a
+        // single pointer store, so readers never block on this and never observe
+        // a partially-applied index.
+        self.publish_read_state();
         // Optional background manifestation (research §10.3): only after a
         // successful authoritative commit + version publication. The foreground
         // write never waits unless the caller explicitly opted in. A failure or a
@@ -1532,43 +1524,7 @@ impl Namespace {
         hole: bool,
     ) -> Result<Option<u64>> {
         let view = self.view(root)?;
-        let ino = view.inode(inode).ok_or(OrfsError::NotFound)?;
-        if !ino.is_file() {
-            return Err(if ino.is_dir() {
-                OrfsError::IsADirectory
-            } else {
-                OrfsError::InvalidArgument("not a regular file".into())
-            });
-        }
-        let size = ino.extents.size();
-        if hole {
-            if offset > size {
-                return Ok(None);
-            }
-            for e in ino.extents.extents() {
-                if e.end() <= offset {
-                    continue;
-                }
-                if matches!(e.kind, ExtentKind::Zero) {
-                    return Ok(Some(e.start.max(offset)));
-                }
-            }
-            // Past the last mapped extent, and at/before EOF, is a hole.
-            Ok(Some(size))
-        } else {
-            if offset >= size {
-                return Ok(None);
-            }
-            for e in ino.extents.extents() {
-                if e.end() <= offset {
-                    continue;
-                }
-                if matches!(e.kind, ExtentKind::Data { .. }) {
-                    return Ok(Some(e.start.max(offset)));
-                }
-            }
-            Ok(None)
-        }
+        seek_data_hole_from(&view, inode, offset, hole)
     }
 }
 
@@ -1761,6 +1717,10 @@ pub trait OrfsCore {
     fn listxattr(&self, inode: u64, root: u64) -> Result<Vec<Vec<u8>>>;
     fn removexattr(&mut self, inode: u64, name: &[u8]) -> Result<()>;
     fn readdir(&self, parent: u64, root: u64) -> Result<Vec<(Vec<u8>, u64)>>;
+    /// The short-lived cell holding this core's current immutable read view
+    /// (Phase 19). The FUSE layer clones the `Arc` out of it and serves reads
+    /// with no core lock held across physical I/O.
+    fn read_view_cell(&self) -> ReadCell;
 }
 
 impl OrfsCore for Namespace {
@@ -1857,6 +1817,338 @@ impl OrfsCore for Namespace {
     fn readdir(&self, parent: u64, root: u64) -> Result<Vec<(Vec<u8>, u64)>> {
         Namespace::readdir(self, parent, root)
     }
+    fn read_view_cell(&self) -> ReadCell {
+        self.read_pub.clone()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The immutable read view (Phase 19; external review P0)
+// ---------------------------------------------------------------------------
+
+/// A short-lived cell holding the current immutable read view.
+///
+/// Readers take a read-lock only long enough to clone the inner `Arc`, then drop
+/// the guard and serve the request with no lock held across physical I/O. Writers
+/// install a new complete view with a single store at the commit boundary.
+pub type ReadCell = Arc<parking_lot::RwLock<Arc<dyn CoreRead>>>;
+
+/// The immutable, shareable read surface of a filesystem core.
+///
+/// Every method takes `&self` and performs no mutation; an implementor is
+/// `Send + Sync` so the FUSE layer can serve requests from many threads at once.
+#[allow(clippy::too_many_arguments)]
+pub trait CoreRead: Send + Sync {
+    fn root(&self) -> u64;
+    fn parent_of(&self, inode: u64) -> Option<u64>;
+    fn lookup(&self, parent: u64, name: &[u8], root: u64) -> Result<u64>;
+    fn getattr(&self, inode: u64, root: u64) -> Result<InodeStat>;
+    fn read_at(&self, inode: u64, root: u64, offset: u64, length: u32) -> Result<Vec<u8>>;
+    fn readdir(&self, parent: u64, root: u64) -> Result<Vec<(Vec<u8>, u64)>>;
+    fn readlink(&self, inode: u64, root: u64) -> Result<Vec<u8>>;
+    fn getxattr(&self, inode: u64, name: &[u8], root: u64) -> Result<Vec<u8>>;
+    fn listxattr(&self, inode: u64, root: u64) -> Result<Vec<Vec<u8>>>;
+    fn seek_data_hole(&self, inode: u64, root: u64, offset: u64, hole: bool)
+        -> Result<Option<u64>>;
+}
+
+/// The log read seam shared by the live engine (`Log`) and the read view
+/// (`LogView`), so both execute the *identical* byte-assembly code.
+trait ExtentReader {
+    fn read_range_into(&self, offset: u64, buf: &mut [u8]) -> Result<()>;
+}
+
+impl ExtentReader for Log {
+    fn read_range_into(&self, offset: u64, buf: &mut [u8]) -> Result<()> {
+        Log::read_range_into(self, offset, buf)
+    }
+}
+
+impl ExtentReader for LogView {
+    fn read_range_into(&self, offset: u64, buf: &mut [u8]) -> Result<()> {
+        LogView::read_range_into(self, offset, buf)
+    }
+}
+
+/// An immutable, reference-counted read view of a committed root.
+///
+/// It owns an `Arc<Index>` (a complete, frozen index at `root`) and a `LogView`
+/// (a captured segment locator plus the shared read-handle cache). A reader
+/// clones the enclosing `Arc<dyn CoreRead>` and then reads with no writer lock
+/// held. Because the index and the locator are captured *after* a complete
+/// commit, a reader can only ever observe a whole committed state.
+pub struct ReadState {
+    root: u64,
+    index: Arc<Index>,
+    log: LogView,
+    manifestation: Option<Arc<ManifestationState>>,
+    read_planner: Option<Arc<ReadPlanner>>,
+}
+
+impl ReadState {
+    /// Construct a view over `index` at `root`. `index` must be a complete,
+    /// frozen committed index; `log` must capture the segment locator covering
+    /// every offset `index` references.
+    pub fn new_interior(
+        root: u64,
+        index: Arc<Index>,
+        log: LogView,
+        manifestation: Option<Arc<ManifestationState>>,
+        read_planner: Option<Arc<ReadPlanner>>,
+    ) -> ReadState {
+        ReadState {
+            root,
+            index,
+            log,
+            manifestation,
+            read_planner,
+        }
+    }
+
+    /// Reject a view selector that is not this view's committed root. The FUSE
+    /// layer always reads through the current view's own root, so this is never
+    /// taken on the request path; it keeps the `CoreRead` contract honest.
+    fn check_root(&self, root: u64) -> Result<()> {
+        if root == self.root {
+            Ok(())
+        } else {
+            Err(OrfsError::InvalidArgument(format!(
+                "read view is frozen at root {} and cannot serve root {root}",
+                self.root
+            )))
+        }
+    }
+}
+
+impl CoreRead for ReadState {
+    fn root(&self) -> u64 {
+        self.root
+    }
+
+    fn parent_of(&self, inode: u64) -> Option<u64> {
+        if inode == ROOT_INODE {
+            Some(ROOT_INODE)
+        } else {
+            self.index.parent_of(inode)
+        }
+    }
+
+    fn lookup(&self, parent: u64, name: &[u8], root: u64) -> Result<u64> {
+        self.check_root(root)?;
+        self.index.inode(parent).ok_or(OrfsError::NotFound)?;
+        self.index.lookup(parent, name).ok_or(OrfsError::NotFound)
+    }
+
+    fn getattr(&self, inode: u64, root: u64) -> Result<InodeStat> {
+        self.check_root(root)?;
+        Ok(self.index.inode(inode).ok_or(OrfsError::NotFound)?.stat())
+    }
+
+    fn read_at(&self, inode: u64, root: u64, offset: u64, length: u32) -> Result<Vec<u8>> {
+        self.check_root(root)?;
+        Ok(planned_read_from(
+            &self.index,
+            self.read_planner.as_deref(),
+            &self.log,
+            inode,
+            root,
+            offset,
+            length,
+        )?
+        .bytes)
+    }
+
+    fn readdir(&self, parent: u64, root: u64) -> Result<Vec<(Vec<u8>, u64)>> {
+        self.check_root(root)?;
+        let ino = self.index.inode(parent).ok_or(OrfsError::NotFound)?;
+        if !ino.is_dir() {
+            return Err(OrfsError::NotADirectory);
+        }
+        Ok(self.index.readdir(parent).unwrap_or_default())
+    }
+
+    fn readlink(&self, inode: u64, root: u64) -> Result<Vec<u8>> {
+        self.check_root(root)?;
+        let ino = self.index.inode(inode).ok_or(OrfsError::NotFound)?;
+        match &ino.symlink_target {
+            Some(t) => Ok(t.clone()),
+            None => Err(OrfsError::InvalidArgument(
+                "readlink on a non-symlink inode".into(),
+            )),
+        }
+    }
+
+    fn getxattr(&self, inode: u64, name: &[u8], root: u64) -> Result<Vec<u8>> {
+        self.check_root(root)?;
+        getxattr_from(&self.index, self.manifestation.as_deref(), inode, name)
+    }
+
+    fn listxattr(&self, inode: u64, root: u64) -> Result<Vec<Vec<u8>>> {
+        self.check_root(root)?;
+        listxattr_from(&self.index, inode)
+    }
+
+    fn seek_data_hole(
+        &self,
+        inode: u64,
+        root: u64,
+        offset: u64,
+        hole: bool,
+    ) -> Result<Option<u64>> {
+        self.check_root(root)?;
+        seek_data_hole_from(&self.index, inode, offset, hole)
+    }
+}
+
+// -- shared read logic (used by both `Namespace` and `ReadState`) -------------
+
+/// Assemble the bytes of a logical read from the authoritative extent map.
+///
+/// The single implementation backs both the live engine and the immutable read
+/// view, so the two are byte-identical by construction.
+fn read_extent_from(
+    index: &Index,
+    log: &dyn ExtentReader,
+    inode: u64,
+    offset: u64,
+    length: u64,
+) -> Result<Vec<u8>> {
+    let ino = index.inode(inode).ok_or(OrfsError::NotFound)?;
+    if ino.is_dir() {
+        return Err(OrfsError::IsADirectory);
+    }
+    if !ino.is_file() {
+        return Err(OrfsError::InvalidArgument(
+            "read_at on a non-file inode".into(),
+        ));
+    }
+    let pieces = ino.extents.plan_read(offset, length);
+    let mut out = Vec::new();
+    for piece in pieces {
+        match piece {
+            ReadPiece::Zero { len } => {
+                out.resize(out.len() + len as usize, 0);
+            }
+            ReadPiece::Data {
+                logical_offset,
+                len,
+            } => {
+                // Read directly into the destination: no intermediate `Vec`
+                // (Phase 18 lean authoritative path).
+                let start = out.len();
+                out.resize(start + len as usize, 0);
+                log.read_range_into(logical_offset, &mut out[start..])?;
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The measured/authoritative read over a frozen index.
+fn planned_read_from(
+    index: &Index,
+    planner: Option<&ReadPlanner>,
+    log: &dyn ExtentReader,
+    inode: u64,
+    root: u64,
+    offset: u64,
+    length: u32,
+) -> Result<PlannedRead> {
+    let ino = index.inode(inode).ok_or(OrfsError::NotFound)?;
+    if ino.is_dir() {
+        return Err(OrfsError::IsADirectory);
+    }
+    if !ino.is_file() {
+        return Err(OrfsError::InvalidArgument(
+            "read_at on a non-file inode".into(),
+        ));
+    }
+    let Some(planner) = planner else {
+        let bytes = read_extent_from(index, log, inode, offset, length as u64)?;
+        return Ok(PlannedRead::fallback(
+            bytes,
+            Some("manifestation disabled".to_string()),
+        ));
+    };
+    let query = ReadQuery {
+        inode,
+        inode_version: ino.current_version(),
+        root,
+        logical_len: ino.size,
+        offset,
+        length: length as u64,
+    };
+    planner.read(&query, |off, len| {
+        read_extent_from(index, log, inode, off, len)
+    })
+}
+
+/// `SEEK_DATA`/`SEEK_HOLE` against a frozen logical extent map.
+fn seek_data_hole_from(index: &Index, inode: u64, offset: u64, hole: bool) -> Result<Option<u64>> {
+    let ino = index.inode(inode).ok_or(OrfsError::NotFound)?;
+    if !ino.is_file() {
+        return Err(if ino.is_dir() {
+            OrfsError::IsADirectory
+        } else {
+            OrfsError::InvalidArgument("not a regular file".into())
+        });
+    }
+    let size = ino.extents.size();
+    if hole {
+        if offset > size {
+            return Ok(None);
+        }
+        for e in ino.extents.extents() {
+            if e.end() <= offset {
+                continue;
+            }
+            if matches!(e.kind, ExtentKind::Zero) {
+                return Ok(Some(e.start.max(offset)));
+            }
+        }
+        // Past the last mapped extent, and at/before EOF, is a hole.
+        Ok(Some(size))
+    } else {
+        if offset >= size {
+            return Ok(None);
+        }
+        for e in ino.extents.extents() {
+            if e.end() <= offset {
+                continue;
+            }
+            if matches!(e.kind, ExtentKind::Data { .. }) {
+                return Ok(Some(e.start.max(offset)));
+            }
+        }
+        Ok(None)
+    }
+}
+
+/// Read an extended attribute (including the derived `user.orfs.*` set).
+fn getxattr_from(
+    index: &Index,
+    manifestation: Option<&ManifestationState>,
+    inode: u64,
+    name: &[u8],
+) -> Result<Vec<u8>> {
+    let ino = index.inode(inode).ok_or(OrfsError::NotFound)?;
+    let summary = manifestation.and_then(|s| s.summary(inode, ino.current_version()));
+    if let Some(v) = derived_xattr(ino, name, summary.as_ref()) {
+        return Ok(v);
+    }
+    ino.xattrs.get(name).cloned().ok_or(OrfsError::NoData)
+}
+
+/// List extended attribute names (stored plus the derived `user.orfs.*` set).
+fn listxattr_from(index: &Index, inode: u64) -> Result<Vec<Vec<u8>>> {
+    let ino = index.inode(inode).ok_or(OrfsError::NotFound)?;
+    let mut names: Vec<Vec<u8>> = ino.xattrs.keys().cloned().collect();
+    for d in DERIVED_XATTRS {
+        names.push(d.as_bytes().to_vec());
+    }
+    names.sort();
+    names.dedup();
+    Ok(names)
 }
 
 #[cfg(test)]

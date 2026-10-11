@@ -905,6 +905,84 @@ impl SegmentCache {
     }
 }
 
+/// Fetch (or open and cache) a validated read-only segment handle from a shared
+/// cache. The single implementation behind [`Log::cached_reader`] and
+/// [`LogView`], so both resolve to the same descriptors.
+fn cached_reader_with(readers: &Mutex<SegmentCache>, id: u64) -> Result<Arc<ReadAt>> {
+    let mut cache = readers
+        .lock()
+        .map_err(|_| OrfsError::Corrupt("segment read cache is poisoned".to_string()))?;
+    cache.get(id)
+}
+
+/// Read `buf.len()` canonical bytes at logical `offset` from a captured locator
+/// and shared handle cache, crossing segment boundaries as needed.
+///
+/// The single implementation behind [`Log::read_range_into`] and
+/// [`LogView::read_range_into`], so the live engine and an immutable read view
+/// return byte-identical results.
+fn read_range_into_with(
+    locator: &SegmentLocator,
+    readers: &Mutex<SegmentCache>,
+    offset: u64,
+    buf: &mut [u8],
+) -> Result<()> {
+    let len = buf.len() as u64;
+    if len == 0 {
+        return Ok(());
+    }
+    let end = offset.checked_add(len).ok_or(OrfsError::Overflow {
+        what: "read range end",
+    })?;
+    let limit = locator.total_len();
+    if end > limit {
+        return Err(OrfsError::OutOfBounds {
+            offset,
+            length: len,
+            limit,
+        });
+    }
+    let mut cur = offset;
+    let mut done = 0usize;
+    while cur < end {
+        let (extent, phys) = locator
+            .locate_extent(cur)
+            .ok_or_else(|| OrfsError::Corrupt(format!("no segment covers logical offset {cur}")))?;
+        let avail = extent
+            .valid_len
+            .checked_sub(phys)
+            .ok_or_else(|| OrfsError::Corrupt("read offset beyond segment extent".to_string()))?;
+        let want = (end - cur).min(avail) as usize;
+        let reader = cached_reader_with(readers, extent.id)?;
+        reader.read_exact_at(phys, &mut buf[done..done + want])?;
+        cur += want as u64;
+        done += want;
+    }
+    Ok(())
+}
+
+/// An immutable, captured read handle over a committed prefix of the log.
+///
+/// It holds a snapshot of the segment locator plus a shared reference to the
+/// read-only segment-handle cache. Segments are immutable and their ids are
+/// never reused, so a captured locator stays valid for every offset that was
+/// committed when it was taken. A [`crate::namespace::ReadState`] carries one so
+/// a reader can do physical I/O with no writer lock held.
+#[derive(Clone)]
+pub struct LogView {
+    locator: SegmentLocator,
+    readers: Arc<Mutex<SegmentCache>>,
+}
+
+impl LogView {
+    /// Read `buf.len()` canonical bytes at logical `offset` directly into `buf`.
+    ///
+    /// Byte-identical to [`Log::read_range_into`] over the same captured prefix.
+    pub fn read_range_into(&self, offset: u64, buf: &mut [u8]) -> Result<()> {
+        read_range_into_with(&self.locator, &self.readers, offset, buf)
+    }
+}
+
 pub struct Log {
     dir: PathBuf,
     segment_size: u64,
@@ -939,8 +1017,10 @@ pub struct Log {
     /// The watermark last written durably to disk.
     durable_watermark: Option<watermark::Watermark>,
     /// Reusable, validated read-only segment handles (Phase 18). Purely a cache:
-    /// dropping it only costs a reopen, never correctness.
-    readers: Mutex<SegmentCache>,
+    /// dropping it only costs a reopen, never correctness. Shared (`Arc`) with
+    /// every [`LogView`] handed to a reader, so the writer and all concurrent
+    /// readers reuse the same open descriptors (Phase 19).
+    readers: Arc<Mutex<SegmentCache>>,
 }
 
 impl Log {
@@ -989,7 +1069,7 @@ impl Log {
             recovery: RecoveryDisposition::Clean,
             watermark: None,
             durable_watermark: None,
-            readers: Mutex::new(SegmentCache::new(dir.to_path_buf())),
+            readers: Arc::new(Mutex::new(SegmentCache::new(dir.to_path_buf()))),
         })
     }
 
@@ -1109,7 +1189,7 @@ impl Log {
             recovery,
             watermark: recovered_wm,
             durable_watermark: disk_watermark,
-            readers: Mutex::new(SegmentCache::new(dir.to_path_buf())),
+            readers: Arc::new(Mutex::new(SegmentCache::new(dir.to_path_buf()))),
         })
     }
 
@@ -1976,11 +2056,17 @@ impl Log {
 
     /// Fetch (or open and cache) a validated read-only segment handle.
     fn cached_reader(&self, id: u64) -> Result<Arc<ReadAt>> {
-        let mut cache = self
-            .readers
-            .lock()
-            .map_err(|_| OrfsError::Corrupt("segment read cache is poisoned".to_string()))?;
-        cache.get(id)
+        cached_reader_with(&self.readers, id)
+    }
+
+    /// Capture a cheap, immutable read handle over the current committed
+    /// segments. Used to publish a [`crate::namespace::ReadState`]; the captured
+    /// locator covers every offset committed at the moment it is taken.
+    pub fn read_view(&self) -> LogView {
+        LogView {
+            locator: self.locator.clone(),
+            readers: self.readers.clone(),
+        }
     }
 
     /// Read `len` canonical bytes at logical `offset`, crossing segment
@@ -2058,37 +2144,7 @@ impl Log {
     /// single-extent read writes straight into the destination. Bytes are
     /// identical to [`Log::read_range`] for the same range.
     pub fn read_range_into(&self, offset: u64, buf: &mut [u8]) -> Result<()> {
-        let len = buf.len() as u64;
-        if len == 0 {
-            return Ok(());
-        }
-        let end = offset.checked_add(len).ok_or(OrfsError::Overflow {
-            what: "read range end",
-        })?;
-        let limit = self.locator.total_len();
-        if end > limit {
-            return Err(OrfsError::OutOfBounds {
-                offset,
-                length: len,
-                limit,
-            });
-        }
-        let mut cur = offset;
-        let mut done = 0usize;
-        while cur < end {
-            let (extent, phys) = self.locator.locate_extent(cur).ok_or_else(|| {
-                OrfsError::Corrupt(format!("no segment covers logical offset {cur}"))
-            })?;
-            let avail = extent.valid_len.checked_sub(phys).ok_or_else(|| {
-                OrfsError::Corrupt("read offset beyond segment extent".to_string())
-            })?;
-            let want = (end - cur).min(avail) as usize;
-            let reader = self.cached_reader(extent.id)?;
-            reader.read_exact_at(phys, &mut buf[done..done + want])?;
-            cur += want as u64;
-            done += want;
-        }
-        Ok(())
+        read_range_into_with(&self.locator, &self.readers, offset, buf)
     }
 
     /// Read the exact committed canonical bytes `[0, R)`.

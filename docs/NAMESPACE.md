@@ -242,6 +242,19 @@ Mapping to the FUSE operations of research §14 follows directly: `lookup` →
 `getxattr`/`setxattr`/`listxattr`/`removexattr`. Operations outside this set
 (snapshots, io_uring, acceleration) are later phases.
 
+### 6.1 Immutable read views (Phase 19)
+
+Reads no longer serialise on the core. The engine publishes an immutable,
+reference-counted read view (`Arc<dyn CoreRead>`; concretely `Arc<ReadState>`)
+through a short-lived `RwLock<Arc<..>>` cell at each **commit boundary**. A reader
+clones the `Arc`, drops the guard, and serves the whole request — including
+physical segment I/O — with no lock held. A reader thus observes a whole
+committed state, never a partial one. The index is stored so a published view
+shares almost all of its memory with the live writer (inode nodes are `Arc`-shared;
+the dentry map and per-directory child maps are `Arc`-swapped). The complete
+model, the sharing strategy and its measured cost, and both transports are
+documented in [`docs/CONCURRENCY.md`](CONCURRENCY.md).
+
 ---
 
 ## 7. Structural hardening (Phase-2 carry-over fixes)

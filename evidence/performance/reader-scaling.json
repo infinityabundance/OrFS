@@ -1,0 +1,75 @@
+{
+  "all_ok": true,
+  "environment": {
+    "arch": "x86_64",
+    "cpus": 8,
+    "image_digest": "sha256:e40e40e85910336674268fec578991ae3c0fd985b42be22fd7641fca94cd5af5",
+    "os": "linux",
+    "profile": "debug",
+    "toolchain": "1.99.0-x86_64-unknown-linux-gnu"
+  },
+  "generator": "tests/concurrency_stress.rs",
+  "not_blocked_by_core_lock": {
+    "locked_read_us_while_core_lock_held": 200060.184,
+    "note": "the core lock is held for ~200 ms by another thread; a read through the immutable view completes immediately, while a read taking the core lock waits for the whole hold",
+    "view_read_us_while_core_lock_held": 23.654
+  },
+  "results": [
+    {
+      "concurrent_p50_us": 25.68,
+      "concurrent_p95_us": 28.55,
+      "concurrent_p99_us": 39.94,
+      "concurrent_throughput_mb_s": 615.99,
+      "global_lock_p50_us": 25.73,
+      "global_lock_throughput_mb_s": 601.67,
+      "readers": 1
+    },
+    {
+      "concurrent_p50_us": 26.17,
+      "concurrent_p95_us": 46.82,
+      "concurrent_p99_us": 48.14,
+      "concurrent_throughput_mb_s": 833.11,
+      "global_lock_p50_us": 26.22,
+      "global_lock_throughput_mb_s": 603.0,
+      "readers": 2
+    },
+    {
+      "concurrent_p50_us": 45.82,
+      "concurrent_p95_us": 47.41,
+      "concurrent_p99_us": 48.59,
+      "concurrent_throughput_mb_s": 1403.18,
+      "global_lock_p50_us": 46.29,
+      "global_lock_throughput_mb_s": 410.4,
+      "readers": 4
+    },
+    {
+      "concurrent_p50_us": 47.21,
+      "concurrent_p95_us": 57.15,
+      "concurrent_p99_us": 70.01,
+      "concurrent_throughput_mb_s": 1515.35,
+      "global_lock_p50_us": 26.43,
+      "global_lock_throughput_mb_s": 547.98,
+      "readers": 8
+    },
+    {
+      "concurrent_p50_us": 47.1,
+      "concurrent_p95_us": 57.51,
+      "concurrent_p99_us": 954.1,
+      "concurrent_throughput_mb_s": 1797.74,
+      "global_lock_p50_us": 29.24,
+      "global_lock_throughput_mb_s": 446.98,
+      "readers": 16
+    }
+  ],
+  "schema": "orfs.evidence.reader-scaling.v1",
+  "sharing_strategy": "ReadState holds Arc<Index> (inode nodes are Arc-shared, unchanged inodes are never re-copied) plus a LogView capturing the segment locator and sharing the read-handle cache. Publication clones Arc<Index> (spine pointer copies only) and swaps it in with one store at the commit boundary. See docs/CONCURRENCY.md.",
+  "with_global_read_lock": "the pre-Phase-19 path: every read holds the core Mutex across physical I/O",
+  "without_global_read_lock": "readers clone Arc<dyn CoreRead> out of a short-lived RwLock<Arc<..>> and read with no lock held across I/O",
+  "workload": {
+    "chunk_bytes": 131072,
+    "chunks": 32,
+    "file_bytes": 4194304,
+    "read_bytes": 16384,
+    "reads_per_arm": 3000
+  }
+}

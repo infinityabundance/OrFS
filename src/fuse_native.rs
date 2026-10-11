@@ -57,7 +57,7 @@ use crate::error::OrfsError;
 use crate::fuse::{MountOptions, OrfsFuse, StatfsMode, Transport};
 use crate::fuse_uring::{FuseUringNegotiation, FuseUringRing, RingCompletion};
 use crate::inode::{has_permission, InodeStat, InodeType, Timespec};
-use crate::namespace::{OrfsCore, RenameMode, SetAttr};
+use crate::namespace::{CoreRead, OrfsCore, RenameMode, SetAttr};
 
 // ---------------------------------------------------------------------------
 // UAPI: opcodes and constants (uapi/linux/fuse.h, ABI 7.45)
@@ -444,6 +444,11 @@ struct Dispatcher<C: OrfsCore + Send + 'static> {
 }
 
 impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
+    /// Clone the current immutable read view (no core lock).
+    fn read_view(&self) -> Arc<dyn CoreRead> {
+        self.fs.read_view()
+    }
+
     fn open_flags(&self) -> u32 {
         if self.direct_io {
             FOPEN_DIRECT_IO
@@ -509,9 +514,9 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
 
     fn lookup(&self, req: &Req<'_>) -> Reply {
         let name = trim_name(req.payload);
-        let core = self.fs.inner.core.lock();
-        let root = core.root();
-        let directory = match core.getattr(req.nodeid, root) {
+        let view = self.read_view();
+        let root = view.root();
+        let directory = match view.getattr(req.nodeid, root) {
             Ok(st) => st,
             Err(e) => return Reply::Err(errno(&e)),
         };
@@ -524,27 +529,26 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         let resolved = if name == b"." {
             Ok(req.nodeid)
         } else if name == b".." {
-            Ok(core.parent_of(req.nodeid).unwrap_or(FUSE_ROOT_ID))
+            Ok(view.parent_of(req.nodeid).unwrap_or(FUSE_ROOT_ID))
         } else {
-            core.lookup(req.nodeid, name, root)
+            view.lookup(req.nodeid, name, root)
         };
         let ino = match resolved {
             Ok(i) => i,
             Err(e) => return Reply::Err(errno(&e)),
         };
-        let st = match core.getattr(ino, root) {
+        let st = match view.getattr(ino, root) {
             Ok(st) => st,
             Err(e) => return Reply::Err(errno(&e)),
         };
-        drop(core);
         self.fs.inner.record_lookup(ino);
         self.fs.inner.metrics.lock().lookups += 1;
         Reply::Entry(attr_from_stat(&st))
     }
 
     fn getattr(&self, req: &Req<'_>) -> Reply {
-        let core = self.fs.inner.core.lock();
-        match self.fs.inner.stat(&*core, req.nodeid) {
+        let view = self.read_view();
+        match self.fs.inner.stat(view.as_ref(), req.nodeid) {
             Ok(st) => Reply::Attr(attr_from_stat(&st)),
             Err(e) => Reply::Err(errno(&e)),
         }
@@ -625,8 +629,9 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
     }
 
     fn readlink(&self, req: &Req<'_>) -> Reply {
-        let core = self.fs.inner.core.lock();
-        match core.readlink(req.nodeid, core.root()) {
+        let view = self.read_view();
+        let root = view.root();
+        match view.readlink(req.nodeid, root) {
             Ok(target) => Reply::Data(target),
             Err(e) => Reply::Err(errno(&e)),
         }
@@ -868,18 +873,17 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
             Some(h) if !h.is_dir => {}
             _ => return Reply::Err(libc::EBADF),
         }
-        let core = self.fs.inner.core.lock();
-        let root = core.root();
-        let st = match core.getattr(req.nodeid, root) {
+        let view = self.read_view();
+        let root = view.root();
+        let st = match view.getattr(req.nodeid, root) {
             Ok(st) => st,
             Err(e) => return Reply::Err(errno(&e)),
         };
         if !has_permission(req.uid, req.gid, &st, 0o4) {
             return Reply::Err(libc::EACCES);
         }
-        match core.read_at(req.nodeid, root, offset, size) {
+        match view.read_at(req.nodeid, root, offset, size) {
             Ok(data) => {
-                drop(core);
                 let mut m = self.fs.inner.metrics.lock();
                 m.reads += 1;
                 m.byte_reads += data.len() as u64;
@@ -954,9 +958,9 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
     }
 
     fn opendir(&self, req: &Req<'_>) -> Reply {
-        let core = self.fs.inner.core.lock();
-        let root = core.root();
-        let st = match core.getattr(req.nodeid, root) {
+        let view = self.read_view();
+        let root = view.root();
+        let st = match view.getattr(req.nodeid, root) {
             Ok(st) => st,
             Err(e) => return Reply::Err(errno(&e)),
         };
@@ -966,11 +970,10 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         if !has_permission(req.uid, req.gid, &st, 0o5) {
             return Reply::Err(libc::EACCES);
         }
-        let listing = match self.fs.inner.build_dir_listing(&*core, req.nodeid) {
+        let listing = match self.fs.inner.build_dir_listing(view.as_ref(), req.nodeid) {
             Ok(l) => l,
             Err(e) => return Reply::Err(errno(&e)),
         };
-        drop(core);
         let fh = self.fs.inner.register_dir(req.nodeid, listing);
         let mut m = self.fs.inner.metrics.lock();
         m.opendirs += 1;
@@ -1029,8 +1032,9 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         if bits == 0 {
             return Reply::Empty;
         }
-        let core = self.fs.inner.core.lock();
-        let st = match core.getattr(req.nodeid, core.root()) {
+        let view = self.read_view();
+        let root = view.root();
+        let st = match view.getattr(req.nodeid, root) {
             Ok(st) => st,
             Err(e) => return Reply::Err(errno(&e)),
         };

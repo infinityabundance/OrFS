@@ -22,6 +22,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::directory::{DentryAddPayload, DentryRemovePayload, DentryRenamePayload, RenameFlags};
 use crate::error::{OrfsError, Result};
@@ -51,12 +52,32 @@ pub struct Checkpoint {
 }
 
 /// The derived namespace index.
+///
+/// # Structural sharing (Phase 19)
+///
+/// The index is published to readers as an immutable snapshot
+/// ([`crate::namespace::ReadState`]). To keep publication cheap it is stored so
+/// that a snapshot can share almost all of its memory with the live writer:
+///
+/// * `inodes` maps each id to an `Arc<Inode>`, so a commit that touches a few
+///   inodes re-copies only those inode *nodes* (their extent maps, version
+///   history and xattrs are never deep-copied); every untouched inode is shared.
+/// * `dentries` is a single `Arc<HashMap<…>>`, so a data-only commit shares the
+///   whole directory-entry map with the previous snapshot for free (it is only
+///   rebuilt, copy-on-write, when the namespace *structure* changes).
+/// * `children` maps each directory id to an `Arc<BTreeMap<…>>`, so an untouched
+///   directory's listing is shared and only the affected directory is rebuilt.
+///
+/// Cloning an `Index` is therefore a handful of `Arc` bumps plus a copy of the
+/// inode/directory *spines* (pointer-sized entries), never a deep copy of the
+/// inode payloads. The measured cost and the plan to move the spines themselves
+/// to a persistent (path-copying) map are documented in `docs/CONCURRENCY.md`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Index {
     root: u64,
-    inodes: HashMap<u64, Inode>,
-    dentries: DentryMap,
-    children: HashMap<u64, BTreeMap<Vec<u8>, u64>>,
+    inodes: HashMap<u64, Arc<Inode>>,
+    dentries: Arc<DentryMap>,
+    children: HashMap<u64, Arc<BTreeMap<Vec<u8>, u64>>>,
     next_inode_id: u64,
     snapshots: BTreeMap<Vec<u8>, u64>,
     checkpoints: Vec<Checkpoint>,
@@ -67,7 +88,7 @@ impl Default for Index {
         Index {
             root: 0,
             inodes: HashMap::new(),
-            dentries: HashMap::new(),
+            dentries: Arc::new(HashMap::new()),
             children: HashMap::new(),
             next_inode_id: ROOT_INODE,
             snapshots: BTreeMap::new(),
@@ -156,8 +177,8 @@ impl Index {
                     Timespec::ZERO,
                     offset,
                 );
-                self.inodes.insert(ROOT_INODE, root);
-                self.children.entry(ROOT_INODE).or_default();
+                self.inodes.insert(ROOT_INODE, Arc::new(root));
+                self.children.insert(ROOT_INODE, Arc::new(BTreeMap::new()));
                 self.next_inode_id = ROOT_INODE + 1;
                 self.root = offset + record.header.total_len().map_err(OrfsError::from)?;
             }
@@ -365,45 +386,43 @@ impl Index {
             id, generation, kind, mode, uid, gid, nlink, size, atime, mtime, ctime, offset,
         );
         inode.symlink_target = target;
-        self.inodes.insert(id, inode);
+        self.inodes.insert(id, Arc::new(inode));
         self.next_inode_id = self.next_inode_id.max(id + 1);
         Ok(())
     }
 
     fn add_dentry(&mut self, parent: u64, name: Vec<u8>, child: u64, offset: u64) -> Result<()> {
-        let p = self
-            .inodes
-            .get(&parent)
-            .ok_or_else(|| OrfsError::Corrupt(format!("dentry parent {parent} does not exist")))?;
-        if !p.is_dir() {
-            return Err(OrfsError::Corrupt(format!(
-                "dentry parent {parent} is not a directory"
-            )));
-        }
-        if !self.inodes.contains_key(&child) {
-            return Err(OrfsError::Corrupt(format!(
-                "dentry child {child} does not exist"
-            )));
+        {
+            let p = self.inodes.get(&parent).ok_or_else(|| {
+                OrfsError::Corrupt(format!("dentry parent {parent} does not exist"))
+            })?;
+            if !p.is_dir() {
+                return Err(OrfsError::Corrupt(format!(
+                    "dentry parent {parent} is not a directory"
+                )));
+            }
+            if !self.inodes.contains_key(&child) {
+                return Err(OrfsError::Corrupt(format!(
+                    "dentry child {child} does not exist"
+                )));
+            }
         }
         if self.dentries.contains_key(&(parent, name.clone())) {
             return Err(OrfsError::Corrupt(format!(
                 "duplicate dentry under {parent}"
             )));
         }
-        self.dentries.insert((parent, name.clone()), child);
-        self.children.entry(parent).or_default().insert(name, child);
+        Arc::make_mut(&mut self.dentries).insert((parent, name.clone()), child);
+        self.set_child(parent, &name, Some(child));
         self.inode_mut(child)?.bump_version(offset);
         Ok(())
     }
 
     fn remove_dentry(&mut self, parent: u64, name: &[u8], offset: u64) -> Result<()> {
-        let child = self
-            .dentries
+        let child = Arc::make_mut(&mut self.dentries)
             .remove(&(parent, name.to_vec()))
             .ok_or_else(|| OrfsError::Corrupt(format!("remove of absent dentry under {parent}")))?;
-        if let Some(map) = self.children.get_mut(&parent) {
-            map.remove(name);
-        }
+        self.set_child(parent, name, None);
         self.inode_mut(child)?.bump_version(offset);
         Ok(())
     }
@@ -416,29 +435,39 @@ impl Index {
                 if old_key == new_key {
                     return Ok(());
                 }
-                let child = self.dentries.remove(&old_key).ok_or_else(|| {
-                    OrfsError::Corrupt("rename source does not exist".to_string())
-                })?;
-                if self.dentries.contains_key(&new_key) {
-                    return Err(OrfsError::Corrupt(
-                        "rename destination already exists".to_string(),
-                    ));
-                }
+                let child = {
+                    let dentries = Arc::make_mut(&mut self.dentries);
+                    let child = dentries.remove(&old_key).ok_or_else(|| {
+                        OrfsError::Corrupt("rename source does not exist".to_string())
+                    })?;
+                    if dentries.contains_key(&new_key) {
+                        return Err(OrfsError::Corrupt(
+                            "rename destination already exists".to_string(),
+                        ));
+                    }
+                    dentries.insert(new_key.clone(), child);
+                    child
+                };
                 self.set_child(p.old_parent, &p.old_name, None);
-                self.dentries.insert(new_key.clone(), child);
                 self.set_child(p.new_parent, &p.new_name, Some(child));
                 self.inode_mut(child)?.bump_version(offset);
             }
             RenameFlags::Exchange => {
-                let c1 =
-                    self.dentries.get(&old_key).copied().ok_or_else(|| {
+                let (c1, c2) = {
+                    let dentries = self.dentries.as_ref();
+                    let c1 = dentries.get(&old_key).copied().ok_or_else(|| {
                         OrfsError::Corrupt("exchange source does not exist".into())
                     })?;
-                let c2 = self.dentries.get(&new_key).copied().ok_or_else(|| {
-                    OrfsError::Corrupt("exchange destination does not exist".into())
-                })?;
-                self.dentries.insert(old_key.clone(), c2);
-                self.dentries.insert(new_key.clone(), c1);
+                    let c2 = dentries.get(&new_key).copied().ok_or_else(|| {
+                        OrfsError::Corrupt("exchange destination does not exist".into())
+                    })?;
+                    (c1, c2)
+                };
+                {
+                    let dentries = Arc::make_mut(&mut self.dentries);
+                    dentries.insert(old_key.clone(), c2);
+                    dentries.insert(new_key.clone(), c1);
+                }
                 self.set_child(p.old_parent, &p.old_name, Some(c2));
                 self.set_child(p.new_parent, &p.new_name, Some(c1));
                 self.inode_mut(c1)?.bump_version(offset);
@@ -449,21 +478,28 @@ impl Index {
     }
 
     fn set_child(&mut self, parent: u64, name: &[u8], child: Option<u64>) {
-        let map = self.children.entry(parent).or_default();
         match child {
             Some(c) => {
-                map.insert(name.to_vec(), c);
+                let entry = self
+                    .children
+                    .entry(parent)
+                    .or_insert_with(|| Arc::new(BTreeMap::new()));
+                Arc::make_mut(entry).insert(name.to_vec(), c);
             }
             None => {
-                map.remove(name);
+                if let Some(entry) = self.children.get_mut(&parent) {
+                    Arc::make_mut(entry).remove(name);
+                }
             }
         }
     }
 
     fn inode_mut(&mut self, id: u64) -> Result<&mut Inode> {
-        self.inodes
+        let slot = self
+            .inodes
             .get_mut(&id)
-            .ok_or_else(|| OrfsError::Corrupt(format!("record references missing inode {id}")))
+            .ok_or_else(|| OrfsError::Corrupt(format!("record references missing inode {id}")))?;
+        Ok(Arc::make_mut(slot))
     }
 
     // -- read accessors ----------------------------------------------------
@@ -500,7 +536,7 @@ impl Index {
 
     /// A reference to an inode by id.
     pub fn inode(&self, id: u64) -> Option<&Inode> {
-        self.inodes.get(&id)
+        self.inodes.get(&id).map(|a| &**a)
     }
 
     /// Every live inode id (used by physical accounting and manifestation).
@@ -562,7 +598,7 @@ impl Index {
         let inode = self.inodes.get(&child)?;
         if inode.is_dir() {
             // Directories have exactly one parent: search the dentry graph.
-            for ((parent, _name), c) in &self.dentries {
+            for ((parent, _name), c) in self.dentries.iter() {
                 if *c == child {
                     return Some(*parent);
                 }
@@ -933,18 +969,18 @@ impl Snapshot {
                 }
             }
             inode.extents = extents;
-            index.inodes.insert(si.id, inode);
+            index.inodes.insert(si.id, Arc::new(inode));
             if kind == InodeType::Directory {
-                index.children.entry(si.id).or_default();
+                index.children.insert(si.id, Arc::new(BTreeMap::new()));
             }
         }
         for d in self.dentries {
-            index.dentries.insert((d.parent, d.name.clone()), d.child);
-            index
+            Arc::make_mut(&mut index.dentries).insert((d.parent, d.name.clone()), d.child);
+            let entry = index
                 .children
                 .entry(d.parent)
-                .or_default()
-                .insert(d.name, d.child);
+                .or_insert_with(|| Arc::new(BTreeMap::new()));
+            Arc::make_mut(entry).insert(d.name, d.child);
         }
         index.snapshots = self
             .snapshots

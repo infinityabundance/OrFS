@@ -43,7 +43,9 @@ use crate::extent::ReadPiece;
 use crate::index::{Index, ROOT_INODE};
 use crate::inode::InodeStat;
 use crate::log::{Log, OpenMode, RootPin};
-use crate::namespace::{derived_xattr, OrfsCore, RenameMode, SetAttr, DERIVED_XATTRS};
+use crate::namespace::{
+    derived_xattr, CoreRead, OrfsCore, ReadCell, ReadState, RenameMode, SetAttr, DERIVED_XATTRS,
+};
 use crate::volume::Volume;
 
 /// A historical root reference: `(volume UUID, committed end offset)`.
@@ -526,5 +528,21 @@ impl OrfsCore for Snapshot {
 
     fn readdir(&self, parent: u64, _root: u64) -> Result<Vec<(Vec<u8>, u64)>> {
         Snapshot::readdir(self, parent)
+    }
+
+    fn read_view_cell(&self) -> ReadCell {
+        // A snapshot is immutable, so one frozen read view is built here and
+        // shared for the mount's lifetime. It reads through the snapshot's own
+        // log handle (whose locator is fixed at snapshot time) and carries no
+        // manifested structures (a snapshot reports the honest un-manifested
+        // derived attributes, exactly like `Snapshot::getxattr`).
+        let state: Arc<dyn CoreRead> = Arc::new(ReadState::new_interior(
+            self.root(),
+            Arc::new(self.index.clone()),
+            self.log.read_view(),
+            None,
+            None,
+        ));
+        Arc::new(parking_lot::RwLock::new(state))
     }
 }

@@ -48,7 +48,7 @@ use crate::fuse_uring::{self, FuseUringNegotiation, FuseUringReport, TransportPr
 use crate::inode::{has_permission, InodeStat, InodeType, Timespec};
 use crate::log::OpenMode;
 use crate::manifestation::ManifestationProfile;
-use crate::namespace::{Namespace, OrfsCore, RenameMode, SetAttr};
+use crate::namespace::{CoreRead, Namespace, OrfsCore, ReadCell, RenameMode, SetAttr};
 use crate::snapshot::Snapshot;
 
 /// The FUSE root inode (`FUSE_ROOT_ID`), shared with the namespace engine.
@@ -334,6 +334,12 @@ pub struct Metrics {
 
 pub(crate) struct Inner<C: OrfsCore + Send + 'static> {
     pub(crate) core: Mutex<C>,
+    /// The current immutable read view (Phase 19). Readers clone the `Arc` out of
+    /// this short-lived cell and then serve the request with **no lock held across
+    /// physical I/O**. It is the *same* cell the core publishes into at each commit
+    /// boundary, so it is always current without the FUSE layer taking the core
+    /// lock.
+    read: ReadCell,
     handles: Mutex<HandleTable>,
     lookups: Mutex<LookupTable>,
     pub(crate) metrics: Mutex<Metrics>,
@@ -342,8 +348,13 @@ pub(crate) struct Inner<C: OrfsCore + Send + 'static> {
 }
 
 impl<C: OrfsCore + Send + 'static> Inner<C> {
-    pub(crate) fn stat(&self, core: &C, ino: u64) -> Result<InodeStat> {
-        core.getattr(ino, core.root())
+    /// Clone the current immutable read view (a cheap `Arc` bump, no I/O).
+    pub(crate) fn read_view(&self) -> Arc<dyn CoreRead> {
+        self.read.read().clone()
+    }
+
+    pub(crate) fn stat(&self, view: &dyn CoreRead, ino: u64) -> Result<InodeStat> {
+        view.getattr(ino, view.root())
     }
 
     /// Build the immutable listing of `dir` used to answer `readdir`/
@@ -355,9 +366,13 @@ impl<C: OrfsCore + Send + 'static> Inner<C> {
     /// the iteration cookies stable and makes a partially consumed listing
     /// resumable, which is the strongest guarantee a FUSE filesystem can offer
     /// without per-directory versioning.
-    pub(crate) fn build_dir_listing(&self, core: &C, dir: u64) -> Result<Vec<DirEntryView>> {
-        let root = core.root();
-        let ino = core.getattr(dir, root)?;
+    pub(crate) fn build_dir_listing(
+        &self,
+        view: &dyn CoreRead,
+        dir: u64,
+    ) -> Result<Vec<DirEntryView>> {
+        let root = view.root();
+        let ino = view.getattr(dir, root)?;
         if ino.kind != InodeType::Directory {
             return Err(OrfsError::NotADirectory);
         }
@@ -367,14 +382,14 @@ impl<C: OrfsCore + Send + 'static> Inner<C> {
             ino: dir,
             kind: FuseFileType::Directory,
         });
-        let parent = core.parent_of(dir).unwrap_or(ROOT_INODE);
+        let parent = view.parent_of(dir).unwrap_or(ROOT_INODE);
         out.push(DirEntryView {
             name: b"..".to_vec(),
             ino: parent,
             kind: FuseFileType::Directory,
         });
-        for (name, child) in core.readdir(dir, root)? {
-            let kind = match core.getattr(child, root) {
+        for (name, child) in view.readdir(dir, root)? {
+            let kind = match view.getattr(child, root) {
                 Ok(st) => fuse_kind(st.kind),
                 Err(_) => continue,
             };
@@ -451,8 +466,12 @@ pub struct OrfsFuse<C: OrfsCore + Send + 'static> {
 
 impl<C: OrfsCore + Send + 'static> OrfsFuse<C> {
     pub(crate) fn new(core: C, backing: PathBuf, options: MountOptions) -> OrfsFuse<C> {
+        // The core owns the publication cell; the adaptor shares it so it never
+        // has to take the core lock just to obtain the current read view.
+        let read = core.read_view_cell();
         let inner = Arc::new(Inner {
             core: Mutex::new(core),
+            read,
             handles: Mutex::new(HandleTable::default()),
             lookups: Mutex::new(LookupTable::default()),
             metrics: Mutex::new(Metrics::default()),
@@ -493,6 +512,11 @@ impl<C: OrfsCore + Send + 'static> OrfsFuse<C> {
             options,
             negotiation: Arc::new(Mutex::new(FuseUringNegotiation::not_requested())),
         }
+    }
+
+    /// Clone the current immutable read view (a cheap `Arc` bump; no core lock).
+    pub(crate) fn read_view(&self) -> Arc<dyn CoreRead> {
+        self.inner.read_view()
     }
 
     /// The shared cell the `INIT` negotiation writes and the mount reports from.
@@ -701,9 +725,9 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
 
     fn lookup(&self, req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEntry) {
         let name = name.as_bytes();
-        let core = self.inner.core.lock();
-        let root = core.root();
-        let directory = match core.getattr(parent.0, root) {
+        let view = self.read_view();
+        let root = view.root();
+        let directory = match view.getattr(parent.0, root) {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
@@ -716,19 +740,18 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         let resolved = if name == b"." {
             Ok(parent.0)
         } else if name == b".." {
-            Ok(core.parent_of(parent.0).unwrap_or(self.inner.root_inode))
+            Ok(view.parent_of(parent.0).unwrap_or(self.inner.root_inode))
         } else {
-            core.lookup(parent.0, name, root)
+            view.lookup(parent.0, name, root)
         };
         let ino = match resolved {
             Ok(i) => i,
             Err(e) => return reply.error(errno(&e)),
         };
-        let st = match core.getattr(ino, root) {
+        let st = match view.getattr(ino, root) {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
-        drop(core);
         self.inner.record_lookup(ino);
         self.inner.metrics.lock().lookups += 1;
         let attr = file_attr(&st);
@@ -746,8 +769,8 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
     }
 
     fn getattr(&self, _req: &Request, ino: INodeNo, _fh: Option<FileHandle>, reply: ReplyAttr) {
-        let core = self.inner.core.lock();
-        match self.inner.stat(&*core, ino.0) {
+        let view = self.read_view();
+        match self.inner.stat(view.as_ref(), ino.0) {
             Ok(st) => reply.attr(&self.options.attr_ttl, &file_attr(&st)),
             Err(e) => reply.error(errno(&e)),
         }
@@ -827,8 +850,9 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
     }
 
     fn readlink(&self, _req: &Request, ino: INodeNo, reply: ReplyData) {
-        let core = self.inner.core.lock();
-        match core.readlink(ino.0, core.root()) {
+        let view = self.read_view();
+        let root = view.root();
+        match view.readlink(ino.0, root) {
             Ok(target) => reply.data(&target),
             Err(e) => reply.error(errno(&e)),
         }
@@ -1107,9 +1131,9 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
     }
 
     fn open(&self, req: &Request, ino: INodeNo, flags: OpenFlags, reply: ReplyOpen) {
-        let mut core = self.inner.core.lock();
-        let root = core.root();
-        let st = match core.getattr(ino.0, root) {
+        let view = self.read_view();
+        let root = view.root();
+        let st = match view.getattr(ino.0, root) {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
@@ -1129,11 +1153,14 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
                 size: Some(0),
                 ..Default::default()
             };
+            // A truncating open is the only mutating part; take the core lock
+            // only then. A plain open (the common case) is served from the
+            // immutable view with no writer lock.
+            let mut core = self.inner.core.lock();
             if let Err(e) = core.setattr(ino.0, &attrs) {
                 return reply.error(errno(&e));
             }
         }
-        drop(core);
         let fh = self.inner.register_file(ino.0, flags.0);
         let mut m = self.inner.metrics.lock();
         m.opens += 1;
@@ -1158,9 +1185,9 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             Some(h) if !h.is_dir => h,
             _ => return reply.error(Errno::EBADF),
         };
-        let core = self.inner.core.lock();
-        let root = core.root();
-        let st = match core.getattr(ino.0, root) {
+        let view = self.read_view();
+        let root = view.root();
+        let st = match view.getattr(ino.0, root) {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
@@ -1168,9 +1195,8 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             return reply.error(Errno::EACCES);
         }
         let _ = handle;
-        match core.read_at(ino.0, root, offset, size) {
+        match view.read_at(ino.0, root, offset, size) {
             Ok(data) => {
-                drop(core);
                 let mut m = self.inner.metrics.lock();
                 m.reads += 1;
                 m.byte_reads += data.len() as u64;
@@ -1289,9 +1315,9 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
     }
 
     fn opendir(&self, req: &Request, ino: INodeNo, _flags: OpenFlags, reply: ReplyOpen) {
-        let core = self.inner.core.lock();
-        let root = core.root();
-        let st = match core.getattr(ino.0, root) {
+        let view = self.read_view();
+        let root = view.root();
+        let st = match view.getattr(ino.0, root) {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
@@ -1301,11 +1327,10 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         if !has_permission(req.uid(), req.gid(), &st, 0o4 | 0o1) {
             return reply.error(Errno::EACCES);
         }
-        let listing = match self.inner.build_dir_listing(&*core, ino.0) {
+        let listing = match self.inner.build_dir_listing(view.as_ref(), ino.0) {
             Ok(l) => l,
             Err(e) => return reply.error(errno(&e)),
         };
-        drop(core);
         let fh = self.inner.register_dir(ino.0, listing);
         let mut m = self.inner.metrics.lock();
         m.opendirs += 1;
@@ -1362,12 +1387,12 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             Some(e) => e,
             None => return reply.error(Errno::EBADF),
         };
-        let core = self.inner.core.lock();
-        let root = core.root();
+        let view = self.read_view();
+        let root = view.root();
         let start = offset as usize;
         let mut acquired: Vec<u64> = Vec::new();
         for (idx, entry) in entries.iter().enumerate().skip(start) {
-            let st = match core.getattr(entry.ino, root) {
+            let st = match view.getattr(entry.ino, root) {
                 Ok(st) => st,
                 Err(_) => continue,
             };
@@ -1383,7 +1408,6 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             }
             acquired.push(entry.ino);
         }
-        drop(core);
         // Each readdirplus entry we hand back takes a kernel lookup reference.
         for ino in acquired {
             self.inner.record_lookup(ino);
@@ -1496,18 +1520,19 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
     }
 
     fn getxattr(&self, req: &Request, ino: INodeNo, name: &OsStr, size: u32, reply: ReplyXattr) {
-        let core = self.inner.core.lock();
+        let view = self.read_view();
+        let root = view.root();
         // Access rule: reading an attribute requires read permission on the
         // inode, symmetric with reading its contents. No namespace (including
         // `security.*`/`trusted.*`) bypasses this check.
-        let st = match core.getattr(ino.0, core.root()) {
+        let st = match view.getattr(ino.0, root) {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
         if !has_permission(req.uid(), req.gid(), &st, 0o4) {
             return reply.error(Errno::EACCES);
         }
-        match core.getxattr(ino.0, name.as_bytes(), core.root()) {
+        match view.getxattr(ino.0, name.as_bytes(), root) {
             Ok(value) => {
                 if size == 0 {
                     reply.size(value.len() as u32);
@@ -1522,15 +1547,16 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
     }
 
     fn listxattr(&self, req: &Request, ino: INodeNo, size: u32, reply: ReplyXattr) {
-        let core = self.inner.core.lock();
-        let st = match core.getattr(ino.0, core.root()) {
+        let view = self.read_view();
+        let root = view.root();
+        let st = match view.getattr(ino.0, root) {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
         if !has_permission(req.uid(), req.gid(), &st, 0o4) {
             return reply.error(Errno::EACCES);
         }
-        match core.listxattr(ino.0, core.root()) {
+        match view.listxattr(ino.0, root) {
             Ok(names) => {
                 let mut buf = Vec::new();
                 for n in &names {
@@ -1569,8 +1595,9 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
     }
 
     fn access(&self, req: &Request, ino: INodeNo, mask: AccessFlags, reply: ReplyEmpty) {
-        let core = self.inner.core.lock();
-        let st = match core.getattr(ino.0, core.root()) {
+        let view = self.read_view();
+        let root = view.root();
+        let st = match view.getattr(ino.0, root) {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
@@ -1759,8 +1786,9 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         if offset < 0 {
             return reply.error(Errno::EINVAL);
         }
-        let core = self.inner.core.lock();
-        match core.seek_data_hole(ino.0, core.root(), offset as u64, hole) {
+        let view = self.read_view();
+        let root = view.root();
+        match view.seek_data_hole(ino.0, root, offset as u64, hole) {
             Ok(Some(pos)) => reply.offset(pos as i64),
             Ok(None) => reply.error(Errno::ENXIO),
             Err(e) => reply.error(errno(&e)),
@@ -2040,6 +2068,16 @@ fn build_core(
 
 fn build_config(opts: &MountOptions) -> Config {
     let mut config = Config::default();
+    // Serve FUSE requests from several threads so concurrent readers can actually
+    // run in parallel. Combined with the immutable read view (Phase 19) a read no
+    // longer serialises the whole filesystem behind the core lock. The `fuser`
+    // read-dispatch loop itself is concurrent when `n_threads > 1`.
+    config.n_threads = Some(
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .max(1),
+    );
     let mut options = vec![
         MountOption::FSName("orfs".to_string()),
         MountOption::Subtype("orfs".to_string()),

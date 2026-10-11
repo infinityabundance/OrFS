@@ -1159,6 +1159,9 @@ impl Namespace {
         if kind == InodeType::Directory {
             plan.bump_nlink(parent, 1, &self.index)?;
         }
+        // POSIX/Linux: a new entry marks the containing directory's mtime and
+        // ctime for update (docs/FUSE-SEMANTICS.md §5.1).
+        plan.bump_times(parent, None, now, &self.index)?;
         self.commit_plan(plan)?;
         Ok(id)
     }
@@ -1212,6 +1215,23 @@ impl Namespace {
 
     /// Append a new immutable data extent for a write.
     pub fn write_at(&mut self, inode: u64, offset: u64, data: &[u8]) -> Result<u32> {
+        self.write_at_inner(inode, offset, data, false)
+    }
+
+    /// Append a data extent and, when `kill_setid` is set, clear any
+    /// `S_ISUID`/`S_ISGID` bits in the **same** authoritative transaction.
+    ///
+    /// The kernel signals this precisely with `FUSE_WRITE_KILL_SUIDGID` when a
+    /// write is made by a caller without `CAP_FSETID` and the negotiated
+    /// `FUSE_HANDLE_KILLPRIV(_V2)` capability delegates the clearing to the
+    /// daemon (docs/FUSE-SEMANTICS.md §5.2).
+    fn write_at_inner(
+        &mut self,
+        inode: u64,
+        offset: u64,
+        data: &[u8],
+        kill_setid: bool,
+    ) -> Result<u32> {
         self.require_file(inode)?;
         if data.is_empty() {
             return Ok(0);
@@ -1225,8 +1245,33 @@ impl Namespace {
         let prev = plan.prev_for(inode, &self.index);
         plan.add(RecordType::DataExtent, inode, prev, payload)?;
         plan.note_changed(inode, offset, offset + data.len() as u64);
+        // A write advances the file's mtime and ctime (classic Unix semantics).
+        plan.bump_times(inode, None, now(), &self.index)?;
+        if kill_setid {
+            self.plan_clear_setid(&mut plan, inode)?;
+        }
         self.commit_plan(plan)?;
         Ok(data.len() as u32)
+    }
+
+    /// Append a `PERMISSION_CHANGE` clearing `S_ISUID`/`S_ISGID` when the inode
+    /// carries either bit (Linux `killpriv`). A no-op otherwise.
+    fn plan_clear_setid(&self, plan: &mut Plan, inode: u64) -> Result<()> {
+        let ino = self.index.inode(inode).ok_or(OrfsError::NotFound)?;
+        // 0o4000 = S_ISUID, 0o2000 = S_ISGID.
+        let cleared = ino.mode & !0o6000;
+        if cleared == ino.mode {
+            return Ok(());
+        }
+        let payload = PermissionChangePayload {
+            inode_id: inode,
+            mode: Some(cleared),
+            uid: None,
+            gid: None,
+        }
+        .encode();
+        let prev = plan.prev_for(inode, &self.index);
+        plan.add(RecordType::PermissionChange, inode, prev, payload)
     }
 
     /// Append an explicit zero range (a hole punch or a sparse-region write).
@@ -1252,6 +1297,8 @@ impl Namespace {
         let mut plan = self.plan()?;
         let prev = plan.prev_for(inode, &self.index);
         plan.add(RecordType::FileResize, inode, prev, payload)?;
+        // A truncate advances the file's mtime and ctime (POSIX).
+        plan.bump_times(inode, None, now(), &self.index)?;
         // Growth appends new (zero) bytes above the old end; a shrink changes no
         // byte below the new end. Either way the resize touches the inode.
         plan.note_changed(inode, old_size.min(new_size), old_size.max(new_size));
@@ -1300,6 +1347,12 @@ impl Namespace {
             let prev = plan.prev_for(inode, &self.index);
             plan.add(RecordType::FileResize, inode, prev, payload)?;
             plan.note_changed(inode, old_size.min(size), old_size.max(size));
+            // A size change is a content mutation: it advances mtime/ctime
+            // unless an explicit time was supplied in the same request (in
+            // which case the INODE_SETATTR above already set them).
+            if attrs.atime.is_none() && attrs.mtime.is_none() {
+                plan.bump_times(inode, None, now(), &self.index)?;
+            }
         } else {
             // A pure metadata change still touches the inode (a metadata-only
             // incremental generation keeps acceleration version-current).
@@ -1334,6 +1387,7 @@ impl Namespace {
             plan.add(RecordType::DentryRemove, child, prev, bytes)?;
         }
         plan.bump_nlink(child, -1, &self.index)?;
+        plan.bump_times(parent, None, now(), &self.index)?;
         self.commit_plan(plan)?;
         Ok(())
     }
@@ -1369,6 +1423,7 @@ impl Namespace {
         // An rmdir'd directory has no names left: link count goes to zero.
         plan.bump_nlink(child, -2, &self.index)?;
         plan.bump_nlink(parent, -1, &self.index)?;
+        plan.bump_times(parent, None, now(), &self.index)?;
         self.commit_plan(plan)?;
         Ok(())
     }
@@ -1394,6 +1449,7 @@ impl Namespace {
         let prev = plan.prev_for(inode, &self.index);
         plan.add(RecordType::HardlinkAdd, inode, prev, payload)?;
         plan.bump_nlink(inode, 1, &self.index)?;
+        plan.bump_times(new_parent, None, now(), &self.index)?;
         self.commit_plan(plan)?;
         Ok(())
     }
@@ -1515,6 +1571,12 @@ impl Namespace {
                     &mut plan, old_parent, old_name, new_parent, new_name, &src_inode,
                 )?;
             }
+        }
+        // A rename marks both containing directories' mtime and ctime for update.
+        let now = now();
+        plan.bump_times(old_parent, None, now, &self.index)?;
+        if new_parent != old_parent {
+            plan.bump_times(new_parent, None, now, &self.index)?;
         }
         self.commit_plan(plan)?;
         Ok(())
@@ -1805,6 +1867,34 @@ impl Plan {
         Ok(())
     }
 
+    /// Record an implicit timestamp transition (`mtime`/`ctime`, and optionally
+    /// `atime`) on `inode` as an authoritative, append-only `INODE_SETATTR`.
+    ///
+    /// This is how OrFS advances the timestamps Linux/ext4 advances implicitly:
+    /// the parent directory on a namespace mutation (`create`/`mkdir`/`symlink`/
+    /// `link`/`unlink`/`rmdir`/`rename`) and the file itself on a content
+    /// mutation (write/truncate). It uses the very same record as an explicit
+    /// `utimensat`, so a snapshot pinned to an earlier root still reads the
+    /// timestamps that root encoded, and history is never rewritten. `None` for
+    /// `atime` leaves the access time untouched (`INODE_SETATTR` sets `ctime`
+    /// from `mtime`).
+    fn bump_times(
+        &mut self,
+        inode: u64,
+        atime: Option<Timespec>,
+        mtime: Timespec,
+        index: &Index,
+    ) -> Result<()> {
+        let payload = InodeSetattrPayload {
+            inode_id: inode,
+            atime,
+            mtime: Some(mtime),
+        }
+        .encode();
+        let prev = self.prev_for(inode, index);
+        self.add(RecordType::InodeSetattr, inode, prev, payload)
+    }
+
     fn bump_nlink(&mut self, inode: u64, delta: i64, index: &Index) -> Result<()> {
         let current = self
             .nlink
@@ -1869,6 +1959,16 @@ pub trait OrfsCore {
     fn setattr(&mut self, inode: u64, attrs: &SetAttr) -> Result<()>;
     fn read_at(&self, inode: u64, root: u64, offset: u64, length: u32) -> Result<Vec<u8>>;
     fn write_at(&mut self, inode: u64, offset: u64, data: &[u8]) -> Result<u32>;
+    /// Like [`OrfsCore::write_at`] but, when `kill_setid` is true, clears any
+    /// `S_ISUID`/`S_ISGID` bits in the *same* authoritative transaction (Linux
+    /// `killpriv` on a write by a caller without `CAP_FSETID`).
+    fn write_at_killpriv(
+        &mut self,
+        inode: u64,
+        offset: u64,
+        data: &[u8],
+        kill_setid: bool,
+    ) -> Result<u32>;
     /// Append an explicit zero range (hole punch / zero range).
     fn zero_range(&mut self, inode: u64, offset: u64, len: u64) -> Result<()>;
     /// Resolve `SEEK_DATA`/`SEEK_HOLE` (`None` means POSIX `ENXIO`).
@@ -1948,6 +2048,15 @@ impl OrfsCore for Namespace {
     }
     fn write_at(&mut self, inode: u64, offset: u64, data: &[u8]) -> Result<u32> {
         Namespace::write_at(self, inode, offset, data)
+    }
+    fn write_at_killpriv(
+        &mut self,
+        inode: u64,
+        offset: u64,
+        data: &[u8],
+        kill_setid: bool,
+    ) -> Result<u32> {
+        Namespace::write_at_inner(self, inode, offset, data, kill_setid)
     }
     fn zero_range(&mut self, inode: u64, offset: u64, len: u64) -> Result<()> {
         Namespace::zero_range(self, inode, offset, len)

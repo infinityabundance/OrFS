@@ -833,9 +833,10 @@ fn snapshots_and_checkpoints_are_logged_and_rebuilt() {
     let checkpoints = live.checkpoints();
     assert_eq!(checkpoints.len(), 1);
     // The inode's version counts every authoritative record touching it:
-    // INODE_CREATE, DENTRY_ADD, and DATA_EXTENT.
+    // INODE_CREATE, DENTRY_ADD, DATA_EXTENT, and the implicit INODE_SETATTR that
+    // advances mtime/ctime on the write (Phase 25).
     let version = ns.getxattr(f, b"user.orfs.version", ns.root()).unwrap();
-    assert_eq!(version, b"3");
+    assert_eq!(version, b"4");
     assert!(ns.index_matches_log().unwrap());
 }
 

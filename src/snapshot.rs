@@ -467,6 +467,16 @@ impl OrfsCore for Snapshot {
         Err(read_only())
     }
 
+    fn write_at_killpriv(
+        &mut self,
+        _inode: u64,
+        _offset: u64,
+        _data: &[u8],
+        _kill_setid: bool,
+    ) -> Result<u32> {
+        Err(read_only())
+    }
+
     fn zero_range(&mut self, _inode: u64, _offset: u64, _len: u64) -> Result<()> {
         Err(read_only())
     }

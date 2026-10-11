@@ -1,4 +1,4 @@
-# pjdfstest expected deviations (Phase 24).
+# pjdfstest expected deviations.
 #
 # Every OrFS assertion that is EXPECTED to fail and is NOT explained by the
 # mechanical rule "the test creates a FIFO/block/char/socket node, which OrFS
@@ -10,31 +10,10 @@
 #   * a failing assertion is neither mechanical nor listed here (a regression), or
 #   * a listed assertion no longer fails (drift: fix it and delete the entry).
 #
+# Phase 25 closed every real OrFS deviation the Phase 24 court found (implicit
+# timestamps, setuid/setgid on write/truncate, utimensat(UTIME_NOW) with write
+# permission, ftruncate through a writable fd, and non-root supplementary-group
+# chgrp). The sole remaining entry is an artifact the reference ext4 fails too.
+#
 # Columns: test_file<TAB>assertion<TAB>class<TAB>reason
-chmod_12	3	setuid_sgid_killpriv	non-owner write does not clear S_ISUID; the kernel's SETATTR killpriv request is refused with EPERM (docs/FUSE-SEMANTICS.md §5.2)
-chmod_12	4	setuid_sgid_killpriv	S_ISUID not cleared after a non-owner write
-chmod_12	7	setuid_sgid_killpriv	non-owner write does not clear S_ISGID; killpriv SETATTR refused with EPERM
-chmod_12	8	setuid_sgid_killpriv	S_ISGID not cleared after a non-owner write
-chmod_12	11	setuid_sgid_killpriv	non-owner write does not clear S_ISUID|S_ISGID; killpriv SETATTR refused with EPERM
-chmod_12	12	setuid_sgid_killpriv	S_ISUID|S_ISGID not cleared after a non-owner write
-chown_05	5	supplementary_group_chgrp	non-root chgrp to a supplementary group returns EPERM (docs/FUSE-SEMANTICS.md §6)
-chown_05	6	supplementary_group_chgrp	downstream of the refused chgrp
-chown_05	11	supplementary_group_chgrp	downstream of the refused chgrp
-chown_05	14	supplementary_group_chgrp	non-root lchown to a supplementary group returns EPERM
-chown_05	15	supplementary_group_chgrp	downstream of the refused lchown
-ftruncate_00	15	file_timestamp	content mutations do not advance the file ctime (docs/FUSE-SEMANTICS.md §5.1)
-ftruncate_00	24	fd_truncate_permission	truncation through a writable fd re-checks inode write permission and returns EACCES
-mkdir_00	33	dir_timestamp	namespace mutations do not advance the parent directory mtime/ctime
-mkdir_00	34	dir_timestamp	namespace mutations do not advance the parent directory mtime/ctime
-open_00	33	dir_timestamp	create does not advance the parent directory mtime
-open_00	34	dir_timestamp	create does not advance the parent directory ctime
-open_00	43	file_timestamp	O_TRUNC does not advance the file mtime
-open_00	44	file_timestamp	O_TRUNC does not advance the file ctime
-rmdir_00	8	dir_timestamp	rmdir does not advance the parent directory mtime
-rmdir_00	9	dir_timestamp	rmdir does not advance the parent directory ctime
-symlink_00	11	dir_timestamp	symlink does not advance the parent directory mtime
-symlink_00	12	dir_timestamp	symlink does not advance the parent directory ctime
-truncate_00	15	file_timestamp	truncate does not advance the file ctime
 unlink_08	2	shared_with_reference	the reference (ext4) fails this assertion too; not an OrFS deviation
-utimensat_06	4	utime_now_write_permission	utimensat(UTIME_NOW) with only write permission is refused (EPERM) instead of EACCES
-utimensat_06	11	utime_now_write_permission	utimensat(UTIME_NOW) with only write permission is refused (EPERM) instead of succeeding

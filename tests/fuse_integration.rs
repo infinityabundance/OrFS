@@ -1131,7 +1131,7 @@ fn write_evidence(rec: &Recorder, mountpoint: &Path) -> std::io::Result<()> {
                 "evidence": "evidence/correctness/pjdfstest.json",
                 "suite_repository": "https://github.com/pjd/pjdfstest",
                 "suite_commit": "85a8aea9e685999ef0540392fd80535f873d7ff7",
-                "note": "the standard pjdfstest suite run against a mounted OrFS volume AND against a reference ext4 directory; the few OrFS deviations are classified, with the exact expected/observed errno recorded in scripts/posix/pjdfstest-expected.tsv",
+                "note": "the standard pjdfstest suite run against a mounted OrFS volume AND against a reference ext4 directory; every OrFS failure is either an unsupported node type (EOPNOTSUPP) or the one assertion the reference ext4 fails too (scripts/posix/pjdfstest-expected.tsv carries only that shared artifact)",
             },
             "xfstests": {
                 "evidence": "evidence/correctness/xfstests.json",

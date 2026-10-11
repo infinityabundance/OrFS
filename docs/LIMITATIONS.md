@@ -218,40 +218,44 @@ committed root lags the bytes, so recovery may include a mutation that was never
 acknowledged. That is the safe direction (acknowledged ⇒ survives); the converse
 never happens. See `docs/CAPACITY.md` §8 and `docs/RECOVERY.md` §7.
 
-## 12. POSIX deviations found by the standard suite (Phase 24)
+## 12. POSIX deviations found by the standard suite (Phase 24; closed in Phase 25)
 
 The pjdfstest court (`docs/FUSE-SEMANTICS.md` §11.1,
 `evidence/correctness/pjdfstest.json`) compares a mounted OrFS volume against a
-reference ext4 directory on the same suite. Three real bugs it found are fixed
+reference ext4 directory on the same suite. Three real bugs it found were fixed
 there (an over-long name now returns `ENAMETOOLONG`; `rmdir` now enforces the
 sticky-bit rule; the FUSE adapter now reports the true `nlink`, including `0` for
-an unlinked-but-open file). The residual, **documented** deviations are:
+an unlinked-but-open file). It also recorded a set of POSIX semantic deviations,
+which **Phase 25 has now closed**, each verified against the reference:
 
-* **Implicit timestamps are not advanced** (`dir_timestamp`, `file_timestamp`).
-  Namespace mutations do not bump the parent directory's `mtime`/`ctime`, and
-  content mutations (write/truncate) do not bump the file's `mtime`/`ctime`. An
-explicit `utimensat`/`futimens` update is honoured precisely. This is a real gap
-  versus Linux, recorded with the exact failing assertions rather than hidden.
-* **`setuid`/`setgid` are not cleared by a non-owner write**
-  (`setuid_sgid_killpriv`). The kernel's FUSE `SETATTR` that clears the bits is
-  refused by the owner-or-root chmod rule with `EPERM`. See `docs/FUSE-SEMANTICS.md`
-  §5.2.
-* **`utimensat(UTIME_NOW)` with only write permission** is refused (`EPERM`)
-  instead of being allowed, and a non-writer is refused with `EPERM` where Linux
-  returns `EACCES` (`utime_now_write_permission`). The time update is gated on
-ownership, using one errno for both cases.
-* **Truncation through a writable fd re-checks inode write permission**
-  (`fd_truncate_permission`): `ftruncate` on a file opened `O_RDWR` but whose mode
-  denies write returns `EACCES`, where Linux allows it (the fd already carries
-  write access).
-* **Supplementary-group `chgrp`** returns `EPERM` for a non-root owner
-  (`supplementary_group_chgrp`) — already documented in §6 of
-  `docs/FUSE-SEMANTICS.md` (no caller-group database to verify membership).
-* One assertion (`unlink_08` #2, `unlink` of a directory) is marked
-  `shared_with_reference`: the reference ext4 run fails it too, so it is a pjdfstest/
-  environment artefact, not an OrFS deviation.
+* **Implicit timestamps** (`dir_timestamp`, `file_timestamp`). Namespace
+  mutations now advance the containing directory's `mtime`/`ctime`, and content
+  mutations (write/truncate) advance the file's `mtime`/`ctime`, each as an
+  append-only `INODE_SETATTR` record in the same authoritative transaction
+  (`docs/FUSE-SEMANTICS.md` §5.1). Explicit `utimensat` values and
+  `UTIME_OMIT`/`UTIME_NOW` are preserved.
+* **`setuid`/`setgid` on a non-owner write** (`setuid_sgid_killpriv`). OrFS now
+  negotiates `FUSE_HANDLE_KILLPRIV(_V2)` and clears the bits itself on write —
+  and on a truncate by a caller without `CAP_FSETID` — in the same transaction
+  (§5.2).
+* **`utimensat(UTIME_NOW)` with only write permission**
+  (`utime_now_write_permission`). A pure `ATTR_TOUCH` time update
+  (`times == NULL` or both `UTIME_NOW`) now needs only write permission for a
+  non-owner, returning `EACCES` (not `EPERM`) when it is absent (§6).
+* **Truncation through a writable fd re-checking inode write permission**
+  (`fd_truncate_permission`). A `SETATTR` carrying an already-open writable
+  handle no longer re-checks the inode's write permission (Linux checks it at
+  `open`).
+* **Supplementary-group `chgrp`** (`supplementary_group_chgrp`). A non-root owner
+  may now `chgrp` to its effective or a supplementary group, read from the
+  kernel's `/proc/<pid>/status`; a group whose membership cannot be confirmed is
+  still refused with `EPERM` (§6).
 
-These do not change any byte of committed history and never return a wrong
-success; each is a defined errno or a defined timestamp value, recorded in
-`scripts/posix/pjdfstest-expected.tsv` and asserted by the Phase 24 gate so they
-cannot silently grow.
+The only remaining pjdfstest failure that is not a mechanically unsupported node
+type is `unlink/08.t` #2, which the reference ext4 run fails too — an
+environment/suite artefact, not an OrFS deviation. Every deviation is (or was)
+recorded in `scripts/posix/pjdfstest-expected.tsv` and asserted by the gate so it
+cannot silently grow; that allowlist now contains only the shared artefact.
+
+None of these changes alters a byte of committed history (each implicit timestamp
+is an appended record) and none returns a wrong success.

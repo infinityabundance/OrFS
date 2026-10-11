@@ -26,10 +26,10 @@
   "orfs": {
     "summary": {
       "files_total": 238,
-      "files_ok": 183,
-      "files_failed": 55,
+      "files_ok": 192,
+      "files_failed": 46,
       "assertions_total": 8798,
-      "assertions_failed": 3865
+      "assertions_failed": 3777
     },
     "files": [
       {
@@ -191,13 +191,13 @@
       {
         "name": "chmod_12",
         "assertions": 14,
-        "failed": 6,
-        "verdict": "fail"
+        "failed": 0,
+        "verdict": "ok"
       },
       {
         "name": "chown_00",
         "assertions": 1280,
-        "failed": 830,
+        "failed": 774,
         "verdict": "fail"
       },
       {
@@ -227,8 +227,8 @@
       {
         "name": "chown_05",
         "assertions": 18,
-        "failed": 5,
-        "verdict": "fail"
+        "failed": 0,
+        "verdict": "ok"
       },
       {
         "name": "chown_06",
@@ -263,8 +263,8 @@
       {
         "name": "ftruncate_00",
         "assertions": 26,
-        "failed": 2,
-        "verdict": "fail"
+        "failed": 0,
+        "verdict": "ok"
       },
       {
         "name": "ftruncate_01",
@@ -395,7 +395,7 @@
       {
         "name": "link_00",
         "assertions": 202,
-        "failed": 131,
+        "failed": 129,
         "verdict": "fail"
       },
       {
@@ -503,8 +503,8 @@
       {
         "name": "mkdir_00",
         "assertions": 36,
-        "failed": 2,
-        "verdict": "fail"
+        "failed": 0,
+        "verdict": "ok"
       },
       {
         "name": "mkdir_01",
@@ -731,8 +731,8 @@
       {
         "name": "open_00",
         "assertions": 47,
-        "failed": 4,
-        "verdict": "fail"
+        "failed": 0,
+        "verdict": "ok"
       },
       {
         "name": "open_01",
@@ -1049,8 +1049,8 @@
       {
         "name": "rmdir_00",
         "assertions": 10,
-        "failed": 2,
-        "verdict": "fail"
+        "failed": 0,
+        "verdict": "ok"
       },
       {
         "name": "rmdir_01",
@@ -1145,8 +1145,8 @@
       {
         "name": "symlink_00",
         "assertions": 14,
-        "failed": 2,
-        "verdict": "fail"
+        "failed": 0,
+        "verdict": "ok"
       },
       {
         "name": "symlink_01",
@@ -1223,8 +1223,8 @@
       {
         "name": "truncate_00",
         "assertions": 21,
-        "failed": 1,
-        "verdict": "fail"
+        "failed": 0,
+        "verdict": "ok"
       },
       {
         "name": "truncate_01",
@@ -1313,7 +1313,7 @@
       {
         "name": "unlink_00",
         "assertions": 112,
-        "failed": 70,
+        "failed": 66,
         "verdict": "fail"
       },
       {
@@ -1439,8 +1439,8 @@
       {
         "name": "utimensat_06",
         "assertions": 13,
-        "failed": 2,
-        "verdict": "fail"
+        "failed": 0,
+        "verdict": "ok"
       },
       {
         "name": "utimensat_07",
@@ -3151,244 +3151,9 @@
         "unlink_11",
         "utimensat_00"
       ],
-      "assertions_covered": 3838
+      "assertions_covered": 3776
     },
-    "documented_deviations": [
-      {
-        "file": "chmod_12",
-        "assertion": 3,
-        "tried": "-u 65534 -g 65534 open pjdfstest_cd0bd2ad7e3aa51b7625c2fc11aff055 O_WRONLY : write 0 x : fstat 0 mode",
-        "expected": "0777",
-        "got": "EPERM",
-        "class": "setuid_sgid_killpriv",
-        "reason": "non-owner write does not clear S_ISUID; the kernel's SETATTR killpriv request is refused with EPERM (docs/FUSE-SEMANTICS.md §5.2)"
-      },
-      {
-        "file": "chmod_12",
-        "assertion": 4,
-        "tried": "stat pjdfstest_cd0bd2ad7e3aa51b7625c2fc11aff055 mode",
-        "expected": "0777",
-        "got": "04777",
-        "class": "setuid_sgid_killpriv",
-        "reason": "S_ISUID not cleared after a non-owner write"
-      },
-      {
-        "file": "chmod_12",
-        "assertion": 7,
-        "tried": "-u 65534 -g 65534 open pjdfstest_cd0bd2ad7e3aa51b7625c2fc11aff055 O_RDWR : write 0 x : fstat 0 mode",
-        "expected": "0777",
-        "got": "EPERM",
-        "class": "setuid_sgid_killpriv",
-        "reason": "non-owner write does not clear S_ISGID; killpriv SETATTR refused with EPERM"
-      },
-      {
-        "file": "chmod_12",
-        "assertion": 8,
-        "tried": "stat pjdfstest_cd0bd2ad7e3aa51b7625c2fc11aff055 mode",
-        "expected": "0777",
-        "got": "02777",
-        "class": "setuid_sgid_killpriv",
-        "reason": "S_ISGID not cleared after a non-owner write"
-      },
-      {
-        "file": "chmod_12",
-        "assertion": 11,
-        "tried": "-u 65534 -g 65534 open pjdfstest_cd0bd2ad7e3aa51b7625c2fc11aff055 O_RDWR : write 0 x : fstat 0 mode",
-        "expected": "0777",
-        "got": "EPERM",
-        "class": "setuid_sgid_killpriv",
-        "reason": "non-owner write does not clear S_ISUID|S_ISGID; killpriv SETATTR refused with EPERM"
-      },
-      {
-        "file": "chmod_12",
-        "assertion": 12,
-        "tried": "stat pjdfstest_cd0bd2ad7e3aa51b7625c2fc11aff055 mode",
-        "expected": "0777",
-        "got": "06777",
-        "class": "setuid_sgid_killpriv",
-        "reason": "S_ISUID|S_ISGID not cleared after a non-owner write"
-      },
-      {
-        "file": "chown_05",
-        "assertion": 5,
-        "tried": "-u 65534 -g 65533,65534 -- chown pjdfstest_390da58b6cece2bc156134ec15b9fa2e/pjdfstest_3579e803a44ffe36b1f99978573b7a8b -1 65533",
-        "expected": "0",
-        "got": "EPERM",
-        "class": "supplementary_group_chgrp",
-        "reason": "non-root chgrp to a supplementary group returns EPERM (docs/FUSE-SEMANTICS.md §6)"
-      },
-      {
-        "file": "chown_05",
-        "assertion": 6,
-        "tried": "-u 65534 -g 65534 stat pjdfstest_390da58b6cece2bc156134ec15b9fa2e/pjdfstest_3579e803a44ffe36b1f99978573b7a8b uid,gid",
-        "expected": "65534,65533",
-        "got": "65534,65534",
-        "class": "supplementary_group_chgrp",
-        "reason": "downstream of the refused chgrp"
-      },
-      {
-        "file": "chown_05",
-        "assertion": 11,
-        "tried": "-u 65534 -g 65534 stat pjdfstest_390da58b6cece2bc156134ec15b9fa2e/pjdfstest_3579e803a44ffe36b1f99978573b7a8b uid,gid",
-        "expected": "65534,65533",
-        "got": "65534,65534",
-        "class": "supplementary_group_chgrp",
-        "reason": "downstream of the refused chgrp"
-      },
-      {
-        "file": "chown_05",
-        "assertion": 14,
-        "tried": "-u 65534 -g 65533,65534 -- lchown pjdfstest_390da58b6cece2bc156134ec15b9fa2e/pjdfstest_3579e803a44ffe36b1f99978573b7a8b -1 65533",
-        "expected": "0",
-        "got": "EPERM",
-        "class": "supplementary_group_chgrp",
-        "reason": "non-root lchown to a supplementary group returns EPERM"
-      },
-      {
-        "file": "chown_05",
-        "assertion": 15,
-        "tried": "-u 65534 -g 65533 stat pjdfstest_390da58b6cece2bc156134ec15b9fa2e/pjdfstest_3579e803a44ffe36b1f99978573b7a8b uid,gid",
-        "expected": "65534,65533",
-        "got": "65534,65534",
-        "class": "supplementary_group_chgrp",
-        "reason": "downstream of the refused lchown"
-      },
-      {
-        "file": "ftruncate_00",
-        "assertion": 15,
-        "tried": "",
-        "expected": "",
-        "got": "",
-        "class": "file_timestamp",
-        "reason": "content mutations do not advance the file ctime (docs/FUSE-SEMANTICS.md §5.1)"
-      },
-      {
-        "file": "ftruncate_00",
-        "assertion": 24,
-        "tried": "-u 65534 open pjdfstest_be344ec5b588f3b90d0b88b0ae751f05 O_CREAT,O_RDWR 0 : ftruncate 0 0",
-        "expected": "0",
-        "got": "EACCES",
-        "class": "fd_truncate_permission",
-        "reason": "truncation through a writable fd re-checks inode write permission and returns EACCES"
-      },
-      {
-        "file": "mkdir_00",
-        "assertion": 33,
-        "tried": "",
-        "expected": "",
-        "got": "",
-        "class": "dir_timestamp",
-        "reason": "namespace mutations do not advance the parent directory mtime/ctime"
-      },
-      {
-        "file": "mkdir_00",
-        "assertion": 34,
-        "tried": "",
-        "expected": "",
-        "got": "",
-        "class": "dir_timestamp",
-        "reason": "namespace mutations do not advance the parent directory mtime/ctime"
-      },
-      {
-        "file": "open_00",
-        "assertion": 33,
-        "tried": "",
-        "expected": "",
-        "got": "",
-        "class": "dir_timestamp",
-        "reason": "create does not advance the parent directory mtime"
-      },
-      {
-        "file": "open_00",
-        "assertion": 34,
-        "tried": "",
-        "expected": "",
-        "got": "",
-        "class": "dir_timestamp",
-        "reason": "create does not advance the parent directory ctime"
-      },
-      {
-        "file": "open_00",
-        "assertion": 43,
-        "tried": "",
-        "expected": "",
-        "got": "",
-        "class": "file_timestamp",
-        "reason": "O_TRUNC does not advance the file mtime"
-      },
-      {
-        "file": "open_00",
-        "assertion": 44,
-        "tried": "",
-        "expected": "",
-        "got": "",
-        "class": "file_timestamp",
-        "reason": "O_TRUNC does not advance the file ctime"
-      },
-      {
-        "file": "rmdir_00",
-        "assertion": 8,
-        "tried": "",
-        "expected": "",
-        "got": "",
-        "class": "dir_timestamp",
-        "reason": "rmdir does not advance the parent directory mtime"
-      },
-      {
-        "file": "rmdir_00",
-        "assertion": 9,
-        "tried": "",
-        "expected": "",
-        "got": "",
-        "class": "dir_timestamp",
-        "reason": "rmdir does not advance the parent directory ctime"
-      },
-      {
-        "file": "symlink_00",
-        "assertion": 11,
-        "tried": "",
-        "expected": "",
-        "got": "",
-        "class": "dir_timestamp",
-        "reason": "symlink does not advance the parent directory mtime"
-      },
-      {
-        "file": "symlink_00",
-        "assertion": 12,
-        "tried": "",
-        "expected": "",
-        "got": "",
-        "class": "dir_timestamp",
-        "reason": "symlink does not advance the parent directory ctime"
-      },
-      {
-        "file": "truncate_00",
-        "assertion": 15,
-        "tried": "",
-        "expected": "",
-        "got": "",
-        "class": "file_timestamp",
-        "reason": "truncate does not advance the file ctime"
-      },
-      {
-        "file": "utimensat_06",
-        "assertion": 4,
-        "tried": "-u 65534 open . O_RDONLY : utimensat 0 pjdfstest_58bd330388d8359507fc0f4c783948f5 0 UTIME_NOW 0 UTIME_NOW 0",
-        "expected": "EACCES",
-        "got": "EPERM",
-        "class": "utime_now_write_permission",
-        "reason": "utimensat(UTIME_NOW) with only write permission is refused (EPERM) instead of EACCES"
-      },
-      {
-        "file": "utimensat_06",
-        "assertion": 11,
-        "tried": "-u 65534 open . O_RDONLY : utimensat 0 pjdfstest_58bd330388d8359507fc0f4c783948f5 0 UTIME_NOW 0 UTIME_NOW 0",
-        "expected": "0",
-        "got": "EPERM",
-        "class": "utime_now_write_permission",
-        "reason": "utimensat(UTIME_NOW) with only write permission is refused (EPERM) instead of succeeding"
-      }
-    ],
+    "documented_deviations": [],
     "shared_with_reference": [
       {
         "file": "unlink_08",
@@ -3400,28 +3165,8 @@
     ],
     "class_counts": [
       {
-        "class": "dir_timestamp",
-        "count": 8
-      },
-      {
-        "class": "fd_truncate_permission",
-        "count": 1
-      },
-      {
-        "class": "file_timestamp",
-        "count": 4
-      },
-      {
-        "class": "setuid_sgid_killpriv",
-        "count": 6
-      },
-      {
         "class": "shared_with_reference",
         "count": 1
-      },
-      {
-        "class": "supplementary_group_chgrp",
-        "count": 5
       },
       {
         "class": "unsupported_errno",
@@ -3429,15 +3174,11 @@
       },
       {
         "class": "unsupported_node_downstream",
-        "count": 3124
+        "count": 3062
       },
       {
         "class": "unsupported_node_type",
         "count": 682
-      },
-      {
-        "class": "utime_now_write_permission",
-        "count": 2
       }
     ],
     "unclassified": []

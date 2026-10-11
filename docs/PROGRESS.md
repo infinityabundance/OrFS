@@ -1487,6 +1487,55 @@ against a **mounted** OrFS volume and comparing to a trusted ordinary filesystem
 
 ### Docs
 
-`docs/FUSE-SEMANTICS.md` (new §5.1 timestamps, §5.2 setuid/setgid killpriv, §11
+`docs/FUSE-SEMANTICS.md` (new §5.1 timestamps, §5.2 setuid/sgid killpriv, §11
 standard POSIX courts), `docs/LIMITATIONS.md` §12 (residual documented deviations),
 `docs/PERFORMANCE.md` §7 (tooling inventory updated), this section.
+
+## Phase 25 — Close the pjdfstest POSIX deviations
+
+**Complete.** Implements the Linux/POSIX semantics the Phase 24 pjdfstest court
+exposed (external-review finding P1), then re-runs the court to prove the
+deviation count dropped.
+
+### Delivered
+
+* **Implicit timestamps** (`src/namespace.rs`). A namespace mutation (`create`,
+  `mkdir`, `symlink`, `link`, `unlink`, `rmdir`, `rename`) now advances the
+  containing directory's `mtime`/`ctime`, and a content mutation (`write`,
+  `truncate`, `ftruncate`, `O_TRUNC`) advances the file's `mtime`/`ctime`. Each
+  update is an appended `INODE_SETATTR` record in the *same* transaction as the
+  mutation (`Plan::bump_times`), so committed history is never rewritten and a
+  snapshot pinned to an earlier root reads exactly the timestamps that root
+  encoded. Explicit `utimensat`/`UTIME_NOW`/`UTIME_OMIT` values are preserved.
+* **`setuid`/`setgid` on write/truncate** (`src/fuse.rs`, `src/fuse_native.rs`,
+  `src/namespace.rs`). Both transports now negotiate `FUSE_HANDLE_KILLPRIV` and
+  `FUSE_HANDLE_KILLPRIV_V2`; the daemon clears `S_ISUID`/`S_ISGID` in the same
+  transaction as the write flagged `FUSE_WRITE_KILL_SUIDGID`, and on a truncate
+  by a caller without `CAP_FSETID` (`OrfsCore::write_at_killpriv`).
+* **`utimensat(UTIME_NOW)` with write permission** (`src/fuse.rs`,
+  `src/fuse_native.rs`). A pure `ATTR_TOUCH` update now needs only write
+  permission for a non-owner (`EACCES` when absent, not `EPERM`).
+* **`ftruncate` through a writable fd** (`src/fuse.rs`, `src/fuse_native.rs`). A
+  `SETATTR` carrying an already-open writable handle no longer re-checks the
+  inode's write permission.
+* **Supplementary-group `chgrp`** (`src/fuse.rs`, `src/fuse_native.rs`). A
+  non-root owner may `chgrp` to its effective or a supplementary group, read from
+  the kernel's `/proc/<pid>/status` `Groups:` line; unconfirmable membership is
+  refused with `EPERM`.
+
+### Results (evidence-backed)
+
+* `evidence/correctness/pjdfstest.json`: OrFS **238 files / 8,798 assertions**,
+  now **46 failing files / 3,777 assertions** (down from 55 / 3,865) — 3,776
+  mechanically unsupported node types, **0 documented deviations**, **0
+  unclassified**, and the single remaining non-mechanical failure is the one the
+  reference ext4 fails too (`unlink/08.t` #2). Reference ext4 unchanged (2 files /
+  28 assertions). Gate **pass**; `scripts/posix/pjdfstest-expected.tsv` now carries
+  only that shared artefact.
+* `evidence/correctness/posix-results.json`: refreshed pjdfstest-court note.
+
+### Docs
+
+`docs/FUSE-SEMANTICS.md` §5.1/§5.2/§6/§7/§11.1 and `docs/LIMITATIONS.md` §12 now
+record the closed semantics and that the allowlist holds only the shared
+reference artefact.

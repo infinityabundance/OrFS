@@ -38,7 +38,7 @@ use fuser::{
     FileType as FuseFileType, Filesystem, FopenFlags, Generation, INodeNo, InitFlags, KernelConfig,
     LockOwner, MountOption, Notifier, OpenFlags, RenameFlags, ReplyAttr, ReplyCreate, ReplyData,
     ReplyDirectory, ReplyDirectoryPlus, ReplyEmpty, ReplyEntry, ReplyLock, ReplyLseek, ReplyOpen,
-    ReplyStatfs, ReplyWrite, ReplyXattr, Request, Session, SessionACL, TimeOrNow,
+    ReplyStatfs, ReplyWrite, ReplyXattr, Request, Session, SessionACL, TimeOrNow, WriteFlags,
 };
 use parking_lot::Mutex;
 
@@ -728,7 +728,14 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             | InitFlags::FUSE_ASYNC_READ
             | InitFlags::FUSE_BIG_WRITES
             | InitFlags::FUSE_MAX_PAGES
-            | InitFlags::FUSE_ASYNC_DIO;
+            | InitFlags::FUSE_ASYNC_DIO
+            // Delegate suid/sgid clearing on write to the daemon instead of the
+            // kernel's mode-clearing SETATTR, which the ownership rule refuses
+            // (docs/FUSE-SEMANTICS.md §5.2). The V2 form additionally carries
+            // FUSE_WRITE_KILL_SUIDGID on the write so the daemon clears exactly
+            // when the kernel would.
+            | InitFlags::FUSE_HANDLE_KILLPRIV
+            | InitFlags::FUSE_HANDLE_KILLPRIV_V2;
         let supported = config.capabilities() & want;
         let _ = config.add_capabilities(supported);
 
@@ -816,7 +823,7 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         atime: Option<TimeOrNow>,
         mtime: Option<TimeOrNow>,
         _ctime: Option<SystemTime>,
-        _fh: Option<FileHandle>,
+        fh: Option<FileHandle>,
         _crtime: Option<SystemTime>,
         _chgtime: Option<SystemTime>,
         _bkuptime: Option<SystemTime>,
@@ -826,38 +833,72 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         if let Err(e) = self.ensure_writable() {
             return reply.error(errno(&e));
         }
+        // Truncation through an already-open writable descriptor carries write
+        // access from `open`; do not re-check the inode's write permission
+        // (Linux `ftruncate` never does). A path-based truncate still checks.
+        let writable_fh = fh
+            .and_then(|h| self.inner.handle(h.0))
+            .is_some_and(|h| !h.is_dir && (h.flags & libc::O_ACCMODE) != libc::O_RDONLY);
         let mut core = self.inner.core.lock();
         let root = core.root();
         let st = match core.getattr(ino.0, root) {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
-        // Permission: chmod/chown/utimes require ownership or root; truncate
-        // requires write permission. Beyond that, changing the *owner* (uid), or
-        // moving a file to a *different* group, additionally requires root:
-        // Linux permits only a privileged process to give a file away. (An owner
-        // may still restate the current uid/gid, which is a no-op.) This is
-        // deliberately a little stricter than Linux's "an owner may `chgrp` to a
-        // supplementary group": a single-node daemon has no group database for
-        // the caller, so it cannot verify membership. See docs/FUSE-SEMANTICS.md
-        // §6.
         let is_root = req.uid() == 0;
         let owner_or_root = is_root || req.uid() == st.uid;
-        if (mode.is_some() || uid.is_some() || gid.is_some() || atime.is_some() || mtime.is_some())
-            && !owner_or_root
-        {
+        let meta_change = mode.is_some() || uid.is_some() || gid.is_some();
+        let time_change = atime.is_some() || mtime.is_some();
+        // Linux `ATTR_TOUCH` (an explicit `utimensat`/`utimes` with `times == NULL`
+        // or both fields `UTIME_NOW`) is the one time update a *non-owner* may
+        // perform, provided it has write permission. Every other time form (a
+        // specific time, or one field omitted) is `ATTR_TIMES_SET`, which
+        // requires ownership. Because the mount does not use
+        // `default_permissions`, the kernel delegates this check to the daemon.
+        let touch_like = !meta_change
+            && matches!(atime, Some(TimeOrNow::Now))
+            && matches!(mtime, Some(TimeOrNow::Now));
+        if touch_like {
+            if !owner_or_root && !has_permission(req.uid(), req.gid(), &st, 0o2) {
+                return reply.error(Errno::EACCES);
+            }
+        } else if (meta_change || time_change) && !owner_or_root {
+            // chmod/chown/utimes with an explicit value require ownership or root.
             return reply.error(Errno::EPERM);
         }
+        // Changing the *owner* (uid) requires root (Linux `CAP_CHOWN`).
         let uid_changes = uid.is_some_and(|u| u != st.uid);
-        let gid_changes = gid.is_some_and(|g| g != st.gid);
-        if (uid_changes || gid_changes) && !is_root {
+        if uid_changes && !is_root {
             return reply.error(Errno::EPERM);
         }
-        if size.is_some() && !has_permission(req.uid(), req.gid(), &st, 0o2) {
+        // A non-root owner may move a file into a group it belongs to — its
+        // effective group or a supplementary group — and only root may do more.
+        // The FUSE request carries only the caller's fsgid, so membership is read
+        // from the kernel's own `/proc/<pid>/status` (docs/FUSE-SEMANTICS.md §6).
+        let gid_changes = gid.is_some_and(|g| g != st.gid);
+        if gid_changes && !is_root {
+            let target = gid.unwrap_or(st.gid);
+            if !owner_or_root || !caller_in_group(req.pid(), req.gid(), target) {
+                return reply.error(Errno::EPERM);
+            }
+        }
+        if size.is_some() && !writable_fh && !has_permission(req.uid(), req.gid(), &st, 0o2) {
             return reply.error(Errno::EACCES);
         }
+        // Linux clears S_ISUID/S_ISGID when a caller without CAP_FSETID truncates
+        // (the kernel signals this as FATTR_KILL_SUIDGID, which the high-level API
+        // does not surface, so we approximate CAP_FSETID as uid 0). The resize and
+        // the clearing then share one authoritative transaction.
+        let mut effective_mode = mode;
+        if size.is_some() && !is_root {
+            let cleared = st.mode & !(libc::S_ISUID | libc::S_ISGID);
+            if cleared != st.mode {
+                effective_mode =
+                    Some(effective_mode.unwrap_or(st.mode) & !(libc::S_ISUID | libc::S_ISGID));
+            }
+        }
         let attrs = SetAttr {
-            mode,
+            mode: effective_mode,
             uid,
             gid,
             atime: atime.map(time_or_now),
@@ -1261,7 +1302,7 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         fh: FileHandle,
         offset: u64,
         data: &[u8],
-        _write_flags: fuser::WriteFlags,
+        write_flags: fuser::WriteFlags,
         _flags: OpenFlags,
         _lock_owner: Option<LockOwner>,
         reply: ReplyWrite,
@@ -1289,7 +1330,15 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         } else {
             offset
         };
-        match core.write_at(ino.0, effective, data) {
+        // Linux clears S_ISUID/S_ISGID on a write by a caller without
+        // CAP_FSETID. With FUSE_HANDLE_KILLPRIV(_V2) negotiated the kernel says so
+        // precisely with FUSE_WRITE_KILL_SUIDGID; the non-owner fallback below
+        // covers a kernel that negotiated only the older capability.
+        let kill_setid = write_flags.contains(WriteFlags::FUSE_WRITE_KILL_SUIDGID)
+            || (req.uid() != 0
+                && req.uid() != st.uid
+                && st.mode & (libc::S_ISUID | libc::S_ISGID) != 0);
+        match core.write_at_killpriv(ino.0, effective, data, kill_setid) {
             Ok(n) => {
                 drop(core);
                 let mut m = self.inner.metrics.lock();
@@ -1904,6 +1953,34 @@ fn acc_mask(mode: fuser::OpenAccMode) -> u32 {
         fuser::OpenAccMode::O_WRONLY => 0o2,
         fuser::OpenAccMode::O_RDWR => 0o4 | 0o2,
     }
+}
+
+/// Whether the process that issued the FUSE request (identified by `pid`) is a
+/// member of `target_gid`, through its effective group or a supplementary group.
+///
+/// A FUSE request carries only the caller's fsuid/fsgid, never its supplementary
+/// groups, so the daemon reads them from the kernel's own
+/// `/proc/<pid>/status` `Groups:` line — the same set Linux's `chgrp_ok`
+/// consults. The requesting process is blocked in the FUSE call, so its `/proc`
+/// entry is stable. A missing or unreadable entry yields `false` (deny), which
+/// is conservative: it can refuse a permitted `chgrp` but never fabricate one.
+pub(crate) fn caller_in_group(pid: u32, egid: u32, target_gid: u32) -> bool {
+    if egid == target_gid {
+        return true;
+    }
+    std::fs::read_to_string(format!("/proc/{pid}/status"))
+        .ok()
+        .and_then(|status| {
+            status
+                .lines()
+                .find_map(|line| line.strip_prefix("Groups:"))
+                .map(str::to_owned)
+        })
+        .is_some_and(|groups| {
+            groups
+                .split_whitespace()
+                .any(|g| g.parse::<u32>() == Ok(target_gid))
+        })
 }
 
 fn check_create<C: OrfsCore>(core: &C, req: &Request, parent: u64, mask: u32) -> Result<()> {

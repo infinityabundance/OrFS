@@ -101,6 +101,11 @@ const FUSE_ROOT_ID: u64 = 1;
 // `fuse_init_out.flags` / `flags2`.
 const FUSE_ASYNC_READ: u32 = 1 << 0;
 const FUSE_BIG_WRITES: u32 = 1 << 5;
+/// `FUSE_HANDLE_KILLPRIV` (`1 << 19`): the daemon clears suid/sgid on write.
+const FUSE_HANDLE_KILLPRIV: u32 = 1 << 19;
+/// `FUSE_HANDLE_KILLPRIV_V2` (`1 << 28`): as above, and the kernel carries the
+/// precise `FUSE_WRITE_KILL_SUIDGID` signal on the write request.
+const FUSE_HANDLE_KILLPRIV_V2: u32 = 1 << 28;
 const FUSE_INIT_EXT: u32 = 1 << 30;
 /// `FUSE_OVER_IO_URING = 1 << 41` → `flags2` bit 9.
 const FUSE_OVER_IO_URING_FLAGS2: u32 = 1 << (41 - 32);
@@ -158,8 +163,12 @@ const FATTR_GID: u32 = 1 << 2;
 const FATTR_SIZE: u32 = 1 << 3;
 const FATTR_ATIME: u32 = 1 << 4;
 const FATTR_MTIME: u32 = 1 << 5;
+const FATTR_FH: u32 = 1 << 6;
 const FATTR_ATIME_NOW: u32 = 1 << 7;
 const FATTR_MTIME_NOW: u32 = 1 << 8;
+
+// `fuse_write_in.write_flags`.
+const FUSE_WRITE_KILL_SUIDGID: u32 = 1 << 2;
 
 // `d_type` values.
 const DT_DIR: u32 = 4;
@@ -351,6 +360,7 @@ struct Req<'a> {
     nodeid: u64,
     uid: u32,
     gid: u32,
+    pid: u32,
     commit_id: u64,
     /// The per-opcode input header (`op_in`, 128 bytes).
     op: &'a [u8],
@@ -616,6 +626,7 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         // mtime, ctime, atimensec, mtimensec, ctimensec, mode, unused4, uid,
         // gid, unused5.
         let valid = get_u32(req.op, 0);
+        let fh = get_u64(req.op, 8);
         let size = get_u64(req.op, 16);
         let atime = get_u64(req.op, 32);
         let mtime = get_u64(req.op, 40);
@@ -632,26 +643,50 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         };
         let is_root = req.uid == 0;
         let owner_or_root = is_root || req.uid == st.uid;
-        let meta = FATTR_MODE
-            | FATTR_UID
-            | FATTR_GID
-            | FATTR_ATIME
-            | FATTR_MTIME
-            | FATTR_ATIME_NOW
-            | FATTR_MTIME_NOW;
-        if valid & meta != 0 && !owner_or_root {
+        let meta_change = valid & (FATTR_MODE | FATTR_UID | FATTR_GID) != 0;
+        let time_change = valid & (FATTR_ATIME | FATTR_MTIME) != 0;
+        // Linux `ATTR_TOUCH` (both times `UTIME_NOW`, e.g. `utimes(path, NULL)`)
+        // needs only write permission for a non-owner; every other time form
+        // requires ownership (mirrors the classical transport).
+        let touch_like =
+            !meta_change && valid & FATTR_ATIME_NOW != 0 && valid & FATTR_MTIME_NOW != 0;
+        if touch_like {
+            if !owner_or_root && !has_permission(req.uid, req.gid, &st, 0o2) {
+                return Reply::Err(libc::EACCES);
+            }
+        } else if (meta_change || time_change) && !owner_or_root {
             return Reply::Err(libc::EPERM);
         }
         let uid_changes = valid & FATTR_UID != 0 && uid != st.uid;
-        let gid_changes = valid & FATTR_GID != 0 && gid != st.gid;
-        if (uid_changes || gid_changes) && !is_root {
+        if uid_changes && !is_root {
             return Reply::Err(libc::EPERM);
         }
-        if valid & FATTR_SIZE != 0 && !has_permission(req.uid, req.gid, &st, 0o2) {
+        let gid_changes = valid & FATTR_GID != 0 && gid != st.gid;
+        if gid_changes
+            && !is_root
+            && (!owner_or_root || !crate::fuse::caller_in_group(req.pid, req.gid, gid))
+        {
+            return Reply::Err(libc::EPERM);
+        }
+        let writable_fh = valid & FATTR_FH != 0
+            && self
+                .fs
+                .inner
+                .handle(fh)
+                .is_some_and(|h| !h.is_dir && (h.flags & libc::O_ACCMODE) != libc::O_RDONLY);
+        if valid & FATTR_SIZE != 0 && !writable_fh && !has_permission(req.uid, req.gid, &st, 0o2) {
             return Reply::Err(libc::EACCES);
         }
+        let mut effective_mode = (valid & FATTR_MODE != 0).then_some(mode & 0o7777);
+        if valid & FATTR_SIZE != 0 && !is_root {
+            let cleared = st.mode & !(libc::S_ISUID | libc::S_ISGID);
+            if cleared != st.mode {
+                effective_mode =
+                    Some(effective_mode.unwrap_or(st.mode) & !(libc::S_ISUID | libc::S_ISGID));
+            }
+        }
         let attrs = SetAttr {
-            mode: (valid & FATTR_MODE != 0).then_some(mode & 0o7777),
+            mode: effective_mode,
             uid: (valid & FATTR_UID != 0).then_some(uid),
             gid: (valid & FATTR_GID != 0).then_some(gid),
             size: (valid & FATTR_SIZE != 0).then_some(size),
@@ -998,6 +1033,7 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         let fh = get_u64(req.op, 0);
         let offset = get_u64(req.op, 8);
         let size = get_u32(req.op, 16) as usize;
+        let write_flags = get_u32(req.op, 20);
         let handle = match self.fs.inner.handle(fh) {
             Some(h) if !h.is_dir => h,
             _ => return Reply::Err(libc::EBADF),
@@ -1017,7 +1053,11 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         } else {
             offset
         };
-        match core.write_at(req.nodeid, effective, data) {
+        let kill_setid = write_flags & FUSE_WRITE_KILL_SUIDGID != 0
+            || (req.uid != 0
+                && req.uid != st.uid
+                && st.mode & (libc::S_ISUID | libc::S_ISGID) != 0);
+        match core.write_at_killpriv(req.nodeid, effective, data, kill_setid) {
             Ok(n) => {
                 drop(core);
                 let mut m = self.fs.inner.metrics.lock();
@@ -1757,7 +1797,14 @@ fn encode_init_reply(unique: u64, minor: u32, passthrough: bool) -> Vec<u8> {
     put_u32(&mut out, 7); // major
     put_u32(&mut out, minor); // minor
     put_u32(&mut out, MAX_READAHEAD); // max_readahead
-    put_u32(&mut out, FUSE_INIT_EXT | FUSE_ASYNC_READ | FUSE_BIG_WRITES); // flags
+    put_u32(
+        &mut out,
+        FUSE_INIT_EXT
+            | FUSE_ASYNC_READ
+            | FUSE_BIG_WRITES
+            | FUSE_HANDLE_KILLPRIV
+            | FUSE_HANDLE_KILLPRIV_V2,
+    ); // flags
     put_u16(&mut out, 12); // max_background
     put_u16(&mut out, 9); // congestion_threshold
     put_u32(&mut out, MAX_WRITE); // max_write
@@ -2276,6 +2323,7 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
                 nodeid: get_u64(hdr, 16),
                 uid: get_u32(hdr, 24),
                 gid: get_u32(hdr, 28),
+                pid: get_u32(hdr, 32),
                 commit_id: get_u64(hdr, 264),
                 op: &hdr[128..256],
                 payload: &e.payload.as_slice()[..payload_sz],

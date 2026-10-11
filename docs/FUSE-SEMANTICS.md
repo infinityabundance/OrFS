@@ -113,7 +113,7 @@ are stable, so an unlinked child still resolves).
 | `lookup` | Resolves `.`/`..`/`name` in the live root; requires execute permission on the parent. A component longer than `NAME_MAX` (255) returns `ENAMETOOLONG`. |
 | `forget` | Decrements lookup accounting. |
 | `getattr` | Returns the version-consistent `InodeStat`. |
-| `setattr` | Applies a masked change (`mode`/`uid`/`gid`/`atime`/`mtime`/`size`). `chmod`/`utimes` require owner or root; changing the owner (`uid`) or moving the file to a *different* `gid` additionally requires root (§6); `size` requires write permission. Replies with fresh attributes. Requests an inode invalidation. |
+| `setattr` | Applies a masked change (`mode`/`uid`/`gid`/`atime`/`mtime`/`size`). `chmod`/`utimes` require owner or root (a `utimensat(UTIME_NOW)` needs only write permission for a non-owner, per Linux `ATTR_TOUCH` §6); changing the owner (`uid`) requires root and moving the file to a *different* `gid` requires root or an owner that belongs to the target group (§6); `size` requires write permission unless the request carries an already-open writable handle. An implicit `mtime`/`ctime` advancement and any `setuid`/`setgid` clearing are committed in the same authoritative transaction (§5.1, §5.2). Replies with fresh attributes. Requests an inode invalidation. |
 | `readlink` | Returns the authoritative target bytes. |
 | `mknod` | Regular files and directories are created; any other node type (`S_IFIFO`/`S_IFCHR`/`S_IFBLK`/`S_IFSOCK`) returns `EOPNOTSUPP`. `umask` is already applied by the kernel (OrFS does not set `FUSE_DONT_MASK`). |
 | `mkdir` | Creates a directory; replies with the entry. |
@@ -124,7 +124,7 @@ are stable, so an unlinked child still resolves).
 | `link` | Hard link; adjusts `nlink`. |
 | `open` | Enforces access-mode permission; honours `O_TRUNC`; allocates a file handle. |
 | `read` | Enforces read permission; resolves logical extents. Clamped to EOF. |
-| `write` | Enforces write permission; appends an immutable `DATA_EXTENT`. For `O_APPEND` the *authoritative* end-of-file is used as the offset. Requests an inode invalidation. |
+| `write` | Enforces write permission; appends an immutable `DATA_EXTENT` and advances the file's `mtime`/`ctime` in the same transaction (§5.1). For `O_APPEND` the *authoritative* end-of-file is used as the offset. Clears `S_ISUID`/`S_ISGID` when the kernel flags the write `FUSE_WRITE_KILL_SUIDGID` (§5.2). Requests an inode invalidation. |
 | `flush` | **Not** a durability barrier — returns `ok` because nothing is buffered (§8). |
 | `fsync` | Durably flushes the authoritative log (`sync()`), i.e. it *is* the durability barrier. `fdatasync(2)` arrives as `fsync` with the `datasync` hint and is served by the same full `sync()` (a strictly stronger guarantee). |
 | `fsyncdir` | Same durability hook as `fsync`. |
@@ -152,28 +152,34 @@ errno (`EOPNOTSUPP`, `ENOSYS`, `EINVAL`, …).
 Every inode carries `atime`/`mtime`/`ctime` (1 ns granularity). They are set at
 creation and updated by an explicit `setattr` (chmod/chown/utimes).
 
-**Documented deviation (found by the standard pjdfstest court, Phase 24).** OrFS
-does **not** advance timestamps implicitly the way Linux/ext4 does:
+OrFS also advances timestamps **implicitly**, the way Linux/ext4 does. Each
+implicit update is itself an authoritative, append-only `INODE_SETATTR` record
+committed in the *same* transaction as the mutation that caused it — never an
+in-place edit — so committed history is unchanged and a snapshot pinned to an
+earlier root reads exactly the timestamps that root encoded:
 
 * a namespace mutation (`create`, `mkdir`, `symlink`, `link`, `unlink`, `rmdir`,
-  `rename`) does **not** advance the parent directory's `mtime`/`ctime`; and
-* a content mutation (write, `truncate`, `O_TRUNC`, `ftruncate`) does **not**
-  advance the file's `mtime`/`ctime`.
+  `rename`) advances the containing directory's `mtime` and `ctime` (`rename`
+  advances both directories when it crosses them); and
+* a content mutation (`write`, `truncate`, `ftruncate`, `O_TRUNC`) advances the
+  file's `mtime` and `ctime`. The access time is left untouched.
 
-This is honest and deliberate, not a wrong success: the timestamps returned are
-the ones the authoritative log encodes. It is recorded as a residual deviation in
-`evidence/correctness/pjdfstest.json` (classes `dir_timestamp`, `file_timestamp`)
-and in `scripts/posix/pjdfstest-expected.tsv` with the exact failing assertions.
+An explicit `utimensat`/`utimes`/`futimens` still takes precedence: its values
+(including `UTIME_NOW` and `UTIME_OMIT`) are applied verbatim. Verified against
+the reference ext4 by the pjdfstest court (§11.1).
 
 ### 5.2 `setuid`/`setgid` on non-owner write
 
-**Documented deviation.** On Linux a non-privileged write to a file with
-`S_ISUID`/`S_ISGID` set clears those bits. The kernel implements this by issuing a
-FUSE `SETATTR` that only clears the bits. OrFS's `setattr` ownership rule (§6)
-rejects any mode change by a non-owner, so that kernel request fails with `EPERM`
-and the bits are not cleared. A future revision would negotiate
-`FUSE_HANDLE_KILLPRIV` (letting the daemon clear the bits itself on write) or
-accept a bits-clearing `SETATTR`. Recorded as class `setuid_sgid_killpriv`.
+On Linux a write by a caller without `CAP_FSETID` to a file with
+`S_ISUID`/`S_ISGID` set clears those bits. OrFS negotiates
+`FUSE_HANDLE_KILLPRIV` and `FUSE_HANDLE_KILLPRIV_V2` (§7), so the kernel
+suppresses its mode-clearing `SETATTR` and instead flags the write with
+`FUSE_WRITE_KILL_SUIDGID`. The daemon clears `S_ISUID`/`S_ISGID` in the *same*
+authoritative transaction as the write. A truncate by a caller without
+`CAP_FSETID` clears them too (the kernel signals this as `FATTR_KILL_SUIDGID`;
+the high-level API does not surface that bit, so the daemon approximates
+`CAP_FSETID` as uid 0 and clears the bits with the resize in one transaction).
+Verified by pjdfstest `chmod/12.t` (§11.1).
 
 ---
 
@@ -191,15 +197,16 @@ by default: delegating to the kernel makes the daemon's behaviour depend on the
 mount ACL and the kernel's `allow_other` policy, whereas OrFS wants identical
 semantics across transports. It is exposed for compatibility testing.
 
-**Ownership changes (`setattr` `uid`/`gid`) are stricter than mode/time**
-(verified by the mounted court). `chmod` and `utimes` require ownership or root,
-but only root may set a file's `uid` to a different user, and only root may move
-it to a different `gid`. The owner may restate its current `uid`/`gid`, which is a
-permitted no-op. This matches Linux for the privileged/unprivileged split; the
-one deliberate deviation is that a non-root owner cannot perform a Linux-style
-`chgrp` to one of its *supplementary* groups, because the single-node daemon has
-no caller-group database to verify membership against — it returns `EPERM`
-rather than guess.
+**Ownership changes (`setattr` `uid`/`gid`)** (verified by the mounted court).
+`chmod` and `utimes` require ownership or root, and only root may set a file's
+`uid` to a different user. A non-root *owner* may move a file into a group it
+belongs to — its effective group or a supplementary group — which is the Linux
+`chgrp(2)` rule. A FUSE `SETATTR` request carries only the caller's fsuid/fsgid,
+never its supplementary groups, so the daemon reads them from the kernel's own
+`/proc/<pid>/status` `Groups:` line (the requesting thread is blocked in the FUSE
+call, so its entry is stable). A group the daemon cannot confirm membership in is
+refused with `EPERM`, never accepted by guesswork. The owner may restate its
+current `uid`/`gid`, which is a permitted no-op.
 
 Note: the OrFS genesis root is owned by `uid 0`. A volume mounted by a
 non-privileged user should have its root `chown`ed to that user (the integration
@@ -214,6 +221,9 @@ Requested (only if the kernel advertises them):
 
 * `FUSE_ASYNC_READ`, `FUSE_BIG_WRITES`, `FUSE_MAX_PAGES`, `FUSE_ASYNC_DIO`
 * `FUSE_DO_READDIRPLUS`, `FUSE_READDIRPLUS_AUTO`
+* `FUSE_HANDLE_KILLPRIV`, `FUSE_HANDLE_KILLPRIV_V2` — so the daemon clears
+  `S_ISUID`/`S_ISGID` itself on write/truncate instead of the kernel's
+  mode-clearing `SETATTR` (see §5.2).
 
 **Not** requested, deliberately:
 
@@ -329,26 +339,32 @@ every other uid at the VFS layer otherwise; zeroed TTLs force every path walk ba
 through the daemon's permission checks (a positive entry TTL lets the kernel
 satisfy a walk from a cached dentry and skip the search-permission re-check).
 
-Result: **238 test files, 8,798 assertions.** OrFS fails 55 files / 3,865
+Result: **238 test files, 8,798 assertions.** OrFS fails 46 files / 3,777
 assertions; the reference ext4 fails 2 files / 28 assertions. Every OrFS failing
 assertion is accounted for:
 
-* **6,406 assertions are mechanically unsupported**: pjdfstest's `create_file`
+* **3,776 assertions are mechanically unsupported**: pjdfstest's `create_file`
   builds FIFO/block/char/socket nodes, which OrFS rejects with `EOPNOTSUPP`
-  (mknod §5). Recorded as classes `unsupported_node_type`,
-  `unsupported_errno`, `unsupported_node_downstream`.
-* **27 assertions across 10 files are documented deviations** (see §5.1, §5.2,
-  §6 and `docs/LIMITATIONS.md` §12): timestamps (11), `setuid`/`setgid` (6),
-  supplementary-group `chgrp` (5, already documented), `utimensat(UTIME_NOW)` with
-  only write permission (2), truncate through a writable fd re-checking inode
-  permission (1), and one assertion the **reference fails too** (1).
-* **0 unclassified.** The gate fails on any unclassified failure or any
-  allowlisted assertion that stops failing.
+  (mknod §5). Recorded as classes `unsupported_node_type` (682),
+  `unsupported_errno` (32) and `unsupported_node_downstream` (3,062).
+* **1 assertion is shared with the reference**: `unlink/08.t` #2, which the
+  reference ext4 fails too — an environment/suite artifact, not an OrFS
+  deviation.
+* **0 documented deviations** and **0 unclassified**. `scripts/posix/pjdfstest-expected.tsv`
+  now carries only that one shared artifact; the gate fails on any unclassified
+  failure or any allowlisted assertion that stops failing.
 
 The court found and fixed three real bugs (Phase 24): an over-long name returned
 `EINVAL` instead of `ENAMETOOLONG`; `rmdir` omitted the sticky-bit check that
 `unlink` enforces; and the FUSE adapter clamped the reported `nlink` to `>= 1`,
 so an unlinked-but-open file showed `nlink 1` instead of the POSIX `0`.
+
+Phase 25 closed every POSIX deviation the Phase 24 run exposed, verified against
+the reference: implicit `mtime`/`ctime` advancement on namespace and content
+mutations (§5.1), `setuid`/`setgid` clearing on a non-owner write and truncate
+(§5.2), `utimensat(UTIME_NOW)` permitted with only write permission (§6),
+truncation through an already-open writable descriptor not re-checked (§6), and
+non-root supplementary-group `chgrp` (§6). See `docs/LIMITATIONS.md` §12.
 
 ### 11.2 xfstests
 

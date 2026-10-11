@@ -16,6 +16,9 @@ ORFS_BASE_IMAGE="rust:1.99.0-slim-bookworm@sha256:2c3a22f0a5533ea2dd5a16627bc841
 # Derived images (built by scripts/container-image-build.sh from the Dockerfiles).
 ORFS_IMAGE="${ORFS_IMAGE:-orfs-build:1.99.0}"
 ORFS_KMOUNT_IMAGE="${ORFS_KMOUNT_IMAGE:-orfs-kmount:1.99.0}"
+# Standard POSIX suite image (Phase 24): pinned rust base + build tooling + the
+# commit-pinned pjdfstest suite. See Dockerfile.posix.
+ORFS_POSIX_IMAGE="${ORFS_POSIX_IMAGE:-orfs-posix:1.99.0}"
 
 # Image-ID digest for machine-generated evidence. The derived images are built
 # locally (not pulled), so they have no RepoDigests; the image config `.Id` is a
@@ -189,13 +192,53 @@ docker_run_kmount() {
         "$ORFS_KMOUNT_IMAGE" "$@"
 }
 
-# Generate the mount-test /etc/passwd (root + the invoking uid) if absent.
+# Generate the mount-test /etc/passwd (root, the invoking uid, and `nobody`).
+#
+# `nobody` (65534) is REQUIRED by pjdfstest: several tests resolve it with
+# `id -u nobody` to exercise unprivileged-caller semantics. The minimal image
+# ships no passwd, so without an entry those tests would run as root and measure
+# the wrong thing. Rewritten every run so a stale file cannot omit an entry.
 _orfs_write_kmount_passwd() {
     ORFS_KMOUNT_PASSWD="$ORFS_PROJECT_DIR/target/.kmount-passwd"
-    if [ ! -f "$ORFS_KMOUNT_PASSWD" ]; then
-        printf 'root:x:0:0:root:/root:/bin/sh\norfs:x:%s:%s:OrFS:/tmp:/bin/sh\n' \
-            "$(id -u)" "$(id -g)" > "$ORFS_KMOUNT_PASSWD"
-    fi
+    printf 'root:x:0:0:root:/root:/bin/sh\norfs:x:%s:%s:OrFS:/tmp:/bin/sh\nnobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n' \
+        "$(id -u)" "$(id -g)" > "$ORFS_KMOUNT_PASSWD"
+}
+
+# docker_run_posix: runs the standard-POSIX-suite court (Phase 24). Like
+# docker_run_kmount_root it needs `/dev/fuse`, SYS_ADMIN, and an unconfined
+# AppArmor/seccomp profile, and it runs as **root** because pjdfstest requires
+# root to exercise its permission-bypass and ownership cases. It uses the
+# Dockerfile.posix image, which carries the pinned pjdfstest build. One container
+# runs at a time. Does not `exec`, so the caller can inspect the exit status and
+# the evidence the container wrote to the bind-mounted project tree.
+docker_run_posix() {
+    _orfs_write_kmount_passwd
+    docker run --rm \
+        --memory="$ORFS_MEM_LIMIT" \
+        --memory-swap="$ORFS_MEMSWAP_LIMIT" \
+        --cpus="$ORFS_CPUS" \
+        --pids-limit="$ORFS_PIDS" \
+        --device /dev/fuse \
+        --cap-add SYS_ADMIN \
+        --security-opt apparmor=unconfined \
+        --security-opt seccomp=unconfined \
+        --ulimit core=0 \
+        -v "$ORFS_PARENT_DIR":"$ORFS_PARENT_DIR" \
+        -v "$ORFS_KMOUNT_PASSWD:/etc/passwd:ro" \
+        -w "$ORFS_PROJECT_DIR" \
+        -u 0:0 \
+        -e HOME=/tmp \
+        -e TMPDIR="$ORFS_TMP_DIR" \
+        -e CARGO_HOME="$ORFS_CARGO_HOME" \
+        -e RUSTUP_HOME=/usr/local/rustup \
+        -e CARGO_TARGET_DIR="$ORFS_TARGET_DIR" \
+        -e CARGO_TERM_COLOR=never \
+        -e RUSTUP_TOOLCHAIN=1.99.0 \
+        -e ORFS_POSIX_IMAGE_DIGEST="$(_orfs_image_digest "$ORFS_POSIX_IMAGE")" \
+        -e ORFS_POSIX_IMAGE_NAME="$ORFS_POSIX_IMAGE" \
+        -e ORFS_BASE_IMAGE_NAME="$ORFS_BASE_IMAGE" \
+        -e PJDFSTEST_SUBDIR="${PJDFSTEST_SUBDIR:-}" \
+        "$ORFS_POSIX_IMAGE" "$@"
 }
 
 # docker_run_kmount_root: like docker_run_kmount but runs as **root** (uid 0).

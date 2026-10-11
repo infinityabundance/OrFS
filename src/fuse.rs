@@ -702,7 +702,10 @@ fn file_attr(st: &InodeStat) -> FileAttr {
         crtime: ts_to_system(st.ctime),
         kind: fuse_kind(st.kind),
         perm: (st.mode & 0o7777) as u16,
-        nlink: st.nlink.max(1),
+        // Report the true link count, including 0 for an unlinked file that is
+        // still open (POSIX). A named inode always has nlink >= 1, so lookup and
+        // readdirplus never hand the kernel a zero link count.
+        nlink: st.nlink,
         uid: st.uid,
         gid: st.gid,
         rdev: 0,
@@ -1022,6 +1025,24 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         let mut core = self.inner.core.lock();
         if let Err(e) = check_dir_write(&*core, req, parent.0, 0o2 | 0o1) {
             return reply.error(errno(&e));
+        }
+        // Sticky-bit handling (same rule as `unlink`): in a sticky directory only
+        // the owner of the entry to be removed — or the owner of the sticky
+        // directory, or root — may remove it. POSIX applies this to `rmdir` too.
+        let root = core.root();
+        if let Ok(dir) = core.getattr(parent.0, root) {
+            if dir.mode & libc::S_ISVTX != 0 && req.uid() != 0 {
+                match core.lookup(parent.0, name.as_bytes(), root) {
+                    Ok(child) => {
+                        if let Ok(st) = core.getattr(child, root) {
+                            if st.uid != req.uid() && dir.uid != req.uid() {
+                                return reply.error(Errno::EPERM);
+                            }
+                        }
+                    }
+                    Err(e) => return reply.error(errno(&e)),
+                }
+            }
         }
         if let Err(e) = core.rmdir(parent.0, name.as_bytes()) {
             return reply.error(errno(&e));

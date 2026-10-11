@@ -1,0 +1,3451 @@
+{
+  "generated_by": "scripts/posix/pjdfstest.sh",
+  "suite": "pjdfstest",
+  "suite_repository": "https://github.com/pjd/pjdfstest",
+  "suite_commit": "85a8aea9e685999ef0540392fd80535f873d7ff7",
+  "image": {
+    "name": "orfs-posix:1.99.0",
+    "digest": "sha256:7568e2203fcc2b13e50dd3a99c3c198f7995df1c155788faadc70ab1e8dc7471",
+    "base": "rust:1.99.0-slim-bookworm@sha256:2c3a22f0a5533ea2dd5a16627bc841228151faa2d4de2644ac9987e4a2f1f2fa"
+  },
+  "environment": {
+    "uname": "Linux",
+    "kernel": "7.2.9-2-cachyos",
+    "uid": 0,
+    "orfs_transport": "fuse (traditional /dev/fuse)",
+    "orfs_durability": "ordered",
+    "orfs_backing_io": "sync",
+    "orfs_mount_options": [
+      "allow-other",
+      "entry-ttl-ms=0",
+      "attr-ttl-ms=0"
+    ],
+    "orfs_fstype": "fuse.orfs",
+    "reference_fstype": "ext4"
+  },
+  "orfs": {
+    "summary": {
+      "files_total": 238,
+      "files_ok": 183,
+      "files_failed": 55,
+      "assertions_total": 8798,
+      "assertions_failed": 3865
+    },
+    "files": [
+      {
+        "name": "chflags_00",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_01",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_02",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_03",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_04",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_05",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_06",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_07",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_08",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_10",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_11",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_12",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_13",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_00",
+        "assertions": 119,
+        "failed": 63,
+        "verdict": "fail"
+      },
+      {
+        "name": "chmod_01",
+        "assertions": 17,
+        "failed": 12,
+        "verdict": "fail"
+      },
+      {
+        "name": "chmod_02",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_03",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_04",
+        "assertions": 7,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_05",
+        "assertions": 14,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_06",
+        "assertions": 8,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_07",
+        "assertions": 25,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_08",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_10",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_11",
+        "assertions": 109,
+        "failed": 56,
+        "verdict": "fail"
+      },
+      {
+        "name": "chmod_12",
+        "assertions": 14,
+        "failed": 6,
+        "verdict": "fail"
+      },
+      {
+        "name": "chown_00",
+        "assertions": 1280,
+        "failed": 830,
+        "verdict": "fail"
+      },
+      {
+        "name": "chown_01",
+        "assertions": 22,
+        "failed": 16,
+        "verdict": "fail"
+      },
+      {
+        "name": "chown_02",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chown_03",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chown_04",
+        "assertions": 9,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chown_05",
+        "assertions": 18,
+        "failed": 5,
+        "verdict": "fail"
+      },
+      {
+        "name": "chown_06",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chown_07",
+        "assertions": 132,
+        "failed": 72,
+        "verdict": "fail"
+      },
+      {
+        "name": "chown_08",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chown_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chown_10",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_00",
+        "assertions": 26,
+        "failed": 2,
+        "verdict": "fail"
+      },
+      {
+        "name": "ftruncate_01",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_02",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_03",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_04",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_05",
+        "assertions": 15,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_06",
+        "assertions": 8,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_07",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_08",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_09",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_10",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_11",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_12",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_13",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_14",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "granular_00",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "granular_01",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "granular_02",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "granular_03",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "granular_04",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "granular_05",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "granular_06",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_00",
+        "assertions": 202,
+        "failed": 131,
+        "verdict": "fail"
+      },
+      {
+        "name": "link_01",
+        "assertions": 32,
+        "failed": 24,
+        "verdict": "fail"
+      },
+      {
+        "name": "link_02",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_03",
+        "assertions": 13,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_04",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_05",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_06",
+        "assertions": 18,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_07",
+        "assertions": 17,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_08",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_09",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_10",
+        "assertions": 23,
+        "failed": 8,
+        "verdict": "fail"
+      },
+      {
+        "name": "link_11",
+        "assertions": 9,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_12",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_13",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_14",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_15",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_16",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_17",
+        "assertions": 8,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_00",
+        "assertions": 36,
+        "failed": 2,
+        "verdict": "fail"
+      },
+      {
+        "name": "mkdir_01",
+        "assertions": 17,
+        "failed": 12,
+        "verdict": "fail"
+      },
+      {
+        "name": "mkdir_02",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_03",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_04",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_05",
+        "assertions": 12,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_06",
+        "assertions": 12,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_07",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_08",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_10",
+        "assertions": 21,
+        "failed": 11,
+        "verdict": "fail"
+      },
+      {
+        "name": "mkdir_11",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_12",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_00",
+        "assertions": 36,
+        "failed": 31,
+        "verdict": "fail"
+      },
+      {
+        "name": "mkfifo_01",
+        "assertions": 17,
+        "failed": 12,
+        "verdict": "fail"
+      },
+      {
+        "name": "mkfifo_02",
+        "assertions": 4,
+        "failed": 3,
+        "verdict": "fail"
+      },
+      {
+        "name": "mkfifo_03",
+        "assertions": 4,
+        "failed": 3,
+        "verdict": "fail"
+      },
+      {
+        "name": "mkfifo_04",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_05",
+        "assertions": 12,
+        "failed": 4,
+        "verdict": "fail"
+      },
+      {
+        "name": "mkfifo_06",
+        "assertions": 12,
+        "failed": 5,
+        "verdict": "fail"
+      },
+      {
+        "name": "mkfifo_07",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_08",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_09",
+        "assertions": 21,
+        "failed": 12,
+        "verdict": "fail"
+      },
+      {
+        "name": "mkfifo_10",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_11",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_12",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mknod_00",
+        "assertions": 36,
+        "failed": 31,
+        "verdict": "fail"
+      },
+      {
+        "name": "mknod_01",
+        "assertions": 27,
+        "failed": 20,
+        "verdict": "fail"
+      },
+      {
+        "name": "mknod_02",
+        "assertions": 12,
+        "failed": 9,
+        "verdict": "fail"
+      },
+      {
+        "name": "mknod_03",
+        "assertions": 12,
+        "failed": 9,
+        "verdict": "fail"
+      },
+      {
+        "name": "mknod_04",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mknod_05",
+        "assertions": 12,
+        "failed": 4,
+        "verdict": "fail"
+      },
+      {
+        "name": "mknod_06",
+        "assertions": 12,
+        "failed": 5,
+        "verdict": "fail"
+      },
+      {
+        "name": "mknod_07",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mknod_08",
+        "assertions": 35,
+        "failed": 20,
+        "verdict": "fail"
+      },
+      {
+        "name": "mknod_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mknod_10",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mknod_11",
+        "assertions": 28,
+        "failed": 24,
+        "verdict": "fail"
+      },
+      {
+        "name": "open_00",
+        "assertions": 47,
+        "failed": 4,
+        "verdict": "fail"
+      },
+      {
+        "name": "open_01",
+        "assertions": 22,
+        "failed": 16,
+        "verdict": "fail"
+      },
+      {
+        "name": "open_02",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_03",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_04",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_05",
+        "assertions": 12,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_06",
+        "assertions": 144,
+        "failed": 53,
+        "verdict": "fail"
+      },
+      {
+        "name": "open_07",
+        "assertions": 25,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_08",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_10",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_11",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_12",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_13",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_14",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_15",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_16",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_17",
+        "assertions": 3,
+        "failed": 3,
+        "verdict": "fail"
+      },
+      {
+        "name": "open_18",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_19",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_20",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_21",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_22",
+        "assertions": 21,
+        "failed": 8,
+        "verdict": "fail"
+      },
+      {
+        "name": "open_23",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_24",
+        "assertions": 5,
+        "failed": 5,
+        "verdict": "fail"
+      },
+      {
+        "name": "open_25",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_26",
+        "assertions": 9,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "posix_fallocate_00",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_00",
+        "assertions": 122,
+        "failed": 68,
+        "verdict": "fail"
+      },
+      {
+        "name": "rename_01",
+        "assertions": 8,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_02",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_03",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_04",
+        "assertions": 18,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_05",
+        "assertions": 17,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_06",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_07",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_08",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_09",
+        "assertions": 2353,
+        "failed": 1032,
+        "verdict": "fail"
+      },
+      {
+        "name": "rename_10",
+        "assertions": 2099,
+        "failed": 868,
+        "verdict": "fail"
+      },
+      {
+        "name": "rename_11",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_12",
+        "assertions": 32,
+        "failed": 24,
+        "verdict": "fail"
+      },
+      {
+        "name": "rename_13",
+        "assertions": 32,
+        "failed": 26,
+        "verdict": "fail"
+      },
+      {
+        "name": "rename_14",
+        "assertions": 32,
+        "failed": 16,
+        "verdict": "fail"
+      },
+      {
+        "name": "rename_15",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_16",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_17",
+        "assertions": 8,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_18",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_19",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_20",
+        "assertions": 25,
+        "failed": 14,
+        "verdict": "fail"
+      },
+      {
+        "name": "rename_21",
+        "assertions": 16,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_22",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_23",
+        "assertions": 42,
+        "failed": 33,
+        "verdict": "fail"
+      },
+      {
+        "name": "rename_24",
+        "assertions": 13,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_00",
+        "assertions": 10,
+        "failed": 2,
+        "verdict": "fail"
+      },
+      {
+        "name": "rmdir_01",
+        "assertions": 14,
+        "failed": 3,
+        "verdict": "fail"
+      },
+      {
+        "name": "rmdir_02",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_03",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_04",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_05",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_06",
+        "assertions": 23,
+        "failed": 16,
+        "verdict": "fail"
+      },
+      {
+        "name": "rmdir_07",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_08",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_10",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_11",
+        "assertions": 47,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_12",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_13",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_14",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_15",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_00",
+        "assertions": 14,
+        "failed": 2,
+        "verdict": "fail"
+      },
+      {
+        "name": "symlink_01",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_02",
+        "assertions": 7,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_03",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_04",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_05",
+        "assertions": 12,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_06",
+        "assertions": 12,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_07",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_08",
+        "assertions": 21,
+        "failed": 8,
+        "verdict": "fail"
+      },
+      {
+        "name": "symlink_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_10",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_11",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_12",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_00",
+        "assertions": 21,
+        "failed": 1,
+        "verdict": "fail"
+      },
+      {
+        "name": "truncate_01",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_02",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_03",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_04",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_05",
+        "assertions": 15,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_06",
+        "assertions": 8,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_07",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_08",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_09",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_10",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_11",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_12",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_13",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_14",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_00",
+        "assertions": 112,
+        "failed": 70,
+        "verdict": "fail"
+      },
+      {
+        "name": "unlink_01",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_02",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_03",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_04",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_05",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_06",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_07",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_08",
+        "assertions": 3,
+        "failed": 1,
+        "verdict": "fail"
+      },
+      {
+        "name": "unlink_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_10",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_11",
+        "assertions": 270,
+        "failed": 128,
+        "verdict": "fail"
+      },
+      {
+        "name": "unlink_12",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_13",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_14",
+        "assertions": 7,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_00",
+        "assertions": 32,
+        "failed": 20,
+        "verdict": "fail"
+      },
+      {
+        "name": "utimensat_01",
+        "assertions": 7,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_02",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_03",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_04",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_05",
+        "assertions": 16,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_06",
+        "assertions": 13,
+        "failed": 2,
+        "verdict": "fail"
+      },
+      {
+        "name": "utimensat_07",
+        "assertions": 17,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_08",
+        "assertions": 9,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_09",
+        "assertions": 7,
+        "failed": 0,
+        "verdict": "ok"
+      }
+    ]
+  },
+  "reference": {
+    "summary": {
+      "files_total": 238,
+      "files_ok": 236,
+      "files_failed": 2,
+      "assertions_total": 8827,
+      "assertions_failed": 28
+    },
+    "files": [
+      {
+        "name": "chflags_00",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_01",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_02",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_03",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_04",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_05",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_06",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_07",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_08",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_10",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_11",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_12",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chflags_13",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_00",
+        "assertions": 119,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_01",
+        "assertions": 17,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_02",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_03",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_04",
+        "assertions": 7,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_05",
+        "assertions": 14,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_06",
+        "assertions": 8,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_07",
+        "assertions": 25,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_08",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_10",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_11",
+        "assertions": 109,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chmod_12",
+        "assertions": 14,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chown_00",
+        "assertions": 1280,
+        "failed": 27,
+        "verdict": "fail"
+      },
+      {
+        "name": "chown_01",
+        "assertions": 22,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chown_02",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chown_03",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chown_04",
+        "assertions": 9,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chown_05",
+        "assertions": 18,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chown_06",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chown_07",
+        "assertions": 132,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chown_08",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chown_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "chown_10",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_00",
+        "assertions": 26,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_01",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_02",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_03",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_04",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_05",
+        "assertions": 15,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_06",
+        "assertions": 8,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_07",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_08",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_09",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_10",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_11",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_12",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_13",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "ftruncate_14",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "granular_00",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "granular_01",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "granular_02",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "granular_03",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "granular_04",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "granular_05",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "granular_06",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_00",
+        "assertions": 202,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_01",
+        "assertions": 32,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_02",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_03",
+        "assertions": 13,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_04",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_05",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_06",
+        "assertions": 18,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_07",
+        "assertions": 17,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_08",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_09",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_10",
+        "assertions": 23,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_11",
+        "assertions": 9,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_12",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_13",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_14",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_15",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_16",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "link_17",
+        "assertions": 8,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_00",
+        "assertions": 36,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_01",
+        "assertions": 17,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_02",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_03",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_04",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_05",
+        "assertions": 12,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_06",
+        "assertions": 12,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_07",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_08",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_10",
+        "assertions": 21,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_11",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkdir_12",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_00",
+        "assertions": 36,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_01",
+        "assertions": 17,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_02",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_03",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_04",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_05",
+        "assertions": 12,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_06",
+        "assertions": 12,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_07",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_08",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_09",
+        "assertions": 21,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_10",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_11",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mkfifo_12",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mknod_00",
+        "assertions": 36,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mknod_01",
+        "assertions": 27,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mknod_02",
+        "assertions": 12,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mknod_03",
+        "assertions": 12,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mknod_04",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mknod_05",
+        "assertions": 12,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mknod_06",
+        "assertions": 12,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mknod_07",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mknod_08",
+        "assertions": 35,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mknod_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mknod_10",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "mknod_11",
+        "assertions": 28,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_00",
+        "assertions": 47,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_01",
+        "assertions": 22,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_02",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_03",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_04",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_05",
+        "assertions": 12,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_06",
+        "assertions": 144,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_07",
+        "assertions": 25,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_08",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_10",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_11",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_12",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_13",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_14",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_15",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_16",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_17",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_18",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_19",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_20",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_21",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_22",
+        "assertions": 21,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_23",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_24",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_25",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "open_26",
+        "assertions": 9,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "posix_fallocate_00",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_00",
+        "assertions": 122,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_01",
+        "assertions": 8,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_02",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_03",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_04",
+        "assertions": 18,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_05",
+        "assertions": 17,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_06",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_07",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_08",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_09",
+        "assertions": 2353,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_10",
+        "assertions": 2099,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_11",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_12",
+        "assertions": 32,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_13",
+        "assertions": 32,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_14",
+        "assertions": 32,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_15",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_16",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_17",
+        "assertions": 8,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_18",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_19",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_20",
+        "assertions": 25,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_21",
+        "assertions": 16,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_22",
+        "assertions": 30,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_23",
+        "assertions": 42,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rename_24",
+        "assertions": 13,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_00",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_01",
+        "assertions": 14,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_02",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_03",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_04",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_05",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_06",
+        "assertions": 23,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_07",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_08",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_10",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_11",
+        "assertions": 47,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_12",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_13",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_14",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "rmdir_15",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_00",
+        "assertions": 14,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_01",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_02",
+        "assertions": 7,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_03",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_04",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_05",
+        "assertions": 12,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_06",
+        "assertions": 12,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_07",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_08",
+        "assertions": 21,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_10",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_11",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "symlink_12",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_00",
+        "assertions": 21,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_01",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_02",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_03",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_04",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_05",
+        "assertions": 15,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_06",
+        "assertions": 8,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_07",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_08",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_09",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_10",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_11",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_12",
+        "assertions": 3,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_13",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "truncate_14",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_00",
+        "assertions": 112,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_01",
+        "assertions": 5,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_02",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_03",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_04",
+        "assertions": 4,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_05",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_06",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_07",
+        "assertions": 6,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_08",
+        "assertions": 3,
+        "failed": 1,
+        "verdict": "fail"
+      },
+      {
+        "name": "unlink_09",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_10",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_11",
+        "assertions": 270,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_12",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_13",
+        "assertions": 2,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "unlink_14",
+        "assertions": 7,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_00",
+        "assertions": 32,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_01",
+        "assertions": 7,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_02",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_03",
+        "assertions": 1,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_04",
+        "assertions": 10,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_05",
+        "assertions": 16,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_06",
+        "assertions": 13,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_07",
+        "assertions": 17,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_08",
+        "assertions": 9,
+        "failed": 0,
+        "verdict": "ok"
+      },
+      {
+        "name": "utimensat_09",
+        "assertions": 7,
+        "failed": 0,
+        "verdict": "ok"
+      }
+    ],
+    "failures": [
+      {
+        "file": "chown_00",
+        "assertion": 650,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 654,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 665,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 666,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 671,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 672,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 686,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 690,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1054,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1058,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1064,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1069,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1073,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1079,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1084,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1088,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1094,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1099,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1103,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1109,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1114,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1118,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1124,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1129,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1133,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1139,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "chown_00",
+        "assertion": 1144,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      },
+      {
+        "file": "unlink_08",
+        "assertion": 2,
+        "tried": "",
+        "expected": "",
+        "got": ""
+      }
+    ]
+  },
+  "deviations": {
+    "note": "Every OrFS failing assertion is either mechanically explained ('unsupported_node_types': the test creates a FIFO/block/char/socket node, which OrFS rejects with EOPNOTSUPP) or is a documented deviation listed in scripts/posix/pjdfstest-expected.tsv (reasons in documented_deviations). 'shared_with_reference' means the reference filesystem fails the same assertion. The gate fails on any unclassified failure or any allowlisted assertion that no longer fails.",
+    "unsupported_node_types": {
+      "errno": "EOPNOTSUPP",
+      "rationale": "OrFS represents only regular files, directories and symlinks. mknod(2) for S_IFIFO/S_IFCHR/S_IFBLK/S_IFSOCK returns EOPNOTSUPP (docs/FUSE-SEMANTICS.md §5). pjdfstest files that create FIFO/block/char/socket nodes are therefore recorded as unsupported rather than failures.",
+      "files": [
+        "chmod_00",
+        "chmod_01",
+        "chmod_11",
+        "chown_00",
+        "chown_01",
+        "chown_07",
+        "link_00",
+        "link_01",
+        "link_10",
+        "mkdir_01",
+        "mkdir_10",
+        "mkfifo_00",
+        "mkfifo_01",
+        "mkfifo_02",
+        "mkfifo_03",
+        "mkfifo_05",
+        "mkfifo_06",
+        "mkfifo_09",
+        "mknod_00",
+        "mknod_01",
+        "mknod_02",
+        "mknod_03",
+        "mknod_05",
+        "mknod_06",
+        "mknod_08",
+        "mknod_11",
+        "open_01",
+        "open_06",
+        "open_17",
+        "open_22",
+        "open_24",
+        "rename_00",
+        "rename_09",
+        "rename_10",
+        "rename_12",
+        "rename_13",
+        "rename_14",
+        "rename_20",
+        "rename_23",
+        "rmdir_01",
+        "rmdir_06",
+        "symlink_08",
+        "unlink_00",
+        "unlink_11",
+        "utimensat_00"
+      ],
+      "assertions_covered": 3838
+    },
+    "documented_deviations": [
+      {
+        "file": "chmod_12",
+        "assertion": 3,
+        "tried": "-u 65534 -g 65534 open pjdfstest_cd0bd2ad7e3aa51b7625c2fc11aff055 O_WRONLY : write 0 x : fstat 0 mode",
+        "expected": "0777",
+        "got": "EPERM",
+        "class": "setuid_sgid_killpriv",
+        "reason": "non-owner write does not clear S_ISUID; the kernel's SETATTR killpriv request is refused with EPERM (docs/FUSE-SEMANTICS.md §5.2)"
+      },
+      {
+        "file": "chmod_12",
+        "assertion": 4,
+        "tried": "stat pjdfstest_cd0bd2ad7e3aa51b7625c2fc11aff055 mode",
+        "expected": "0777",
+        "got": "04777",
+        "class": "setuid_sgid_killpriv",
+        "reason": "S_ISUID not cleared after a non-owner write"
+      },
+      {
+        "file": "chmod_12",
+        "assertion": 7,
+        "tried": "-u 65534 -g 65534 open pjdfstest_cd0bd2ad7e3aa51b7625c2fc11aff055 O_RDWR : write 0 x : fstat 0 mode",
+        "expected": "0777",
+        "got": "EPERM",
+        "class": "setuid_sgid_killpriv",
+        "reason": "non-owner write does not clear S_ISGID; killpriv SETATTR refused with EPERM"
+      },
+      {
+        "file": "chmod_12",
+        "assertion": 8,
+        "tried": "stat pjdfstest_cd0bd2ad7e3aa51b7625c2fc11aff055 mode",
+        "expected": "0777",
+        "got": "02777",
+        "class": "setuid_sgid_killpriv",
+        "reason": "S_ISGID not cleared after a non-owner write"
+      },
+      {
+        "file": "chmod_12",
+        "assertion": 11,
+        "tried": "-u 65534 -g 65534 open pjdfstest_cd0bd2ad7e3aa51b7625c2fc11aff055 O_RDWR : write 0 x : fstat 0 mode",
+        "expected": "0777",
+        "got": "EPERM",
+        "class": "setuid_sgid_killpriv",
+        "reason": "non-owner write does not clear S_ISUID|S_ISGID; killpriv SETATTR refused with EPERM"
+      },
+      {
+        "file": "chmod_12",
+        "assertion": 12,
+        "tried": "stat pjdfstest_cd0bd2ad7e3aa51b7625c2fc11aff055 mode",
+        "expected": "0777",
+        "got": "06777",
+        "class": "setuid_sgid_killpriv",
+        "reason": "S_ISUID|S_ISGID not cleared after a non-owner write"
+      },
+      {
+        "file": "chown_05",
+        "assertion": 5,
+        "tried": "-u 65534 -g 65533,65534 -- chown pjdfstest_390da58b6cece2bc156134ec15b9fa2e/pjdfstest_3579e803a44ffe36b1f99978573b7a8b -1 65533",
+        "expected": "0",
+        "got": "EPERM",
+        "class": "supplementary_group_chgrp",
+        "reason": "non-root chgrp to a supplementary group returns EPERM (docs/FUSE-SEMANTICS.md §6)"
+      },
+      {
+        "file": "chown_05",
+        "assertion": 6,
+        "tried": "-u 65534 -g 65534 stat pjdfstest_390da58b6cece2bc156134ec15b9fa2e/pjdfstest_3579e803a44ffe36b1f99978573b7a8b uid,gid",
+        "expected": "65534,65533",
+        "got": "65534,65534",
+        "class": "supplementary_group_chgrp",
+        "reason": "downstream of the refused chgrp"
+      },
+      {
+        "file": "chown_05",
+        "assertion": 11,
+        "tried": "-u 65534 -g 65534 stat pjdfstest_390da58b6cece2bc156134ec15b9fa2e/pjdfstest_3579e803a44ffe36b1f99978573b7a8b uid,gid",
+        "expected": "65534,65533",
+        "got": "65534,65534",
+        "class": "supplementary_group_chgrp",
+        "reason": "downstream of the refused chgrp"
+      },
+      {
+        "file": "chown_05",
+        "assertion": 14,
+        "tried": "-u 65534 -g 65533,65534 -- lchown pjdfstest_390da58b6cece2bc156134ec15b9fa2e/pjdfstest_3579e803a44ffe36b1f99978573b7a8b -1 65533",
+        "expected": "0",
+        "got": "EPERM",
+        "class": "supplementary_group_chgrp",
+        "reason": "non-root lchown to a supplementary group returns EPERM"
+      },
+      {
+        "file": "chown_05",
+        "assertion": 15,
+        "tried": "-u 65534 -g 65533 stat pjdfstest_390da58b6cece2bc156134ec15b9fa2e/pjdfstest_3579e803a44ffe36b1f99978573b7a8b uid,gid",
+        "expected": "65534,65533",
+        "got": "65534,65534",
+        "class": "supplementary_group_chgrp",
+        "reason": "downstream of the refused lchown"
+      },
+      {
+        "file": "ftruncate_00",
+        "assertion": 15,
+        "tried": "",
+        "expected": "",
+        "got": "",
+        "class": "file_timestamp",
+        "reason": "content mutations do not advance the file ctime (docs/FUSE-SEMANTICS.md §5.1)"
+      },
+      {
+        "file": "ftruncate_00",
+        "assertion": 24,
+        "tried": "-u 65534 open pjdfstest_be344ec5b588f3b90d0b88b0ae751f05 O_CREAT,O_RDWR 0 : ftruncate 0 0",
+        "expected": "0",
+        "got": "EACCES",
+        "class": "fd_truncate_permission",
+        "reason": "truncation through a writable fd re-checks inode write permission and returns EACCES"
+      },
+      {
+        "file": "mkdir_00",
+        "assertion": 33,
+        "tried": "",
+        "expected": "",
+        "got": "",
+        "class": "dir_timestamp",
+        "reason": "namespace mutations do not advance the parent directory mtime/ctime"
+      },
+      {
+        "file": "mkdir_00",
+        "assertion": 34,
+        "tried": "",
+        "expected": "",
+        "got": "",
+        "class": "dir_timestamp",
+        "reason": "namespace mutations do not advance the parent directory mtime/ctime"
+      },
+      {
+        "file": "open_00",
+        "assertion": 33,
+        "tried": "",
+        "expected": "",
+        "got": "",
+        "class": "dir_timestamp",
+        "reason": "create does not advance the parent directory mtime"
+      },
+      {
+        "file": "open_00",
+        "assertion": 34,
+        "tried": "",
+        "expected": "",
+        "got": "",
+        "class": "dir_timestamp",
+        "reason": "create does not advance the parent directory ctime"
+      },
+      {
+        "file": "open_00",
+        "assertion": 43,
+        "tried": "",
+        "expected": "",
+        "got": "",
+        "class": "file_timestamp",
+        "reason": "O_TRUNC does not advance the file mtime"
+      },
+      {
+        "file": "open_00",
+        "assertion": 44,
+        "tried": "",
+        "expected": "",
+        "got": "",
+        "class": "file_timestamp",
+        "reason": "O_TRUNC does not advance the file ctime"
+      },
+      {
+        "file": "rmdir_00",
+        "assertion": 8,
+        "tried": "",
+        "expected": "",
+        "got": "",
+        "class": "dir_timestamp",
+        "reason": "rmdir does not advance the parent directory mtime"
+      },
+      {
+        "file": "rmdir_00",
+        "assertion": 9,
+        "tried": "",
+        "expected": "",
+        "got": "",
+        "class": "dir_timestamp",
+        "reason": "rmdir does not advance the parent directory ctime"
+      },
+      {
+        "file": "symlink_00",
+        "assertion": 11,
+        "tried": "",
+        "expected": "",
+        "got": "",
+        "class": "dir_timestamp",
+        "reason": "symlink does not advance the parent directory mtime"
+      },
+      {
+        "file": "symlink_00",
+        "assertion": 12,
+        "tried": "",
+        "expected": "",
+        "got": "",
+        "class": "dir_timestamp",
+        "reason": "symlink does not advance the parent directory ctime"
+      },
+      {
+        "file": "truncate_00",
+        "assertion": 15,
+        "tried": "",
+        "expected": "",
+        "got": "",
+        "class": "file_timestamp",
+        "reason": "truncate does not advance the file ctime"
+      },
+      {
+        "file": "utimensat_06",
+        "assertion": 4,
+        "tried": "-u 65534 open . O_RDONLY : utimensat 0 pjdfstest_58bd330388d8359507fc0f4c783948f5 0 UTIME_NOW 0 UTIME_NOW 0",
+        "expected": "EACCES",
+        "got": "EPERM",
+        "class": "utime_now_write_permission",
+        "reason": "utimensat(UTIME_NOW) with only write permission is refused (EPERM) instead of EACCES"
+      },
+      {
+        "file": "utimensat_06",
+        "assertion": 11,
+        "tried": "-u 65534 open . O_RDONLY : utimensat 0 pjdfstest_58bd330388d8359507fc0f4c783948f5 0 UTIME_NOW 0 UTIME_NOW 0",
+        "expected": "0",
+        "got": "EPERM",
+        "class": "utime_now_write_permission",
+        "reason": "utimensat(UTIME_NOW) with only write permission is refused (EPERM) instead of succeeding"
+      }
+    ],
+    "shared_with_reference": [
+      {
+        "file": "unlink_08",
+        "assertion": 2,
+        "expected": "",
+        "got": "",
+        "reason": "the reference (ext4) fails this assertion too; not an OrFS deviation"
+      }
+    ],
+    "class_counts": [
+      {
+        "class": "dir_timestamp",
+        "count": 8
+      },
+      {
+        "class": "fd_truncate_permission",
+        "count": 1
+      },
+      {
+        "class": "file_timestamp",
+        "count": 4
+      },
+      {
+        "class": "setuid_sgid_killpriv",
+        "count": 6
+      },
+      {
+        "class": "shared_with_reference",
+        "count": 1
+      },
+      {
+        "class": "supplementary_group_chgrp",
+        "count": 5
+      },
+      {
+        "class": "unsupported_errno",
+        "count": 32
+      },
+      {
+        "class": "unsupported_node_downstream",
+        "count": 3124
+      },
+      {
+        "class": "unsupported_node_type",
+        "count": 682
+      },
+      {
+        "class": "utime_now_write_permission",
+        "count": 2
+      }
+    ],
+    "unclassified": []
+  },
+  "gate": {
+    "documented_allowlist_present": true,
+    "unclassified_failures": 0,
+    "stale_allowlist_entries": 0
+  },
+  "result": "pass"
+}

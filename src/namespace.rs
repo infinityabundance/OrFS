@@ -27,8 +27,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::commit::{CommitOutcome, CommitSequencer, DurabilityMode};
 use crate::directory::{
-    validate_name, DentryAddPayload, DentryRemovePayload, DentryRenamePayload, RenameFlags,
-    DENTRY_ADD_MAGIC, DENTRY_REMOVE_MAGIC, HARDLINK_ADD_MAGIC, HARDLINK_REMOVE_MAGIC,
+    check_name_len, validate_name, DentryAddPayload, DentryRemovePayload, DentryRenamePayload,
+    RenameFlags, DENTRY_ADD_MAGIC, DENTRY_REMOVE_MAGIC, HARDLINK_ADD_MAGIC, HARDLINK_REMOVE_MAGIC,
 };
 use crate::error::{OrfsError, Result};
 use crate::extent::{
@@ -669,6 +669,7 @@ impl Namespace {
 
     /// Resolve `(parent, name)` in the view at `root`.
     pub fn lookup(&self, parent: u64, name: &[u8], root: u64) -> Result<u64> {
+        check_name_len(name)?;
         let view = self.view(root)?;
         view.inode(parent).ok_or(OrfsError::NotFound)?;
         view.lookup(parent, name).ok_or(OrfsError::NotFound)
@@ -1310,6 +1311,7 @@ impl Namespace {
 
     /// Remove one name of a file (tombstone: a `DENTRY_REMOVE`/`HARDLINK_REMOVE`).
     pub fn unlink(&mut self, parent: u64, name: &[u8]) -> Result<()> {
+        check_name_len(name)?;
         self.require_live_dir(parent)?;
         let child = self.index.lookup(parent, name).ok_or(OrfsError::NotFound)?;
         let ino = self.index.inode(child).ok_or(OrfsError::NotFound)?;
@@ -1338,6 +1340,7 @@ impl Namespace {
 
     /// Remove an empty directory.
     pub fn rmdir(&mut self, parent: u64, name: &[u8]) -> Result<()> {
+        check_name_len(name)?;
         self.require_live_dir(parent)?;
         let child = self.index.lookup(parent, name).ok_or(OrfsError::NotFound)?;
         let ino = self.index.inode(child).ok_or(OrfsError::NotFound)?;
@@ -1405,6 +1408,7 @@ impl Namespace {
         new_name: &[u8],
         mode: RenameMode,
     ) -> Result<()> {
+        check_name_len(old_name)?;
         self.require_live_dir(old_parent)?;
         self.require_live_dir(new_parent)?;
         let src = self
@@ -2130,6 +2134,7 @@ impl CoreRead for ReadState {
     }
 
     fn lookup(&self, parent: u64, name: &[u8], root: u64) -> Result<u64> {
+        check_name_len(name)?;
         self.check_root(root)?;
         self.index.inode(parent).ok_or(OrfsError::NotFound)?;
         self.index.lookup(parent, name).ok_or(OrfsError::NotFound)

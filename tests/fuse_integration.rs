@@ -1122,6 +1122,23 @@ fn write_evidence(rec: &Recorder, mountpoint: &Path) -> std::io::Result<()> {
                 {"operation": "flock (BSD advisory locks)", "errno": "ENOSYS", "rationale": "OrFS does not negotiate FUSE_FLOCK_LOCKS; delegated to the kernel for the same reason."},
             ],
         },
+        "courts": {
+            "custom_mounted_model": {
+                "evidence": "evidence/correctness/posix-results.json",
+                "note": "the operations table above: each check compared against the reference filesystem (or asserted semantically where the reference value is non-deterministic)",
+            },
+            "pjdfstest": {
+                "evidence": "evidence/correctness/pjdfstest.json",
+                "suite_repository": "https://github.com/pjd/pjdfstest",
+                "suite_commit": "85a8aea9e685999ef0540392fd80535f873d7ff7",
+                "note": "the standard pjdfstest suite run against a mounted OrFS volume AND against a reference ext4 directory; the few OrFS deviations are classified, with the exact expected/observed errno recorded in scripts/posix/pjdfstest-expected.tsv",
+            },
+            "xfstests": {
+                "evidence": "evidence/correctness/xfstests.json",
+                "status": "documented-unsupported",
+                "note": "xfstests cannot be run against a FUSE mount in this environment; the exact attempted commands, errors, and blockers are recorded (docs/FUSE-SEMANTICS.md §11)",
+            },
+        },
         "notes": [
             "readdirplus is negotiated (FUSE_DO_READDIRPLUS) and exercised by ordinary readdir(3) calls",
             "POSIX record locks and flock are delegated to the kernel (ENOSYS); see docs/FUSE-SEMANTICS.md",

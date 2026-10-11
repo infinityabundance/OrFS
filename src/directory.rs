@@ -39,16 +39,11 @@ pub const NAME_MAX: usize = 255;
 
 /// Validate a path component.
 pub fn validate_name(name: &[u8]) -> Result<()> {
+    check_name_len(name)?;
     if name.is_empty() {
         return Err(OrfsError::InvalidArgument(
             "empty directory entry name".into(),
         ));
-    }
-    if name.len() > NAME_MAX {
-        return Err(OrfsError::InvalidArgument(format!(
-            "directory entry name is {} bytes, limit {NAME_MAX}",
-            name.len()
-        )));
     }
     if name.contains(&b'/') || name.contains(&0) {
         return Err(OrfsError::InvalidArgument(
@@ -59,6 +54,18 @@ pub fn validate_name(name: &[u8]) -> Result<()> {
         return Err(OrfsError::InvalidArgument(
             "'.' and '..' are implicit directory entries".into(),
         ));
+    }
+    Ok(())
+}
+
+/// Enforce only the `NAME_MAX` length bound, returning the POSIX-correct
+/// `ENAMETOOLONG`. Used on read/resolution paths (and `unlink`/`rmdir`) where a
+/// component must be rejected for length but the other structural rules are
+/// already guaranteed by the kernel (which splits paths and never passes
+/// `"."`/`".."` to a name-resolving operation).
+pub fn check_name_len(name: &[u8]) -> Result<()> {
+    if name.len() > NAME_MAX {
+        return Err(OrfsError::NameTooLong);
     }
     Ok(())
 }

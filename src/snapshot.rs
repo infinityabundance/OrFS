@@ -249,6 +249,7 @@ impl Snapshot {
 
     /// Resolve `(parent, name)` as of the root.
     pub fn lookup(&self, parent: u64, name: &[u8]) -> Result<u64> {
+        crate::directory::check_name_len(name)?;
         self.index.inode(parent).ok_or(OrfsError::NotFound)?;
         self.index.lookup(parent, name).ok_or(OrfsError::NotFound)
     }

@@ -217,3 +217,41 @@ cannot be written *after* the segment bytes were made durable, the durable
 committed root lags the bytes, so recovery may include a mutation that was never
 acknowledged. That is the safe direction (acknowledged ⇒ survives); the converse
 never happens. See `docs/CAPACITY.md` §8 and `docs/RECOVERY.md` §7.
+
+## 12. POSIX deviations found by the standard suite (Phase 24)
+
+The pjdfstest court (`docs/FUSE-SEMANTICS.md` §11.1,
+`evidence/correctness/pjdfstest.json`) compares a mounted OrFS volume against a
+reference ext4 directory on the same suite. Three real bugs it found are fixed
+there (an over-long name now returns `ENAMETOOLONG`; `rmdir` now enforces the
+sticky-bit rule; the FUSE adapter now reports the true `nlink`, including `0` for
+an unlinked-but-open file). The residual, **documented** deviations are:
+
+* **Implicit timestamps are not advanced** (`dir_timestamp`, `file_timestamp`).
+  Namespace mutations do not bump the parent directory's `mtime`/`ctime`, and
+  content mutations (write/truncate) do not bump the file's `mtime`/`ctime`. An
+explicit `utimensat`/`futimens` update is honoured precisely. This is a real gap
+  versus Linux, recorded with the exact failing assertions rather than hidden.
+* **`setuid`/`setgid` are not cleared by a non-owner write**
+  (`setuid_sgid_killpriv`). The kernel's FUSE `SETATTR` that clears the bits is
+  refused by the owner-or-root chmod rule with `EPERM`. See `docs/FUSE-SEMANTICS.md`
+  §5.2.
+* **`utimensat(UTIME_NOW)` with only write permission** is refused (`EPERM`)
+  instead of being allowed, and a non-writer is refused with `EPERM` where Linux
+  returns `EACCES` (`utime_now_write_permission`). The time update is gated on
+ownership, using one errno for both cases.
+* **Truncation through a writable fd re-checks inode write permission**
+  (`fd_truncate_permission`): `ftruncate` on a file opened `O_RDWR` but whose mode
+  denies write returns `EACCES`, where Linux allows it (the fd already carries
+  write access).
+* **Supplementary-group `chgrp`** returns `EPERM` for a non-root owner
+  (`supplementary_group_chgrp`) — already documented in §6 of
+  `docs/FUSE-SEMANTICS.md` (no caller-group database to verify membership).
+* One assertion (`unlink_08` #2, `unlink` of a directory) is marked
+  `shared_with_reference`: the reference ext4 run fails it too, so it is a pjdfstest/
+  environment artefact, not an OrFS deviation.
+
+These do not change any byte of committed history and never return a wrong
+success; each is a defined errno or a defined timestamp value, recorded in
+`scripts/posix/pjdfstest-expected.tsv` and asserted by the Phase 24 gate so they
+cannot silently grow.

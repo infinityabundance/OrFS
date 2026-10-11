@@ -1,0 +1,42 @@
+{
+  "suite": "xfstests (fstests generic tests)",
+  "repository": "https://git.kernel.org/pub/scm/fs/xfs/xfstests-dev.git",
+  "pinned_commit": "3e1ee800e52a0f53d7d9a7809be1ffc80ec1788f",
+  "ran": false,
+  "status": "assessed-not-runnable-in-this-environment",
+  "generated_by": "scripts/container-posix-test.sh (assessment only; see docs/FUSE-SEMANTICS.md §11)",
+  "supported_fuse_arrangement": {
+    "present": true,
+    "source": "README.fuse @ pinned commit",
+    "mechanism": "FSTYP=fuse + FUSE_SUBTYP=<suffix> and a /sbin/mount.fuse.<suffix> mount helper; TEST_DEV / SCRATCH_DEV are dummy names (e.g. non1/non2), not block devices",
+    "scope": "defined for the libfuse `passthrough_ll` example filesystem only; the helper is a userspace program that mounts a backing directory"
+  },
+  "attempts": [
+    {
+      "what": "run the generic quick group",
+      "command": "export FSTYP=orfs; export TEST_DEV=<dir>; export TEST_DIR=<dir>; export SCRATCH_DEV=<dir>; export SCRATCH_MNT=<dir>; ./check -n -g quick",
+      "observed": "aborts before executing any test: `fsstress not found or executable`"
+    },
+    {
+      "what": "build the required in-tree helper tools",
+      "command": "make -j4",
+      "observed": "`libtoolize: No such file or directory` -> `Makefile:78: configure Error 127`; the pinned image ships no libtool/dev libraries"
+    },
+    {
+      "what": "generic-test runtime dependency",
+      "command": "command -v xfs_io",
+      "observed": "absent (provided by xfsprogs, which is not installed and is itself a separate build)"
+    }
+  ],
+  "blockers": [
+    "xfstests does not run or even configure until its own helper binaries are built (`make`), which requires libtool plus acl/attr/uuid/cap development libraries; `./check` refuses to start without `fsstress`.",
+    "There is no built-in `FSTYP` for FUSE or for OrFS. The only documented FUSE substrate (README.fuse) pairs `FSTYP=fuse` with `FUSE_SUBTYP` and a `/sbin/mount.fuse.<subtype>` mount helper, and it is written for libfuse's `passthrough_ll` example.",
+    "OrFS's mount model is a foreground daemon (`orfs mount <backing> <mnt>`); it provides no `/sbin/mount.fuse.orfs` helper, so the kernel's userland-mount path used by `FSTYP=fuse` has nothing to call.",
+    "The generic tests overwhelmingly use `xfs_io` (from xfsprogs) and assume block-device semantics (block-granular fallocate/punch-hole, mkfs, FS_IOC ioctls) that an append-only FUSE filesystem does not expose."
+  ],
+  "conclusion": "xfstests cannot be run against a mounted OrFS volume in this environment. Its FUSE substrate exists but targets the libfuse passthrough example and requires (a) building xfstests' helper tools, (b) xfsprogs, and (c) an OrFS mount helper the project does not provide. No results are fabricated. POSIX behaviour is instead exercised by the pjdfstest court (evidence/correctness/pjdfstest.json) and the custom mounted model court (evidence/correctness/posix-results.json).",
+  "environment": {
+    "kernel": "7.2.9-2-cachyos",
+    "uname": "Linux"
+  }
+}

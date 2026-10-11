@@ -110,7 +110,7 @@ are stable, so an unlinked child still resolves).
 |---|---|
 | `init` | Negotiates only honoured capabilities (see §7). Sets `max_write`, `max_readahead`, 1 ns time granularity. |
 | `destroy` | Best-effort `sync()` of the authoritative log. |
-| `lookup` | Resolves `.`/`..`/`name` in the live root; requires execute permission on the parent. |
+| `lookup` | Resolves `.`/`..`/`name` in the live root; requires execute permission on the parent. A component longer than `NAME_MAX` (255) returns `ENAMETOOLONG`. |
 | `forget` | Decrements lookup accounting. |
 | `getattr` | Returns the version-consistent `InodeStat`. |
 | `setattr` | Applies a masked change (`mode`/`uid`/`gid`/`atime`/`mtime`/`size`). `chmod`/`utimes` require owner or root; changing the owner (`uid`) or moving the file to a *different* `gid` additionally requires root (§6); `size` requires write permission. Replies with fresh attributes. Requests an inode invalidation. |
@@ -118,7 +118,7 @@ are stable, so an unlinked child still resolves).
 | `mknod` | Regular files and directories are created; any other node type (`S_IFIFO`/`S_IFCHR`/`S_IFBLK`/`S_IFSOCK`) returns `EOPNOTSUPP`. `umask` is already applied by the kernel (OrFS does not set `FUSE_DONT_MASK`). |
 | `mkdir` | Creates a directory; replies with the entry. |
 | `unlink` | Logical removal; enforces sticky-bit rules; requests an entry invalidation. |
-| `rmdir` | Rejects non-empty directories (`ENOTEMPTY`). |
+| `rmdir` | Rejects non-empty directories (`ENOTEMPTY`); enforces the same sticky-bit rule as `unlink` (only the entry owner, the sticky directory's owner, or root may remove it, else `EPERM`). |
 | `symlink` | Stores the target immutably. |
 | `rename` | One atomic transaction. Flags map to `Ordinary`, `RENAME_NOREPLACE`, or `RENAME_EXCHANGE`; `RENAME_WHITEOUT` → `EOPNOTSUPP`; combined flags → `EINVAL`. |
 | `link` | Hard link; adjusts `nlink`. |
@@ -146,6 +146,34 @@ are stable, so an unlinked child still resolves).
 
 Unsupported operations never return a wrong success: they return the documented
 errno (`EOPNOTSUPP`, `ENOSYS`, `EINVAL`, …).
+
+### 5.1 Timestamps
+
+Every inode carries `atime`/`mtime`/`ctime` (1 ns granularity). They are set at
+creation and updated by an explicit `setattr` (chmod/chown/utimes).
+
+**Documented deviation (found by the standard pjdfstest court, Phase 24).** OrFS
+does **not** advance timestamps implicitly the way Linux/ext4 does:
+
+* a namespace mutation (`create`, `mkdir`, `symlink`, `link`, `unlink`, `rmdir`,
+  `rename`) does **not** advance the parent directory's `mtime`/`ctime`; and
+* a content mutation (write, `truncate`, `O_TRUNC`, `ftruncate`) does **not**
+  advance the file's `mtime`/`ctime`.
+
+This is honest and deliberate, not a wrong success: the timestamps returned are
+the ones the authoritative log encodes. It is recorded as a residual deviation in
+`evidence/correctness/pjdfstest.json` (classes `dir_timestamp`, `file_timestamp`)
+and in `scripts/posix/pjdfstest-expected.tsv` with the exact failing assertions.
+
+### 5.2 `setuid`/`setgid` on non-owner write
+
+**Documented deviation.** On Linux a non-privileged write to a file with
+`S_ISUID`/`S_ISGID` set clears those bits. The kernel implements this by issuing a
+FUSE `SETATTR` that only clears the bits. OrFS's `setattr` ownership rule (§6)
+rejects any mode change by a non-owner, so that kernel request fails with `EPERM`
+and the bits are not cleared. A future revision would negotiate
+`FUSE_HANDLE_KILLPRIV` (letting the daemon clear the bits itself on write) or
+accept a bits-clearing `SETATTR`. Recorded as class `setuid_sgid_killpriv`.
 
 ---
 
@@ -275,3 +303,62 @@ is recorded here and in `evidence/correctness/posix-results.json`.
   writes).
 * Writeback cache — see §8.
 * Cross-node locking — out of scope.
+
+---
+
+## 11. Standard POSIX courts (Phase 24)
+
+The custom mounted model court (§33 of the design directive) is joined by two
+standard suites, so POSIX behaviour is measured against an external oracle rather
+than only against OrFS's own model.
+
+### 11.1 pjdfstest
+
+`scripts/container-posix-test.sh` (image `Dockerfile.posix`) runs
+[pjdfstest](https://github.com/pjd/pjdfstest) pinned at commit
+`85a8aea9e685999ef0540392fd80535f873d7ff7` twice: once against a **mounted OrFS
+volume** (`orfs mount --transport fuse --backing-io sync --allow-other
+--entry-ttl-ms 0 --attr-ttl-ms 0`, as root, since the suite requires root), and
+once against a **reference ext4 directory**. Per-file verdicts for both runs,
+per-assertion failures, the pinned commit, the image digest, and the exact
+environment are written to `evidence/correctness/pjdfstest.json`.
+
+Why those mount options: `--allow-other` is required because the suite switches
+to unprivileged uids (`nobody` = 65534) and a root-mounted FUSE filesystem denies
+every other uid at the VFS layer otherwise; zeroed TTLs force every path walk back
+through the daemon's permission checks (a positive entry TTL lets the kernel
+satisfy a walk from a cached dentry and skip the search-permission re-check).
+
+Result: **238 test files, 8,798 assertions.** OrFS fails 55 files / 3,865
+assertions; the reference ext4 fails 2 files / 28 assertions. Every OrFS failing
+assertion is accounted for:
+
+* **6,406 assertions are mechanically unsupported**: pjdfstest's `create_file`
+  builds FIFO/block/char/socket nodes, which OrFS rejects with `EOPNOTSUPP`
+  (mknod §5). Recorded as classes `unsupported_node_type`,
+  `unsupported_errno`, `unsupported_node_downstream`.
+* **27 assertions across 10 files are documented deviations** (see §5.1, §5.2,
+  §6 and `docs/LIMITATIONS.md` §12): timestamps (11), `setuid`/`setgid` (6),
+  supplementary-group `chgrp` (5, already documented), `utimensat(UTIME_NOW)` with
+  only write permission (2), truncate through a writable fd re-checking inode
+  permission (1), and one assertion the **reference fails too** (1).
+* **0 unclassified.** The gate fails on any unclassified failure or any
+  allowlisted assertion that stops failing.
+
+The court found and fixed three real bugs (Phase 24): an over-long name returned
+`EINVAL` instead of `ENAMETOOLONG`; `rmdir` omitted the sticky-bit check that
+`unlink` enforces; and the FUSE adapter clamped the reported `nlink` to `>= 1`,
+so an unlinked-but-open file showed `nlink 1` instead of the POSIX `0`.
+
+### 11.2 xfstests
+
+xfstests (`fstests` generic tests, `xfstests-dev` pinned at commit
+`3e1ee800e52a0f53d7d9a7809be1ffc80ec1788f`) **cannot be run against a mounted
+OrFS volume in this environment.** xfstests does ship a supported FUSE substrate
+(`README.fuse`: `FSTYP=fuse` + `FUSE_SUBTYP=<suffix>` + a
+`/sbin/mount.fuse.<suffix>` mount helper), but it is defined for libfuse's
+`passthrough_ll` example filesystem, and running *any* of the suite additionally
+requires (a) building xfstests' own helper binaries, (b) `xfsprogs` (`xfs_io`),
+and (c) an OrFS mount helper the project does not provide (OrFS mounts as a
+foreground daemon). The exact attempted commands and observed errors are recorded
+in `evidence/correctness/xfstests.json`; no results are fabricated.

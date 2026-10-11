@@ -38,6 +38,11 @@ pub enum OrfsError {
     #[error("object already exists")]
     AlreadyExists,
 
+    /// A path component exceeded the filesystem `NAME_MAX` (255 bytes). POSIX
+    /// requires `ENAMETOOLONG` here, distinct from a generic `EINVAL`.
+    #[error("file name too long")]
+    NameTooLong,
+
     /// An extended attribute was requested that is not present.
     #[error("no such extended attribute")]
     NoData,
@@ -133,6 +138,7 @@ impl OrfsError {
             OrfsError::InvalidArgument(_) => libc::EINVAL,
             OrfsError::NotFound => libc::ENOENT,
             OrfsError::AlreadyExists => libc::EEXIST,
+            OrfsError::NameTooLong => libc::ENAMETOOLONG,
             OrfsError::NoData => libc::ENODATA,
             OrfsError::PermissionDenied => libc::EACCES,
             OrfsError::NotADirectory => libc::ENOTDIR,

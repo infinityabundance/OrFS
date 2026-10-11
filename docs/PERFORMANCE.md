@@ -424,7 +424,8 @@ index-backed lookup.
 | `fio` | **unavailable** | absent from `rust:1.99.0-slim-bookworm`; installing it means a new image |
 | `hyperfine` | **unavailable** | absent from the pinned image |
 | `perf` | **unavailable** | absent from the pinned image **and** `perf_event_paranoid=2` / `CAP_PERFMON` dropped |
-| `pjdfstest`, `xfstests` | **unavailable** | absent; POSIX behaviour is covered by the custom model court (§8) |
+| `pjdfstest` | **used** (Phase 24) | run in the `orfs-posix:1.99.0` image against both a mounted OrFS volume and a reference ext4 directory; results in `evidence/correctness/pjdfstest.json` (docs/FUSE-SEMANTICS.md §11.1) |
+| `xfstests` | **assessed, not runnable here** (Phase 24) | a FUSE substrate exists but needs xfstests' built helper tools, xfsprogs, and a mount helper; exact commands/errors in `evidence/correctness/xfstests.json` (docs/FUSE-SEMANTICS.md §11.2) |
 | `setfattr`/`getfattr` | **unavailable** | absent; xattrs are exercised via direct syscalls |
 
 The directive permits documenting the blocker instead of adding the tools; the

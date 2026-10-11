@@ -1,8 +1,25 @@
 {
   "cache_profile": "write-through",
+  "courts": {
+    "custom_mounted_model": {
+      "evidence": "evidence/correctness/posix-results.json",
+      "note": "the operations table above: each check compared against the reference filesystem (or asserted semantically where the reference value is non-deterministic)"
+    },
+    "pjdfstest": {
+      "evidence": "evidence/correctness/pjdfstest.json",
+      "note": "the standard pjdfstest suite run against a mounted OrFS volume AND against a reference ext4 directory; the few OrFS deviations are classified, with the exact expected/observed errno recorded in scripts/posix/pjdfstest-expected.tsv",
+      "suite_commit": "85a8aea9e685999ef0540392fd80535f873d7ff7",
+      "suite_repository": "https://github.com/pjd/pjdfstest"
+    },
+    "xfstests": {
+      "evidence": "evidence/correctness/xfstests.json",
+      "note": "xfstests cannot be run against a FUSE mount in this environment; the exact attempted commands, errors, and blockers are recorded (docs/FUSE-SEMANTICS.md §11)",
+      "status": "documented-unsupported"
+    }
+  },
   "generated_by": "tests/fuse_integration.rs",
   "mounted": true,
-  "mountpoint": "/mnt/1tb_kingston/OrFS/target/fuse-it/it-524-1791730485580606733/mnt",
+  "mountpoint": "/mnt/1tb_kingston/OrFS/target/fuse-it/it-525-1791735669784502695/mnt",
   "notes": [
     "readdirplus is negotiated (FUSE_DO_READDIRPLUS) and exercised by ordinary readdir(3) calls",
     "POSIX record locks and flock are delegated to the kernel (ENOSYS); see docs/FUSE-SEMANTICS.md",

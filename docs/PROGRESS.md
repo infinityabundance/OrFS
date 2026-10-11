@@ -1433,3 +1433,60 @@ order, read-only transition, diagnostics, residual limits), `docs/RECOVERY.md` �
 (ENOSPC/EIO/degraded modes, reordered durable writes), `docs/POWERLOSS.md` §2.1/§7
 (new flush/loss modes and device-failure injection), `docs/LIMITATIONS.md` §11,
 this section.
+
+## Phase 24 — Broad POSIX court (pjdfstest; xfstests assessment)
+
+**Complete.** Broadens POSIX compatibility testing beyond the project's own model
+court (research §33, external-review finding P1) by running a standard suite
+against a **mounted** OrFS volume and comparing to a trusted ordinary filesystem.
+
+### Delivered
+
+* **Pinned image** — `Dockerfile.posix` (`orfs-posix:1.99.0`), derived from the
+  same pinned Rust base, adding the pjdfstest toolchain (perl, openssl, gawk, jq,
+  autoconf/automake/gcc/make) and vendoring **pjdfstest at commit
+  `85a8aea9e685999ef0540392fd80535f873d7ff7`** (cloned at image build; the resolved
+  commit is recorded in the evidence). Built by `scripts/container-image-build.sh`.
+* **`scripts/container-posix-test.sh`** runs `scripts/posix/pjdfstest.sh` in a
+  root, `/dev/fuse`+`SYS_ADMIN` container (`docker_run_posix`, one at a time). It
+  mounts a fresh OrFS volume rw, runs the whole pjdfstest suite against it, then
+  runs the **same** suite against a reference **ext4** directory (the project
+  drive), and writes `evidence/correctness/pjdfstest.json` (per-file verdicts for
+  both runs + per-assertion failures + environment + pinned commit).
+* **Gate** — every OrFS failing assertion is classified mechanically (FIFO/block/
+  char/socket node types → `EOPNOTSUPP`) or matched against the reviewed allowlist
+  `scripts/posix/pjdfstest-expected.tsv`. The court fails on any unclassified
+  failure or any allowlisted assertion that no longer fails.
+* **Bugs found and fixed** (minimal, in `src/`):
+  * `ENAMETOOLONG` — an over-long path component (and the `lookup`/`unlink`/
+    `rmdir`/`rename`/`link` paths) returned `EINVAL`/`ENOENT`; a new
+    `OrfsError::NameTooLong` + `check_name_len` now yield the POSIX errno
+    (`src/error.rs`, `src/directory.rs`, `src/namespace.rs`, `src/snapshot.rs`).
+  * `rmdir` sticky-bit — `rmdir` omitted the sticky-bit rule that `unlink`
+    enforces (`src/fuse.rs`). Now enforced identically.
+  * `nlink` clamp — the FUSE adapter reported `nlink.max(1)`, so an unlinked-but-
+    open file showed `nlink 1`. It now reports the true count (`0`), as POSIX
+    requires (`src/fuse.rs`).
+* **Reference comparison** — the same suite against ext4, plus the documented
+  deviations classified with their exact expected/observed errno.
+
+### Results (evidence-backed)
+
+* `evidence/correctness/pjdfstest.json`: OrFS **238 files / 8,798 assertions**,
+  55 failing files (3,865 assertions — 6,406 classified as unsupported node types,
+  27 documented deviations, 0 unclassified); reference ext4 **2 failing files /
+  28 assertions** (one is a pjdfstest artefact that OrFS is marked
+  `shared_with_reference` for). Gate **pass**.
+* `evidence/correctness/xfstests.json`: xfstests **cannot run** here — a FUSE
+  substrate exists (`README.fuse`, `FSTYP=fuse` + `FUSE_SUBTYP` + a mount helper)
+  but targets libfuse's `passthrough_ll` example and still needs xfstests' built
+  helper tools, `xfsprogs`, and an OrFS mount helper. Exact commands and errors
+  recorded; no fabricated results.
+* `evidence/correctness/posix-results.json` now carries a `courts` section naming
+  the model court, the pjdfstest court, and the xfstests assessment.
+
+### Docs
+
+`docs/FUSE-SEMANTICS.md` (new §5.1 timestamps, §5.2 setuid/setgid killpriv, §11
+standard POSIX courts), `docs/LIMITATIONS.md` §12 (residual documented deviations),
+`docs/PERFORMANCE.md` §7 (tooling inventory updated), this section.

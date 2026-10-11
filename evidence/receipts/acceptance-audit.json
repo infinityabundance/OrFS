@@ -1,0 +1,178 @@
+{
+  "schema": "orfs.evidence.acceptance-audit.v1",
+  "generated_by": "independent adversarial audit (clean-checkout, in-container)",
+  "audited_head_commit": "79cc421",
+  "audited_head_subject": "phase12: consistent bench workload names and evidence/doc refresh",
+  "audit_utc": "2026-10-11",
+  "repo": "/mnt/1tb_kingston/OrFS",
+  "clean_checkout": {
+    "path": "/mnt/1tb_kingston/.orfs-audit",
+    "command": "git clone file:///mnt/1tb_kingston/OrFS /mnt/1tb_kingston/.orfs-audit && (cd /mnt/1tb_kingston/.orfs-audit && sh scripts/container-reproduce.sh)",
+    "pristine_result": "FAIL",
+    "pristine_error": "failed to get `ekbloom`: revspec '255452e1a803080de99f7a18aaef840c8c835209' not found; class=Reference (4); code=NotFound (-3)",
+    "reason": "Cargo.toml pins ekbloom to git rev 255452e1a803080de99f7a18aaef840c8c835209, which no longer exists in /mnt/1tb_kingston/EKBLOOM (HEAD is 708c349128668bf26b50684ce473d8de4058dc31). A pristine checkout with an empty CARGO_HOME cannot resolve dependencies.",
+    "seeded_result": "PASS",
+    "seeded_command": "cp -a <original>/.cargo-home <clone>/.cargo-home && (cd clone && . scripts/lib.sh && docker_run sh -c 'CARGO_NET_OFFLINE=true cargo build --release && cargo test --release')",
+    "tests_default": 220,
+    "tests_default_failed": 0,
+    "tests_failpoints": 225,
+    "tests_failpoints_failed": 0,
+    "fmt_clippy": "cargo fmt -p orfs --check OK; cargo clippy --all-targets -- -D warnings OK",
+    "note": "The 220/225 tests pass and fmt/clippy are clean, but ONLY after the dangling EKBLOOM dependency is supplied from the pre-existing cargo cache; they do not reproduce from a genuinely pristine environment."
+  },
+  "fuse_courts_single_container": {
+    "fuse_integration": "2 passed, 0 failed (real /dev/fuse mount)",
+    "fuse_uring": "3 passed, 0 failed",
+    "snapshot_fuse": "1 passed, 0 failed",
+    "performance_court": "1 passed, 0 failed, 214.73s",
+    "uring_probe": "io_uring_setup OK fd=3 features=0x3ffff",
+    "uring_integration": "7 passed, 0 failed",
+    "benches": "backing_io and mechanisms completed; rewrote evidence/performance/{backing-uring,mechanisms,ekbloom-frontier}.json",
+    "note": "All FUSE suites pass when exactly one kmount container runs at a time. Concurrent kmount containers leave unkillable D-state containers (see containers.unkillable)."
+  },
+  "ekbloom_pin": {
+    "declared_rev": "255452e1a803080de99f7a18aaef840c8c835209",
+    "exists_in_ekbloom_repo": false,
+    "ekbloom_head_now": "708c349128668bf26b50684ce473d8de4058dc31",
+    "cargo_lock_pins_rev": true,
+    "recoverable_from": "OrFS/.cargo-home/git/db/EKBLOOM-6b6990a7e0157fc0 (cached object + refs/remotes/origin/main=255452e)",
+    "impact": "Non-reproducible from a pristine clone; provenance of the EKBLOOM bytes actually linked is only verifiable against the local cargo cache."
+  },
+  "gates": {
+    "A": {
+      "name": "Genuine non-withdrawal",
+      "verdict": "PASS",
+      "artifact": "tests/log_model.rs::committed_bytes_never_rewritten_across_appends_and_rollover + torn_tail_is_quarantined_not_truncated; evidence/recovery/torn-write.json (verdicts.no_committed_record_rewritten=true, committed_physical_bytes_unchanged=true for all 3 crash failpoints)"
+    },
+    "B": {
+      "name": "Valid historical roots",
+      "verdict": "PASS",
+      "artifact": "tests/log_model.rs::every_published_root_is_a_complete_transaction_boundary; evidence/correctness/committed-roots.json (24 roots, every one is_transaction_boundary=true with last_record_type=TX_COMMIT; invariants all true)"
+    },
+    "C": {
+      "name": "Log-only reconstruction",
+      "verdict": "PASS",
+      "artifact": "tests/log_model.rs::replay_from_committed_prefixes_is_deterministic; evidence/correctness/log-replay.json (distinct_replays_agree=true) + namespace-rebuild.json"
+    },
+    "D": {
+      "name": "Transaction atomicity",
+      "verdict": "PASS",
+      "artifact": "tests/transaction_model.rs::root_does_not_move_until_commit_and_never_exposes_a_partial_transaction; tests/concurrency_stress.rs (readers never observe partial mutation)"
+    },
+    "E": {
+      "name": "Real FUSE functionality",
+      "verdict": "PASS",
+      "artifact": "tests/fuse_integration.rs (2/2 under docker_run_kmount in the clean checkout, real mount); evidence/correctness/posix-results.json (18/18 POSIX ops matched)",
+      "gap": "POSIX coverage gaps, self-declared in posix-results.json: pwrite (only indirect), chown, utimens, fdatasync, mmap"
+    },
+    "F": {
+      "name": "Correct io_uring execution",
+      "verdict": "PASS",
+      "artifact": "tests/uring_integration.rs 7/7 (ordering, CQE/errors, short-write retry, cancel/teardown, sync/uring byte-equivalence, honest fallback); evidence/correctness/uring-equivalence.json (digests_equal/roots_equal); evidence/performance/backing-uring.json; scripts/uring-probe.c"
+    },
+    "G": {
+      "name": "Real historical snapshots",
+      "verdict": "PASS",
+      "artifact": "tests/snapshot_model.rs (10, incl. snapshot_equivalence_evidence, replay_reconstructs_each_committed_root) + tests/snapshot_fuse.rs::snapshot_mount_is_read_only_and_historical (passed under kmount); evidence/correctness/snapshot-equivalence.json"
+    },
+    "H": {
+      "name": "Concealed manifestation",
+      "verdict": "PASS",
+      "artifact": "tests/manifestation.rs (generations_are_version_qualified, recovery_selects_newest_valid_and_ignores_torn, drop_all_and_rebuild_yields_identical_logical_bytes); evidence/recovery/manifested-generation.json (published 2/recovered 2/rejected 0; physical generation payloads with blake3)"
+    },
+    "I": {
+      "name": "EKBLOOM correctness",
+      "verdict": "PASS",
+      "artifact": "tests/ekbloom_read.rs incl. proptest_planned_equals_authoritative + compatible_certified_path_serves_an_exact_read; evidence/correctness/ekbloom-read-equivalence.json",
+      "caveat": "Accelerated paths are byte-exact but are never actually chosen on the measured workloads: evidence/performance/ekbloom-frontier.json shows the planner served 2000/2000 4 KiB reads by logical-extent (fallback) for every profile. Correctness holds; acceleration is inert. Provenance also weakened by the dangling EKBLOOM pin."
+    },
+    "J": {
+      "name": "Recovery",
+      "verdict": "PASS",
+      "artifact": "tests/crash_recovery.rs (2/2 with --features failpoints, process SIGABRT at every failpoint) + tests/recovery_adversarial.rs; evidence/recovery/{torn-write,commit-interruption,segment-rollover}.json",
+      "caveat": "Process-crash court only; power-loss durability is an explicitly separate, open obligation (PROGRESS.md, RECOVERY.md)."
+    },
+    "K": {
+      "name": "Physical accounting",
+      "verdict": "PASS",
+      "artifact": "evidence/performance/manifestation-accounting.json (m_total == on_disk_total_bytes == 13646; totals_match=true; categories M_log/M_ekbloom/M_indexes/M_checkpoints/M_other, manifested_generations=2)"
+    },
+    "L": {
+      "name": "FUSE-over-io_uring",
+      "verdict": "PARTIAL",
+      "artifact": "src/fuse_uring.rs; tests/fuse_uring.rs 3/3 (ring control/cancel/shutdown on a non-fuse fd, F0/F1/requested-F2 equivalence, negotiation reason); evidence/performance/fuse-uring.json; evidence/correctness/fuse-uring-ring.json",
+      "blocker": "Not active. Verified at /sys/module/fuse/parameters/enable_uring = N (fuse.enable_uring=0). Also: io-uring 0.7.15 cannot set sqe->len required by FUSE_IO_URING_CMD_REGISTER; fuser 0.18 does not expose the /dev/fuse fd. No host here can demonstrate actual F2 operation, only honest negotiation + fallback."
+    },
+    "M": {
+      "name": "Reproducibility (pinned container)",
+      "verdict": "FAIL",
+      "artifact": "clone + scripts/container-reproduce.sh",
+      "detail": "Pristine clone fails dependency resolution (dangling EKBLOOM rev). Passes only with a pre-seeded cargo cache. Additionally scripts/lib.sh ORFS_PROJECT_DIR resolution is broken: dirname \"$0 2>/dev/null || echo .\" is corrupted by the '/' inside '2>/dev/null', so the computed path is invalid and the code silently falls back to $PWD. Scripts therefore only work when invoked with cwd = project root (the documented usage), and silently use the WRONG tree otherwise."
+    },
+    "N": {
+      "name": "Measured advantage",
+      "verdict": "PASS",
+      "artifact": "evidence/performance/{sequential-read,random-read,append-write,fuse-baseline,mount-replay,mechanisms,ekbloom-frontier,backing-uring}.json; reproduced from the clean checkout (single kmount container)",
+      "detail": "Committed numbers exactly back docs/PERFORMANCE.md (e.g. sequential-read conventional 27256 / F0 2916 / F1 2475 / E1 1.9 MB/s). Reproduced values are commensurate (F0 2576 MB/s). No performance superiority is claimed anywhere; E1 is far slower and the frontier shows no profile beats the authoritative read. So the evidence is genuine, but the governing objective ('spend manifested space to maximise speed') is NOT met on any measured workload."
+    }
+  },
+  "documentation_required_set": {
+    "present": [
+      "ORFS-SPEC.md", "ON_DISK.md", "LOG-INVARIANTS.md", "TRANSACTIONS.md",
+      "FUSE-SEMANTICS.md", "IO_URING.md", "FUSE_URING.md", "EKBLOOM-INTEGRATION.md",
+      "RECOVERY.md", "SECURITY.md", "PERFORMANCE.md", "LIMITATIONS.md"
+    ],
+    "missing": [],
+    "extra": ["MANIFESTATION.md", "NAMESPACE.md", "PROGRESS.md", "QUERY.md", "SNAPSHOTS.md"],
+    "findings": [
+      "docs/ORFS-SPEC.md (the declared master specification index) is STALE: its phase table marks phases 4-12 'planned' and its document-set table marks FUSE-SEMANTICS/IO_URING/FUSE_URING/EKBLOOM-INTEGRATION/RECOVERY/SECURITY/PERFORMANCE/LIMITATIONS as 'planned' and 'not written'. All of them exist and all phases are complete per PROGRESS.md/README.md.",
+      "README.md status table marks phase 11 and 12 as '-' while PROGRESS.md marks them Complete.",
+      "PROGRESS.md counts are stale (Phase 11 says 215 default / 220 failpoints, and '21 unsafe sites'; actual is 220 / 225 and 22 unsafe sites).",
+      "docs/FUSE_URING.md sec.7 is titled 'two blockers' but LIMITATIONS.md sec.4 lists three."
+    ]
+  },
+  "evidence_required_set": {
+    "correctness": ["log-replay.json", "committed-roots.json", "inode-semantics.json", "snapshot-equivalence.json", "posix-results.json", "ekbloom-read-equivalence.json"],
+    "recovery": ["torn-write.json", "commit-interruption.json", "segment-rollover.json", "manifested-generation.json"],
+    "performance": ["fuse-baseline.json", "backing-uring.json", "fuse-uring.json", "ekbloom-frontier.json", "random-read.json", "sequential-read.json", "append-write.json", "mount-replay.json"],
+    "security_present": ["concurrency-stress.json", "fuzz-decode.json", "hostile-input-results.json", "unsafe-audit.json"],
+    "receipts": ["container.json", "toolchain.json", "environment.json"],
+    "missing": ["evidence/receipts/source-commit.json"],
+    "empty_or_placeholder": [],
+    "findings": [
+      "All required evidence files except evidence/receipts/source-commit.json are present, non-empty and machine-generated (verified: a fresh in-container test run regenerates them; evidence/correctness/committed-roots.json reproduces byte-identically).",
+      "evidence/performance/mount-replay.json is written by TWO tests (tests/performance_court.rs schema orfs.performance.mount-replay.v1 and tests/snapshot_model.rs schema orfs.evidence.mount-replay.v1). Under a plain `cargo test`, snapshot_model runs last and silently CLOBBERS the performance court's mount-time data. The committed copy is the performance version only because of run ordering."
+    ]
+  },
+  "overclaims": {
+    "none": [
+      "F2 FUSE-over-io_uring is correctly NOT claimed active (README, LIMITATIONS sec.4, FUSE_URING sec.7, fuse-uring.json).",
+      "The image pixel-surface pyramid is correctly NOT claimed implemented (PROGRESS.md 'Explicitly not implemented', QUERY.md sec.9.1, src/image.rs)."
+    ],
+    "flagged": [
+      "docs/ORFS-SPEC.md contradicts the shipped state (stale phase/document tables) - a spec-integrity failure rather than a feature overclaim.",
+      "README.md phase table and PROGRESS.md test counts are inconsistent with the tree."
+    ]
+  },
+  "containers": {
+    "created_by_audit": ["orfs-audit-fuse (exited, removed)", "orfs-audit-perf (exited, removed)"],
+    "unkillable_preexisting": [
+      "objective_kalam (orfs-kmount, hung in performance_court)",
+      "elastic_rubin (orfs-kmount, hung in performance_court)",
+      "zealous_bhabha (orfs-kmount, hung in performance_court)",
+      "nice_wilbur (orfs-kmount, hung in fuse_integration with a hand-set target)"
+    ],
+    "note": "The four pre-existing containers cannot be stopped or removed: 'tried to kill container, but did not receive an exit event' (uninterruptible kernel sleep). They were created before this audit; the audit did not create them and cannot remove them. Running multiple kmount containers concurrently is the apparent trigger; a single kmount container completes cleanly."
+  },
+  "gaps_prioritized": [
+    "REPRODUCIBILITY: dangling EKBLOOM pin (Cargo.toml:41, docs/LIMITATIONS.md sec.1) makes a pristine build impossible; re-pin to a rev that exists (or vendor/patch) and let a fresh clone build.",
+    "scripts/lib.sh ORFS_PROJECT_DIR resolution is broken (dirname argument corrupted by '/' in '2>/dev/null'); scripts silently operate on the wrong tree unless cwd is the project root.",
+    "evidence/receipts/source-commit.json is absent (the required source-provenance receipt).",
+    "Documentation drift: docs/ORFS-SPEC.md phase/document tables, README.md phase table, and PROGRESS.md counts are stale.",
+    "Latent evidence collision: evidence/performance/mount-replay.json has two writers (performance_court vs snapshot_model); a plain `cargo test` destroys the performance mount data.",
+    "Governing objective unmet: no workload demonstrates a manifestation speedup; E1 is slower (PERFORMANCE.md sec.5, ekbloom-frontier.json).",
+    "POSIX court gaps: pwrite/chown/utimens/fdatasync/mmap not separately proven (posix-results.json).",
+    "Watermark residual window (LIMITATIONS.md sec.6, RECOVERY.md sec.5): bytes committed but not yet watermarked before a crash cannot be detected as lost.",
+    "Concurrent kmount containers can hang unkillably on this host (4 pre-existing zombies)."
+  ]
+}

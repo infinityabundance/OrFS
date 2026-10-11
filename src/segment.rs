@@ -112,6 +112,9 @@ impl Segment {
     /// Create a new, empty segment. Fails if the file already exists.
     pub fn create(dir: &Path, id: u64) -> Result<Segment> {
         let name = segment_file_name(id)?;
+        if let Some(err) = crate::powerloss::device_create(dir, &name) {
+            return Err(err);
+        }
         let path = dir.join(&name);
         let file = OpenOptions::new()
             .read(true)
@@ -178,7 +181,22 @@ impl Segment {
     /// Write `buf` at `offset`. The caller must ensure the range is within the
     /// append frontier; committed bytes are never rewritten by this layer.
     pub fn write_at(&self, offset: u64, buf: &[u8]) -> Result<()> {
-        self.file.write_all_at(buf, offset)?;
+        // A simulated device may reject (ENOSPC/EIO) or shorten the write. When it
+        // does, only the accepted prefix is persisted, and the error is returned so
+        // the authoritative path refuses the mutation rather than acknowledging it.
+        if let Some(fault) =
+            crate::powerloss::device_write(&self.dir, &self.name, offset, buf.len() as u64)
+        {
+            let n = (fault.written as usize).min(buf.len());
+            if n > 0 {
+                self.file
+                    .write_all_at(&buf[..n], offset)
+                    .map_err(map_store_err)?;
+                crate::powerloss::record_write(&self.dir, &self.name, offset, &buf[..n]);
+            }
+            return Err(fault.error);
+        }
+        self.file.write_all_at(buf, offset).map_err(map_store_err)?;
         // Capture the write in the simulated device's volatile cache (write-through
         // to `self.file` keeps ordinary in-session reads correct). No-op without a
         // device.
@@ -205,7 +223,10 @@ impl Segment {
 
     /// Flush and fsync the segment file.
     pub fn sync(&self) -> Result<()> {
-        self.file.sync_all()?;
+        if let Some(err) = crate::powerloss::device_sync(&self.dir, &self.name) {
+            return Err(err);
+        }
+        self.file.sync_all().map_err(map_store_err)?;
         // The device's durability point: promote cached writes per its model.
         crate::powerloss::flush_file(&self.dir, &self.name);
         Ok(())
@@ -351,6 +372,9 @@ impl SegmentLocator {
 /// Fsync a directory so that newly created/renamed entries are durable.
 pub(crate) fn fsync_dir(dir: &Path) -> Result<()> {
     crate::failpoints::check(crate::failpoints::Failpoint::DuringDirectorySync)?;
+    if let Some(err) = crate::powerloss::device_dir_sync(dir) {
+        return Err(err);
+    }
     // A simulated device models directory durability itself; when one is attached
     // to this directory it handles the sync and the real fsync is skipped.
     if crate::powerloss::sync_dir(dir) {
@@ -358,11 +382,22 @@ pub(crate) fn fsync_dir(dir: &Path) -> Result<()> {
     }
     match File::open(dir) {
         Ok(f) => {
-            f.sync_all()?;
+            f.sync_all().map_err(map_store_err)?;
             Ok(())
         }
         Err(e) if e.kind() == io::ErrorKind::PermissionDenied => Ok(()),
         Err(e) => Err(e.into()),
+    }
+}
+
+/// Map an OS error to a semantically meaningful OrFS error: an out-of-space error
+/// becomes [`OrfsError::NoSpace`] (so the authoritative path can recognise and
+/// latch a capacity exhaustion), everything else stays an `Io` error.
+pub(crate) fn map_store_err(e: io::Error) -> OrfsError {
+    if e.raw_os_error() == Some(libc::ENOSPC) {
+        OrfsError::NoSpace(e.to_string())
+    } else {
+        OrfsError::Io(e)
     }
 }
 

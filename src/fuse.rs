@@ -188,6 +188,10 @@ pub struct MountOptions {
     pub manifest_sync: bool,
     /// Manifestation worker threads (`0` selects the CPU count).
     pub manifest_workers: usize,
+    /// Minimum backing bytes to keep free for authoritative writes (the
+    /// capacity reserve; Phase 23, research §31). `0` leaves the device-derived
+    /// default in place.
+    pub capacity_reserve_bytes: u64,
 }
 
 impl Default for MountOptions {
@@ -211,6 +215,7 @@ impl Default for MountOptions {
             manifest: None,
             manifest_sync: false,
             manifest_workers: 0,
+            capacity_reserve_bytes: 0,
         }
     }
 }
@@ -2055,6 +2060,13 @@ fn build_core(
         OpenMode::ReadWrite
     };
     let mut core = Namespace::open(backing, mode, opts.durability)?;
+    // Phase 23: a configured authoritative reserve bounds growth so a full
+    // backing returns ENOSPC before it fills the device (research §30, §31).
+    if opts.capacity_reserve_bytes > 0 {
+        core.set_capacity_policy(
+            crate::capacity::CapacityPolicy::new().with_reserve(opts.capacity_reserve_bytes),
+        );
+    }
     let report = if opts.backing_io == BackingIo::Uring {
         let cfg = crate::uring::UringConfig {
             enabled: true,

@@ -1362,3 +1362,74 @@ from `evidence/performance/incremental-manifestation.json`:
 
 `docs/MANIFESTATION.md` §14 (overlay model, reuse/compatibility rules, bounded
 depth + flattening, crash-safety, measured economics), this section.
+
+## Phase 23 — ENOSPC/device-error recovery hardening and a capacity policy
+
+**Complete.** Production-grade failure handling: running out of authoritative
+space, device errors (`EIO`/short writes/failed `fsync`), and reordered durable
+writes must never silently violate acknowledged durability; plus a real capacity
+policy (research I8, §30, §31).
+
+### Delivered
+
+* **Simulated-device fault injection** — `src/powerloss.rs`. A deterministic
+  `DeviceFaultRule { op, kind, skip, fire, name_suffix }` (`DeviceOp` ×
+  `DeviceFaultKind`) is consulted by the log's I/O seams (segment `write`/`sync`/
+  `create`, directory `fsync`, the commit watermark, and the manifestation
+  publish path). A write can be rejected (`ENOSPC`/`EIO`) or **shortened** (a
+  partial write then an error). `attach_with_faults` installs a plan.
+* **Capacity policy** — new `src/capacity.rs`: a `CapacityPolicy`
+  (authoritative **reserve**, optional **soft/hard quotas**, optional explicit
+  authoritative bound) and a `CapacityGovernor` with a one-way **degraded latch**.
+  When no explicit bound is set the log derives capacity from the backing device
+  at open (`available + used`), so the reserve is honoured against the real
+  device.
+* **Early ENOSPC detection** — `CommitSequencer::projected_transaction_bytes`
+  computes the whole framed transaction (`TX_BEGIN` + data + `TX_COMMIT`, each
+  with its 60-byte header and 16-byte footer) and `Log::ensure_capacity` admits it
+  **before the first byte is written**; `Log::reserve` re-checks per record.
+* **Read-only transition** — an authoritative `ENOSPC`/`EIO` latches the volume
+  degraded: the failing operation is not acknowledged, the root does not advance,
+  no committed byte is rewritten, and every further mutation returns `EROFS`.
+  Reads continue. `OrfsError::is_authoritative_store_failure` classifies the
+  trigger; `OS ENOSPC` is mapped to `OrfsError::NoSpace` at the segment seam.
+* **Optional-first throttling** — `Namespace::commit_plan` asks
+  `optional_allowed(authoritative, optional)` before enqueuing any manifestation
+  or trigram job, so optional construction stops before it can starve
+  authoritative commits. An optional failure is recorded (`Failed`/`Skipped`) and
+  never fails an authoritative commit.
+* **Reordered durable writes** — `FlushMode::Reordered` (an honoured barrier that
+  applies durable writes out of order: nothing is lost) and
+  `DurableLoss::ReorderDurable` (a contract-violating device drops durable sector
+  blocks; safety-only).
+* **Diagnostics** — `stats::PhysicalAccounting` and `orfs stat` report the policy,
+  reserve, quotas, authoritative usage, admissible headroom, optional usage,
+  throttle state, and degraded reason; the FUSE `--reserve` mount flag sets a
+  reserve.
+
+### Results (evidence-backed)
+
+* Every authoritative write, sync, rollover, and watermark point swept with
+  `ENOSPC` (`evidence/recovery/enospc.json`, 19 cases) and with `EIO`/short
+  write/failed `fsync` (`evidence/recovery/device-error.json`, 32 cases): every
+  case recovers to a complete committed boundary, every acknowledged-durable
+  mutation survives, no partial transaction is ever visible, and the volume
+  latches `EROFS`. Two `proptest` courts randomise the injection point and kind.
+* Capacity-policy verdicts (`evidence/recovery/capacity.json`): exhaustion
+  returns `ENOSPC`, does not advance the committed root, latches `EROFS`, throttles
+  optional first, and never reclaims authoritative history.
+* Reordered durable writes preserve every `sync` acknowledgement
+  (`a_reordered_durable_device_never_violates_acknowledged_durability`);
+  partially/reordered-applied durable images recover-or-refuse without exposing a
+  partial transaction. `evidence/recovery/power-loss.json` now includes the new
+  profiles.
+* Tests: **305** in `scripts/container-test.sh` (was 281; +24; 8 policy unit
+  tests, 6 capacity/recovery courts, 10 injection/evidence courts).
+
+### Docs
+
+`docs/CAPACITY.md` (new: the two spaces, policy, early detection, throttling
+order, read-only transition, diagnostics, residual limits), `docs/RECOVERY.md` §7
+(ENOSPC/EIO/degraded modes, reordered durable writes), `docs/POWERLOSS.md` §2.1/§7
+(new flush/loss modes and device-failure injection), `docs/LIMITATIONS.md` §11,
+this section.

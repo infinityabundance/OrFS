@@ -25,6 +25,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use crate::capacity::{CapacityGovernor, CapacityPolicy, CapacityReport};
 use crate::error::{OrfsError, Result};
 use crate::failpoints::{self, Failpoint};
 use crate::record::{Record, RecordHeader, RecordType, TypeClass, HEADER_LEN, MAX_PAYLOAD_LEN};
@@ -1021,6 +1022,9 @@ pub struct Log {
     /// every [`LogView`] handed to a reader, so the writer and all concurrent
     /// readers reuse the same open descriptors (Phase 19).
     readers: Arc<Mutex<SegmentCache>>,
+    /// Authoritative-space admission control and the degraded/read-only latch
+    /// (Phase 23; research I8, §30, §31).
+    capacity: CapacityGovernor,
 }
 
 impl Log {
@@ -1070,6 +1074,11 @@ impl Log {
             watermark: None,
             durable_watermark: None,
             readers: Arc::new(Mutex::new(SegmentCache::new(dir.to_path_buf()))),
+            capacity: {
+                let mut g = CapacityGovernor::new(CapacityPolicy::default());
+                g.resolve_from_backing(dir, 0);
+                g
+            },
         })
     }
 
@@ -1190,6 +1199,11 @@ impl Log {
             watermark: recovered_wm,
             durable_watermark: disk_watermark,
             readers: Arc::new(Mutex::new(SegmentCache::new(dir.to_path_buf()))),
+            capacity: {
+                let mut g = CapacityGovernor::new(CapacityPolicy::default());
+                g.resolve_from_backing(dir, committed);
+                g
+            },
         })
     }
 
@@ -1203,6 +1217,57 @@ impl Log {
     /// it, and lets tests assert the classification.
     pub fn recovery(&self) -> RecoveryDisposition {
         self.recovery
+    }
+
+    // -- capacity governance (Phase 23; research I8, §30, §31) --------------
+
+    /// The capacity governor in force.
+    pub fn capacity(&self) -> &CapacityGovernor {
+        &self.capacity
+    }
+
+    /// Mutable access to the capacity governor.
+    pub fn capacity_mut(&mut self) -> &mut CapacityGovernor {
+        &mut self.capacity
+    }
+
+    /// Replace the capacity policy and re-derive an implicit capacity bound from
+    /// the backing device (using this log's current authoritative footprint).
+    pub fn set_capacity_policy(&mut self, policy: CapacityPolicy) {
+        self.capacity.set_policy(policy);
+        let used = self.append_end_offset();
+        self.capacity.resolve_from_backing(&self.dir, used);
+    }
+
+    /// The authoritative bytes currently occupied (the logical append frontier);
+    /// a monotonic, honest measure of physical growth.
+    pub fn authoritative_bytes(&self) -> u64 {
+        self.append_end_offset()
+    }
+
+    /// Whether the volume has latched into degraded/read-only mode.
+    pub fn is_degraded(&self) -> bool {
+        self.capacity.is_degraded()
+    }
+
+    /// Latch the volume degraded/read-only with a reason (Phase 23).
+    pub fn degrade(&mut self, reason: impl Into<String>) {
+        self.capacity.degrade(reason);
+    }
+
+    /// A truthful capacity report for this volume.
+    pub fn capacity_report(&self) -> CapacityReport {
+        let used = self.authoritative_bytes();
+        let optional = self.capacity.optional_used_bytes();
+        self.capacity.report(used, optional)
+    }
+
+    /// Admit `needed` authoritative bytes, or refuse (latching degraded) when the
+    /// reserve would be breached or a quota exceeded. This is the single
+    /// authoritative-space admission gate.
+    pub(crate) fn ensure_capacity(&mut self, needed: u64) -> Result<()> {
+        let used = self.authoritative_bytes();
+        self.capacity.check_authoritative(used, needed)
     }
 
     /// Pin a committed root so its segments cannot be quarantined or rolled over
@@ -1323,6 +1388,10 @@ impl Log {
                 "cannot reserve zero bytes".to_string(),
             ));
         }
+        // Authoritative-space admission first: a full device (or an already
+        // degraded volume) must refuse before any byte is reserved or written
+        // (research I7/I8; §31).
+        self.ensure_capacity(len)?;
         let w = self
             .writer
             .as_ref()
@@ -1611,8 +1680,19 @@ impl Log {
     fn persist_watermark(&mut self) -> Result<()> {
         if let Some(wm) = self.watermark {
             if self.durable_watermark != Some(wm) {
-                watermark::Watermark::write(&self.dir, &wm)?;
-                self.durable_watermark = Some(wm);
+                match watermark::Watermark::write(&self.dir, &wm) {
+                    Ok(()) => self.durable_watermark = Some(wm),
+                    Err(e) => {
+                        // A watermark that cannot be made durable leaves the
+                        // completeness witness behind: latch degraded so the
+                        // volume stops accepting authoritative writes rather than
+                        // acknowledge an un-witnessed durability point.
+                        if e.is_authoritative_store_failure() {
+                            self.capacity.degrade(e.to_string());
+                        }
+                        return Err(e);
+                    }
+                }
             }
         }
         Ok(())

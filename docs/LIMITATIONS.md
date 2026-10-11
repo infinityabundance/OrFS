@@ -197,3 +197,23 @@ The feature is deliberately scoped to read-only historical views
 passthrough-eligible, so a descriptor can never observe bytes changing behind an
 open file. The measured numbers in `docs/FUSE_PASSTHROUGH.md` §6 are warm-cache
 single-run figures and are not a portability claim.
+
+## 11. Capacity is finite and exhausted by an orderly read-only transition
+
+Phase 23 makes the (previously implicit) capacity behaviour explicit
+(`docs/CAPACITY.md`). Two honest limits remain:
+
+* **The reserve and quotas bound *this* volume, not the device.** Another tenant
+  can fill the backing store; OrFS then degrades on the OS `ENOSPC`, never
+  silently. The device-derived capacity is sampled at open, so a shrinking or
+  concurrently-filled filesystem is caught by the OS error rather than predicted.
+* **Exhaustion is not reclamation.** OrFS is append-only (see §5): the capacity
+  policy can only *refuse* growth. It never truncates, reclaims, or rewrites
+  committed history, so an exhausted volume requires freed space (or a larger
+  device) to become writable again — reopening re-evaluates capacity.
+
+One ordering subtlety is documented rather than hidden: if the commit watermark
+cannot be written *after* the segment bytes were made durable, the durable
+committed root lags the bytes, so recovery may include a mutation that was never
+acknowledged. That is the safe direction (acknowledged ⇒ survives); the converse
+never happens. See `docs/CAPACITY.md` §8 and `docs/RECOVERY.md` §7.

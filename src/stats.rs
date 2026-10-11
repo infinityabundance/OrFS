@@ -21,6 +21,7 @@ use std::collections::BTreeMap;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
+use crate::capacity::CapacityReport;
 use crate::error::Result;
 use crate::index::Index;
 use crate::inode::InodeType;
@@ -107,6 +108,10 @@ pub struct PhysicalAccounting {
     // -- capacity (never unlimited) --
     /// Backing device capacity, when readable.
     pub capacity: Option<BackingCapacity>,
+    /// The volume's capacity policy and growth diagnostics (Phase 23), when the
+    /// path is a volume: authoritative reserve, quotas, headroom, and whether
+    /// optional construction is throttled or the volume is degraded/read-only.
+    pub capacity_policy: Option<CapacityReport>,
     /// Physical overhead over the live logical bytes (`m_total - logical_live`).
     pub physical_overhead_bytes: u64,
 }
@@ -205,6 +210,7 @@ fn empty_account(dir: &Path) -> Result<PhysicalAccounting> {
         manifested_inodes: 0,
         manifested_bytes: 0,
         capacity: backing_capacity(dir),
+        capacity_policy: None,
         physical_overhead_bytes: 0,
     })
 }
@@ -221,6 +227,7 @@ fn account_with_index(
         acc.committed_root = v.log.committed_end_offset();
         acc.authoritative_canonical_bytes = v.log.canonical_bytes();
         acc.uncommitted_tail_bytes = v.log.tail().map(|t| t.abandoned_bytes).unwrap_or(0);
+        acc.capacity_policy = Some(v.capacity_report());
     }
 
     // Logical figures from the committed namespace index.

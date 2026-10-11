@@ -110,6 +110,20 @@ pub enum OrfsError {
 }
 
 impl OrfsError {
+    /// Whether this error is an *unrecoverable authoritative-store failure*: the
+    /// backing store cannot accept authoritative records (out of space) or
+    /// returned a device error. Such a failure must latch the volume into
+    /// degraded/read-only mode (research I8, §31) rather than accept further
+    /// writes. Injected failpoints are excluded: they are a test artefact, not a
+    /// store failure.
+    pub fn is_authoritative_store_failure(&self) -> bool {
+        match self {
+            OrfsError::NoSpace(_) => true,
+            OrfsError::Io(e) => matches!(e.raw_os_error(), Some(libc::ENOSPC) | Some(libc::EIO)),
+            _ => false,
+        }
+    }
+
     /// Map this error to the POSIX errno a FUSE reply should carry.
     pub fn errno(&self) -> i32 {
         match self {

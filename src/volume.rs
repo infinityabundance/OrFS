@@ -20,6 +20,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::capacity::{CapacityPolicy, CapacityReport};
 use crate::error::{OrfsError, Result};
 use crate::log::{scan_log, Log, OpenMode};
 use crate::record::{
@@ -296,6 +297,22 @@ impl Volume {
     /// Flush and fsync the authoritative log.
     pub fn sync(&mut self) -> Result<()> {
         self.log.sync()
+    }
+
+    /// Replace the volume's capacity policy (Phase 23; research §30, §31). An
+    /// implicit capacity bound is re-derived from the backing device.
+    pub fn set_capacity_policy(&mut self, policy: CapacityPolicy) {
+        self.log.set_capacity_policy(policy);
+    }
+
+    /// A truthful capacity report for this volume.
+    pub fn capacity_report(&self) -> CapacityReport {
+        self.log.capacity_report()
+    }
+
+    /// Whether the volume has latched into degraded/read-only mode.
+    pub fn is_degraded(&self) -> bool {
+        self.log.is_degraded()
     }
 
     /// Attempt to engage the io_uring backing engine on the authoritative log

@@ -1,14 +1,16 @@
 {
   "all_invariants_ok": true,
   "device_model": {
-    "assertion_policy": "barrier+none asserts ack survival; partial/reordered/torn assert safety only (recover-or-refuse, never corrupt)",
+    "assertion_policy": "barrier/reordered+none asserts ack survival; partial/reordered_partial/torn/reorder_durable assert safety only (recover-or-refuse, never corrupt)",
     "durable_loss_modes": [
       "none",
       "tear_tail",
-      "lost_watermark"
+      "lost_watermark",
+      "reorder_durable"
     ],
     "flush_modes": [
       "barrier",
+      "reordered",
       "partial",
       "reordered_partial"
     ],
@@ -1573,6 +1575,284 @@
         }
       },
       "surviving_durable_mutations": 5
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986,
+        1429,
+        1872
+      ],
+      "acknowledged_transaction_ids": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "acknowledged_unsynced_roots": [],
+      "baseline_root": 100,
+      "durability_mode": "sync",
+      "fail_after_transactions": 4,
+      "final_acknowledged_root": 1872,
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "reordered",
+          "sector": 512,
+          "seed": 1
+        },
+        "dropped_writes": 0,
+        "files": [
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 886,
+            "name": "0000000000000986.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 0,
+        "total_torn_durable_bytes": 0
+      },
+      "profile": {
+        "durable_loss": "none",
+        "flush": "reordered",
+        "sector": 512,
+        "seed": 1
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 1872,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 1872
+        }
+      },
+      "surviving_durable_mutations": 4
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986,
+        1429,
+        1872
+      ],
+      "acknowledged_transaction_ids": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "acknowledged_unsynced_roots": [],
+      "baseline_root": 100,
+      "durability_mode": "sync",
+      "fail_after_transactions": 4,
+      "final_acknowledged_root": 1872,
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "reordered",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 0,
+        "files": [
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 886,
+            "name": "0000000000000986.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 0,
+        "total_torn_durable_bytes": 0
+      },
+      "profile": {
+        "durable_loss": "none",
+        "flush": "reordered",
+        "sector": 512,
+        "seed": 7
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 1872,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 1872
+        }
+      },
+      "surviving_durable_mutations": 4
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986,
+        1429,
+        1872
+      ],
+      "acknowledged_transaction_ids": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "acknowledged_unsynced_roots": [],
+      "baseline_root": 100,
+      "durability_mode": "sync",
+      "fail_after_transactions": 4,
+      "final_acknowledged_root": 1872,
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "reorder_durable",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 3
+        },
+        "dropped_writes": 0,
+        "files": [
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 0,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 986
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 0,
+            "name": "0000000000000986.seg",
+            "present": true,
+            "torn_durable_bytes": 886
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 0,
+        "total_torn_durable_bytes": 1872
+      },
+      "profile": {
+        "durable_loss": "reorder_durable",
+        "flush": "barrier",
+        "sector": 512,
+        "seed": 3
+      },
+      "recovery": {
+        "Refused": {
+          "error": "corrupt committed state: segment id 986 does not continue from 0"
+        }
+      },
+      "surviving_durable_mutations": 0
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986,
+        1429,
+        1872
+      ],
+      "acknowledged_transaction_ids": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "acknowledged_unsynced_roots": [],
+      "baseline_root": 100,
+      "durability_mode": "sync",
+      "fail_after_transactions": 4,
+      "final_acknowledged_root": 1872,
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "reorder_durable",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 21
+        },
+        "dropped_writes": 0,
+        "files": [
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 512,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 474
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 512,
+            "name": "0000000000000986.seg",
+            "present": true,
+            "torn_durable_bytes": 374
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 0,
+        "total_torn_durable_bytes": 848
+      },
+      "profile": {
+        "durable_loss": "reorder_durable",
+        "flush": "barrier",
+        "sector": 512,
+        "seed": 21
+      },
+      "recovery": {
+        "Refused": {
+          "error": "corrupt committed state: torn record in non-final segment 0 at physical offset 395"
+        }
+      },
+      "surviving_durable_mutations": 0
     }
   ],
   "model_assumptions": [
@@ -1580,6 +1860,7 @@
     "Only a flush/fsync promotes cached writes to the durable image; its behaviour is configurable (barrier vs partial vs reordered-partial).",
     "A 'barrier' fsync is an honoured durability barrier: the profile under which a sync-mode acknowledgement must survive.",
     "'partial'/'reordered_partial'/'tear_tail' model hardware that violated its documented contract (or a power cut during the flush whose completion the caller never received); they assert safety, not ack survival.",
+    "'reordered' honours the barrier but applies durable writes out of order (nothing is lost); 'reorder_durable' additionally drops durable sector blocks (a contract-violating device) and asserts safety only.",
     "power_fail() discards every un-flushed cached write, optionally tears the trailing sector of the durable image, materialises the surviving image to the real directory, and detaches for an independent recovery.",
     "The commit watermark is modelled as atomic (all-or-nothing), matching its write-tmp/rename/fsync implementation.",
     "All randomness is seeded and consumed in a fixed order, so a run reproduces exactly.",

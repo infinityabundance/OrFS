@@ -250,7 +250,32 @@ impl<'a> CommitSequencer<'a> {
     /// The transaction is consumed. On any error the caller must discard the log
     /// (drop it and reopen): a failure may have written partial bytes that are
     /// never reused (Law I) but leave the in-memory writer state unusable.
-    pub fn commit(&mut self, mut tx: Transaction) -> Result<CommitOutcome> {
+    pub fn commit(&mut self, tx: Transaction) -> Result<CommitOutcome> {
+        let result = self.commit_inner(tx);
+        if let Err(e) = &result {
+            // An unrecoverable authoritative-store failure (out of space or a
+            // device error) latches the volume into degraded/read-only mode: it
+            // must stop accepting writes rather than acknowledge onto an
+            // unreliable store (research I7, I8; §31).
+            if e.is_authoritative_store_failure() {
+                self.log.degrade(e.to_string());
+            }
+        }
+        result
+    }
+
+    fn commit_inner(&mut self, mut tx: Transaction) -> Result<CommitOutcome> {
+        // A degraded/read-only volume refuses every further mutation with EROFS,
+        // even before structural checks: it must not accept writes onto an
+        // unreliable store (research I7, I8; §31).
+        if self.log.is_degraded() {
+            let reason = self
+                .log
+                .capacity()
+                .degraded_reason()
+                .unwrap_or("unrecoverable authoritative-store failure");
+            return Err(OrfsError::ReadOnly(format!("volume degraded: {reason}")));
+        }
         if tx.state() != TxState::Prepared {
             return Err(OrfsError::InvalidArgument(format!(
                 "transaction {} is not prepared (state {})",
@@ -268,6 +293,13 @@ impl<'a> CommitSequencer<'a> {
         let durability = self.durability;
         // The id is now consumed regardless of the outcome: never reissue it.
         self.next_tx_id = self.next_tx_id.max(tx_id.saturating_add(1));
+
+        // --- 0. early authoritative-space admission ------------------------
+        // Admit the whole framed transaction (TX_BEGIN + data + TX_COMMIT) before
+        // the first byte is written, so a full device refuses cleanly with ENOSPC
+        // instead of leaving a partial transaction (research I7, §31).
+        let projected = self.projected_transaction_bytes(&tx, tx_id)?;
+        self.log.ensure_capacity(projected)?;
 
         // --- 1. reserve + write TX_BEGIN -----------------------------------
         failpoints::check(Failpoint::BeforeReservation)?;
@@ -382,10 +414,33 @@ impl<'a> CommitSequencer<'a> {
     /// not advance, so no state becomes visible.
     pub fn abort(
         &mut self,
+        tx: Transaction,
+        reason: AbortReason,
+        message: &str,
+    ) -> Result<AbortOutcome> {
+        let result = self.abort_inner(tx, reason, message);
+        if let Err(e) = &result {
+            if e.is_authoritative_store_failure() {
+                self.log.degrade(e.to_string());
+            }
+        }
+        result
+    }
+
+    fn abort_inner(
+        &mut self,
         mut tx: Transaction,
         reason: AbortReason,
         message: &str,
     ) -> Result<AbortOutcome> {
+        if self.log.is_degraded() {
+            let why = self
+                .log
+                .capacity()
+                .degraded_reason()
+                .unwrap_or("unrecoverable authoritative-store failure");
+            return Err(OrfsError::ReadOnly(format!("volume degraded: {why}")));
+        }
         if tx.state() != TxState::Prepared {
             return Err(OrfsError::InvalidArgument(
                 "only a prepared transaction can be aborted".into(),
@@ -483,6 +538,48 @@ impl<'a> CommitSequencer<'a> {
     }
 
     // -- internals ---------------------------------------------------------
+
+    /// The exact framed byte length a transaction will occupy: `TX_BEGIN`, every
+    /// data record, and `TX_COMMIT`, each with its 60-byte header and 16-byte
+    /// footer. Used for early authoritative-space admission.
+    fn projected_transaction_bytes(&self, tx: &Transaction, tx_id: u64) -> Result<u64> {
+        let seq = self.log.next_sequence_number();
+        let mut total = 0u64;
+        let begin_payload = tx.begin().encode();
+        let begin_rec = Record::new(
+            RecordType::TxBegin,
+            seq,
+            tx_id,
+            0,
+            0,
+            crate::record::FLAG_NONE,
+            begin_payload.to_vec(),
+        )?;
+        total = total.saturating_add(begin_rec.encode()?.len() as u64);
+        for rec in tx.records() {
+            let mut rec = rec.clone();
+            seal(&mut rec, seq, tx_id);
+            total = total.saturating_add(rec.encode()?.len() as u64);
+        }
+        let commit_payload = TxCommitPayload {
+            transaction_id: tx_id,
+            record_count: 1 + tx.records().len() as u64,
+            bracketed_byte_length: 0,
+            commit_sequence_number: seq,
+            bracket_checksum: [0u8; crate::transaction::BRACKET_CHECKSUM_LEN],
+        };
+        let commit_rec = Record::new(
+            RecordType::TxCommit,
+            seq,
+            tx_id,
+            0,
+            0,
+            crate::record::FLAG_NONE,
+            commit_payload.encode().to_vec(),
+        )?;
+        total = total.saturating_add(commit_rec.encode()?.len() as u64);
+        Ok(total)
+    }
 
     /// Reserve `len` bytes and write a record, injecting the torn-write
     /// failpoints. Returns the record's logical offset.

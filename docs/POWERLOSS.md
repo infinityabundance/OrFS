@@ -68,8 +68,8 @@ Semantics:
 pub struct SimConfig { pub seed: u64, pub sector: u64,
                        pub flush: FlushMode, pub durable_loss: DurableLoss }
 
-pub enum FlushMode { Barrier, Partial, ReorderedPartial }
-pub enum DurableLoss { None, TearTail, LostWatermark }
+pub enum FlushMode { Barrier, Partial, ReorderedPartial, Reordered }
+pub enum DurableLoss { None, TearTail, LostWatermark, ReorderDurable }
 ```
 
 * `Barrier` — a completed `fsync` is an **honoured durability barrier**: every
@@ -82,10 +82,18 @@ pub enum DurableLoss { None, TearTail, LostWatermark }
   shuffled order (models reordering across the flush). For a monotonic append
   workload the *order alone* is unobservable; combined with partial promotion it
   yields holes, which recovery must handle.
+* `Reordered` (Phase 23) — an **honoured barrier that applies durable writes out
+  of order**: nothing is lost, so every acknowledged-durable mutation must still
+  survive. Models a device that completes and persists writes in an order other
+  than issue order.
 * `TearTail` — at power failure, tear (truncate) the trailing sector of every
   flushed file.
 * `LostWatermark` — at power failure, lose the commit watermark (a power cut in
   the window between the segment `fsync` and the watermark `fsync`).
+* `ReorderDurable` (Phase 23) — at power failure, drop a seeded subset of the
+  *durable* image's sector-aligned blocks (a reordered/partially-applied durable
+  write by a contract-violating device). Recovery must reach a complete committed
+  boundary or refuse; assertions are safety-only.
 
 All randomness comes from a single seeded SplitMix64 generator, consumed in a
 fixed (sorted-key) order, so a run reproduces **byte-for-byte**.
@@ -176,3 +184,32 @@ admits two complementary cases:
 
 Both behaviours are asserted; they are the two documented outcomes of §5 of
 `docs/RECOVERY.md`.
+
+---
+
+## 7. Device-failure injection (Phase 23)
+
+The simulated device doubles as a **fault injector** for out-of-space (`ENOSPC`)
+and device-error (`EIO`) handling. A `DeviceFaultRule` names an operation
+(`Write`, `Sync`, `Create`, `DirSync`, `Watermark`, `Manifest`), a kind
+(`NoSpace`, `IoError`, `ShortWrite`, `SyncError`), a `skip`/`fire` count, and an
+optional file suffix. The log's I/O seams consult the plan
+(`Segment::write_at`/`sync`/`create`, `fsync_dir`, `Watermark::write`, and the
+manifestation publish path), so a fault can be placed at a chosen point.
+
+```rust
+pub enum DeviceOp { Write, Sync, Create, DirSync, Watermark, Manifest }
+pub enum DeviceFaultKind { NoSpace, IoError, ShortWrite, SyncError }
+pub struct DeviceFaultRule { op, kind, skip, fire, name_suffix }
+```
+
+The court (`tests/power_loss.rs`) sweeps every write / sync / create / watermark
+point and asserts that a refused authoritative mutation is not acknowledged,
+does not advance the committed root, leaves earlier roots intact, recovers to a
+complete committed boundary, and latches the volume read-only (`EROFS`). Optional
+manifestation faults are recorded as optional failures and never fail an
+authoritative commit. A `proptest` randomises the kind and point. Evidence:
+`evidence/recovery/enospc.json`, `evidence/recovery/device-error.json`.
+
+This is still a simulation: the injected errors model a device that returns
+`ENOSPC`/`EIO` (or a short write / failed `fsync`), not real hardware timing.

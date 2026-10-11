@@ -420,6 +420,22 @@ impl Namespace {
         self.durability
     }
 
+    /// Replace the volume's capacity policy (Phase 23; research §30, §31).
+    pub fn set_capacity_policy(&mut self, policy: crate::capacity::CapacityPolicy) {
+        self.volume.set_capacity_policy(policy);
+    }
+
+    /// A truthful capacity report for this volume.
+    pub fn capacity_report(&self) -> crate::capacity::CapacityReport {
+        self.volume.capacity_report()
+    }
+
+    /// Whether the volume has latched into degraded/read-only mode after an
+    /// authoritative-store failure (further mutations return `EROFS`).
+    pub fn is_degraded(&self) -> bool {
+        self.volume.is_degraded()
+    }
+
     /// The measured index-reconstruction (mount) report, if available.
     pub fn mount_report(&self) -> Option<&crate::checkpoint::MountReport> {
         self.mount_report.as_ref()
@@ -834,17 +850,39 @@ impl Namespace {
         // single pointer store, so readers never block on this and never observe
         // a partially-applied index.
         self.publish_read_state();
-        // Optional background manifestation (research §10.3): only after a
+        // Optional background manifestation (research §10.3, §31): only after a
         // successful authoritative commit + version publication. The foreground
         // write never waits unless the caller explicitly opted in. A failure or a
         // full queue here is dropped — it can never affect authoritative history.
+        //
+        // Phase 23: optional construction is throttled *before* it can consume the
+        // authoritative reserve, so a manifesting volume still commits. Optional
+        // space is the first thing sacrificed when the backing grows scarce.
         if let Some(engine) = self.manifestation_engine.clone() {
-            self.enqueue_manifestations(&engine, &touched, &changed);
+            let optional = engine.state().manifested_bytes_total();
+            let authoritative = self.volume.log.authoritative_bytes();
+            if self
+                .volume
+                .log
+                .capacity_mut()
+                .optional_allowed(authoritative, optional)
+            {
+                self.enqueue_manifestations(&engine, &touched, &changed);
+            }
         }
         // Optional background trigram indexing (research §11.1): also only after
         // a successful authoritative commit, and only if the query plane is on.
         if let Some(engine) = self.trigram_engine.clone() {
-            self.enqueue_trigram_builds(&engine, &touched);
+            let optional = engine.state().manifested_bytes_total();
+            let authoritative = self.volume.log.authoritative_bytes();
+            if self
+                .volume
+                .log
+                .capacity_mut()
+                .optional_allowed(authoritative, optional)
+            {
+                self.enqueue_trigram_builds(&engine, &touched);
+            }
         }
         Ok(outcome)
     }

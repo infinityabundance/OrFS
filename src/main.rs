@@ -114,6 +114,9 @@ enum Command {
         /// Manifestation worker threads (0 selects the CPU count).
         #[arg(long, default_value_t = 0)]
         manifest_workers: usize,
+        /// Minimum backing bytes to keep free for authoritative writes (reserve).
+        #[arg(long, default_value_t = 0)]
+        reserve: u64,
     },
 
     /// Unmount a mounted OrFS volume.
@@ -332,6 +335,7 @@ fn run(cli: &Cli) -> Result<()> {
             manifest,
             manifest_sync,
             manifest_workers,
+            reserve,
         } => mount_cmd(MountArgs {
             backing,
             mountpoint,
@@ -352,6 +356,7 @@ fn run(cli: &Cli) -> Result<()> {
             manifest: manifest.as_deref(),
             manifest_sync: *manifest_sync,
             manifest_workers: *manifest_workers,
+            reserve: *reserve,
         }),
         Command::Unmount { mountpoint } => unmount_cmd(mountpoint, cli.json),
         Command::Inspect { backing } => inspect(backing, cli.json),
@@ -563,6 +568,43 @@ fn stat_cmd(path: &Path, json: bool) -> Result<()> {
             println!("  backing available:      {} bytes", c.available_bytes);
         }
         None => println!("  backing capacity:       unavailable"),
+    }
+    // Phase 23 capacity policy and growth diagnostics.
+    if let Some(cap) = &acc.capacity_policy {
+        println!("  capacity policy:");
+        match cap.authoritative_capacity_bytes {
+            Some(c) => println!("    authoritative capacity: {c} bytes"),
+            None => println!("    authoritative capacity: unbounded (device-derived)"),
+        }
+        println!(
+            "    authoritative reserve:  {} bytes",
+            cap.policy.reserve_bytes
+        );
+        if let Some(q) = cap.policy.soft_quota_bytes {
+            println!("    soft quota (optional):  {q} bytes");
+        }
+        if let Some(q) = cap.policy.hard_quota_bytes {
+            println!("    hard quota:             {q} bytes");
+        }
+        println!(
+            "    authoritative in use:   {} bytes",
+            cap.authoritative_used_bytes
+        );
+        if let Some(h) = cap.authoritative_headroom_bytes {
+            println!("    admissible headroom:    {h} bytes");
+        }
+        println!(
+            "    optional manifested:    {} bytes (throttled: {})",
+            cap.optional_used_bytes, cap.optional_throttled
+        );
+        if cap.degraded {
+            println!(
+                "    DEGRADED / READ-ONLY:   {}",
+                cap.degraded_reason
+                    .as_deref()
+                    .unwrap_or("capacity exhausted")
+            );
+        }
     }
     Ok(())
 }
@@ -850,6 +892,7 @@ struct MountArgs<'a> {
     manifest: Option<&'a str>,
     manifest_sync: bool,
     manifest_workers: usize,
+    reserve: u64,
 }
 
 fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
@@ -937,6 +980,7 @@ fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
         manifest,
         manifest_sync: args.manifest_sync,
         manifest_workers: args.manifest_workers,
+        capacity_reserve_bytes: args.reserve,
     };
 
     eprintln!(

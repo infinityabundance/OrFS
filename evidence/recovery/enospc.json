@@ -1,0 +1,1152 @@
+{
+  "all_invariants_ok": true,
+  "device_model": "simulated in-process device with positional write/create/watermark fault injection",
+  "failure_class": "ENOSPC (out of authoritative space)",
+  "generator": "tests/power_loss.rs",
+  "invariants": {
+    "a_mutation_that_cannot_be_written_returns_enospc": true,
+    "a_refused_mutation_does_not_advance_the_committed_root": true,
+    "a_refused_mutation_is_not_acknowledged": true,
+    "earlier_committed_roots_remain_valid_and_non_withdrawn": true,
+    "exhaustion_transitions_to_read_only_erofs": true,
+    "the_next_transaction_does_not_reuse_failed_bytes": true
+  },
+  "matrix": [
+    {
+      "acknowledged_durable_roots": [],
+      "acknowledged_roots": [],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Write",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 0,
+        "files": [
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 100,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 0,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 100,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 100
+        }
+      },
+      "skip": 0,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 0
+    },
+    {
+      "acknowledged_durable_roots": [],
+      "acknowledged_roots": [],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Write",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 1,
+        "files": [
+          {
+            "dropped_volatile_bytes": 104,
+            "durable_len": 100,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 104,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 100,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 100
+        }
+      },
+      "skip": 1,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 0
+    },
+    {
+      "acknowledged_durable_roots": [],
+      "acknowledged_roots": [],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Write",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 2,
+        "files": [
+          {
+            "dropped_volatile_bytes": 196,
+            "durable_len": 100,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 196,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 100,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 100
+        }
+      },
+      "skip": 2,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 0
+    },
+    {
+      "acknowledged_durable_roots": [],
+      "acknowledged_roots": [],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Write",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 3,
+        "files": [
+          {
+            "dropped_volatile_bytes": 295,
+            "durable_len": 100,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 295,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 100,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 100
+        }
+      },
+      "skip": 3,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 0
+    },
+    {
+      "acknowledged_durable_roots": [
+        543
+      ],
+      "acknowledged_roots": [
+        543
+      ],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Write",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 0,
+        "files": [
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 543,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 0,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 543,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 543
+        }
+      },
+      "skip": 4,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 1
+    },
+    {
+      "acknowledged_durable_roots": [
+        543
+      ],
+      "acknowledged_roots": [
+        543
+      ],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Write",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 1,
+        "files": [
+          {
+            "dropped_volatile_bytes": 104,
+            "durable_len": 543,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 104,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 543,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 543
+        }
+      },
+      "skip": 5,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 1
+    },
+    {
+      "acknowledged_durable_roots": [
+        543
+      ],
+      "acknowledged_roots": [
+        543
+      ],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Write",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 2,
+        "files": [
+          {
+            "dropped_volatile_bytes": 196,
+            "durable_len": 543,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 196,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 543,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 543
+        }
+      },
+      "skip": 6,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 1
+    },
+    {
+      "acknowledged_durable_roots": [
+        543
+      ],
+      "acknowledged_roots": [
+        543
+      ],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Write",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 3,
+        "files": [
+          {
+            "dropped_volatile_bytes": 295,
+            "durable_len": 543,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 295,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 543,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 543
+        }
+      },
+      "skip": 7,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 1
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986
+      ],
+      "acknowledged_roots": [
+        543,
+        986
+      ],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Write",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 0,
+        "files": [
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 0,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 986,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 986
+        }
+      },
+      "skip": 8,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 2
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986
+      ],
+      "acknowledged_roots": [
+        543,
+        986
+      ],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Write",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 1,
+        "files": [
+          {
+            "dropped_volatile_bytes": 104,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 104,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 986,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 986
+        }
+      },
+      "skip": 9,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 2
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986
+      ],
+      "acknowledged_roots": [
+        543,
+        986
+      ],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Write",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 2,
+        "files": [
+          {
+            "dropped_volatile_bytes": 196,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 196,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 986,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 986
+        }
+      },
+      "skip": 10,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 2
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986
+      ],
+      "acknowledged_roots": [
+        543,
+        986
+      ],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Write",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 3,
+        "files": [
+          {
+            "dropped_volatile_bytes": 295,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 295,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 986,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 986
+        }
+      },
+      "skip": 11,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 2
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986
+      ],
+      "acknowledged_roots": [
+        543,
+        986
+      ],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Create",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "create",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 0,
+        "files": [
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 0,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 986,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 986
+        }
+      },
+      "skip": 0,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 2
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986,
+        1429,
+        1872
+      ],
+      "acknowledged_roots": [
+        543,
+        986,
+        1429,
+        1872
+      ],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Create",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "create",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 0,
+        "files": [
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 990,
+            "name": "0000000000000986.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 0,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 1872,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 1872
+        }
+      },
+      "skip": 1,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 4
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986,
+        1429,
+        1872,
+        2315,
+        2758
+      ],
+      "acknowledged_roots": [
+        543,
+        986,
+        1429,
+        1872,
+        2315,
+        2758
+      ],
+      "durability_mode": "sync",
+      "failure": null,
+      "failure_errno": null,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "create",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 0,
+        "files": [
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 990,
+            "name": "0000000000000986.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 782,
+            "name": "0000000000001976.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 0,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 2758,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 2758
+        }
+      },
+      "skip": 2,
+      "subsequent_errno": null,
+      "surviving_durable_mutations": 6
+    },
+    {
+      "acknowledged_durable_roots": [],
+      "acknowledged_roots": [],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Watermark",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "watermark",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 0,
+        "files": [
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 543,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 0,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 100,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 543
+        }
+      },
+      "skip": 0,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 0
+    },
+    {
+      "acknowledged_durable_roots": [
+        543
+      ],
+      "acknowledged_roots": [
+        543
+      ],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Watermark",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "watermark",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 0,
+        "files": [
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 0,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 543,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 986
+        }
+      },
+      "skip": 1,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 1
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986
+      ],
+      "acknowledged_roots": [
+        543,
+        986
+      ],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Watermark",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "watermark",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 0,
+        "files": [
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 1429,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 0,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 986,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 1429
+        }
+      },
+      "skip": 2,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 2
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986,
+        1429
+      ],
+      "acknowledged_roots": [
+        543,
+        986,
+        1429
+      ],
+      "durability_mode": "sync",
+      "failure": "no space on backing store: simulated device: out of space during Watermark",
+      "failure_errno": 28,
+      "invariants_ok": true,
+      "kind": "no_space",
+      "op": "watermark",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 0,
+        "files": [
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 1872,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 0,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 1429,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 1872
+        }
+      },
+      "skip": 3,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 3
+    }
+  ],
+  "schema": "orfs.evidence.enospc.v1"
+}

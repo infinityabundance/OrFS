@@ -196,3 +196,66 @@ before (§2.4).
 | `evidence/recovery/torn-write.json` | Torn/tail-producing failpoints |
 | `evidence/recovery/segment-rollover.json` | A real rollover (segments, valid lengths, committed root) |
 | `evidence/recovery/manifested-generation.json` | Manifested-generation recovery |
+| `evidence/recovery/capacity.json` | Capacity-policy invariant verdicts (ENOSPC/latch) |
+| `evidence/recovery/enospc.json` | ENOSPC injection at record/rollover/watermark points |
+| `evidence/recovery/device-error.json` | EIO / short write / failed fsync injection |
+
+---
+
+## 7. Capacity exhaustion, device errors, and degraded mode (Phase 23)
+
+The power-loss court models *what survives*, but not what happens when the
+backing store simply **cannot accept** a write. Phase 23 adds explicit failure
+handling for ENOSPC and device errors, plus a real capacity policy
+(`docs/CAPACITY.md`). The acknowledged-durability contract is never weakened and
+a mutation is never reported successful unless it reached its documented
+acknowledgment stage (I7).
+
+### 7.1 Out of authoritative space (`ENOSPC`)
+
+A transaction's **whole framed size** (`TX_BEGIN` + data + `TX_COMMIT`) is
+admitted *before the first byte is written*. When it cannot fit:
+
+* the mutation returns `OrfsError::NoSpace` (errno `ENOSPC`) and is **not
+  acknowledged**;
+* the committed root does **not** advance;
+* earlier committed roots stay valid and no committed byte is rewritten;
+* the next transaction never reuses the failed bytes;
+* the volume latches **read-only**, so further mutations return `EROFS`.
+
+Tests: `recovery_adversarial::early_enospc_refuses_before_writing_any_byte`,
+`authoritative_capacity_exhaustion_transitions_to_read_only`,
+`hard_quota_exhaustion_never_reclaims_authoritative_history`;
+`power_loss::enospc_and_eio_at_every_record_write_never_violate_acknowledged_durability`
+(sweeps every write point), `enospc_at_segment_rollover_never_violates_acknowledged_durability`,
+`enospc_at_the_commit_watermark_never_violates_acknowledged_durability`.
+
+### 7.2 Device errors (`EIO`, short writes, failed `fsync`)
+
+The simulated device can reject a write, shorten it, or fail a `fsync`, at any
+authoritative point (record write, segment rollover, directory sync, watermark).
+The same invariants hold: the operation returns `EIO`, is not acknowledged, and
+latches the volume read-only; an optional (manifestation) failure is recorded but
+**never** fails an authoritative operation. Tests:
+`power_loss::a_failed_fsync_is_never_acknowledged_durable`,
+`a_short_write_is_a_failure_and_never_acknowledged`,
+`recovery_adversarial::optional_manifestation_failure_never_fails_an_authoritative_commit`.
+
+### 7.3 Reordered / partially-applied durable writes
+
+Beyond cache discard, the model can **reorder** the application of durable
+writes (`FlushMode::Reordered` — a honoured barrier that applies writes out of
+order: nothing is lost, so acknowledged-durable mutations must survive) and
+**partially/reordered-apply the durable image** (`DurableLoss::ReorderDurable` — a
+contract-violating device drops durable sector blocks; recovery must reach a
+complete committed boundary or refuse, never expose a partial transaction).
+Tests: `a_reordered_durable_device_never_violates_acknowledged_durability`,
+`reordered_partial_durable_images_recover_or_refuse_but_never_partially_commit`.
+
+### 7.4 Degraded (read-only) mode
+
+On an unrecoverable authoritative-store failure the volume transitions to an
+explicit **read-only** mode: further mutations return `OrfsError::ReadOnly`
+(errno `EROFS`) rather than being accepted, while reads continue. The latch is
+in-memory and per handle; a reopened volume re-evaluates capacity. See
+`docs/CAPACITY.md` §5.

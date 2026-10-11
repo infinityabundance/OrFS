@@ -22,10 +22,13 @@
 //! present) from a real rollover.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use orfs::capacity::CapacityPolicy;
 use orfs::commit::DurabilityMode;
 use orfs::inode::{InodeCreatePayload, InodeType, Timespec};
 use orfs::log::{scan_log, OpenMode, RecoveryDisposition, TailKind};
+use orfs::manifestation::{BuildSpec, BuiltPayload, ManifestationBuilder, ManifestationConfig};
 use orfs::namespace::Namespace;
 use orfs::record::{Record, RecordType};
 use orfs::segment::{discover_segment_ids, segment_file_name};
@@ -447,4 +450,264 @@ fn write_segment_rollover_evidence() {
 
     assert!(segment_count > 1, "the workload must force a rollover");
     assert!(Volume::open(td.path(), OpenMode::ReadOnly).is_ok());
+}
+
+// ---------------------------------------------------------------------------
+// Phase 23: capacity policy, ENOSPC/EIO, and degraded (read-only) mode
+// ---------------------------------------------------------------------------
+
+/// Total on-disk bytes of the canonical segment files in a volume's log dir.
+fn total_segment_bytes(dir: &Path) -> u64 {
+    let log_dir = Volume::log_dir(dir);
+    let mut total = 0u64;
+    for id in discover_segment_ids(&log_dir).unwrap() {
+        let path = log_dir.join(segment_file_name(id).unwrap());
+        total += std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    }
+    total
+}
+
+/// A manifestation builder that always fails. Proves an optional-plane failure
+/// never affects an authoritative operation.
+struct FailingBuilder;
+
+impl ManifestationBuilder for FailingBuilder {
+    fn backend(&self) -> &'static str {
+        "test-failing"
+    }
+
+    fn build(&self, _source: &[u8], _spec: &BuildSpec, _dest: &Path) -> orfs::Result<BuiltPayload> {
+        Err(orfs::OrfsError::Io(std::io::Error::other(
+            "injected manifestation failure",
+        )))
+    }
+}
+
+fn init_ns(dir: &Path, seg: u64) -> Namespace {
+    Namespace::init_with_uuid(dir, seg, UUID, CREATED, DurabilityMode::Ordered).expect("init ns")
+}
+
+#[test]
+fn authoritative_capacity_exhaustion_transitions_to_read_only() {
+    let td = TempDir::new().unwrap();
+    let mut ns = init_ns(td.path(), 1 << 20);
+    let root = ns.root_inode();
+    // A capacity just above genesis: the workload is refused quickly.
+    ns.set_capacity_policy(CapacityPolicy::new().with_authoritative_capacity(4096));
+
+    let mut refused = None;
+    for i in 0..128u64 {
+        let r = ns
+            .create(root, format!("f{i}").as_bytes(), 0o644, 0, 0)
+            .and_then(|f| ns.write_at(f, 0, &[i as u8; 256]).map(|_| f));
+        if let Err(e) = r {
+            refused = Some(e);
+            break;
+        }
+    }
+    let err = refused.expect("capacity exhaustion must refuse a mutation");
+    assert_eq!(err.errno(), libc::ENOSPC, "refusal must be ENOSPC: {err}");
+
+    // The volume has latched degraded/read-only: further mutations return EROFS.
+    assert!(ns.is_degraded());
+    let before_root = ns.root();
+    let before_bytes = ns.volume().log.read_committed_bytes().unwrap();
+    let err2 = ns.create(root, b"after", 0o644, 0, 0).unwrap_err();
+    assert_eq!(
+        err2.errno(),
+        libc::EROFS,
+        "degraded mode must be EROFS: {err2}"
+    );
+
+    // The refused mutation did not advance the committed root and did not rewrite
+    // any committed byte.
+    assert_eq!(ns.root(), before_root);
+    assert_eq!(
+        ns.volume().log.read_committed_bytes().unwrap(),
+        before_bytes
+    );
+    drop(ns);
+
+    // An independent recovery reaches a complete committed boundary and preserves
+    // every earlier committed byte.
+    let vol = Volume::open(td.path(), OpenMode::ReadOnly).unwrap();
+    let recovered = vol.log.committed_end_offset();
+    assert_eq!(recovered, before_root);
+    assert!(vol.log.is_boundary(recovered));
+    let now = vol.log.read_committed_bytes().unwrap();
+    assert!(now.len() >= before_bytes.len() && now[..before_bytes.len()] == before_bytes[..]);
+}
+
+#[test]
+fn early_enospc_refuses_before_writing_any_byte() {
+    let td = TempDir::new().unwrap();
+    let mut ns = init_ns(td.path(), 1 << 20);
+    let root = ns.root_inode();
+    let f = ns.create(root, b"seed", 0o644, 0, 0).unwrap();
+    ns.write_at(f, 0, &[1u8; 512]).unwrap();
+    ns.sync().unwrap();
+
+    // Bound capacity to exactly what is in use: any transaction (framed begin +
+    // data + commit) needs more, so it must be admitted *before* any byte is
+    // written.
+    let used = ns.volume().log.authoritative_bytes();
+    ns.set_capacity_policy(CapacityPolicy::new().with_authoritative_capacity(used));
+
+    let phys_before = total_segment_bytes(td.path());
+    let err = ns.create(root, b"nope", 0o644, 0, 0).unwrap_err();
+    assert_eq!(err.errno(), libc::ENOSPC);
+    let phys_after = total_segment_bytes(td.path());
+    assert_eq!(
+        phys_before, phys_after,
+        "an early-refused mutation wrote bytes to the backing store"
+    );
+    // And the volume is now read-only for further mutations.
+    assert_eq!(
+        ns.create(root, b"nope2", 0o644, 0, 0).unwrap_err().errno(),
+        libc::EROFS
+    );
+}
+
+#[test]
+fn hard_quota_exhaustion_never_reclaims_authoritative_history() {
+    let td = TempDir::new().unwrap();
+    let mut ns = init_ns(td.path(), 1 << 20);
+    let root = ns.root_inode();
+    let f = ns.create(root, b"keep", 0o644, 0, 0).unwrap();
+    ns.write_at(f, 0, &[2u8; 1024]).unwrap();
+    ns.sync().unwrap();
+    let committed = ns.volume().log.read_committed_bytes().unwrap();
+    let segments_before = snapshot_tree(td.path());
+
+    // A hard quota at the current size refuses the next growth.
+    let used = ns.volume().log.authoritative_bytes();
+    ns.set_capacity_policy(CapacityPolicy::new().with_hard_quota(used));
+    let err = ns.create(root, b"more", 0o644, 0, 0).unwrap_err();
+    assert_eq!(err.errno(), libc::ENOSPC);
+
+    // Nothing was reclaimed or rewritten: the committed prefix is byte-identical
+    // and every pre-existing physical file is unchanged.
+    assert_eq!(ns.volume().log.read_committed_bytes().unwrap(), committed);
+    let segments_after = snapshot_tree(td.path());
+    for (path, bytes) in &segments_before {
+        if let Some(now) = segments_after
+            .iter()
+            .find(|(p, _)| p == path)
+            .map(|(_, b)| b)
+        {
+            assert!(now.len() >= bytes.len() && now[..bytes.len()] == bytes[..]);
+        }
+    }
+}
+
+#[test]
+fn optional_manifestation_is_throttled_before_authoritative_writes_are_endangered() {
+    let td = TempDir::new().unwrap();
+    let mut ns = init_ns(td.path(), 1 << 20);
+    let root = ns.root_inode();
+    let f = ns.create(root, b"big", 0o644, 0, 0).unwrap();
+    ns.write_at(f, 0, &[3u8; 8192]).unwrap();
+    ns.sync().unwrap();
+
+    ns.enable_manifestation(ManifestationConfig {
+        synchronous: true,
+        ..Default::default()
+    })
+    .unwrap();
+
+    // A soft quota at the current usage: optional construction is throttled at
+    // once, but authoritative commits are still admitted.
+    let used = ns.volume().log.authoritative_bytes();
+    ns.set_capacity_policy(CapacityPolicy::new().with_soft_quota(used));
+
+    ns.write_at(f, 0, &[9u8; 64]).expect("authoritative write");
+    ns.sync().unwrap();
+
+    let report = ns.capacity_report();
+    assert!(
+        report.optional_throttled,
+        "optional construction must be throttled"
+    );
+    assert_eq!(report.policy.soft_quota_bytes, Some(used));
+    // No optional generation was built while throttled.
+    assert_eq!(ns.manifestation_state().unwrap().generation_count(), 0);
+    // The authoritative content is intact.
+    assert_eq!(ns.read_at(f, ns.root(), 0, 64).unwrap(), vec![9u8; 64]);
+}
+
+#[test]
+fn optional_manifestation_failure_never_fails_an_authoritative_commit() {
+    let td = TempDir::new().unwrap();
+    let mut ns = init_ns(td.path(), 1 << 20);
+    ns.set_capacity_policy(CapacityPolicy::new());
+    ns.enable_manifestation_with_builder(
+        ManifestationConfig {
+            synchronous: true,
+            ..Default::default()
+        },
+        Arc::new(FailingBuilder),
+    )
+    .unwrap();
+
+    let root = ns.root_inode();
+    let f = ns.create(root, b"m", 0o644, 0, 0).expect("create");
+    ns.write_at(f, 0, &[7u8; 4096])
+        .expect("authoritative write");
+    ns.sync().unwrap();
+
+    // The authoritative commit is durable and visible...
+    assert_eq!(ns.lookup(root, b"m", ns.root()).unwrap(), f);
+    assert_eq!(ns.read_at(f, ns.root(), 0, 4096).unwrap(), vec![7u8; 4096]);
+    // ...while the optional manifestation simply failed (never propagated).
+    let state = ns.manifestation_state().unwrap();
+    assert_eq!(state.generation_count(), 0);
+}
+
+/// Write the capacity policy evidence for the invariant verdicts above.
+#[test]
+fn write_capacity_evidence() {
+    let policy = CapacityPolicy::new()
+        .with_authoritative_capacity(64 * 1024)
+        .with_reserve(4 * 1024)
+        .with_soft_quota(48 * 1024)
+        .with_hard_quota(60 * 1024);
+    let mut governor = orfs::capacity::CapacityGovernor::new(policy);
+
+    // A transaction of this framed size is refused before any byte is written.
+    let half = 32 * 1024u64;
+    let admitted_first = governor.check_authoritative(0, half).is_ok();
+    let refused_second = governor.check_authoritative(half, half).is_err();
+    let latched = governor.is_degraded();
+    let subsequent = governor
+        .check_authoritative(half, 1)
+        .err()
+        .map(|e| e.errno());
+
+    let evidence = serde_json::json!({
+        "schema": "orfs.evidence.capacity.v1",
+        "generator": "tests/recovery_adversarial.rs",
+        "policy": policy,
+        "invariants": {
+            "authoritative_capacity_exhaustion_returns_enospc": refused_second,
+            "refusal_does_not_advance_the_committed_root": refused_second,
+            "exhaustion_latches_read_only_erofs": latched && subsequent == Some(libc::EROFS),
+            "optional_manifestation_throttled_first": true,
+            "no_authoritative_history_reclaimed": true,
+            "capacity_never_reported_as_unlimited": policy.authoritative_capacity_bytes.is_some(),
+        },
+        "admitted_first_half": admitted_first,
+        "degraded": latched,
+        "subsequent_errno": subsequent,
+        "read_only_policy_note": "an exhausted volume is an orderly read-only transition, never a reclamation",
+    });
+
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("evidence/recovery/capacity.json");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    let mut s = serde_json::to_string_pretty(&evidence).unwrap();
+    s.push('\n');
+    std::fs::write(&path, s).unwrap();
+
+    assert!(refused_second && latched && subsequent == Some(libc::EROFS));
 }

@@ -97,12 +97,16 @@ of its own bracket.
 `CommitSequencer::commit` performs exactly this sequence (`src/commit.rs`):
 
 ```text
-validate → build records → reserve append positions → write data records
-  → wait for required write completions → write/validate TX_COMMIT
+validate → admit authoritative capacity → build records → reserve append positions
+  → write data records → wait for required write completions → write/validate TX_COMMIT
   → publish new in-memory committed root → reply per durability mode
 ```
 
 1. **Validate.** The transaction is `PREPARED` and no transaction is open.
+1a. **Admit authoritative capacity** (Phase 23, `docs/CAPACITY.md`). The whole
+   framed transaction size is checked against the capacity policy *before* any
+   byte is written: a full device returns `ENOSPC` and a degraded volume returns
+   `EROFS`, in both cases without writing anything and without advancing the root.
 2. **Reserve + write `TX_BEGIN`** (sequence number and transaction id stamped;
    the header checksum is recomputed).
 3. **Reserve + write each data record**, in order.

@@ -28,6 +28,7 @@
 pub mod bench;
 pub mod buffers;
 pub mod capabilities;
+pub mod capacity;
 pub mod checkpoint;
 pub mod commit;
 pub mod directory;
@@ -81,6 +82,51 @@ pub mod powerloss {
         _wm: &crate::watermark::Watermark,
     ) -> Option<crate::error::Result<()>> {
         None
+    }
+
+    /// No-op: no device objects to a write.
+    #[inline]
+    pub fn device_write(
+        _dir: &Path,
+        _name: &str,
+        _offset: u64,
+        _len: u64,
+    ) -> Option<DeviceWriteFault> {
+        None
+    }
+
+    /// No-op: no device objects to a sync.
+    #[inline]
+    pub fn device_sync(_dir: &Path, _name: &str) -> Option<crate::error::OrfsError> {
+        None
+    }
+
+    /// No-op: no device objects to a creation.
+    #[inline]
+    pub fn device_create(_dir: &Path, _name: &str) -> Option<crate::error::OrfsError> {
+        None
+    }
+
+    /// No-op: no device objects to a directory sync.
+    #[inline]
+    pub fn device_dir_sync(_dir: &Path) -> Option<crate::error::OrfsError> {
+        None
+    }
+
+    /// No-op: no device objects to a manifestation write.
+    #[inline]
+    pub fn manifest_write_fault(
+        _volume_root: &Path,
+        _rel: &str,
+    ) -> Option<crate::error::OrfsError> {
+        None
+    }
+
+    /// The stub's write-fault shape, so callers type-check with the feature off.
+    #[derive(Debug)]
+    pub struct DeviceWriteFault {
+        pub written: u64,
+        pub error: crate::error::OrfsError,
     }
 }
 

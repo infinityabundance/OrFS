@@ -94,6 +94,11 @@ pub enum FlushMode {
     /// As [`FlushMode::Partial`], but the promoted subset is selected in a
     /// shuffled order (models write reordering across the flush).
     ReorderedPartial,
+    /// An honoured barrier that nevertheless applies the cached writes to the
+    /// durable image in a **reordered** order. Models a device that completes and
+    /// persists writes out of issue order; because the barrier is honoured, no
+    /// byte is lost, so every acknowledged-durable mutation must still survive.
+    Reordered,
 }
 
 /// An optional additional failure applied to the *already-durable* image at
@@ -110,6 +115,12 @@ pub enum DurableLoss {
     /// between the segment `fsync` and the watermark `fsync`) while the flushed
     /// segment bytes survive: exercises the residual window (`docs/RECOVERY.md` §5).
     LostWatermark,
+    /// At power failure, drop a seeded subset of the *durable* image's
+    /// sector-aligned blocks. Models a device that reordered/partially-applied
+    /// already-`fsync`ed durable writes (a contract violation): recovery must
+    /// reach a complete committed boundary or refuse, never expose a partial
+    /// transaction.
+    ReorderDurable,
 }
 
 /// The deterministic configuration of a simulated device.
@@ -171,6 +182,28 @@ impl SimConfig {
         }
     }
 
+    /// An honoured barrier that applies durable writes in a reordered order:
+    /// nothing is lost, so acknowledged-durable mutations must survive.
+    pub const fn reordered(seed: u64) -> Self {
+        Self {
+            seed,
+            sector: DEFAULT_SECTOR,
+            flush: FlushMode::Reordered,
+            durable_loss: DurableLoss::None,
+        }
+    }
+
+    /// An honoured barrier whose durable image is partially/reordered-applied at
+    /// power failure (a contract-violating device).
+    pub const fn reorder_durable(seed: u64) -> Self {
+        Self {
+            seed,
+            sector: DEFAULT_SECTOR,
+            flush: FlushMode::Barrier,
+            durable_loss: DurableLoss::ReorderDurable,
+        }
+    }
+
     /// An honoured barrier for segment bytes, but the commit watermark is lost at
     /// power failure (a power cut between the segment `fsync` and the watermark
     /// `fsync`).
@@ -215,6 +248,107 @@ impl Rng {
         for i in (1..items.len()).rev() {
             let j = (self.next_u64() % (i as u64 + 1)) as usize;
             items.swap(i, j);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Device-failure injection (Phase 23): ENOSPC / EIO / short write / failed sync
+// ---------------------------------------------------------------------------
+
+/// Which device operation a [`DeviceFaultRule`] targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceOp {
+    /// A segment write (`Segment::write_at`).
+    Write,
+    /// A segment `fsync` (`Segment::sync`).
+    Sync,
+    /// Segment creation (a rollover).
+    Create,
+    /// A directory `fsync`.
+    DirSync,
+    /// The atomic commit-watermark write.
+    Watermark,
+    /// An optional manifestation payload/manifest write.
+    Manifest,
+}
+
+/// The failure a [`DeviceFaultRule`] injects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceFaultKind {
+    /// Out of space: `ENOSPC` ([`OrfsError::NoSpace`] on the authoritative path).
+    NoSpace,
+    /// A device error: `EIO`.
+    IoError,
+    /// A short write: half the requested bytes are written, then `EIO`.
+    ShortWrite,
+    /// A failed `fsync` during an otherwise successful write: `EIO`.
+    SyncError,
+}
+
+/// A deterministic rule that fails matching device operations.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct DeviceFaultRule {
+    /// The operation to fail.
+    pub op: DeviceOp,
+    /// How to fail it.
+    pub kind: DeviceFaultKind,
+    /// Skip this many matching operations before the rule fires.
+    pub skip: u64,
+    /// Fail this many matching operations; `0` means "from here on".
+    pub fire: u64,
+    /// Restrict to files whose name ends with this suffix (`None` = any).
+    pub name_suffix: Option<String>,
+}
+
+impl DeviceFaultRule {
+    /// Fail the `skip`th-and-later matching operations from here on.
+    pub fn new(op: DeviceOp, kind: DeviceFaultKind, skip: u64) -> Self {
+        DeviceFaultRule {
+            op,
+            kind,
+            skip,
+            fire: 0,
+            name_suffix: None,
+        }
+    }
+
+    /// Restrict the rule to files whose name ends with `suffix`.
+    pub fn on(mut self, suffix: &str) -> Self {
+        self.name_suffix = Some(suffix.to_string());
+        self
+    }
+
+    /// Fail only `n` matching operations.
+    pub fn times(mut self, n: u64) -> Self {
+        self.fire = n;
+        self
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ArmedFault {
+    rule: DeviceFaultRule,
+    fired: u64,
+}
+
+/// A write failure injected by the device: `written` bytes were accepted before
+/// the error (zero for a clean reject).
+#[derive(Debug)]
+pub struct DeviceWriteFault {
+    pub written: u64,
+    pub error: OrfsError,
+}
+
+fn fault_error(kind: DeviceFaultKind, op: DeviceOp) -> OrfsError {
+    match kind {
+        DeviceFaultKind::NoSpace => {
+            OrfsError::NoSpace(format!("simulated device: out of space during {op:?}"))
+        }
+        DeviceFaultKind::IoError | DeviceFaultKind::ShortWrite | DeviceFaultKind::SyncError => {
+            OrfsError::Io(std::io::Error::from_raw_os_error(libc::EIO))
         }
     }
 }
@@ -305,6 +439,8 @@ pub struct SimDevice {
     cfg: SimConfig,
     rng: Rng,
     files: BTreeMap<String, FileModel>,
+    /// Deterministic device-failure injection rules (Phase 23).
+    faults: Vec<ArmedFault>,
 }
 
 impl SimDevice {
@@ -327,12 +463,79 @@ impl SimDevice {
             cfg,
             rng: Rng::new(cfg.seed),
             files,
+            faults: Vec::new(),
         })
     }
 
     /// The device's configuration.
     pub fn config(&self) -> SimConfig {
         self.cfg
+    }
+
+    /// Decide whether a fault fires for `op` on `name`, advancing the counters of
+    /// any rules that were consulted but did not fire yet.
+    fn fire(&mut self, op: DeviceOp, name: Option<&str>) -> Option<DeviceFaultKind> {
+        for armed in self.faults.iter_mut() {
+            if armed.rule.op != op {
+                continue;
+            }
+            if let Some(suffix) = &armed.rule.name_suffix {
+                match name {
+                    Some(n) if n.ends_with(suffix.as_str()) => {}
+                    _ => continue,
+                }
+            }
+            if armed.fired < armed.rule.skip {
+                armed.fired += 1;
+                continue;
+            }
+            if armed.rule.fire != 0
+                && armed.fired >= armed.rule.skip.saturating_add(armed.rule.fire)
+            {
+                continue;
+            }
+            armed.fired += 1;
+            return Some(armed.rule.kind);
+        }
+        None
+    }
+
+    /// Check a segment write. Returns a fault (with the number of bytes accepted
+    /// before it) when the device rejects or shortens the write.
+    pub fn check_write(&mut self, name: &str, len: u64) -> Option<DeviceWriteFault> {
+        let kind = self.fire(DeviceOp::Write, Some(name))?;
+        let written = match kind {
+            DeviceFaultKind::ShortWrite => len / 2,
+            _ => 0,
+        };
+        Some(DeviceWriteFault {
+            written,
+            error: fault_error(kind, DeviceOp::Write),
+        })
+    }
+
+    /// Check a segment `fsync`.
+    pub fn check_sync(&mut self, name: &str) -> Option<OrfsError> {
+        self.fire(DeviceOp::Sync, Some(name))
+            .map(|k| fault_error(k, DeviceOp::Sync))
+    }
+
+    /// Check a segment creation (rollover).
+    pub fn check_create(&mut self, name: &str) -> Option<OrfsError> {
+        self.fire(DeviceOp::Create, Some(name))
+            .map(|k| fault_error(k, DeviceOp::Create))
+    }
+
+    /// Check a directory `fsync`.
+    pub fn check_dir_sync(&mut self) -> Option<OrfsError> {
+        self.fire(DeviceOp::DirSync, None)
+            .map(|k| fault_error(k, DeviceOp::DirSync))
+    }
+
+    /// Check an optional manifestation write (payload or manifest).
+    pub fn check_manifest(&mut self, rel: &str) -> Option<OrfsError> {
+        self.fire(DeviceOp::Manifest, Some(rel))
+            .map(|k| fault_error(k, DeviceOp::Manifest))
     }
 
     /// Register a file created during the session (idempotent).
@@ -387,6 +590,16 @@ impl SimDevice {
                     apply(&mut fm.durable, op.offset, &op.bytes);
                 }
             }
+            FlushMode::Reordered => {
+                // Honour the barrier -- nothing is lost -- but apply the writes in
+                // a shuffled order (the durable bytes are order-independent for a
+                // non-overlapping append workload; the model proves that).
+                let mut pending = std::mem::take(&mut fm.pending);
+                rng.shuffle(&mut pending);
+                for op in pending {
+                    apply(&mut fm.durable, op.offset, &op.bytes);
+                }
+            }
             FlushMode::Partial | FlushMode::ReorderedPartial => {
                 let mut pending = std::mem::take(&mut fm.pending);
                 if cfg.flush == FlushMode::ReorderedPartial {
@@ -429,6 +642,9 @@ impl SimDevice {
     /// single durable file write, plus a write-through so a same-session read is
     /// consistent.
     pub fn write_watermark(&mut self, wm: &Watermark) -> Result<()> {
+        if let Some(kind) = self.fire(DeviceOp::Watermark, Some(WATERMARK_FILE)) {
+            return Err(fault_error(kind, DeviceOp::Watermark));
+        }
         let encoded = wm.encode();
         self.record_create(WATERMARK_FILE);
         self.record_write(WATERMARK_FILE, 0, &encoded);
@@ -470,6 +686,37 @@ impl SimDevice {
             } else {
                 content.len() - rem
             };
+            torn = (content.len() - new_len) as u64;
+            content.truncate(new_len);
+        } else if self.cfg.durable_loss == DurableLoss::ReorderDurable && !content.is_empty() {
+            // Drop sector-aligned blocks of the *durable* image: a reordered /
+            // partially-applied durable write. A dropped block reads back as
+            // zeros (a sector that did not survive), and any all-dropped suffix is
+            // truncated so the file length reflects the loss. Recovery observes
+            // exactly the shapes a torn/reordered flush would leave: an interior
+            // hole (a malformed record), a torn tail, or a shorter valid prefix.
+            let sector = self.cfg.sector.max(1) as usize;
+            let blocks = content.len().div_ceil(sector);
+            let mut rng = Rng::new(self.cfg.seed ^ 0x5EED_D00D);
+            let mut keep: Vec<bool> = Vec::with_capacity(blocks);
+            for _ in 0..blocks {
+                keep.push(rng.next_u64() & 1 == 0);
+            }
+            for (i, k) in keep.iter().enumerate() {
+                if *k {
+                    continue;
+                }
+                let lo = i * sector;
+                let hi = (lo + sector).min(content.len());
+                for b in &mut content[lo..hi] {
+                    *b = 0;
+                }
+            }
+            // Truncate a fully-dropped suffix.
+            let mut new_len = content.len();
+            while new_len > 0 && content[new_len - 1] == 0 && !keep[(new_len - 1) / sector] {
+                new_len -= 1;
+            }
             torn = (content.len() - new_len) as u64;
             content.truncate(new_len);
         }
@@ -625,7 +872,23 @@ impl Drop for PowerLossHandle {
 /// is captured by the device until [`PowerLossHandle::power_fail`] (or the
 /// handle's drop) detaches it.
 pub fn attach(log_dir: &Path, cfg: SimConfig) -> Result<PowerLossHandle> {
-    let dev = SimDevice::load(log_dir, cfg)?;
+    attach_with_faults(log_dir, cfg, Vec::new())
+}
+
+/// Attach a simulated device with a deterministic fault-injection plan. The plan
+/// is consulted by the log's I/O seams; a rejected write returns `ENOSPC`/`EIO`
+/// to the authoritative path, which must then refuse and (for an authoritative
+/// failure) latch degraded. See `tests/power_loss.rs`.
+pub fn attach_with_faults(
+    log_dir: &Path,
+    cfg: SimConfig,
+    rules: Vec<DeviceFaultRule>,
+) -> Result<PowerLossHandle> {
+    let mut dev = SimDevice::load(log_dir, cfg)?;
+    dev.faults = rules
+        .into_iter()
+        .map(|rule| ArmedFault { rule, fired: 0 })
+        .collect();
     let arc = Arc::new(Mutex::new(dev));
     DEVICES.with(|m| {
         m.borrow_mut().insert(log_dir.to_path_buf(), arc);
@@ -651,6 +914,47 @@ pub fn attached(log_dir: &Path) -> bool {
 /// Look up the device attached to `log_dir` on this thread, if any.
 pub fn lookup(log_dir: &Path) -> Option<Arc<Mutex<SimDevice>>> {
     DEVICES.with(|m| m.borrow().get(log_dir).cloned())
+}
+
+/// Look up a device attached either directly to `dir` or to `dir/or.log`, so a
+/// call made with a volume root reaches a device attached to its log directory.
+fn lookup_volume(dir: &Path) -> Option<Arc<Mutex<SimDevice>>> {
+    lookup(dir).or_else(|| lookup(&dir.join("or.log")))
+}
+
+/// Check a segment write against any attached device. `Some(fault)` means the
+/// write must not be fully persisted; `None` means no device objects.
+#[inline]
+pub fn device_write(dir: &Path, name: &str, _offset: u64, len: u64) -> Option<DeviceWriteFault> {
+    lookup(dir).and_then(|dev| dev.lock().expect("sim device mutex").check_write(name, len))
+}
+
+/// Check a segment `fsync` against any attached device. `Some` means it failed.
+#[inline]
+pub fn device_sync(dir: &Path, name: &str) -> Option<OrfsError> {
+    lookup(dir).and_then(|dev| dev.lock().expect("sim device mutex").check_sync(name))
+}
+
+/// Check a segment creation against any attached device. `Some` means it failed.
+#[inline]
+pub fn device_create(dir: &Path, name: &str) -> Option<OrfsError> {
+    lookup(dir).and_then(|dev| dev.lock().expect("sim device mutex").check_create(name))
+}
+
+/// Check a directory `fsync` against any attached device. `Some` means it failed.
+#[inline]
+pub fn device_dir_sync(dir: &Path) -> Option<OrfsError> {
+    lookup(dir).and_then(|dev| dev.lock().expect("sim device mutex").check_dir_sync())
+}
+
+/// Check an optional manifestation write. Looks up a device attached to
+/// `volume_root` or to `volume_root/or.log` (where OrFS attaches its model), so
+/// an optional-write failure can be injected without ever reaching the
+/// authoritative path.
+#[inline]
+pub fn manifest_write_fault(volume_root: &Path, rel: &str) -> Option<OrfsError> {
+    lookup_volume(volume_root)
+        .and_then(|dev| dev.lock().expect("sim device mutex").check_manifest(rel))
 }
 
 /// Record a file creation. No-op when no device is attached.

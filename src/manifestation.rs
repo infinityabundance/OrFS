@@ -1109,6 +1109,15 @@ impl GenerationStore {
     /// manifest that a later `HEAD` update will advertise.
     pub fn publish(&self, manifest: &GenerationManifest) -> Result<()> {
         self.ensure_dirs()?;
+        // Optional-space failure injection (Phase 23): an injected ENOSPC/EIO on a
+        // manifestation write must surface as an optional failure only. The caller
+        // records `ManifestationStatus::Failed` and the authoritative commit is
+        // untouched (research I5, §31).
+        if let Some(err) =
+            crate::powerloss::manifest_write_fault(&self.volume_root, &manifest.payload_rel_path)
+        {
+            return Err(err);
+        }
         let final_path = self.manifest_path(manifest.generation);
         let tmp_path = final_path.with_extension("manifest.tmp");
         {

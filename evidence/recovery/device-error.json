@@ -1,0 +1,1860 @@
+{
+  "all_invariants_ok": true,
+  "device_model": "simulated in-process device with positional write/sync fault injection",
+  "failure_class": "EIO / short write / failed fsync (device error)",
+  "generator": "tests/power_loss.rs",
+  "invariants": {
+    "a_failed_mutation_is_not_acknowledged": true,
+    "acknowledged_durable_mutations_always_survive": true,
+    "no_partial_transaction_is_ever_visible": true,
+    "the_failed_mutation_returns_eio": true,
+    "unrecoverable_authoritative_failure_transitions_to_read_only_erofs": true
+  },
+  "matrix": [
+    {
+      "acknowledged_durable_roots": [],
+      "acknowledged_roots": [],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "io_error",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 0,
+        "files": [
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 100,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 0,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 100,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 100
+        }
+      },
+      "skip": 0,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 0
+    },
+    {
+      "acknowledged_durable_roots": [],
+      "acknowledged_roots": [],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "io_error",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 1,
+        "files": [
+          {
+            "dropped_volatile_bytes": 104,
+            "durable_len": 100,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 104,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 100,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 100
+        }
+      },
+      "skip": 1,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 0
+    },
+    {
+      "acknowledged_durable_roots": [],
+      "acknowledged_roots": [],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "io_error",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 2,
+        "files": [
+          {
+            "dropped_volatile_bytes": 196,
+            "durable_len": 100,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 196,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 100,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 100
+        }
+      },
+      "skip": 2,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 0
+    },
+    {
+      "acknowledged_durable_roots": [],
+      "acknowledged_roots": [],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "io_error",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 3,
+        "files": [
+          {
+            "dropped_volatile_bytes": 295,
+            "durable_len": 100,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 295,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 100,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 100
+        }
+      },
+      "skip": 3,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 0
+    },
+    {
+      "acknowledged_durable_roots": [
+        543
+      ],
+      "acknowledged_roots": [
+        543
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "io_error",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 0,
+        "files": [
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 543,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 0,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 543,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 543
+        }
+      },
+      "skip": 4,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 1
+    },
+    {
+      "acknowledged_durable_roots": [
+        543
+      ],
+      "acknowledged_roots": [
+        543
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "io_error",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 1,
+        "files": [
+          {
+            "dropped_volatile_bytes": 104,
+            "durable_len": 543,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 104,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 543,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 543
+        }
+      },
+      "skip": 5,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 1
+    },
+    {
+      "acknowledged_durable_roots": [
+        543
+      ],
+      "acknowledged_roots": [
+        543
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "io_error",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 2,
+        "files": [
+          {
+            "dropped_volatile_bytes": 196,
+            "durable_len": 543,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 196,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 543,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 543
+        }
+      },
+      "skip": 6,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 1
+    },
+    {
+      "acknowledged_durable_roots": [
+        543
+      ],
+      "acknowledged_roots": [
+        543
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "io_error",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 3,
+        "files": [
+          {
+            "dropped_volatile_bytes": 295,
+            "durable_len": 543,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 295,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 543,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 543
+        }
+      },
+      "skip": 7,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 1
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986
+      ],
+      "acknowledged_roots": [
+        543,
+        986
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "io_error",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 0,
+        "files": [
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 0,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 986,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 986
+        }
+      },
+      "skip": 8,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 2
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986
+      ],
+      "acknowledged_roots": [
+        543,
+        986
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "io_error",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 1,
+        "files": [
+          {
+            "dropped_volatile_bytes": 104,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 104,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 986,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 986
+        }
+      },
+      "skip": 9,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 2
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986
+      ],
+      "acknowledged_roots": [
+        543,
+        986
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "io_error",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 2,
+        "files": [
+          {
+            "dropped_volatile_bytes": 196,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 196,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 986,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 986
+        }
+      },
+      "skip": 10,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 2
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986
+      ],
+      "acknowledged_roots": [
+        543,
+        986
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "io_error",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 3,
+        "files": [
+          {
+            "dropped_volatile_bytes": 295,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 295,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 986,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 986
+        }
+      },
+      "skip": 11,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 2
+    },
+    {
+      "acknowledged_durable_roots": [],
+      "acknowledged_roots": [],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "short_write",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 1,
+        "files": [
+          {
+            "dropped_volatile_bytes": 52,
+            "durable_len": 100,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 52,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 100,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 100
+        }
+      },
+      "skip": 0,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 0
+    },
+    {
+      "acknowledged_durable_roots": [],
+      "acknowledged_roots": [],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "short_write",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 2,
+        "files": [
+          {
+            "dropped_volatile_bytes": 150,
+            "durable_len": 100,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 150,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 100,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 100
+        }
+      },
+      "skip": 1,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 0
+    },
+    {
+      "acknowledged_durable_roots": [],
+      "acknowledged_roots": [],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "short_write",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 3,
+        "files": [
+          {
+            "dropped_volatile_bytes": 245,
+            "durable_len": 100,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 245,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 100,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 100
+        }
+      },
+      "skip": 2,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 0
+    },
+    {
+      "acknowledged_durable_roots": [],
+      "acknowledged_roots": [],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "short_write",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 4,
+        "files": [
+          {
+            "dropped_volatile_bytes": 369,
+            "durable_len": 100,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 369,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 100,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 100
+        }
+      },
+      "skip": 3,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 0
+    },
+    {
+      "acknowledged_durable_roots": [
+        543
+      ],
+      "acknowledged_roots": [
+        543
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "short_write",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 1,
+        "files": [
+          {
+            "dropped_volatile_bytes": 52,
+            "durable_len": 543,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 52,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 543,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 543
+        }
+      },
+      "skip": 4,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 1
+    },
+    {
+      "acknowledged_durable_roots": [
+        543
+      ],
+      "acknowledged_roots": [
+        543
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "short_write",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 2,
+        "files": [
+          {
+            "dropped_volatile_bytes": 150,
+            "durable_len": 543,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 150,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 543,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 543
+        }
+      },
+      "skip": 5,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 1
+    },
+    {
+      "acknowledged_durable_roots": [
+        543
+      ],
+      "acknowledged_roots": [
+        543
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "short_write",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 3,
+        "files": [
+          {
+            "dropped_volatile_bytes": 245,
+            "durable_len": 543,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 245,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 543,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 543
+        }
+      },
+      "skip": 6,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 1
+    },
+    {
+      "acknowledged_durable_roots": [
+        543
+      ],
+      "acknowledged_roots": [
+        543
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "short_write",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 4,
+        "files": [
+          {
+            "dropped_volatile_bytes": 369,
+            "durable_len": 543,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 369,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 543,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 543
+        }
+      },
+      "skip": 7,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 1
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986
+      ],
+      "acknowledged_roots": [
+        543,
+        986
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "short_write",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 1,
+        "files": [
+          {
+            "dropped_volatile_bytes": 52,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 52,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 986,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 986
+        }
+      },
+      "skip": 8,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 2
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986
+      ],
+      "acknowledged_roots": [
+        543,
+        986
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "short_write",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 2,
+        "files": [
+          {
+            "dropped_volatile_bytes": 150,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 150,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 986,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 986
+        }
+      },
+      "skip": 9,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 2
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986
+      ],
+      "acknowledged_roots": [
+        543,
+        986
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "short_write",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 3,
+        "files": [
+          {
+            "dropped_volatile_bytes": 245,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 245,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 986,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 986
+        }
+      },
+      "skip": 10,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 2
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986
+      ],
+      "acknowledged_roots": [
+        543,
+        986
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "short_write",
+      "op": "write",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 4,
+        "files": [
+          {
+            "dropped_volatile_bytes": 369,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 369,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 986,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 986
+        }
+      },
+      "skip": 11,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 2
+    },
+    {
+      "acknowledged_durable_roots": [],
+      "acknowledged_roots": [],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "sync_error",
+      "op": "sync",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 4,
+        "files": [
+          {
+            "dropped_volatile_bytes": 443,
+            "durable_len": 100,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 443,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 100,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 100
+        }
+      },
+      "skip": 0,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 0
+    },
+    {
+      "acknowledged_durable_roots": [
+        543
+      ],
+      "acknowledged_roots": [
+        543
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "sync_error",
+      "op": "sync",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 4,
+        "files": [
+          {
+            "dropped_volatile_bytes": 443,
+            "durable_len": 543,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 443,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 543,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 543
+        }
+      },
+      "skip": 1,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 1
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986
+      ],
+      "acknowledged_roots": [
+        543,
+        986
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "sync_error",
+      "op": "sync",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 4,
+        "files": [
+          {
+            "dropped_volatile_bytes": 443,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 443,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 986,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 986
+        }
+      },
+      "skip": 2,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 2
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986,
+        1429
+      ],
+      "acknowledged_roots": [
+        543,
+        986,
+        1429
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "sync_error",
+      "op": "sync",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 4,
+        "files": [
+          {
+            "dropped_volatile_bytes": 443,
+            "durable_len": 1429,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 443,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 1429,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 1429
+        }
+      },
+      "skip": 3,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 3
+    },
+    {
+      "acknowledged_durable_roots": [],
+      "acknowledged_roots": [],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "io_error",
+      "op": "sync",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 4,
+        "files": [
+          {
+            "dropped_volatile_bytes": 443,
+            "durable_len": 100,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 443,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 100,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 100
+        }
+      },
+      "skip": 0,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 0
+    },
+    {
+      "acknowledged_durable_roots": [
+        543
+      ],
+      "acknowledged_roots": [
+        543
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "io_error",
+      "op": "sync",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 4,
+        "files": [
+          {
+            "dropped_volatile_bytes": 443,
+            "durable_len": 543,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 443,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 543,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 543
+        }
+      },
+      "skip": 1,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 1
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986
+      ],
+      "acknowledged_roots": [
+        543,
+        986
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "io_error",
+      "op": "sync",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 4,
+        "files": [
+          {
+            "dropped_volatile_bytes": 443,
+            "durable_len": 986,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 443,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 986,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 986
+        }
+      },
+      "skip": 2,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 2
+    },
+    {
+      "acknowledged_durable_roots": [
+        543,
+        986,
+        1429
+      ],
+      "acknowledged_roots": [
+        543,
+        986,
+        1429
+      ],
+      "durability_mode": "sync",
+      "failure": "io error: Input/output error (os error 5)",
+      "failure_errno": 5,
+      "invariants_ok": true,
+      "kind": "io_error",
+      "op": "sync",
+      "power_fail_report": {
+        "config": {
+          "durable_loss": "none",
+          "flush": "barrier",
+          "sector": 512,
+          "seed": 7
+        },
+        "dropped_writes": 4,
+        "files": [
+          {
+            "dropped_volatile_bytes": 443,
+            "durable_len": 1429,
+            "name": "0000000000000000.seg",
+            "present": true,
+            "torn_durable_bytes": 0
+          },
+          {
+            "dropped_volatile_bytes": 0,
+            "durable_len": 36,
+            "name": "commit.watermark",
+            "present": true,
+            "torn_durable_bytes": 0
+          }
+        ],
+        "total_dropped_volatile_bytes": 443,
+        "total_torn_durable_bytes": 0
+      },
+      "recovery": {
+        "Recovered": {
+          "durable_watermark_root": 1429,
+          "invariants": {
+            "committed_physical_bytes_unchanged": true,
+            "earlier_committed_roots_valid": true,
+            "last_record_is_commit_or_genesis": true,
+            "next_transaction_commits_and_advances": true,
+            "no_committed_record_rewritten": true,
+            "recovered_root_is_transaction_boundary": true
+          },
+          "root": 1429
+        }
+      },
+      "skip": 3,
+      "subsequent_errno": 30,
+      "surviving_durable_mutations": 3
+    }
+  ],
+  "schema": "orfs.evidence.device-error.v1"
+}

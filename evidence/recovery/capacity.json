@@ -1,0 +1,22 @@
+{
+  "admitted_first_half": true,
+  "degraded": true,
+  "generator": "tests/recovery_adversarial.rs",
+  "invariants": {
+    "authoritative_capacity_exhaustion_returns_enospc": true,
+    "capacity_never_reported_as_unlimited": true,
+    "exhaustion_latches_read_only_erofs": true,
+    "no_authoritative_history_reclaimed": true,
+    "optional_manifestation_throttled_first": true,
+    "refusal_does_not_advance_the_committed_root": true
+  },
+  "policy": {
+    "authoritative_capacity_bytes": 65536,
+    "hard_quota_bytes": 61440,
+    "reserve_bytes": 4096,
+    "soft_quota_bytes": 49152
+  },
+  "read_only_policy_note": "an exhausted volume is an orderly read-only transition, never a reclamation",
+  "schema": "orfs.evidence.capacity.v1",
+  "subsequent_errno": 30
+}

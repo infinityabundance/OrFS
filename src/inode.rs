@@ -22,6 +22,7 @@
 //! Names are deliberately **not** part of an inode's identity (research §6).
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use crate::error::{OrfsError, Result};
 use crate::extent::ExtentMap;
@@ -156,6 +157,123 @@ pub struct InodeVersion {
     pub size: u64,
 }
 
+/// An immutable, structurally-shared inode version history (Phase 27).
+///
+/// Versions are stored **newest-first** in a singly linked list whose nodes are
+/// `Arc`-shared. Appending a version is `O(1)` and shares the entire prior
+/// history with every snapshot; cloning an [`Inode`] (on the publish path) is a
+/// single `Arc` bump and never deep-copies the version vector. This is what makes
+/// sustained churn cost proportional to the *affected* inodes rather than to
+/// total retained history (see `docs/CONCURRENCY.md`).
+#[derive(Clone, Default)]
+pub struct VersionHistory {
+    head: Option<Arc<VersionNode>>,
+    len: usize,
+    oldest_record_offset: u64,
+}
+
+struct VersionNode {
+    version: InodeVersion,
+    prev: Option<Arc<VersionNode>>,
+}
+
+impl VersionHistory {
+    fn new(version: InodeVersion) -> VersionHistory {
+        let oldest = version.record_offset;
+        VersionHistory {
+            head: Some(Arc::new(VersionNode {
+                version,
+                prev: None,
+            })),
+            len: 1,
+            oldest_record_offset: oldest,
+        }
+    }
+
+    fn push(&mut self, version: InodeVersion) {
+        if self.len == 0 {
+            self.oldest_record_offset = version.record_offset;
+        }
+        let prev = self.head.take();
+        self.head = Some(Arc::new(VersionNode { version, prev }));
+        self.len += 1;
+    }
+
+    fn last(&self) -> Option<&InodeVersion> {
+        self.head.as_ref().map(|n| &n.version)
+    }
+
+    /// The number of retained versions.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Whether the history is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// The record offset that produced the *oldest* retained version.
+    fn oldest_record_offset(&self) -> u64 {
+        self.oldest_record_offset
+    }
+
+    /// Iterate oldest-first (the canonical order used by the persisted snapshot).
+    pub fn iter(&self) -> impl Iterator<Item = &InodeVersion> {
+        let mut nodes: Vec<&VersionNode> = Vec::with_capacity(self.len);
+        let mut cur = self.head.as_deref();
+        while let Some(n) = cur {
+            nodes.push(n);
+            cur = n.prev.as_deref();
+        }
+        nodes.into_iter().rev().map(|n| &n.version)
+    }
+
+    /// Build a history from an oldest-first list (snapshot decode).
+    pub fn from_vec(versions: Vec<InodeVersion>) -> VersionHistory {
+        let mut h = VersionHistory::default();
+        for v in versions {
+            h.push(v);
+        }
+        h
+    }
+}
+
+impl Drop for VersionHistory {
+    fn drop(&mut self) {
+        // The history is an `Arc`-linked list; dropping it recursively would use
+        // `O(len)` stack. Unlink iteratively instead. When a node is still shared
+        // (another snapshot's history references it) we stop: that owner will
+        // drop the rest.
+        let mut cur = self.head.take();
+        while let Some(node) = cur {
+            match Arc::try_unwrap(node) {
+                Ok(mut node) => cur = node.prev.take(),
+                Err(_) => break,
+            }
+        }
+    }
+}
+
+impl PartialEq for VersionHistory {
+    fn eq(&self, other: &Self) -> bool {
+        self.len == other.len
+            && self.oldest_record_offset == other.oldest_record_offset
+            && self.iter().eq(other.iter())
+    }
+}
+
+impl Eq for VersionHistory {}
+
+impl std::fmt::Debug for VersionHistory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Non-recursive: a history may hold millions of retained versions.
+        f.debug_struct("VersionHistory")
+            .field("len", &self.len)
+            .finish()
+    }
+}
+
 /// A versioned inode (research §6, §25).
 ///
 /// `names` and parent directories are **not** stored here: identity is the
@@ -185,8 +303,8 @@ pub struct Inode {
     pub extents: ExtentMap,
     /// Symbolic-link target, for [`InodeType::Symlink`] inodes.
     pub symlink_target: Option<Vec<u8>>,
-    /// Historical metadata versions, oldest first (never pruned).
-    pub versions: Vec<InodeVersion>,
+    /// Historical metadata versions (newest-first persistent list; never pruned).
+    pub versions: VersionHistory,
     /// Offset of the latest authoritative record for this inode, or 0.
     pub latest_record_offset: u64,
 }
@@ -233,7 +351,7 @@ impl Inode {
             xattrs: BTreeMap::new(),
             extents: ExtentMap::default(),
             symlink_target: None,
-            versions: vec![version],
+            versions: VersionHistory::new(version),
             latest_record_offset: record_offset,
         }
     }
@@ -241,6 +359,16 @@ impl Inode {
     /// The current version number (`>= 1`).
     pub fn current_version(&self) -> u64 {
         self.versions.last().map(|v| v.version).unwrap_or(0)
+    }
+
+    /// The number of retained metadata versions (never pruned).
+    pub fn version_count(&self) -> usize {
+        self.versions.len()
+    }
+
+    /// The record offset that produced the oldest retained version.
+    pub fn creation_root(&self) -> u64 {
+        self.versions.oldest_record_offset()
     }
 
     /// Record a new metadata version after an authoritative record mutated this

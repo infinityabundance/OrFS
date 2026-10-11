@@ -1539,3 +1539,56 @@ deviation count dropped.
 `docs/FUSE-SEMANTICS.md` §5.1/§5.2/§6/§7/§11.1 and `docs/LIMITATIONS.md` §12 now
 record the closed semantics and that the allowlist holds only the shared
 reference artefact.
+
+## Phase 27 — Fix publish `O(N²)` churn; large-scale endurance and recovery acceleration
+
+### The defect and its fix
+
+The Phase-19 read-view publication was meant to *share* structure, but it shared
+mutable containers: `inodes`/`dentries`/`children` were `HashMap`/`Arc<HashMap>`
+spines that were fully copied on every publish, and `Arc::make_mut` on a shared
+inode deep-copied that inode's ever-growing `versions: Vec<InodeVersion>`. Because
+a busy directory's version vector grows without bound (and unlinked inodes are
+retained), sustained `create`/`rename`/`unlink` churn was `O(history²)`.
+
+Phase 27 replaces the shared-mutable representation with **persistent,
+path-copying structures** (`src/persistent.rs`):
+
+* `inodes`, `children` and `snapshots` are persistent treaps (`PMap`); a commit
+  path-copies `O(log n)` nodes and shares every untouched subtree; cloning an
+  `Index` for publication is a handful of `Arc` bumps.
+* `Inode.versions` is a shared `VersionHistory` (an `Arc`-linked newest-first
+  list); appending is `O(1)` and never deep-copies the prior history.
+* `Inode.extents` is an `ExtentMap` over `PMap<u64, Extent>` with an incremental
+  overlay, so writes stay `O(log E + k)` and a file with very many extents is not
+  re-copied on every write.
+
+The observable index is unchanged (same records, same canonical digest, same
+byte-for-byte snapshot document), so every correctness court and historical
+reconstruction remains exact.
+
+### Measured results (`benches/endurance.rs`, `scripts/container-endurance.sh`)
+
+* **Publish cost is flat:** the index-clone publication step is ≈**60 ns** at
+  10k, 100k and 1M churn iterations; per-iteration commit p50 stays ≈45–59 µs
+  across the 100× history increase; 1M iterations (3M ops) complete in ≈63 s with
+  0 errors. `evidence/performance/publish-cost.json`.
+* **Endurance:** 1 001 025 retained inodes, ≈959 MiB RSS (≈1 KiB/inode, linear,
+  within the 8 GiB cap), 1 741 MB log, 0 errors. A file grown to **199 999**
+  disjoint extents (100 000 writes) keeps write p50 ≈6.4–8.9 µs and read p50
+  ≈0.7 µs. **2 000** historical roots open/verify with 0 errors. 4 remounts
+  interleaved with 4 concurrent readers: 297 342 reads, 0 errors, monotone roots.
+  `evidence/performance/endurance.json`.
+* **Recovery acceleration:** mount is `Θ(history)` in every mode. Without a
+  checkpoint the whole log is replayed (20/74/312 ms at 0.5k/2k/8k commits); with
+  a valid checkpoint `bytes_replayed` collapses (17→1.2 MB, 271→16.8 MB) but a
+  whole-log discovery scan and the embedded-index decode remain, so the win is a
+  crossover (60 ms vs 74 ms at 2 k; a wash at 8 k) — reported honestly, not
+  claimed constant-time. `evidence/performance/recovery-acceleration.json`.
+
+### Docs
+
+`docs/CONCURRENCY.md` §4 (sharing strategy; §4.1 path-copying now implemented),
+`docs/PERFORMANCE.md` §9 (measured tables), `docs/RECOVERY.md` §8
+(recovery-acceleration relationship), `docs/NAMESPACE.md` §5.0 (persistent index
+representation).

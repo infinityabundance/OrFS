@@ -259,3 +259,36 @@ explicit **read-only** mode: further mutations return `OrfsError::ReadOnly`
 (errno `EROFS`) rather than being accepted, while reads continue. The latch is
 in-memory and per handle; a reopened volume re-evaluates capacity. See
 `docs/CAPACITY.md` §5.
+
+---
+
+## 8. Recovery acceleration: mount time vs retained history (Phase 27)
+
+Measured by `benches/endurance.rs`
+(`evidence/performance/recovery-acceleration.json`). **Mount/recovery time is
+`Θ(total retained history)`, not constant-time.**
+
+* **Without a checkpoint** (the authoritative fallback, §2, §5): `mount_index`
+  discovers no checkpoint and replays the entire committed log. Measured 25 ms /
+  17 MB replayed at 500 commits, 103 ms / 68 MB at 2 000, 331 ms / 271 MB at
+  8 000 — linear in history.
+* **With a valid in-log checkpoint**: `mount_index` loads the newest valid
+  checkpoint and replays only the suffix, so `bytes_replayed` collapses (to
+  1.2 MB / 4.3 MB / 16.8 MB in the same runs). But discovery still performs a
+  **header-only scan of the whole log** to find candidate checkpoints and the
+  checkpoint's **embedded serialized index** must be decoded and self-digest
+  verified. At 8 000 commits (checkpoints every 500) the checkpoint's own payload
+  also inflates the log (×1.5) and the decode outweighs the skipped replay, so the
+  checkpointed mount is *slower* (390 ms vs 331 ms); the win shows at 2 000
+  commits (66 ms vs 103 ms). This crossover is reported honestly — it is not
+  claimed that a checkpoint is always faster.
+* **Phase-20 historical accelerators** (`Snapshot::open_dir` /
+  `HistoricalIndexCache`): a warm open skips the replay and loads the persisted
+  index; for a small index this is comparable to a suffixed replay (cold vs warm
+  p50 ≈ 0.75 ms), because both decode an `O(index)` document. The materialization
+  work avoided (`bytes_replayed`) is reported by the historical cache counters.
+
+Opening `R` *distinct* historical roots whose prefixes grow with `R` costs
+`O(R·L)` total; the in-memory LRU and persisted accelerator remove the replay only
+for repeated access to a *given* root. The relationship is linear and is reported
+as measured, never as constant-time.

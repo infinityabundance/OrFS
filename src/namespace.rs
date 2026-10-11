@@ -1778,12 +1778,7 @@ pub(crate) fn derived_xattr(
     manifested: Option<&ManifestSummary>,
 ) -> Option<Vec<u8>> {
     let value = match name {
-        b"user.orfs.creation_root" => inode
-            .versions
-            .first()
-            .map(|v| v.record_offset)
-            .unwrap_or(0)
-            .to_string(),
+        b"user.orfs.creation_root" => inode.creation_root().to_string(),
         b"user.orfs.current_root" => inode.latest_record_offset.to_string(),
         b"user.orfs.version" => inode.current_version().to_string(),
         b"user.orfs.history_available" => "1".to_string(),

@@ -46,6 +46,7 @@ pub mod log;
 pub mod manifestation;
 pub mod namespace;
 pub mod passthrough;
+pub mod persistent;
 
 /// The simulated power-loss device model (Phase 17). See `docs/POWERLOSS.md`.
 #[cfg(feature = "powerloss")]

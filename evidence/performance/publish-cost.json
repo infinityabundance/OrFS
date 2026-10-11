@@ -1,0 +1,173 @@
+{
+  "claim": "per-commit publish cost is flat as total retained history grows",
+  "dirs": 1024,
+  "environment": {
+    "cgroup_memory_max": "8589934592",
+    "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "container_image": null,
+    "cores_visible": 8,
+    "cpu_max": "800000 100000",
+    "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+    "fuse_enable_uring": true,
+    "kernel_release": "7.2.9-2-cachyos",
+    "likely_container": true,
+    "machine": "x86_64",
+    "perf_counters_available": false,
+    "perf_event_paranoid": "2",
+    "ram_total_bytes": 134723346432
+  },
+  "generated_by": "benches/endurance.rs",
+  "scales": [
+    {
+      "backing": {
+        "authoritative_canonical_bytes": 18157774,
+        "m_log_bytes": 18157810,
+        "m_total_bytes": 18157854
+      },
+      "commits": 30000,
+      "committed_root": 18157774,
+      "dirs": 1024,
+      "errors": 0,
+      "index_clone_ns": 60,
+      "iterations": 10000,
+      "live_dentries": 1024,
+      "ops": 30000,
+      "per_iter_ns_first_1024": {
+        "count": 1024,
+        "max_ns": 131175,
+        "mean_ns": 47856,
+        "min_ns": 38411,
+        "p50_ns": 46738,
+        "p95_ns": 61585,
+        "p99_ns": 65893
+      },
+      "per_iter_ns_last_1024": {
+        "count": 1024,
+        "max_ns": 5061021,
+        "mean_ns": 61162,
+        "min_ns": 47158,
+        "p50_ns": 53600,
+        "p95_ns": 72996,
+        "p99_ns": 82955
+      },
+      "per_iter_ns_middle_1024": {
+        "count": 1024,
+        "max_ns": 71984,
+        "mean_ns": 53425,
+        "min_ns": 47900,
+        "p50_ns": 53390,
+        "p95_ns": 57417,
+        "p99_ns": 60042
+      },
+      "read_view_clone_ns": 40,
+      "retained_inodes": 11025,
+      "rss_end_kib": 13268,
+      "rss_peak_kib": 13264,
+      "rss_start_kib": 3440,
+      "throughput_iterations_per_s": 17906.182936029007,
+      "throughput_ops_per_s": 53718.54880808702,
+      "total_seconds": 0.558466315
+    },
+    {
+      "backing": {
+        "authoritative_canonical_bytes": 174757774,
+        "m_log_bytes": 174757810,
+        "m_total_bytes": 174757854
+      },
+      "commits": 300000,
+      "committed_root": 174757774,
+      "dirs": 1024,
+      "errors": 0,
+      "index_clone_ns": 60,
+      "iterations": 100000,
+      "live_dentries": 1024,
+      "ops": 300000,
+      "per_iter_ns_first_1024": {
+        "count": 1024,
+        "max_ns": 107762,
+        "mean_ns": 47558,
+        "min_ns": 39404,
+        "p50_ns": 46437,
+        "p95_ns": 62888,
+        "p99_ns": 69220
+      },
+      "per_iter_ns_last_1024": {
+        "count": 1024,
+        "max_ns": 91822,
+        "mean_ns": 56661,
+        "min_ns": 48942,
+        "p50_ns": 55273,
+        "p95_ns": 72536,
+        "p99_ns": 79339
+      },
+      "per_iter_ns_middle_1024": {
+        "count": 1024,
+        "max_ns": 4592345,
+        "mean_ns": 77120,
+        "min_ns": 51816,
+        "p50_ns": 73037,
+        "p95_ns": 78346,
+        "p99_ns": 80000
+      },
+      "read_view_clone_ns": 40,
+      "retained_inodes": 101025,
+      "rss_end_kib": 99844,
+      "rss_peak_kib": 99844,
+      "rss_start_kib": 23088,
+      "throughput_iterations_per_s": 17017.732556626637,
+      "throughput_ops_per_s": 51053.19766987991,
+      "total_seconds": 5.876223502
+    },
+    {
+      "backing": {
+        "authoritative_canonical_bytes": 1740757774,
+        "m_log_bytes": 1740757810,
+        "m_total_bytes": 1740757854
+      },
+      "commits": 3000000,
+      "committed_root": 1740757774,
+      "dirs": 1024,
+      "errors": 0,
+      "index_clone_ns": 60,
+      "iterations": 1000000,
+      "live_dentries": 1024,
+      "ops": 3000000,
+      "per_iter_ns_first_1024": {
+        "count": 1024,
+        "max_ns": 110196,
+        "mean_ns": 46232,
+        "min_ns": 38833,
+        "p50_ns": 45355,
+        "p95_ns": 51817,
+        "p99_ns": 64751
+      },
+      "per_iter_ns_last_1024": {
+        "count": 1024,
+        "max_ns": 3848444,
+        "mean_ns": 63489,
+        "min_ns": 54532,
+        "p50_ns": 59171,
+        "p95_ns": 63899,
+        "p99_ns": 84768
+      },
+      "per_iter_ns_middle_1024": {
+        "count": 1024,
+        "max_ns": 3930999,
+        "mean_ns": 65544,
+        "min_ns": 54031,
+        "p50_ns": 59541,
+        "p95_ns": 78117,
+        "p99_ns": 99907
+      },
+      "read_view_clone_ns": 40,
+      "retained_inodes": 1001025,
+      "rss_end_kib": 981844,
+      "rss_peak_kib": 981844,
+      "rss_start_kib": 190912,
+      "throughput_iterations_per_s": 15901.606561802171,
+      "throughput_ops_per_s": 47704.81968540652,
+      "total_seconds": 62.886727584
+    }
+  ],
+  "schema": "orfs.publish-cost.v1"
+}

@@ -2845,12 +2845,12 @@
       "certified": true,
       "equivalent": true,
       "file": "f3",
-      "generation": null,
+      "generation": 2,
       "historical": true,
       "inode": 3,
       "length": 1,
       "offset": 0,
-      "path": "logical-extent",
+      "path": "checkpoint",
       "root": 82680
     },
     {
@@ -2884,12 +2884,12 @@
       "certified": true,
       "equivalent": true,
       "file": "f4",
-      "generation": null,
+      "generation": 3,
       "historical": true,
       "inode": 4,
       "length": 1,
       "offset": 0,
-      "path": "logical-extent",
+      "path": "path-bloom",
       "root": 82680
     },
     {
@@ -3002,8 +3002,10 @@
   "summary": {
     "accelerated_cases": 155,
     "by_path": {
+      "checkpoint": 1,
       "history": 156,
-      "logical-extent": 336
+      "logical-extent": 334,
+      "path-bloom": 1
     },
     "equivalent": 492,
     "historical_cases": 12,

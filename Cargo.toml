@@ -27,6 +27,11 @@ path = "src/main.rs"
 default = ["powerloss"]
 failpoints = []
 powerloss = []
+# Phase 27 endurance/publish-cost/recovery harness (`benches/endurance.rs`). Opt-in
+# so the ordinary `cargo test` correctness gate never builds it (building a second
+# `harness = false` bench alongside the doctest pass trips a cargo/rustdoc
+# `--extern` staleness race). `scripts/container-endurance.sh` enables it.
+endurance = []
 
 [dependencies]
 # --- Kernel / transport interfaces (version-pinned per directive) ---
@@ -91,6 +96,11 @@ harness = false
 [[bench]]
 name = "mechanisms"
 harness = false
+
+[[bench]]
+name = "endurance"
+harness = false
+required-features = ["endurance"]
 
 [profile.release]
 opt-level = 3

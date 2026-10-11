@@ -3,27 +3,27 @@
   "cost": [
     {
       "changed_bytes": 64,
-      "full_build_ns": 9410639,
+      "full_build_ns": 716730,
       "full_physical_bytes": 163844,
-      "incremental_build_ns": 7945,
+      "incremental_build_ns": 2866,
       "incremental_physical_bytes": 324,
       "object_size": 32768,
       "reused_bytes": 32704
     },
     {
       "changed_bytes": 64,
-      "full_build_ns": 25561408,
+      "full_build_ns": 2794874,
       "full_physical_bytes": 655364,
-      "incremental_build_ns": 8927,
+      "incremental_build_ns": 2705,
       "incremental_physical_bytes": 324,
       "object_size": 131072,
       "reused_bytes": 131008
     },
     {
       "changed_bytes": 64,
-      "full_build_ns": 52842654,
+      "full_build_ns": 11349071,
       "full_physical_bytes": 2621444,
-      "incremental_build_ns": 9879,
+      "incremental_build_ns": 4989,
       "incremental_physical_bytes": 324,
       "object_size": 524288,
       "reused_bytes": 524224
@@ -32,22 +32,22 @@
   "cost_vs_changed_bytes": [
     {
       "changed_bytes": 64,
-      "incremental_build_ns": 4268,
+      "incremental_build_ns": 2955,
       "object_size": 262144
     },
     {
       "changed_bytes": 1024,
-      "incremental_build_ns": 45335,
+      "incremental_build_ns": 24045,
       "object_size": 262144
     },
     {
       "changed_bytes": 8192,
-      "incremental_build_ns": 330276,
+      "incremental_build_ns": 168766,
       "object_size": 262144
     },
     {
       "changed_bytes": 32768,
-      "incremental_build_ns": 3628636,
+      "incremental_build_ns": 669962,
       "object_size": 262144
     }
   ],
@@ -84,168 +84,168 @@
     {
       "flattened": false,
       "generations": 1,
-      "min_read_ns": 3045,
+      "min_read_ns": 1673,
       "overlay_depth": 1,
       "regions": 1
     },
     {
       "flattened": false,
       "generations": 2,
-      "min_read_ns": 2826,
+      "min_read_ns": 1693,
       "overlay_depth": 2,
       "regions": 1
     },
     {
       "flattened": false,
       "generations": 3,
-      "min_read_ns": 2875,
+      "min_read_ns": 1674,
       "overlay_depth": 3,
       "regions": 1
     },
     {
       "flattened": false,
       "generations": 4,
-      "min_read_ns": 2805,
+      "min_read_ns": 1683,
       "overlay_depth": 4,
       "regions": 1
     },
     {
       "flattened": true,
       "generations": 5,
-      "min_read_ns": 3467,
+      "min_read_ns": 2214,
       "overlay_depth": 0,
       "regions": 11
     },
     {
       "flattened": false,
       "generations": 6,
-      "min_read_ns": 2825,
+      "min_read_ns": 1673,
       "overlay_depth": 1,
       "regions": 1
     },
     {
       "flattened": false,
       "generations": 7,
-      "min_read_ns": 2885,
+      "min_read_ns": 2925,
       "overlay_depth": 2,
       "regions": 1
     },
     {
       "flattened": false,
       "generations": 8,
-      "min_read_ns": 2735,
+      "min_read_ns": 2896,
       "overlay_depth": 3,
       "regions": 1
     },
     {
       "flattened": false,
       "generations": 9,
-      "min_read_ns": 2985,
+      "min_read_ns": 2895,
       "overlay_depth": 4,
       "regions": 1
     },
     {
       "flattened": true,
       "generations": 10,
-      "min_read_ns": 4318,
+      "min_read_ns": 2444,
       "overlay_depth": 0,
       "regions": 21
     },
     {
       "flattened": false,
       "generations": 11,
-      "min_read_ns": 2805,
+      "min_read_ns": 1693,
       "overlay_depth": 1,
       "regions": 1
     },
     {
       "flattened": false,
       "generations": 12,
-      "min_read_ns": 2976,
+      "min_read_ns": 2915,
       "overlay_depth": 2,
       "regions": 1
     },
     {
       "flattened": false,
       "generations": 13,
-      "min_read_ns": 2966,
+      "min_read_ns": 2915,
       "overlay_depth": 3,
       "regions": 1
     },
     {
       "flattened": false,
       "generations": 14,
-      "min_read_ns": 3025,
+      "min_read_ns": 1664,
       "overlay_depth": 4,
       "regions": 1
     },
     {
       "flattened": true,
       "generations": 15,
-      "min_read_ns": 4899,
+      "min_read_ns": 4638,
       "overlay_depth": 0,
       "regions": 31
     },
     {
       "flattened": false,
       "generations": 16,
-      "min_read_ns": 2865,
+      "min_read_ns": 1693,
       "overlay_depth": 1,
       "regions": 1
     },
     {
       "flattened": false,
       "generations": 17,
-      "min_read_ns": 2946,
+      "min_read_ns": 1714,
       "overlay_depth": 2,
       "regions": 1
     },
     {
       "flattened": false,
       "generations": 18,
-      "min_read_ns": 2985,
+      "min_read_ns": 1683,
       "overlay_depth": 3,
       "regions": 1
     },
     {
       "flattened": false,
       "generations": 19,
-      "min_read_ns": 3006,
+      "min_read_ns": 1743,
       "overlay_depth": 4,
       "regions": 1
     },
     {
       "flattened": true,
       "generations": 20,
-      "min_read_ns": 5360,
+      "min_read_ns": 3386,
       "overlay_depth": 0,
       "regions": 41
     },
     {
       "flattened": false,
       "generations": 21,
-      "min_read_ns": 2896,
+      "min_read_ns": 1703,
       "overlay_depth": 1,
       "regions": 1
     },
     {
       "flattened": false,
       "generations": 22,
-      "min_read_ns": 2955,
+      "min_read_ns": 1683,
       "overlay_depth": 2,
       "regions": 1
     },
     {
       "flattened": false,
       "generations": 23,
-      "min_read_ns": 2946,
+      "min_read_ns": 1683,
       "overlay_depth": 3,
       "regions": 1
     },
     {
       "flattened": false,
       "generations": 24,
-      "min_read_ns": 2885,
+      "min_read_ns": 2905,
       "overlay_depth": 4,
       "regions": 1
     }

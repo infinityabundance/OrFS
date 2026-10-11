@@ -25,6 +25,7 @@
 //!   region, so old truncated bytes are never resurrected — research §7.2).
 
 use crate::error::{OrfsError, Result};
+use crate::persistent::PMap;
 use crate::record::{get_u32, get_u64, put_u32, put_u64};
 
 // ---------------------------------------------------------------------------
@@ -105,12 +106,22 @@ pub enum ReadPiece {
 
 /// The current logical extent map of a file.
 ///
-/// Invariant: `extents` are ordered, disjoint, and cover exactly
+/// Invariant: the extents are ordered by `start`, disjoint, and cover exactly
 /// `[0, size)` with no gaps and no overlaps.
+///
+/// # Structural sharing (Phase 27)
+///
+/// The map is a persistent [`PMap`] keyed by `start`, so cloning it (as happens
+/// once per `Inode` clone on the publish path) is a single `Arc` bump and never
+/// deep-copies the extent list. Mutations path-copy only the `O(log E)` nodes on
+/// the affected range and splice just the overlapping extents, so write latency
+/// is bounded by `O(log E + k)` rather than the whole file's fragmentation. The
+/// representation is a pure performance change: the observable extent sequence
+/// is identical to the previous ordered `Vec`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ExtentMap {
     size: u64,
-    extents: Vec<Extent>,
+    extents: PMap<u64, Extent>,
 }
 
 impl ExtentMap {
@@ -120,8 +131,12 @@ impl ExtentMap {
     }
 
     /// The extent list (ordered, disjoint, covering `[0, size)`).
-    pub fn extents(&self) -> &[Extent] {
-        &self.extents
+    ///
+    /// Materialised as an owned, ordered `Vec`; callers that only need to walk
+    /// the map in order (a snapshot encode, a count) pay `O(E)` here. The hot
+    /// read path uses [`Self::plan_read`], which is `O(log E + k)`.
+    pub fn extents(&self) -> Vec<Extent> {
+        self.extents.values().copied().collect()
     }
 
     /// Overwrite `[start, end)` with `kind`, extending the size as required and
@@ -134,78 +149,91 @@ impl ExtentMap {
     /// preserves its own base offset.
     fn overlay(&mut self, start: u64, end: u64, kind: ExtentKind) {
         debug_assert!(start <= end);
-        let target_size = self.size.max(end);
-        let mut out: Vec<Extent> = Vec::with_capacity(self.extents.len() + 2);
-        let mut i = 0usize;
-        // 1. Extents wholly before the overwrite are copied verbatim.
-        while i < self.extents.len() && self.extents[i].end() <= start {
-            out.push(self.extents[i]);
-            i += 1;
+        if end == start {
+            return;
         }
-        // 2. The left remainder of an extent straddling `start`.
-        if i < self.extents.len() {
-            let e = self.extents[i];
-            if e.start < start {
-                out.push(Extent {
-                    start: e.start,
-                    len: start - e.start,
-                    kind: e.kind,
-                });
+        let target_size = self.size.max(end);
+        let mut map = std::mem::take(&mut self.extents);
+
+        // Collect, in ascending key order, every extent that intersects
+        // `[start, end)` plus a straddling predecessor. Extents are disjoint and
+        // contiguous, so this is a short run (typically one or two entries).
+        let mut affected: Vec<u64> = Vec::new();
+        let pred = map.predecessor(&start).map(|(k, _)| *k);
+        let mut next = if let Some(s) = pred {
+            if map.get(&s).map(|e| e.end() > start).unwrap_or(false) {
+                affected.push(s);
+                map.successor_strict(&s).map(|(k, _)| *k)
+            } else {
+                map.successor(&start).map(|(k, _)| *k)
+            }
+        } else {
+            map.successor(&start).map(|(k, _)| *k)
+        };
+        while let Some(s) = next {
+            if s >= end {
+                break;
+            }
+            affected.push(s);
+            next = map.successor_strict(&s).map(|(k, _)| *k);
+        }
+
+        // Build the replacement fragments.
+        let mut inserts: Vec<(u64, Extent)> = Vec::with_capacity(affected.len() + 2);
+        if let Some(&s) = affected.first() {
+            let e = *map.get(&s).expect("affected extent present");
+            if s < start {
+                inserts.push((
+                    s,
+                    Extent {
+                        start: s,
+                        len: start - s,
+                        kind: e.kind,
+                    },
+                ));
             }
         }
-        // 3. The new (last-writer-wins) extent.
-        if end > start {
-            out.push(Extent {
+        // A write beyond EOF zero-fills the gap `[size, start)`.
+        if start > self.size {
+            inserts.push((
+                self.size,
+                Extent {
+                    start: self.size,
+                    len: start - self.size,
+                    kind: ExtentKind::Zero,
+                },
+            ));
+        }
+        inserts.push((
+            start,
+            Extent {
                 start,
                 len: end - start,
                 kind,
-            });
-        }
-        // 4. Extents wholly inside `[start, end)` are dropped.
-        while i < self.extents.len() && self.extents[i].end() <= end {
-            i += 1;
-        }
-        // 5. The right remainder of an extent straddling `end`.
-        if i < self.extents.len() {
-            let e = self.extents[i];
-            if e.start < end {
-                out.push(Extent {
-                    start: end,
-                    len: e.end() - end,
-                    kind: shift_kind(e.kind, end - e.start),
-                });
-                i += 1;
+            },
+        ));
+        // The right remainder of an extent straddling `end`.
+        if let Some(&s) = affected.last() {
+            let e = *map.get(&s).expect("affected extent present");
+            if e.end() > end {
+                inserts.push((
+                    end,
+                    Extent {
+                        start: end,
+                        len: e.end() - end,
+                        kind: shift_kind(e.kind, end - e.start),
+                    },
+                ));
             }
-        }
-        // 6. Everything after is copied verbatim.
-        while i < self.extents.len() {
-            out.push(self.extents[i]);
-            i += 1;
         }
 
-        // Re-establish contiguity: fill any gap with zeros.
-        let mut filled: Vec<Extent> = Vec::with_capacity(out.len() + 2);
-        let mut covered = 0u64;
-        for p in out {
-            debug_assert!(p.start >= covered, "extent overlap while overlaying");
-            if p.start > covered {
-                filled.push(Extent {
-                    start: covered,
-                    len: p.start - covered,
-                    kind: ExtentKind::Zero,
-                });
-            }
-            covered = p.end();
-            filled.push(p);
+        for s in &affected {
+            map = map.remove(s);
         }
-        if covered < target_size {
-            filled.push(Extent {
-                start: covered,
-                len: target_size - covered,
-                kind: ExtentKind::Zero,
-            });
+        for (s, e) in inserts {
+            map = map.insert(s, e);
         }
-        self.extents = filled;
+        self.extents = map;
         self.size = target_size;
     }
 
@@ -235,32 +263,42 @@ impl ExtentMap {
             }
             return;
         }
-        let mut out: Vec<Extent> = Vec::new();
-        for e in self.extents.drain(..) {
-            if e.start >= new_size {
-                break;
+        if new_size == 0 {
+            self.extents = PMap::new();
+            self.size = 0;
+            return;
+        }
+        let mut map = std::mem::take(&mut self.extents);
+        match map.predecessor(&(new_size - 1)).map(|(k, _)| *k) {
+            Some(c) => {
+                let e = *map.get(&c).expect("covering extent present");
+                if e.end() > new_size {
+                    map = map.remove(&c);
+                    map = map.insert(
+                        c,
+                        Extent {
+                            start: c,
+                            len: new_size - c,
+                            kind: e.kind,
+                        },
+                    );
+                }
+                // Drop every extent that starts at or beyond the new size.
+                let mut k = map.successor_strict(&c).map(|(kk, _)| *kk);
+                while let Some(s) = k {
+                    map = map.remove(&s);
+                    k = map.successor_strict(&s).map(|(kk, _)| *kk);
+                }
+                self.extents = map;
+                self.size = new_size;
             }
-            if e.end() <= new_size {
-                out.push(e);
-            } else {
-                out.push(Extent {
-                    start: e.start,
-                    len: new_size - e.start,
-                    kind: e.kind,
-                });
-                break;
+            None => {
+                // No extent covers `[0, new_size)` (only possible for an empty
+                // map); everything is hidden.
+                self.extents = PMap::new();
+                self.size = new_size;
             }
         }
-        let covered = out.last().map(Extent::end).unwrap_or(0);
-        if covered < new_size {
-            out.push(Extent {
-                start: covered,
-                len: new_size - covered,
-                kind: ExtentKind::Zero,
-            });
-        }
-        self.extents = out;
-        self.size = new_size;
     }
 
     /// Plan a read of `[offset, offset + length)`, clamped to the current size.
@@ -273,16 +311,16 @@ impl ExtentMap {
         if offset >= end {
             return out;
         }
-        // Binary-search the first extent that can overlap `[offset, end)`: since
-        // extents are ordered, disjoint and contiguous, that is the first extent
-        // whose exclusive end is strictly greater than `offset`. Only the k
-        // intersecting extents are then visited → O(log E + k).
-        let start_idx = self.extents.partition_point(|e| e.end() <= offset);
-        for e in &self.extents[start_idx..] {
-            let (es, ee) = (e.start, e.end());
-            if es >= end {
+        // The extent covering `offset` has the largest key `<= offset` (coverage
+        // is contiguous from zero). Only the k intersecting extents are then
+        // visited → O(log E + k).
+        let mut k = self.extents.predecessor(&offset).map(|(s, _)| *s);
+        while let Some(s) = k {
+            if s >= end {
                 break;
             }
+            let e = *self.extents.get(&s).expect("extent present");
+            let (es, ee) = (e.start, e.end());
             let rs = es.max(offset);
             let re = ee.min(end);
             let len = re - rs;
@@ -293,6 +331,10 @@ impl ExtentMap {
                 }),
                 ExtentKind::Zero => out.push(ReadPiece::Zero { len }),
             }
+            if ee >= end {
+                break;
+            }
+            k = self.extents.successor_strict(&s).map(|(kk, _)| *kk);
         }
         out
     }
@@ -307,11 +349,20 @@ impl ExtentMap {
         if offset >= end {
             return 0;
         }
-        let start_idx = self.extents.partition_point(|e| e.end() <= offset);
-        self.extents[start_idx..]
-            .iter()
-            .take_while(|e| e.start < end)
-            .count()
+        let mut count = 0usize;
+        let mut k = self.extents.predecessor(&offset).map(|(s, _)| *s);
+        while let Some(s) = k {
+            if s >= end {
+                break;
+            }
+            count += 1;
+            let ee = self.extents.get(&s).expect("extent present").end();
+            if ee >= end {
+                break;
+            }
+            k = self.extents.successor_strict(&s).map(|(kk, _)| *kk);
+        }
+        count
     }
 }
 
@@ -558,19 +609,25 @@ mod tests {
         assert_eq!(m.plan_read(12, 1), vec![]);
     }
 
-    /// Build a synthetic map of `n` 4 KiB `Data` extents directly (bypassing the
-    /// O(E) `overlay`, so constructing 100k extents is cheap).
+    /// Build a synthetic map of `n` 4 KiB `Data` extents by directly seeding the
+    /// persistent spine (so constructing 100k extents is `O(n log n)`, and the
+    /// per-extent `overlay` is bypassed).
     fn fragmented(n: u64) -> ExtentMap {
-        ExtentMap {
-            extents: (0..n)
-                .map(|i| Extent {
+        let mut extents = PMap::new();
+        for i in 0..n {
+            extents = extents.insert(
+                i * 4096,
+                Extent {
                     start: i * 4096,
                     len: 4096,
                     kind: ExtentKind::Data {
                         data_offset: i * 4096,
                     },
-                })
-                .collect(),
+                },
+            );
+        }
+        ExtentMap {
+            extents,
             size: n * 4096,
         }
     }

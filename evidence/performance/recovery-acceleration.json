@@ -1,0 +1,205 @@
+{
+  "checkpoint_every": 500,
+  "environment": {
+    "cgroup_memory_max": "8589934592",
+    "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "container_image": null,
+    "cores_visible": 8,
+    "cpu_max": "800000 100000",
+    "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+    "fuse_enable_uring": true,
+    "kernel_release": "7.2.9-2-cachyos",
+    "likely_container": true,
+    "machine": "x86_64",
+    "perf_counters_available": false,
+    "perf_event_paranoid": "2",
+    "ram_total_bytes": 134723346432
+  },
+  "generated_by": "benches/endurance.rs",
+  "note": "mount/recovery time is NOT constant-time; it is Θ(total retained history) in every mode. Without a checkpoint the whole committed log is replayed; with a checkpoint only the suffix after the newest valid checkpoint is replayed (`bytes_replayed` collapses), but a header-only checkpoint-discovery scan of the whole log and the decode of the checkpoint's embedded index remain, so the wall-time win appears only once the skipped replay dominates those costs. The persisted historical accelerator removes the replay entirely on a warm open.",
+  "recovery_chunk_bytes": 32768,
+  "scales": [
+    {
+      "checkpoints_written": 1,
+      "chunk_bytes": 32768,
+      "ops": 500,
+      "with_checkpoints": {
+        "first_open": {
+          "bytes_replayed": 1166637,
+          "checkpoint_root": 16959993,
+          "checkpoints_found": 1,
+          "full_replay_fallback": false,
+          "index_inode_count": 565,
+          "log_bytes": 18126630,
+          "records_replayed": 12,
+          "used_checkpoint": true,
+          "wall_ns": 14469125
+        },
+        "second_open_warm": {
+          "bytes_replayed": 1166637,
+          "checkpoint_root": 16959993,
+          "checkpoints_found": 1,
+          "full_replay_fallback": false,
+          "index_inode_count": 565,
+          "log_bytes": 18126630,
+          "records_replayed": 12,
+          "used_checkpoint": true,
+          "wall_ns": 14354952
+        }
+      },
+      "without_checkpoints": {
+        "first_open": {
+          "bytes_replayed": 16993886,
+          "checkpoint_root": null,
+          "checkpoints_found": 0,
+          "full_replay_fallback": true,
+          "index_inode_count": 565,
+          "log_bytes": 16993886,
+          "records_replayed": 4885,
+          "used_checkpoint": false,
+          "wall_ns": 20251994
+        },
+        "second_open_warm": {
+          "bytes_replayed": 16993886,
+          "checkpoint_root": null,
+          "checkpoints_found": 0,
+          "full_replay_fallback": true,
+          "index_inode_count": 565,
+          "log_bytes": 16993886,
+          "records_replayed": 4885,
+          "used_checkpoint": false,
+          "wall_ns": 19008670
+        }
+      }
+    },
+    {
+      "checkpoints_written": 4,
+      "chunk_bytes": 32768,
+      "ops": 2000,
+      "with_checkpoints": {
+        "first_open": {
+          "bytes_replayed": 4279870,
+          "checkpoint_root": 74310091,
+          "checkpoints_found": 4,
+          "full_replay_fallback": false,
+          "index_inode_count": 2065,
+          "log_bytes": 78589961,
+          "records_replayed": 12,
+          "used_checkpoint": true,
+          "wall_ns": 60081242
+        },
+        "second_open_warm": {
+          "bytes_replayed": 4279870,
+          "checkpoint_root": 74310091,
+          "checkpoints_found": 4,
+          "full_replay_fallback": false,
+          "index_inode_count": 2065,
+          "log_bytes": 78589961,
+          "records_replayed": 12,
+          "used_checkpoint": true,
+          "wall_ns": 62208459
+        }
+      },
+      "without_checkpoints": {
+        "first_open": {
+          "bytes_replayed": 67833386,
+          "checkpoint_root": null,
+          "checkpoints_found": 0,
+          "full_replay_fallback": true,
+          "index_inode_count": 2065,
+          "log_bytes": 67833386,
+          "records_replayed": 18385,
+          "used_checkpoint": false,
+          "wall_ns": 73635448
+        },
+        "second_open_warm": {
+          "bytes_replayed": 67833386,
+          "checkpoint_root": null,
+          "checkpoints_found": 0,
+          "full_replay_fallback": true,
+          "index_inode_count": 2065,
+          "log_bytes": 67833386,
+          "records_replayed": 18385,
+          "used_checkpoint": false,
+          "wall_ns": 73456643
+        }
+      }
+    },
+    {
+      "checkpoints_written": 16,
+      "chunk_bytes": 32768,
+      "ops": 8000,
+      "with_checkpoints": {
+        "first_open": {
+          "bytes_replayed": 16775150,
+          "checkpoint_root": 397319538,
+          "checkpoints_found": 16,
+          "full_replay_fallback": false,
+          "index_inode_count": 8065,
+          "log_bytes": 414094688,
+          "records_replayed": 12,
+          "used_checkpoint": true,
+          "wall_ns": 313273151
+        },
+        "second_open_warm": {
+          "bytes_replayed": 16775150,
+          "checkpoint_root": 397319538,
+          "checkpoints_found": 16,
+          "full_replay_fallback": false,
+          "index_inode_count": 8065,
+          "log_bytes": 414094688,
+          "records_replayed": 12,
+          "used_checkpoint": true,
+          "wall_ns": 313756073
+        }
+      },
+      "without_checkpoints": {
+        "first_open": {
+          "bytes_replayed": 271191386,
+          "checkpoint_root": null,
+          "checkpoints_found": 0,
+          "full_replay_fallback": true,
+          "index_inode_count": 8065,
+          "log_bytes": 271191386,
+          "records_replayed": 72385,
+          "used_checkpoint": false,
+          "wall_ns": 312446316
+        },
+        "second_open_warm": {
+          "bytes_replayed": 271191386,
+          "checkpoint_root": null,
+          "checkpoints_found": 0,
+          "full_replay_fallback": true,
+          "index_inode_count": 8065,
+          "log_bytes": 271191386,
+          "records_replayed": 72385,
+          "used_checkpoint": false,
+          "wall_ns": 308305616
+        }
+      }
+    }
+  ],
+  "schema": "orfs.recovery-acceleration.v1",
+  "snapshot_historical_cache": {
+    "cold_open_ns": {
+      "count": 16,
+      "max_ns": 637281,
+      "mean_ns": 548041,
+      "min_ns": 523498,
+      "p50_ns": 540020,
+      "p95_ns": 584312,
+      "p99_ns": 637281
+    },
+    "persisted_accelerators": 16,
+    "roots": 16,
+    "warm_open_ns": {
+      "count": 16,
+      "max_ns": 535862,
+      "mean_ns": 522159,
+      "min_ns": 512208,
+      "p50_ns": 522377,
+      "p95_ns": 533457,
+      "p99_ns": 535862
+    }
+  }
+}

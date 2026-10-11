@@ -201,6 +201,29 @@ inode_id            -> xattr map
 root                -> named committed snapshots / checkpoints
 ```
 
+### 5.0 Persistent representation (Phase 27)
+
+The index is published to readers as an immutable snapshot at every commit
+boundary (`docs/CONCURRENCY.md` §2–§4). To make that publication cost
+proportional to the *affected* objects rather than to total history, the spines
+are persistent (path-copying) maps (`src/persistent.rs`):
+
+* `inodes: PMap<u64, Arc<Inode>>`, `children: PMap<u64, PMap<Vec<u8>, u64>>`,
+  `snapshots: PMap<Vec<u8>, u64>` — immutable treaps whose nodes are `Arc`-shared;
+  cloning an `Index` is a handful of `Arc` bumps, and a mutation path-copies only
+  `O(log n)` nodes. `checkpoints` is an `Arc<Vec>` appended copy-on-write.
+* `Inode.versions` is a shared `VersionHistory` (an `Arc`-linked newest-first
+  list): appending a version is `O(1)` and shares the prior history, so an inode
+  clone never deep-copies the version vector.
+* `Inode.extents` is an `ExtentMap` over `PMap<u64, Extent>` with an incremental
+  overlay, so a write is `O(log E + k)` and a file with very many extents is not
+  re-copied per write.
+
+The observable index is unchanged — the same records, the same canonical digest,
+and the same byte-for-byte snapshot document (`Index::encode_snapshot`)— so every
+correctness court, historical reconstruction, and persisted accelerator remains
+exact. Only the cost changed: see `docs/PERFORMANCE.md` §9.
+
 ### 5.1 Rebuildability and log-wins
 
 * `Index::from_log(log, root)` builds the index purely by replaying committed

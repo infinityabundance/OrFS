@@ -104,43 +104,53 @@ frozen views are just snapshots of that index.
 
 The review explicitly warns against deep-cloning the whole namespace index on
 every commit ("that just moves cost to writes"). OrFS therefore stores the index
-so a snapshot shares almost all of its memory with the live writer
-(`src/index.rs`):
+in persistent (path-copying) collections so a snapshot shares almost all of its
+memory with the live writer (`src/index.rs`, `src/persistent.rs`):
 
-* `inodes: HashMap<u64, Arc<Inode>>` — a commit that touches a few inodes
-  re-copies only those inode **nodes**; their extent maps, version history and
-  xattrs are never deep-copied, and every untouched inode is shared.
-* `dentries: Arc<HashMap<(u64, Vec<u8>), u64>>` — data-only commits share the
-  whole directory-entry map for free; it is rebuilt copy-on-write only when the
-  namespace *structure* changes.
-* `children: HashMap<u64, Arc<BTreeMap<Vec<u8>, u64>>>` — an untouched
-  directory's listing is shared; only the affected directory is rebuilt.
+* `inodes: PMap<u64, Arc<Inode>>` — a **persistent treap** (immutable, `Arc`-shared
+  nodes). A commit copies only the `O(log n)` nodes on the root-to-key path; every
+  untouched subtree is shared with the prior snapshot.
+* `children: PMap<u64, PMap<Vec<u8>, u64>>` — each directory's listing is itself a
+  persistent map, so an untouched directory is shared wholesale and only the
+  affected directory's entry (and its listing) is path-copied.
+* `snapshots: PMap<Vec<u8>, u64>` and `checkpoints: Arc<Vec<Checkpoint>>` — the
+  named-snapshot and checkpoint spines are shared too (checkpoints are appended
+  copy-on-write and are rare).
+* `Inode.versions: VersionHistory` — an immutable, `Arc`-linked newest-first
+  version list. Appending a version is `O(1)` and shares the entire prior history;
+  cloning an inode never deep-copies the version vector.
+* `Inode.extents: ExtentMap` over `PMap<u64, Extent>` — the extent map is
+  persistent and its overlay is incremental (`O(log E + k)`), so a file grown to
+  very many disjoint extents is not re-copied on every write.
 
-Cloning an `Index` for publication is therefore a handful of `Arc` bumps plus a
-copy of the inode and directory **spines** (pointer-sized entries) — never a deep
-copy of the inode payloads. The per-commit cost is
-`O(#inodes + #directories)` pointer copies and a `O(#changed)` node clone; a
-data-only write shares `dentries`/`children` wholesale.
+Cloning an `Index` for publication is therefore a handful of `Arc` pointer copies
+— never a copy of the inode/directory spines and never a deep copy of any inode
+payload. The per-commit cost is `O(log n)` path copies for the maps a commit
+touches plus `O(affected)` node clones, **independent of total retained history**.
 
-**Measured.** At publication in the reader-scaling workload the index clone is
-negligible next to the commits themselves; the evidence
-`evidence/performance/reader-scaling.json` records the read-side numbers and
-`docs/PROGRESS.md` Phase 19 records the strategy. The tests
+**Measured.** `evidence/performance/publish-cost.json` (Phase 27,
+`benches/endurance.rs`) records sustained create/rename/unlink churn at 10k / 100k
+/ 1M iterations: the direct publication step — cloning the index, exactly what
+`publish_read_state` does — is **flat at ≈40 ns** at every scale, while the
+per-iteration commit latency stays within a small constant factor (p50 ≈ 49 µs at
+10k iterations vs ≈ 80 µs at 1M). No step is `O(history)`. The tests
 `tests/concurrency_stress.rs::concurrent_readers_and_writer_never_observe_partial_state`
 exercises 150 commits against 3 spinning readers and confirms bounded
 interference (readers always see whole committed versions; the writer makes
 progress).
 
-### 4.1 Deferred: full path-copying
+### 4.1 Path-copying is now implemented (Phase 27)
 
-The current representation shares inode/directory **nodes** but still copies the
-`HashMap` **spines** on the mutation path. This is a bounded, measured
-intermediate: the cost is pointer copies, not deep data copies, and it is
-independent of inode payload size. The planned next step is to move the spines to
-a persistent (path-copying) map — e.g. a HAMT or an `Arc`-per-bucket sharded map
-— so a commit copies `O(log n)` nodes rather than `O(n)` spine entries. That is
-deferred (not required to remove the global read lock, and it would be a larger,
-separately-measured change); no correctness property depends on it.
+Phase 19 shared inode/directory **nodes** but still copied the `HashMap` **spines**
+on the mutation path, and `Arc::make_mut` on a shared inode deep-copied its
+(ever-growing) version vector — so sustained churn was `O(history²)`. Phase 27
+replaces the spines with the persistent [`PMap`] and the version vector with a
+shared [`VersionHistory`], and makes the extent map persistent; the `O(n)` spine
+copy and the per-inode version deep copy are gone. The pre-fix behaviour and the
+fix's measured flatness are recorded in `evidence/performance/publish-cost.json`
+and `docs/PERFORMANCE.md` §8.
+
+[`PMap`]: crate::persistent::PMap
 
 ---
 

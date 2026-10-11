@@ -129,6 +129,10 @@ pub struct Snapshot {
     index: Index,
     log: Arc<Log>,
     pin: RootPin,
+    /// In-memory reuse cache for materialized passthrough backing images, keyed
+    /// by inode. A snapshot is immutable, so an inode's image can never change
+    /// within the mount's lifetime; caching avoids re-hashing on every open.
+    passthrough_cache: std::collections::HashMap<u64, crate::passthrough::BackingImage>,
 }
 
 impl Snapshot {
@@ -206,6 +210,7 @@ impl Snapshot {
             index,
             log,
             pin,
+            passthrough_cache: std::collections::HashMap::new(),
         })
     }
 
@@ -278,30 +283,7 @@ impl Snapshot {
     /// Extent bytes are immutable and are read from the retained log at the
     /// offsets recorded in the reconstructed index.
     pub fn read_at(&self, inode: u64, offset: u64, length: u32) -> Result<Vec<u8>> {
-        let ino = self.index.inode(inode).ok_or(OrfsError::NotFound)?;
-        if ino.is_dir() {
-            return Err(OrfsError::IsADirectory);
-        }
-        if !ino.is_file() {
-            return Err(OrfsError::InvalidArgument(
-                "read_at on a non-file inode".into(),
-            ));
-        }
-        let pieces = ino.extents.plan_read(offset, length as u64);
-        let mut out = Vec::new();
-        for piece in pieces {
-            match piece {
-                ReadPiece::Zero { len } => out.resize(out.len() + len as usize, 0),
-                ReadPiece::Data {
-                    logical_offset,
-                    len,
-                } => {
-                    let bytes = self.log.read_range(logical_offset, len)?;
-                    out.extend_from_slice(&bytes);
-                }
-            }
-        }
-        Ok(out)
+        read_at_indexed(&self.index, &self.log, inode, offset, length)
     }
 
     /// Read an extended attribute (including the derived `user.orfs.*` set) as of
@@ -367,6 +349,42 @@ impl Snapshot {
             Ok(None)
         }
     }
+}
+
+/// The byte-assembly core shared by [`Snapshot::read_at`] and the passthrough
+/// materializer, so an image's bytes come from the *identical* code path a
+/// daemon-served read uses.
+fn read_at_indexed(
+    index: &Index,
+    log: &Log,
+    inode: u64,
+    offset: u64,
+    length: u32,
+) -> Result<Vec<u8>> {
+    let ino = index.inode(inode).ok_or(OrfsError::NotFound)?;
+    if ino.is_dir() {
+        return Err(OrfsError::IsADirectory);
+    }
+    if !ino.is_file() {
+        return Err(OrfsError::InvalidArgument(
+            "read_at on a non-file inode".into(),
+        ));
+    }
+    let pieces = ino.extents.plan_read(offset, length as u64);
+    let mut out = Vec::new();
+    for piece in pieces {
+        match piece {
+            ReadPiece::Zero { len } => out.resize(out.len() + len as usize, 0),
+            ReadPiece::Data {
+                logical_offset,
+                len,
+            } => {
+                let bytes = log.read_range(logical_offset, len)?;
+                out.extend_from_slice(&bytes);
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// The deliverable constructor: `open_snapshot(volume, root)`.
@@ -565,5 +583,46 @@ impl OrfsCore for Snapshot {
             None,
         ));
         Arc::new(parking_lot::RwLock::new(state))
+    }
+
+    fn passthrough_backing(
+        &mut self,
+        inode: u64,
+    ) -> Result<Option<crate::passthrough::BackingImage>> {
+        // A snapshot is a read-only historical view: its files are immutable for
+        // the mount's lifetime, so a private backing image can never diverge
+        // from the authoritative bytes an ordinary descriptor could observe.
+        if let Some(image) = self.passthrough_cache.get(&inode) {
+            return Ok(Some(image.clone()));
+        }
+        let ino = match self.index.inode(inode) {
+            Some(i) => i,
+            None => return Ok(None),
+        };
+        if !ino.is_file() {
+            // Directories and symlinks are never passthrough-eligible.
+            return Ok(None);
+        }
+        let volume_dir = match self.log.dir().parent() {
+            Some(p) => p.to_path_buf(),
+            None => return Ok(None),
+        };
+        let identity = crate::passthrough::BackingIdentity {
+            uuid: self.identity.uuid,
+            root: self.identity.root,
+            inode,
+            inode_version: ino.current_version(),
+            generation: ino.generation,
+        };
+        let size = ino.size;
+        let image = {
+            let index = &self.index;
+            let log = &self.log;
+            crate::passthrough::materialize(&volume_dir, &identity, size, |offset, len| {
+                read_at_indexed(index, log, inode, offset, len)
+            })?
+        };
+        self.passthrough_cache.insert(inode, image.clone());
+        Ok(Some(image))
     }
 }

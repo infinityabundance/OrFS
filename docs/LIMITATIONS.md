@@ -173,3 +173,27 @@ instrumented power-loss rig can test real hardware. `sync` still promises only
 what the backing device documents
 (`DurabilityMode::claims_power_loss_durability()` remains `false` for every
 profile). See `docs/POWERLOSS.md`.
+
+## 10. FUSE passthrough requires `CAP_SYS_ADMIN` and the native F2 session
+
+Phase 21 adds kernel FUSE passthrough for **immutable snapshot** reads only
+(`docs/FUSE_PASSTHROUGH.md`). Two kernel/workflow constraints are honest limits,
+not choices:
+
+* **`CAP_SYS_ADMIN` is required by the kernel** for
+  `FUSE_DEV_IOC_BACKING_OPEN` (`fs/fuse/backing.c`). Docker grants an added
+  capability only to the **root** user, so the ordinary non-root project uid runs
+  with `CapEff=0` and the ioctl returns `EPERM`; OrFS then falls back to
+  daemon-served reads with identical bytes. The passthrough **court** therefore
+  runs in a root container (`scripts/lib.sh` `docker_run_kmount_root`, invoked by
+  `scripts/container-fuse-test.sh`); the mechanism itself is unchanged for
+  unprivileged use — it simply declines.
+* **Only the native F2 session can register backings** (it owns `/dev/fuse`;
+  `fuser` 0.18 does not expose the fd). `F0`/`F1` snapshots, or any kernel that
+  does not offer `FUSE_PASSTHROUGH` at `INIT`, serve reads through the daemon.
+
+The feature is deliberately scoped to read-only historical views
+(`OrfsCore::passthrough_backing` defaults to `None`); no mutable file is ever
+passthrough-eligible, so a descriptor can never observe bytes changing behind an
+open file. The measured numbers in `docs/FUSE_PASSTHROUGH.md` §6 are warm-cache
+single-run figures and are not a portability claim.

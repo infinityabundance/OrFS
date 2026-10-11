@@ -12,82 +12,82 @@
     "F0": {
       "create_unlink": {
         "ops": 300,
-        "us_per_op": 6691.323333333334
+        "us_per_op": 111.56
       },
       "fsync": {
         "ops": 300,
-        "us_per_op": 9675.943333333333
+        "us_per_op": 3601.38
       },
       "metadata_lookup": {
         "ops": 1000,
-        "us_per_op": 8.089
+        "us_per_op": 7.991
       },
       "random_1b_read": {
         "ops": 1000,
-        "us_per_op": 5.3
+        "us_per_op": 5.368
       },
       "random_4k_read": {
         "ops": 1000,
-        "us_per_op": 12.177
+        "us_per_op": 12.34
       },
       "sequential_read": {
         "bytes": 8388608,
-        "mib_per_s": 544.2170206866413,
-        "seconds": 0.014700018
+        "mib_per_s": 565.5735120432516,
+        "seconds": 0.014144934
       }
     },
     "F1": {
       "create_unlink": {
         "ops": 300,
-        "us_per_op": 6805.783333333334
+        "us_per_op": 158.02
       },
       "fsync": {
         "ops": 300,
-        "us_per_op": 9574.796666666667
+        "us_per_op": 3691.786666666667
       },
       "metadata_lookup": {
         "ops": 1000,
-        "us_per_op": 9.349
+        "us_per_op": 8.531
       },
       "random_1b_read": {
         "ops": 1000,
-        "us_per_op": 5.853
+        "us_per_op": 5.911
       },
       "random_4k_read": {
         "ops": 1000,
-        "us_per_op": 12.291
+        "us_per_op": 12.456
       },
       "sequential_read": {
         "bytes": 8388608,
-        "mib_per_s": 370.53191199144555,
-        "seconds": 0.021590583
+        "mib_per_s": 527.0948495322099,
+        "seconds": 0.015177534
       }
     },
     "F2": {
       "create_unlink": {
         "ops": 300,
-        "us_per_op": 6937.823333333334
+        "us_per_op": 115.39
       },
       "fsync": {
         "ops": 300,
-        "us_per_op": 9956.766666666666
+        "us_per_op": 3644.8966666666665
       },
       "metadata_lookup": {
         "ops": 1000,
-        "us_per_op": 9.507
+        "us_per_op": 10.334
       },
       "random_1b_read": {
         "ops": 1000,
-        "us_per_op": 5.765
+        "us_per_op": 5.118
       },
       "random_4k_read": {
         "ops": 1000,
-        "us_per_op": 12.848
+        "us_per_op": 12.421
       },
       "sequential_read": {
         "bytes": 8388608,
-        "mib_per_s": 463.3483357801986,
-        "seconds": 0.017265628
+        "mib_per_s": 585.4313791365574,
+        "seconds": 0.013665137
       }
     }
   },

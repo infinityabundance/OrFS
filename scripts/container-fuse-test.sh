@@ -9,8 +9,23 @@
 # so mount-test artifacts never leak into the shared `target/`. `ORFS_FUSE_TEST=1`
 # makes a mount failure a hard test failure, so a green run here proves that a
 # real mount happened and that every POSIX assertion passed.
+#
+# Phase 21 (FUSE passthrough) needs `capable(CAP_SYS_ADMIN)`, which the kernel
+# requires at `FUSE_DEV_IOC_BACKING_OPEN` (`fs/fuse/backing.c`) and which Docker
+# only retains for the root user. That one court therefore runs in a root
+# container; every other court runs as the ordinary non-root project user.
 set -eu
 . "$(dirname "$0")/lib.sh"
+
+echo "=== phase 21: kernel FUSE passthrough for immutable snapshots (root) ==="
+docker_run_kmount_root sh -c '
+    set -eu
+    umask 0
+    export ORFS_FUSE_TEST=1
+    export CARGO_TARGET_DIR="$(pwd)/target/kmount-passthrough"
+    timeout -k 10 900 cargo test --test fuse_passthrough -- --nocapture --test-threads=1
+'
+
 docker_run_kmount sh -c '
     set -eu
     export ORFS_FUSE_TEST=1

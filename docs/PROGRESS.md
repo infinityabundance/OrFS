@@ -1230,3 +1230,66 @@ correct replay.
 ### Docs
 
 `docs/SNAPSHOTS.md` §6.1 (new), `docs/NAMESPACE.md` §5.1 and §6, this section.
+
+## Phase 21 — Kernel-served FUSE passthrough for immutable snapshots
+
+**Complete.** External review §2/§9 (P1): "make the fastest read never invoke
+the handler". A read of an immutable historical snapshot file is now answered
+directly by the kernel, from a private byte-exact backing file, with no
+`FUSE_READ` crossing `/dev/fuse`.
+
+### Delivered
+
+* **Immutable backing images** — `src/passthrough.rs`. For a snapshot file OrFS
+  materializes a write-once, digest-verified copy beneath a concealed
+  `.or_passthrough/` area, qualified by
+  `(volume uuid, committed root, inode, inode version, generation)` and the
+  BLAKE3 content digest. The bytes come from the *same* `Snapshot::read_at` code
+  path a daemon-served read uses, so equivalence is by construction. The image
+  is reused across opens and silently rebuilt if missing/truncated/corrupt.
+* **Kernel registration + attach** — `src/fuse_native.rs`. When passthrough is
+  requested, the `FUSE_INIT` reply advertises `FUSE_PASSTHROUGH` (`flags2` bit 5)
+  and `max_stack_depth = 2`; at `OPEN` the dispatcher registers the backing with
+  `FUSE_DEV_IOC_BACKING_OPEN` (ioctl on the session's `/dev/fuse` fd) and replies
+  with `FOPEN_PASSTHROUGH` + the returned `backing_id`. Counters on `NativeStats`
+  record engagement; `OrfsCore::passthrough_backing` **defaults to `None`** and
+  is overridden only by the read-only `Snapshot`.
+* **Lifetime + fallback** — registrations are refcounted per image, pinned for
+  the open-file lifetime, released on the last `RELEASE` with
+  `FUSE_DEV_IOC_BACKING_CLOSE`, and force-released at session teardown. A denied
+  registration or materialization error falls back to daemon-served reads with
+  identical bytes.
+* **Accounting** — `M_passthrough` in `src/stats.rs` counts the concealed images
+  and is included in `M_total`.
+* **Transports** — passthrough is available only on the native F2 session (the
+  only transport that owns `/dev/fuse`); snapshots mounted via `fuser` (F0/F1) or
+  on a kernel without `FUSE_PASSTHROUGH` serve reads through the daemon.
+
+### Results (evidence-backed)
+
+All 275 tests pass (was 265; +6 unit tests in `src/passthrough.rs` and
+`src/fuse_native.rs`, +4 mount-integration tests in `tests/fuse_passthrough.rs`).
+Kernel `7.2.9-2-cachyos`, FUSE ABI 7.45, `CONFIG_FUSE_PASSTHROUGH=y`.
+
+* **Engagement** (`evidence/correctness/fuse-passthrough.json`): after reading a
+  256 KiB snapshot file through a real mount, the daemon-side read counter
+  `daemon_reads` is **0**, `passthrough_registered = 1`, `passthrough_fallbacks = 0`,
+  and a second concurrent open **reuses** the registration (refcount) rather than
+  registering again; closing both handles releases it. A denied materialization
+  (concealed area forced to be a file) is recorded as a fallback and still returns
+  the exact bytes.
+* **Byte-exactness**: the kernel-served bytes are byte-identical to an independent
+  authoritative replay of the same committed root; a second committed version
+  produces a **distinct** image with the correct distinct bytes (no cross-version
+  reuse).
+* **Latency** (`evidence/performance/passthrough.json`, full-file 256 KiB read):
+  passthrough **p50 16.6 µs** vs daemon-served **446 µs** (≈ 27× faster, equal
+  bytes) vs cached plain ext4 **3.2 µs**. Residual cost is the FUSE file's
+  `read_iter` entry, no longer a `/dev/fuse` round-trip.
+* **No regression**: the existing snapshot, transport-equivalence, performance,
+  and manifestation courts remain byte-identical; passthrough does not engage for
+  a live (mutable) core.
+
+### Docs
+
+`docs/FUSE_PASSTHROUGH.md` (new), this section, `docs/LIMITATIONS.md` §10.

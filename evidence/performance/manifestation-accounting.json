@@ -11,7 +11,7 @@
     },
     "bloom_total_bytes": 6496,
     "capacity": {
-      "available_bytes": 108403363840,
+      "available_bytes": 104866365440,
       "block_size": 4096,
       "total_bytes": 1426376364032
     },
@@ -28,6 +28,7 @@
     "m_indexes": 0,
     "m_log": 7106,
     "m_other": 828,
+    "m_passthrough": 0,
     "m_total": 13646,
     "manifested_bytes": 5712,
     "manifested_generations": 2,
@@ -35,7 +36,7 @@
     "physical_overhead_bytes": 9539,
     "uncommitted_tail_bytes": 0,
     "uuid": "4f724653-0711-4022-8033-445566778899",
-    "volume": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmpqbT3pN"
+    "volume": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmpLV9CfH"
   },
   "ekbloom_bytes_match": true,
   "generator": "tests/manifestation.rs",

@@ -176,6 +176,11 @@ pub struct MountOptions {
     pub auto_unmount: bool,
     /// How `statfs` accounts capacity.
     pub statfs: StatfsMode,
+    /// Request kernel FUSE **passthrough** for immutable snapshot reads
+    /// (Phase 21). Only engageable on the native F2 session (which owns the
+    /// `/dev/fuse` descriptor) and only for read-only historical views; when it
+    /// cannot engage, reads fall back to the daemon with identical bytes.
+    pub passthrough: bool,
     /// Enable concealed manifestation for eligible objects with this profile
     /// (`None` disables the plane entirely; the default).
     pub manifest: Option<ManifestationProfile>,
@@ -202,6 +207,7 @@ impl Default for MountOptions {
             allow_other: false,
             auto_unmount: false,
             statfs: StatfsMode::PhysicalSafe,
+            passthrough: false,
             manifest: None,
             manifest_sync: false,
             manifest_workers: 0,
@@ -230,6 +236,9 @@ pub(crate) struct Handle {
     pub(crate) flags: i32,
     /// The immutable directory listing captured at `opendir` (dir handles only).
     pub(crate) dir: Option<Vec<DirEntryView>>,
+    /// The version-qualified passthrough backing image this file handle is
+    /// pinned to (native F2 sessions only). Released on `RELEASE`.
+    pub(crate) backing: Option<PathBuf>,
 }
 
 /// The per-mount handle table. Handle ids are distinct from inode ids.
@@ -408,6 +417,7 @@ impl<C: OrfsCore + Send + 'static> Inner<C> {
             is_dir: false,
             flags,
             dir: None,
+            backing: None,
         })
     }
 
@@ -418,7 +428,16 @@ impl<C: OrfsCore + Send + 'static> Inner<C> {
             is_dir: true,
             flags: 0,
             dir: Some(listing),
+            backing: None,
         })
+    }
+
+    /// Pin a passthrough backing image to an open file handle so `RELEASE` can
+    /// release the kernel registration. A no-op if the handle already vanished.
+    pub(crate) fn set_handle_backing(&self, id: u64, path: PathBuf) {
+        if let Some(h) = self.handles.lock().map.get_mut(&id) {
+            h.backing = Some(path);
+        }
     }
 
     pub(crate) fn handle(&self, id: u64) -> Option<Handle> {
@@ -427,6 +446,7 @@ impl<C: OrfsCore + Send + 'static> Inner<C> {
             is_dir: h.is_dir,
             flags: h.flags,
             dir: h.dir.clone(),
+            backing: h.backing.clone(),
         })
     }
 
@@ -2272,9 +2292,71 @@ pub fn run_snapshot(
         "orfs: snapshot mount of {} at root {root} (read-only; pinned for the mount lifetime)",
         snap.identity()
     );
+    // Prefer the native F2 session when passthrough was requested: only a session
+    // that owns the `/dev/fuse` descriptor can register backing files. If it
+    // cannot engage for any reason, fall back to the classical transport with
+    // byte-identical reads (never a silent capability claim).
+    if opts.passthrough {
+        // The native F2 session is the only transport that owns `/dev/fuse`;
+        // request it explicitly for the passthrough attempt.
+        let native_opts = MountOptions {
+            transport: Transport::FuseUring,
+            ..opts
+        };
+        match crate::fuse_native::prepare(mountpoint, &native_opts) {
+            Ok(prepared) => match prepared.launch(snap, backing.to_path_buf()) {
+                Ok(native) => return run_native_foreground(native, mountpoint),
+                Err(e) => eprintln!(
+                    "orfs: warning: native passthrough session failed to start ({e}); \
+                     falling back to the classical /dev/fuse transport"
+                ),
+            },
+            Err(reason) => eprintln!(
+                "orfs: native passthrough session not engaged ({reason}); \
+                 falling back to the classical /dev/fuse transport"
+            ),
+        }
+    }
+    let snap = Snapshot::open_dir(backing, root)?;
     let fs = OrfsFuse::new(snap, backing.to_path_buf(), opts);
     let config = build_config(&opts);
     run_session(fs, mountpoint, &config)
+}
+
+/// Mount a historical snapshot read-only on the **native** F2 session with
+/// kernel FUSE passthrough enabled, in the background.
+///
+/// Unlike [`spawn_snapshot`], this never silently falls back: if the native
+/// session (the only transport that owns `/dev/fuse`, and therefore the only one
+/// that can register backing files) cannot engage, it returns an error. The
+/// passthrough court uses this so a green run proves real kernel engagement.
+pub fn spawn_snapshot_native(
+    backing: &Path,
+    mountpoint: &Path,
+    root: u64,
+    opts: &MountOptions,
+) -> Result<OrfsMount> {
+    let opts = MountOptions {
+        read_only: true,
+        transport: Transport::FuseUring,
+        ..*opts
+    };
+    let snap = Snapshot::open_dir(backing, root)?;
+    let prepared = crate::fuse_native::prepare(mountpoint, &opts).map_err(|e| {
+        OrfsError::Unsupported(format!("native F2 snapshot mount did not engage: {e}"))
+    })?;
+    let native = prepared.launch(snap, backing.to_path_buf()).map_err(|e| {
+        OrfsError::Unsupported(format!("native F2 snapshot session did not start: {e}"))
+    })?;
+    let negotiation = native.negotiation_cell();
+    Ok(OrfsMount {
+        session: MountSession::Native(native),
+        notifier: Arc::new(Mutex::new(None)),
+        transport_requested: opts.transport,
+        backing_io_used: BackingIo::Sync,
+        durability: opts.durability,
+        negotiation,
+    })
 }
 
 /// Mount a historical snapshot read-only in the background (tests/embedding).
@@ -2409,12 +2491,14 @@ mod tests {
             is_dir: false,
             flags: libc::O_RDONLY,
             dir: None,
+            backing: None,
         });
         let b = t.insert(Handle {
             ino: 2,
             is_dir: true,
             flags: 0,
             dir: Some(vec![]),
+            backing: None,
         });
         assert_ne!(a, b);
         assert_eq!(t.get(a).unwrap().ino, 1);

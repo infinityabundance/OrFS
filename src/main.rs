@@ -276,6 +276,10 @@ enum SnapshotCommand {
         root: u64,
         /// Read-only mount point.
         mountpoint: PathBuf,
+        /// Disable kernel FUSE passthrough (enabled by default for snapshots;
+        /// falls back automatically when it cannot engage).
+        #[arg(long)]
+        no_passthrough: bool,
     },
 }
 
@@ -363,7 +367,8 @@ fn run(cli: &Cli) -> Result<()> {
                 backing,
                 root,
                 mountpoint,
-            } => snapshot_mount_cmd(backing, *root, mountpoint),
+                no_passthrough,
+            } => snapshot_mount_cmd(backing, *root, mountpoint, !*no_passthrough),
         },
         Command::Manifest {
             backing,
@@ -530,6 +535,10 @@ fn stat_cmd(path: &Path, json: bool) -> Result<()> {
     println!(
         "  indexes/search:         {} bytes (M_indexes)",
         acc.m_indexes
+    );
+    println!(
+        "  passthrough images:     {} bytes (M_passthrough)",
+        acc.m_passthrough
     );
     println!(
         "  replay accelerators:    {} bytes (M_checkpoints; embedded in or.log)",
@@ -924,6 +933,7 @@ fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
         allow_other: args.allow_other,
         auto_unmount: args.auto_unmount,
         statfs,
+        passthrough: false,
         manifest,
         manifest_sync: args.manifest_sync,
         manifest_workers: args.manifest_workers,
@@ -1129,7 +1139,12 @@ fn snapshot_inspect(backing: &Path, root: u64, json: bool) -> Result<()> {
 }
 
 /// Mount a historical root read-only through FUSE.
-fn snapshot_mount_cmd(backing: &Path, root: u64, mountpoint: &Path) -> Result<()> {
+fn snapshot_mount_cmd(
+    backing: &Path,
+    root: u64,
+    mountpoint: &Path,
+    passthrough: bool,
+) -> Result<()> {
     if !mountpoint.is_dir() {
         return Err(OrfsError::InvalidArgument(format!(
             "mount point {} is not an existing directory",
@@ -1140,11 +1155,12 @@ fn snapshot_mount_cmd(backing: &Path, root: u64, mountpoint: &Path) -> Result<()
         read_only: true,
         durability: DurabilityMode::Ordered,
         statfs: StatfsMode::PhysicalSafe,
+        passthrough,
         ..Default::default()
     };
     eprintln!(
-        "orfs: mounting snapshot root {root} of {} at {} (read-only); \
-         press Ctrl-C or run `orfs unmount {}`",
+        "orfs: mounting snapshot root {root} of {} at {} (read-only, \
+         passthrough={passthrough}); press Ctrl-C or run `orfs unmount {}`",
         backing.display(),
         mountpoint.display(),
         mountpoint.display(),

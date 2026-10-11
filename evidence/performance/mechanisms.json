@@ -2,20 +2,20 @@
   "commit_path": {
     "canonical_bytes": 2580100,
     "commits": 5000,
-    "commits_per_s": 370502.18681505724,
+    "commits_per_s": 370859.98796781857,
     "durability": "ordered",
     "final_root": 2580100,
     "latency": {
-      "max_ns": 19777,
-      "mean_ns": 2578.659,
-      "min_ns": 2374,
-      "p50_ns": 2465,
-      "p95_ns": 3216,
-      "p99_ns": 3687,
+      "max_ns": 17713,
+      "mean_ns": 2585.2246,
+      "min_ns": 2384,
+      "p50_ns": 2455,
+      "p95_ns": 3206,
+      "p99_ns": 3917,
       "samples": 5000
     },
     "note": "one TX_BEGIN + one INODE_CREATE + one DATA_EXTENT + TX_COMMIT per commit; ordered durability (no fsync in the timed loop). Each commit also writes the per-commit completeness watermark at sync points only.",
-    "seconds": 0.013495197
+    "seconds": 0.013482177
   },
   "environment": {
     "cgroup_memory_max": "8589934592",
@@ -42,7 +42,7 @@
     "perf": "absent from the pinned image; hardware counters unavailable (perf_event_paranoid > 1, CAP_PERFMON dropped)"
   },
   "trigram_query": {
-    "build_seconds": 0.006315762,
+    "build_seconds": 0.00649063,
     "corpus_bytes": 1048576,
     "distinct_trigrams": 140,
     "note": "TrigramIndex::plan is candidate generation only (candidates must still be verified); the naive scan is a byte-by-byte substring search. `impossible` patterns need no content read at all.",
@@ -50,21 +50,21 @@
       {
         "candidates": 12075,
         "index_plan": {
-          "max_ns": 24856,
-          "mean_ns": 7081.3475,
-          "min_ns": 7013,
-          "p50_ns": 7054,
-          "p95_ns": 7083,
-          "p99_ns": 7584,
+          "max_ns": 22562,
+          "mean_ns": 7063.2755,
+          "min_ns": 6993,
+          "p50_ns": 7033,
+          "p95_ns": 7063,
+          "p99_ns": 7814,
           "samples": 2000
         },
         "naive_scan": {
-          "max_ns": 3520333,
-          "mean_ns": 1611602.7235,
-          "min_ns": 1324353,
-          "p50_ns": 1386859,
-          "p95_ns": 2527058,
-          "p99_ns": 2694271,
+          "max_ns": 2403251,
+          "mean_ns": 1392847.4,
+          "min_ns": 1323694,
+          "p50_ns": 1344933,
+          "p95_ns": 1735694,
+          "p99_ns": 1755671,
           "samples": 2000
         },
         "naive_scan_hits": 12075,
@@ -74,21 +74,21 @@
       {
         "candidates": 1315,
         "index_plan": {
-          "max_ns": 3997,
-          "mean_ns": 945.025,
+          "max_ns": 3657,
+          "mean_ns": 896.864,
           "min_ns": 881,
           "p50_ns": 892,
-          "p95_ns": 1292,
-          "p99_ns": 1493,
+          "p95_ns": 902,
+          "p99_ns": 902,
           "samples": 2000
         },
         "naive_scan": {
-          "max_ns": 2510988,
-          "mean_ns": 1310712.4755,
-          "min_ns": 1218305,
-          "p50_ns": 1242089,
-          "p95_ns": 1614715,
-          "p99_ns": 2384031,
+          "max_ns": 2339662,
+          "mean_ns": 1261250.82,
+          "min_ns": 1216754,
+          "p50_ns": 1219750,
+          "p95_ns": 1618415,
+          "p99_ns": 1642209,
           "samples": 2000
         },
         "naive_scan_hits": 1315,
@@ -98,8 +98,8 @@
       {
         "candidates": 0,
         "index_plan": {
-          "max_ns": 721,
-          "mean_ns": 24.1945,
+          "max_ns": 200,
+          "mean_ns": 23.426,
           "min_ns": 20,
           "p50_ns": 20,
           "p95_ns": 30,
@@ -107,12 +107,12 @@
           "samples": 2000
         },
         "naive_scan": {
-          "max_ns": 2768299,
-          "mean_ns": 1351141.641,
-          "min_ns": 1203036,
-          "p50_ns": 1230557,
-          "p95_ns": 1763633,
-          "p99_ns": 2458591,
+          "max_ns": 1994908,
+          "mean_ns": 1248051.947,
+          "min_ns": 1204441,
+          "p50_ns": 1208028,
+          "p95_ns": 1414003,
+          "p99_ns": 1605080,
           "samples": 2000
         },
         "naive_scan_hits": 0,
@@ -122,21 +122,21 @@
       {
         "candidates": 0,
         "index_plan": {
-          "max_ns": 60,
-          "mean_ns": 21.0885,
+          "max_ns": 50,
+          "mean_ns": 19.21,
           "min_ns": 10,
           "p50_ns": 20,
-          "p95_ns": 30,
-          "p99_ns": 30,
+          "p95_ns": 20,
+          "p99_ns": 21,
           "samples": 2000
         },
         "naive_scan": {
-          "max_ns": 2724597,
-          "mean_ns": 1584726.624,
-          "min_ns": 1449096,
-          "p50_ns": 1478801,
-          "p95_ns": 1947546,
-          "p99_ns": 2641713,
+          "max_ns": 3570082,
+          "mean_ns": 1486688.5785,
+          "min_ns": 1440422,
+          "p50_ns": 1453627,
+          "p95_ns": 1653780,
+          "p99_ns": 1834449,
           "samples": 2000
         },
         "naive_scan_hits": 24099,
@@ -155,14 +155,14 @@
     "note": "same process, same page-cache-resident scratch file; a submission/syscall microbenchmark, not a device-durability benchmark",
     "ops": 20000,
     "record_bytes": 4096,
-    "speedup_uring_over_sync": 0.2837558171494387,
+    "speedup_uring_over_sync": 0.2116322346130519,
     "sync_append": {
-      "mb_per_s": 3719.7355446022943,
-      "seconds": 0.022023071
+      "mb_per_s": 4973.404851121745,
+      "seconds": 0.016471613
     },
     "uring_append": {
-      "mb_per_s": 1055.4965990384362,
-      "seconds": 0.077612756
+      "mb_per_s": 1052.5327822782876,
+      "seconds": 0.077831305
     }
   }
 }

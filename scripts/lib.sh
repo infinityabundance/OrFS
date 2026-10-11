@@ -163,11 +163,7 @@ docker_probe_io_uring_default() {
 # `/etc/passwd` (root + the current uid) read-only. Without it, mounting fails
 # with "fusermount3: could not determine username".
 docker_run_kmount() {
-    ORFS_KMOUNT_PASSWD="$ORFS_PROJECT_DIR/target/.kmount-passwd"
-    if [ ! -f "$ORFS_KMOUNT_PASSWD" ]; then
-        printf 'root:x:0:0:root:/root:/bin/sh\norfs:x:%s:%s:OrFS:/tmp:/bin/sh\n' \
-            "$(id -u)" "$(id -g)" > "$ORFS_KMOUNT_PASSWD"
-    fi
+    _orfs_write_kmount_passwd
     exec docker run --rm \
         --memory="$ORFS_MEM_LIMIT" \
         --memory-swap="$ORFS_MEMSWAP_LIMIT" \
@@ -182,6 +178,50 @@ docker_run_kmount() {
         -v "$ORFS_KMOUNT_PASSWD:/etc/passwd:ro" \
         -w "$ORFS_PROJECT_DIR" \
         -u "$(id -u):$(id -g)" \
+        -e HOME=/tmp \
+        -e TMPDIR="$ORFS_TMP_DIR" \
+        -e CARGO_HOME="$ORFS_CARGO_HOME" \
+        -e RUSTUP_HOME=/usr/local/rustup \
+        -e CARGO_TARGET_DIR="$ORFS_TARGET_DIR" \
+        -e CARGO_TERM_COLOR=never \
+        -e RUSTUP_TOOLCHAIN=1.99.0 \
+        -e ORFS_IMAGE_DIGEST="$(_orfs_image_digest "$ORFS_KMOUNT_IMAGE")" \
+        "$ORFS_KMOUNT_IMAGE" "$@"
+}
+
+# Generate the mount-test /etc/passwd (root + the invoking uid) if absent.
+_orfs_write_kmount_passwd() {
+    ORFS_KMOUNT_PASSWD="$ORFS_PROJECT_DIR/target/.kmount-passwd"
+    if [ ! -f "$ORFS_KMOUNT_PASSWD" ]; then
+        printf 'root:x:0:0:root:/root:/bin/sh\norfs:x:%s:%s:OrFS:/tmp:/bin/sh\n' \
+            "$(id -u)" "$(id -g)" > "$ORFS_KMOUNT_PASSWD"
+    fi
+}
+
+# docker_run_kmount_root: like docker_run_kmount but runs as **root** (uid 0).
+#
+# PROVEN NECESSARY, NOT ASSUMED: the kernel gates FUSE passthrough on
+# `capable(CAP_SYS_ADMIN)` (`fs/fuse/backing.c`), and Docker only retains an
+# added capability for the root user — the project's usual non-root uid runs with
+# an empty effective capability set, so `FUSE_DEV_IOC_BACKING_OPEN` returns EPERM.
+# This variant does NOT `exec`, so a caller can run a root court and then an
+# ordinary one container at a time.
+docker_run_kmount_root() {
+    _orfs_write_kmount_passwd
+    docker run --rm \
+        --memory="$ORFS_MEM_LIMIT" \
+        --memory-swap="$ORFS_MEMSWAP_LIMIT" \
+        --cpus="$ORFS_CPUS" \
+        --pids-limit="$ORFS_PIDS" \
+        --device /dev/fuse \
+        --cap-add SYS_ADMIN \
+        --security-opt apparmor=unconfined \
+        --security-opt seccomp=unconfined \
+        --ulimit core=0 \
+        -v "$ORFS_PARENT_DIR":"$ORFS_PARENT_DIR" \
+        -v "$ORFS_KMOUNT_PASSWD:/etc/passwd:ro" \
+        -w "$ORFS_PROJECT_DIR" \
+        -u 0:0 \
         -e HOME=/tmp \
         -e TMPDIR="$ORFS_TMP_DIR" \
         -e CARGO_HOME="$ORFS_CARGO_HOME" \

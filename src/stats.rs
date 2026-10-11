@@ -71,13 +71,17 @@ pub struct PhysicalAccounting {
     /// `M_indexes`: rebuildable namespace/search structures (`index/` + the
     /// `trigram`/`suffix`/`image`/`directory` families).
     pub m_indexes: u64,
+    /// `M_passthrough`: immutable, version-qualified backing images materialized
+    /// for kernel FUSE passthrough (Phase 21), beneath the concealed
+    /// `.or_passthrough/` area. Derived and never authoritative.
+    pub m_passthrough: u64,
     /// `M_checkpoints`: replay accelerators. Index checkpoints are records inside
     /// the authoritative log, so their bytes are counted in `M_log`; this figure
     /// is the separate on-disk replay-accelerator area (zero today).
     pub m_checkpoints: u64,
     /// `M_other`: generation manifests and residual backing-root files.
     pub m_other: u64,
-    /// `M_total`: the sum of the five categories above (no double counting).
+    /// `M_total`: the sum of the categories above (no double counting).
     pub m_total: u64,
 
     // -- supporting detail --
@@ -112,13 +116,15 @@ impl PhysicalAccounting {
     pub fn describe(&self) -> String {
         format!(
             "logical {} byte(s) in {} file(s); physical {} byte(s) \
-             (M_log {}, M_ekbloom {}, M_indexes {}, M_checkpoints {}, M_other {})",
+             (M_log {}, M_ekbloom {}, M_indexes {}, M_passthrough {}, \
+             M_checkpoints {}, M_other {})",
             self.logical_live_bytes,
             self.logical_file_count,
             self.m_total,
             self.m_log,
             self.m_ekbloom,
             self.m_indexes,
+            self.m_passthrough,
             self.m_checkpoints,
             self.m_other,
         )
@@ -186,6 +192,7 @@ fn empty_account(dir: &Path) -> Result<PhysicalAccounting> {
         authoritative_canonical_bytes: 0,
         m_ekbloom: 0,
         m_indexes: 0,
+        m_passthrough: 0,
         m_checkpoints: 0,
         m_other: 0,
         m_total: 0,
@@ -259,11 +266,14 @@ fn account_with_index(
     // is not a known area (`volume.meta` and any residual file). Together the
     // five categories partition every byte beneath the backing directory, so
     // `m_total` equals the measured on-disk total exactly.
+    acc.m_passthrough = crate::passthrough::area_bytes(dir);
+
     let root_total = manifestation::dir_bytes(dir);
     let residue_outside = root_total
         .saturating_sub(acc.m_log)
         .saturating_sub(acc.bloom_total_bytes)
-        .saturating_sub(acc.index_bytes);
+        .saturating_sub(acc.index_bytes)
+        .saturating_sub(acc.m_passthrough);
     // Bytes directly under `.or_bloom/` that are not in a known subdirectory.
     let residual_bloom = acc
         .bloom_total_bytes
@@ -282,6 +292,7 @@ fn account_with_index(
         .m_log
         .saturating_add(acc.m_ekbloom)
         .saturating_add(acc.m_indexes)
+        .saturating_add(acc.m_passthrough)
         .saturating_add(acc.m_checkpoints)
         .saturating_add(acc.m_other);
 

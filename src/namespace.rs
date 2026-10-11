@@ -1772,6 +1772,20 @@ pub trait OrfsCore {
     /// (Phase 19). The FUSE layer clones the `Arc` out of it and serves reads
     /// with no core lock held across physical I/O.
     fn read_view_cell(&self) -> ReadCell;
+
+    /// Materialize or reuse an immutable, byte-exact backing image for `inode`
+    /// so the kernel can serve its reads via FUSE **passthrough** (Phase 21).
+    ///
+    /// The default returns `None`: a live, mutable core must never expose
+    /// passthrough, because another descriptor could change the bytes behind an
+    /// open file. Only a read-only historical view (a [`crate::snapshot::Snapshot`]
+    /// pinned to a committed root) overrides this, and only for regular files.
+    fn passthrough_backing(
+        &mut self,
+        _inode: u64,
+    ) -> Result<Option<crate::passthrough::BackingImage>> {
+        Ok(None)
+    }
 }
 
 impl OrfsCore for Namespace {

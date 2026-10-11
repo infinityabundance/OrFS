@@ -39,6 +39,7 @@
 //! "ready" once *every* queue has at least one registered entry
 //! (`is_ring_ready`).
 
+use std::collections::HashMap;
 use std::ffi::CString;
 use std::fs::OpenOptions;
 use std::io;
@@ -107,6 +108,48 @@ const FUSE_OVER_IO_URING_FLAGS2: u32 = 1 << (41 - 32);
 // `fuse_open_out.open_flags`.
 const FOPEN_DIRECT_IO: u32 = 1 << 0;
 const FOPEN_CACHE_DIR: u32 = 1 << 3;
+/// `FOPEN_PASSTHROUGH = 1 << 7` (ABI 7.40+): read/write bypass the daemon.
+const FOPEN_PASSTHROUGH: u32 = 1 << 7;
+
+// FUSE ABI 7.40+ passthrough negotiation (`uapi/linux/fuse.h`).
+/// `FUSE_PASSTHROUGH = 1 << 37` → `flags2` bit 5.
+const FUSE_PASSTHROUGH_FLAGS2: u32 = 1 << (37 - 32);
+/// The 64-bit `FUSE_PASSTHROUGH` capability bit, as it appears in the 64-bit
+/// `INIT` flags (low word `flags` + high word `flags2`).
+const FUSE_PASSTHROUGH: u64 = 1u64 << 37;
+/// The `max_stack_depth` advertised in the `INIT` reply when passthrough is
+/// negotiated. It must be `> 0` for passthrough to be enabled and
+/// `<= FILESYSTEM_MAX_STACK_DEPTH` (2 on Linux); `2` admits a backing file on a
+/// plain or single-layer stacked filesystem.
+const PASSTHROUGH_MAX_STACK_DEPTH: u32 = 2;
+
+/// `FUSE_DEV_IOC_MAGIC` (`uapi/linux/fuse.h`).
+const FUSE_DEV_IOC_MAGIC: u32 = 229;
+/// `_IOW(FUSE_DEV_IOC_MAGIC, 1, struct fuse_backing_map)`.
+const FUSE_DEV_IOC_BACKING_OPEN: libc::c_ulong = iow(
+    FUSE_DEV_IOC_MAGIC,
+    1,
+    std::mem::size_of::<FuseBackingMap>() as u32,
+);
+/// `_IOW(FUSE_DEV_IOC_MAGIC, 2, uint32_t)`.
+const FUSE_DEV_IOC_BACKING_CLOSE: libc::c_ulong = iow(FUSE_DEV_IOC_MAGIC, 2, 4);
+
+/// `_IOW(type, nr, size)`: the little-endian-independent ioctl request number
+/// used on x86_64 (`_IOC_WRITE == 1`). Kept as a `const fn` so a unit test can
+/// recompute it and fail if the transcribed magic ever drifts.
+const fn iow(type_: u32, nr: u32, size: u32) -> libc::c_ulong {
+    ((1u32 << 30) | (size << 16) | (type_ << 8) | nr) as libc::c_ulong
+}
+
+/// `struct fuse_backing_map` (`uapi/linux/fuse.h`, ABI 7.40+): the argument to
+/// `FUSE_DEV_IOC_BACKING_OPEN`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct FuseBackingMap {
+    fd: i32,
+    flags: u32,
+    padding: u64,
+}
 
 // `fuse_setattr_in.valid`.
 const FATTR_MODE: u32 = 1 << 0;
@@ -255,11 +298,11 @@ fn encode_attr_out(a: &Attr, attr_ttl: Duration) -> Vec<u8> {
     v
 }
 
-fn encode_open_out(fh: u64, open_flags: u32) -> Vec<u8> {
+fn encode_open_out(fh: u64, open_flags: u32, backing_id: i32) -> Vec<u8> {
     let mut v = Vec::with_capacity(16);
     put_u64(&mut v, fh);
     put_u32(&mut v, open_flags);
-    put_u32(&mut v, 0); // backing_id
+    put_u32(&mut v, backing_id as u32);
     debug_assert_eq!(v.len(), 16);
     v
 }
@@ -326,6 +369,8 @@ enum Reply {
     Open {
         fh: u64,
         open_flags: u32,
+        /// The registered kernel backing id when `FOPEN_PASSTHROUGH` is set.
+        backing_id: i32,
     },
     Write(u32),
     Create {
@@ -352,7 +397,11 @@ impl Reply {
             Reply::Data(d) => (0, d),
             Reply::Entry(a) => (0, encode_entry_out(&a, entry_ttl, attr_ttl)),
             Reply::Attr(a) => (0, encode_attr_out(&a, attr_ttl)),
-            Reply::Open { fh, open_flags } => (0, encode_open_out(fh, open_flags)),
+            Reply::Open {
+                fh,
+                open_flags,
+                backing_id,
+            } => (0, encode_open_out(fh, open_flags, backing_id)),
             Reply::Write(n) => (0, encode_write_out(n)),
             Reply::Create {
                 attr,
@@ -360,7 +409,7 @@ impl Reply {
                 open_flags,
             } => {
                 let mut v = encode_entry_out(&attr, entry_ttl, attr_ttl);
-                v.extend_from_slice(&encode_open_out(fh, open_flags));
+                v.extend_from_slice(&encode_open_out(fh, open_flags, 0));
                 (0, v)
             }
             Reply::Dir(d) => (0, d),
@@ -441,6 +490,11 @@ struct Dispatcher<C: OrfsCore + Send + 'static> {
     attr_ttl: Duration,
     read_only: bool,
     direct_io: bool,
+    /// The passthrough controller, present only when the mount requested kernel
+    /// passthrough on the native session.
+    passthrough: Option<Arc<PassthroughControl>>,
+    /// Shared native counters (bumped when the daemon serves a read).
+    stats: Arc<Mutex<NativeStats>>,
 }
 
 impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
@@ -855,13 +909,52 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         }
         drop(core);
         let fh = self.fs.inner.register_file(req.nodeid, flags);
+        let (open_flags, backing_id) = self.attach_passthrough(req.nodeid, flags, fh);
         let mut m = self.fs.inner.metrics.lock();
         m.opens += 1;
         m.open_handles += 1;
         drop(m);
         Reply::Open {
             fh,
-            open_flags: self.open_flags(),
+            open_flags,
+            backing_id,
+        }
+    }
+
+    /// Decide whether this open can be served by the kernel and, if so, register
+    /// a version-qualified backing image with the kernel and pin it to the file
+    /// handle. Returns `(open_flags, backing_id)`: `FOPEN_PASSTHROUGH` with a
+    /// positive backing id on success, or the ordinary open flags with `0`.
+    ///
+    /// Passthrough is deliberately conservative: it is offered only by a
+    /// read-only historical core (whose files no ordinary descriptor can mutate),
+    /// only for clean read-only opens, and never alongside direct I/O.
+    fn attach_passthrough(&self, inode: u64, flags: i32, fh: u64) -> (u32, i32) {
+        let ctrl = match &self.passthrough {
+            Some(c) if c.enabled() => c,
+            _ => return (self.open_flags(), 0),
+        };
+        if self.direct_io || (flags & libc::O_ACCMODE) != libc::O_RDONLY {
+            return (self.open_flags(), 0);
+        }
+        let image = {
+            let mut core = self.fs.inner.core.lock();
+            match core.passthrough_backing(inode) {
+                Ok(Some(image)) => image,
+                Ok(None) => return (self.open_flags(), 0),
+                Err(e) => {
+                    ctrl.note_error(format!("materialize passthrough backing: {e}"));
+                    return (self.open_flags(), 0);
+                }
+            }
+        };
+        match ctrl.attach(&image) {
+            Some(id) => {
+                self.fs.inner.set_handle_backing(fh, image.path.clone());
+                self.stats.lock().passthrough_opens += 1;
+                (FOPEN_PASSTHROUGH, id)
+            }
+            None => (self.open_flags(), 0),
         }
     }
 
@@ -888,6 +981,10 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
                 m.reads += 1;
                 m.byte_reads += data.len() as u64;
                 drop(m);
+                // A passthrough-served read never reaches here; this counter is
+                // the daemon-side proof that a read did (or did not) engage the
+                // handler.
+                self.stats.lock().daemon_reads += 1;
                 Reply::Data(data)
             }
             Err(e) => Reply::Err(errno(&e)),
@@ -948,6 +1045,11 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
     fn release(&self, req: &Req<'_>) -> Reply {
         let fh = get_u64(req.op, 0);
         let removed = self.fs.inner.remove_handle(fh);
+        if let Some(h) = &removed {
+            if let (Some(path), Some(ctrl)) = (&h.backing, &self.passthrough) {
+                ctrl.release(path);
+            }
+        }
         let mut m = self.fs.inner.metrics.lock();
         m.releases += 1;
         if removed.is_some() {
@@ -982,6 +1084,7 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         Reply::Open {
             fh,
             open_flags: FOPEN_CACHE_DIR,
+            backing_id: 0,
         }
     }
 
@@ -1177,6 +1280,178 @@ pub struct NativeStats {
     pub negative_completions: u64,
     pub forgets_classical: u64,
     pub interrupts_classical: u64,
+
+    // -- FUSE passthrough (Phase 21) ---------------------------------------
+    /// The mount requested kernel passthrough (`--passthrough`).
+    pub passthrough_requested: bool,
+    /// The kernel offered `FUSE_PASSTHROUGH` at `INIT` and it was negotiated.
+    pub passthrough_negotiated: bool,
+    /// Opens that attached a kernel backing (`FOPEN_PASSTHROUGH` + a backing id).
+    pub passthrough_opens: u64,
+    /// Backing files registered with the kernel via `FUSE_DEV_IOC_BACKING_OPEN`.
+    pub passthrough_registered: u64,
+    /// Attaches that reused an already-registered backing (refcount bump).
+    pub passthrough_reused: u64,
+    /// Opens that fell back to daemon-served reads.
+    pub passthrough_fallbacks: u64,
+    /// Backing registrations released via `FUSE_DEV_IOC_BACKING_CLOSE`.
+    pub passthrough_releases: u64,
+    /// Total logical bytes materialized into backing images.
+    pub passthrough_bytes: u64,
+    /// `FUSE_READ` requests actually served by the daemon (a passthrough-served
+    /// read never increments this).
+    pub daemon_reads: u64,
+    /// The most recent passthrough fallback reason, if any.
+    pub passthrough_last_error: Option<String>,
+}
+
+/// The kernel FUSE-passthrough controller for one native session.
+///
+/// It owns a duplicate of the session's `/dev/fuse` descriptor (an ioctl on any
+/// descriptor referring to the same connection is equivalent), registers backing
+/// images with `FUSE_DEV_IOC_BACKING_OPEN`, and refcount-pins each registration
+/// for the open-file lifetime, releasing the kernel reference on the last
+/// `RELEASE` via `FUSE_DEV_IOC_BACKING_CLOSE`.
+struct PassthroughControl {
+    /// A duplicate of the session's `/dev/fuse` fd, used for the ioctls.
+    fd: OwnedFd,
+    /// Whether `FUSE_PASSTHROUGH` was negotiated for this connection.
+    enabled: bool,
+    /// Live registrations keyed by backing-image path, with open refcounts.
+    cache: Mutex<HashMap<PathBuf, BackingEntry>>,
+    /// Shared native counters (also read by the court as engagement proof).
+    stats: Arc<Mutex<NativeStats>>,
+}
+
+struct BackingEntry {
+    backing_id: i32,
+    /// The userspace descriptor used at registration. The kernel holds its own
+    /// `struct file` reference; keeping ours pinned mirrors the open lifetime.
+    #[allow(dead_code)]
+    image_fd: OwnedFd,
+    refs: usize,
+}
+
+impl PassthroughControl {
+    fn new(fd: OwnedFd, enabled: bool, stats: Arc<Mutex<NativeStats>>) -> PassthroughControl {
+        PassthroughControl {
+            fd,
+            enabled,
+            cache: Mutex::new(HashMap::new()),
+            stats,
+        }
+    }
+
+    fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    /// Register (or reuse) a backing image and pin it for one open. Returns the
+    /// kernel `backing_id` on success, or `None` (recording the reason) so the
+    /// caller falls back to ordinary daemon-served reads.
+    fn attach(&self, image: &crate::passthrough::BackingImage) -> Option<i32> {
+        let mut cache = self.cache.lock();
+        if let Some(entry) = cache.get_mut(&image.path) {
+            entry.refs += 1;
+            self.stats.lock().passthrough_reused += 1;
+            return Some(entry.backing_id);
+        }
+        let file = match OpenOptions::new().read(true).open(&image.path) {
+            Ok(f) => f,
+            Err(e) => {
+                self.note_error(format!("open backing image {}: {e}", image.path.display()));
+                return None;
+            }
+        };
+        let image_fd: OwnedFd = file.into();
+        let mut map = FuseBackingMap {
+            fd: image_fd.as_raw_fd(),
+            flags: 0,
+            padding: 0,
+        };
+        // SAFETY: `self.fd` is a live `/dev/fuse` descriptor owned by this
+        // controller; `map` is a `#[repr(C)]` POD matching `struct
+        // fuse_backing_map`; the request number is transcribed from the running
+        // kernel's `linux/fuse.h` and checked by a unit test. The ioctl copies
+        // the map in and returns the backing id (>= 1) or a negative errno.
+        let rc = unsafe {
+            libc::ioctl(
+                self.fd.as_raw_fd(),
+                FUSE_DEV_IOC_BACKING_OPEN,
+                &mut map as *mut FuseBackingMap,
+            )
+        };
+        if rc < 1 {
+            let err = io::Error::last_os_error();
+            self.note_error(format!(
+                "FUSE_DEV_IOC_BACKING_OPEN failed for {}: {err}",
+                image.path.display()
+            ));
+            return None;
+        }
+        let backing_id = rc as i32;
+        cache.insert(
+            image.path.clone(),
+            BackingEntry {
+                backing_id,
+                image_fd,
+                refs: 1,
+            },
+        );
+        {
+            let mut s = self.stats.lock();
+            s.passthrough_registered += 1;
+            s.passthrough_bytes = s.passthrough_bytes.saturating_add(image.size);
+        }
+        Some(backing_id)
+    }
+
+    /// Release one open's pin; when the last pin goes, release the kernel
+    /// registration so the backing file is no longer held by the kernel.
+    fn release(&self, path: &Path) {
+        let mut cache = self.cache.lock();
+        let drop_it = match cache.get_mut(path) {
+            Some(entry) => {
+                entry.refs = entry.refs.saturating_sub(1);
+                entry.refs == 0
+            }
+            None => false,
+        };
+        if drop_it {
+            if let Some(entry) = cache.remove(path) {
+                self.close_id(entry.backing_id);
+                self.stats.lock().passthrough_releases += 1;
+            }
+        }
+    }
+
+    fn close_id(&self, backing_id: i32) {
+        let mut id = backing_id;
+        // SAFETY: `self.fd` is live; the request number is transcribed from the
+        // running kernel's `linux/fuse.h`. The kernel reads a `uint32_t` id.
+        let _ = unsafe {
+            libc::ioctl(
+                self.fd.as_raw_fd(),
+                FUSE_DEV_IOC_BACKING_CLOSE,
+                &mut id as *mut i32,
+            )
+        };
+    }
+
+    /// Release every live registration (called as the session shuts down, while
+    /// the connection is still open).
+    fn close_all(&self) {
+        let mut cache = self.cache.lock();
+        for (_, entry) in cache.drain() {
+            self.close_id(entry.backing_id);
+        }
+    }
+
+    fn note_error(&self, msg: String) {
+        let mut s = self.stats.lock();
+        s.passthrough_fallbacks += 1;
+        s.passthrough_last_error = Some(msg);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1467,7 +1742,13 @@ fn write_all(fd: RawFd, buf: &[u8]) -> io::Result<()> {
 }
 
 /// Encode the `FUSE_INIT` reply (out header + `fuse_init_out`, 64 bytes).
-fn encode_init_reply(unique: u64, minor: u32) -> Vec<u8> {
+///
+/// `FUSE_INIT_EXT` must be set in `flags` for the kernel to read `flags2`
+/// (`process_init_reply`). When `passthrough` is requested we additionally set
+/// `FUSE_PASSTHROUGH` in `flags2` and advertise a `max_stack_depth > 0`; the
+/// kernel then enables `fc->passthrough`. We never set `FUSE_WRITEBACK_CACHE`,
+/// which cannot coexist with passthrough.
+fn encode_init_reply(unique: u64, minor: u32, passthrough: bool) -> Vec<u8> {
     let mut out = Vec::with_capacity(16 + 64);
     put_u32(&mut out, 16 + 64);
     put_u32(&mut out, 0);
@@ -1483,8 +1764,23 @@ fn encode_init_reply(unique: u64, minor: u32) -> Vec<u8> {
     put_u32(&mut out, 1); // time_gran
     put_u16(&mut out, 32); // max_pages
     put_u16(&mut out, 0); // map_alignment
-    put_u32(&mut out, FUSE_OVER_IO_URING_FLAGS2); // flags2
-    put_u32(&mut out, 0); // max_stack_depth
+    put_u32(
+        &mut out,
+        FUSE_OVER_IO_URING_FLAGS2
+            | if passthrough {
+                FUSE_PASSTHROUGH_FLAGS2
+            } else {
+                0
+            },
+    ); // flags2
+    put_u32(
+        &mut out,
+        if passthrough {
+            PASSTHROUGH_MAX_STACK_DEPTH
+        } else {
+            0
+        },
+    ); // max_stack_depth
     put_u16(&mut out, 0); // request_timeout
     for _ in 0..11 {
         put_u16(&mut out, 0); // unused[11]
@@ -1510,6 +1806,10 @@ pub struct Prepared {
     environment: Arc<Mutex<NativeEnvironment>>,
     stats: Arc<Mutex<NativeStats>>,
     stop: Arc<AtomicBool>,
+    /// The mount requested FUSE passthrough.
+    passthrough: bool,
+    /// The kernel offered `FUSE_PASSTHROUGH` at `INIT`, so passthrough is usable.
+    passthrough_enabled: bool,
 }
 
 /// Perform the whole F2 setup *except* dispatch: open, mount, `INIT`, ring,
@@ -1544,16 +1844,25 @@ pub fn prepare(mountpoint: &Path, opts: &MountOptions) -> Result<Prepared, Strin
     let kernel_minor = get_u32(&init, 44);
     let in_flags = get_u32(&init, 52);
     let in_flags2 = get_u32(&init, 56);
-    let offered = ((in_flags as u64) | ((in_flags2 as u64) << 32))
-        & crate::fuse_uring::FUSE_OVER_IO_URING
-        != 0;
+    let offered_flags = (in_flags as u64) | ((in_flags2 as u64) << 32);
+    let offered = offered_flags & crate::fuse_uring::FUSE_OVER_IO_URING != 0;
     if !offered {
         return Err(fail(format!(
             "kernel did not offer FUSE_OVER_IO_URING at INIT (FUSE ABI 7.{kernel_minor}); \
              fuse_uring_enabled() is false for this connection"
         )));
     }
-    let reply = encode_init_reply(unique, kernel_minor);
+    // FUSE passthrough (Phase 21): engage only when requested and offered. The
+    // kernel sets the capability bit iff CONFIG_FUSE_PASSTHROUGH is enabled.
+    let passthrough = opts.passthrough;
+    let passthrough_enabled = passthrough && (offered_flags & FUSE_PASSTHROUGH != 0);
+    if passthrough && !passthrough_enabled {
+        eprintln!(
+            "orfs: kernel did not offer FUSE_PASSTHROUGH at INIT (FUSE ABI \
+             7.{kernel_minor}); passthrough disabled, reads fall back to the daemon"
+        );
+    }
+    let reply = encode_init_reply(unique, kernel_minor, passthrough_enabled);
     write_all(raw, &reply).map_err(|e| fail(format!("write FUSE_INIT reply: {e}")))?;
 
     let num_queues = possible_cpu_count();
@@ -1572,8 +1881,14 @@ pub fn prepare(mountpoint: &Path, opts: &MountOptions) -> Result<Prepared, Strin
         options: *opts,
         kernel_minor,
         environment,
-        stats: Arc::new(Mutex::new(NativeStats::default())),
+        stats: Arc::new(Mutex::new(NativeStats {
+            passthrough_requested: passthrough,
+            passthrough_negotiated: passthrough_enabled,
+            ..NativeStats::default()
+        })),
         stop: Arc::new(AtomicBool::new(false)),
+        passthrough,
+        passthrough_enabled,
     })
 }
 
@@ -1683,15 +1998,34 @@ impl Prepared {
         let options = self.options;
         let fs = Arc::new(OrfsFuse::new(core, backing, options));
         let negotiation = fs.negotiation_cell();
+        let stats = Arc::clone(&self.stats);
+        // The passthrough controller holds its own `/dev/fuse` duplicate so the
+        // ioctls do not race with the session's reads on the original fd.
+        let passthrough = if self.passthrough {
+            match dup_owned(self.fd.as_raw_fd()) {
+                Ok(fd) => Some(Arc::new(PassthroughControl::new(
+                    fd,
+                    self.passthrough_enabled,
+                    Arc::clone(&stats),
+                ))),
+                Err(e) => {
+                    eprintln!("orfs: passthrough controller fd dup failed: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let dispatcher = Arc::new(Dispatcher {
             fs: Arc::clone(&fs),
             entry_ttl: options.entry_ttl,
             attr_ttl: options.attr_ttl,
             read_only: options.read_only,
             direct_io: options.direct_io,
+            passthrough,
+            stats: Arc::clone(&stats),
         });
         let stop = Arc::clone(&self.stop);
-        let stats = Arc::clone(&self.stats);
         let environment = Arc::clone(&self.environment);
         let mountpoint = self.mountpoint.clone();
         let reader_fd = dup_fd(self.fd.as_raw_fd());
@@ -1748,6 +2082,18 @@ fn dup_fd(fd: RawFd) -> Option<RawFd> {
         None
     } else {
         Some(n)
+    }
+}
+
+/// Duplicate a raw fd into an [`OwnedFd`] (closed when dropped).
+fn dup_owned(fd: RawFd) -> io::Result<OwnedFd> {
+    // SAFETY: `dup` duplicates a valid fd; the result is a fresh owned fd.
+    let n = unsafe { libc::dup(fd) };
+    if n < 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        // SAFETY: `n` is a fresh, valid descriptor we now exclusively own.
+        Ok(unsafe { OwnedFd::from_raw_fd(n) })
     }
 }
 
@@ -1893,6 +2239,11 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
         }
         if let Some(ring) = self.ring.as_mut() {
             ring.shutdown();
+        }
+        // Release every live passthrough registration while the connection is
+        // still open, so the kernel drops its backing-file references cleanly.
+        if let Some(ctrl) = &self.dispatcher.passthrough {
+            ctrl.close_all();
         }
         // `self.fd` drops here, closing /dev/fuse.
         Ok(())
@@ -2063,5 +2414,56 @@ fn classical_reader<C: OrfsCore + Send + 'static>(
     // SAFETY: the fd was produced by `dup` in `launch` and is owned by this thread.
     unsafe {
         libc::close(fd);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn passthrough_uapi_matches_the_kernel_headers() {
+        // `struct fuse_backing_map` is 16 bytes on x86_64 (`int32`, `uint32`,
+        // `uint64`).
+        assert_eq!(std::mem::size_of::<FuseBackingMap>(), 16);
+        // `_IOW(229, 1, struct fuse_backing_map)` and `_IOW(229, 2, uint32_t)` as
+        // computed by the kernel's `asm-generic/ioctl.h` on x86_64
+        // (`_IOC_WRITE == 1`, `_IOC_SIZEBITS == 14`). Verified against the
+        // running kernel's `linux/fuse.h` (ABI 7.45).
+        assert_eq!(FUSE_DEV_IOC_BACKING_OPEN, 0x4010_E501);
+        assert_eq!(FUSE_DEV_IOC_BACKING_CLOSE, 0x4004_E502);
+        // The direction/size/type/number fields decode to the documented values.
+        assert_eq!((FUSE_DEV_IOC_BACKING_OPEN >> 30) & 0x3, 1);
+        assert_eq!((FUSE_DEV_IOC_BACKING_OPEN >> 16) & 0x3fff, 16);
+        assert_eq!((FUSE_DEV_IOC_BACKING_OPEN >> 8) & 0xff, 229);
+        assert_eq!(FUSE_DEV_IOC_BACKING_OPEN & 0xff, 1);
+        assert_eq!(FUSE_DEV_IOC_BACKING_CLOSE & 0xff, 2);
+        // Capability/open-flag bit positions.
+        assert_eq!(FUSE_PASSTHROUGH, 1u64 << 37);
+        assert_eq!(FUSE_PASSTHROUGH_FLAGS2, 1 << 5);
+        assert_eq!(FOPEN_PASSTHROUGH, 1 << 7);
+    }
+
+    #[test]
+    fn init_reply_advertises_passthrough_only_when_requested() {
+        let plain = encode_init_reply(1, 45, false);
+        // flags2 is at offset 16 (out header) + 32 (init_out) = 48, and
+        // max_stack_depth is the next u32 (offset 52).
+        assert_eq!(get_u32(&plain, 48), FUSE_OVER_IO_URING_FLAGS2);
+        assert_eq!(get_u32(&plain, 52), 0);
+        let pt = encode_init_reply(1, 45, true);
+        assert_eq!(
+            get_u32(&pt, 48),
+            FUSE_OVER_IO_URING_FLAGS2 | FUSE_PASSTHROUGH_FLAGS2
+        );
+        assert_eq!(get_u32(&pt, 52), PASSTHROUGH_MAX_STACK_DEPTH);
+    }
+
+    #[test]
+    fn open_out_carries_the_backing_id() {
+        let bytes = encode_open_out(7, FOPEN_PASSTHROUGH, 42);
+        assert_eq!(get_u64(&bytes, 0), 7);
+        assert_eq!(get_u32(&bytes, 8), FOPEN_PASSTHROUGH);
+        assert_eq!(get_u32(&bytes, 12), 42);
     }
 }

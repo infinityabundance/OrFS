@@ -611,6 +611,10 @@ fn quarantine_segment(dir: &Path, id: u64) -> Result<()> {
         dst = qdir.join(format!("{name}.{n}"));
     }
     std::fs::rename(&src, &dst)?;
+    // The moved segment's bytes are retained in `quarantine/`; the simulated
+    // device must forget the old name so it does not resurrect it at power
+    // failure. No-op without a device.
+    crate::powerloss::record_remove(dir, &name);
     Ok(())
 }
 

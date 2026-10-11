@@ -1059,3 +1059,64 @@ the full performance court.
 ABI 7.45, so only the baseline register/commit interface is used; zero-copy is
 not exercised; `OrfsMount::notifier()` is `None` for a native F2 mount; and
 `auto_unmount` is not forwarded to the session. See `docs/FUSE_URING.md` §7.
+
+## Phase 16 — Measured manifestation frontier end-to-end
+
+**Complete** (commit `0ebd7c6`). `tests/ekbloom_frontier_e2e.rs` measures the
+EKBLOOM manifestation frontier end-to-end through real mounts (byte reads,
+search, fragmented sources), `benches/mechanisms.rs` and the performance court
+were extended, and `docs/MANIFESTATION.md`/`docs/PERFORMANCE.md` updated with the
+frontier results. See the commit and the `evidence/performance/ekbloom-*e2e*.json`
+and `ekbloom-frontier.json` files.
+
+## Phase 17 — Simulated power-loss durability model
+
+**Complete.** The durability proof obligation left open by Phases 2/11 —
+"process crash is not power loss" — is now discharged *relative to a stated
+simulated device*. A controlled, deterministic storage layer
+(`src/powerloss.rs`, Cargo feature `powerloss`) models a volatile device
+write-back cache with configurable `barrier` / `partial` / `reordered_partial`
+flushes and optional durable-image damage (`tear_tail` / `lost_watermark`), plus
+a `power_fail()` that discards every un-flushed cached write and materialises the
+surviving image for an independent recovery. A whole OrFS volume runs on it
+through a small no-op-by-default seam (`Segment`, `fsync_dir`, `watermark`).
+
+### Delivered
+
+* **`src/powerloss.rs`** — the deterministic device model (seeded SplitMix64,
+sector-granular partial flushes, tunable durable damage, atomic watermark
+modelling) and a thread-local attach/lookup registry. Feature-gated
+(`powerloss`, on by default; `--no-default-features` compiles a no-op stub at
+every seam, so production builds are unaffected).
+* **Seams** — `Segment::{create,write_at,sync}`, `segment::fsync_dir`,
+`watermark::Watermark::write`, and `log::quarantine_segment` route through the
+device when one is attached; nothing changes when it is not.
+* **`tests/power_loss.rs`** — 11 tests: for `sync`/`ordered`/`batched`, a
+workload of acknowledged mutations is run, power failures are triggered at many
+points (with reordering/partial-flush/torn variants), and recovery runs
+independently. It asserts the §35 invariants, non-withdrawal, no partial
+transaction, the accepted unsynced-ack contract, watermark interaction, and
+logical-content consistency.
+* **Evidence** — `evidence/recovery/power-loss.json` records, per mode and fault
+point, the acknowledged-durable and unsynced roots, surviving durable
+mutations, the recovered root/refusal, per-invariant verdicts, and an explicit
+`model_assumptions` section.
+* **Docs** — `docs/POWERLOSS.md` (new); `docs/RECOVERY.md` §4,
+`docs/TRANSACTIONS.md` §4.1/§6.1, and `docs/LIMITATIONS.md` §9 updated.
+
+### Results
+
+Under a device that honours `fsync` (`barrier`), **every** mutation acknowledged
+`DURABLE` under `sync` survives a power failure; `batched` survives up to its last
+completed sync point; an `ordered` ack without a sync may be absent but never
+corrupts committed state. Under contract-violating devices (partial/reordered
+flushes, torn durable bytes, a lost watermark) recovery either reaches a valid
+committed boundary or **refuses** — never a partially applied transaction, never
+a withdrawn byte.
+
+### Honest caveat
+
+The model is a **simulation with assumed device semantics**, not an instrumented
+power-loss rig. It does not prove real-hardware durability; `sync` still promises
+only what the backing device documents. See `docs/POWERLOSS.md` §5 and
+`docs/LIMITATIONS.md` §9.

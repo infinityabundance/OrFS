@@ -43,6 +43,45 @@ pub mod inode;
 pub mod log;
 pub mod manifestation;
 pub mod namespace;
+
+/// The simulated power-loss device model (Phase 17). See `docs/POWERLOSS.md`.
+#[cfg(feature = "powerloss")]
+pub mod powerloss;
+
+/// Compile-out stub: with the `powerloss` feature disabled every seam call is a
+/// no-op, so a production build (`--no-default-features`) carries none of the
+/// model and behaves exactly as before.
+#[cfg(not(feature = "powerloss"))]
+pub mod powerloss {
+    use std::path::Path;
+
+    /// No-op: no device can be attached in this build.
+    #[inline]
+    pub fn record_create(_dir: &Path, _name: &str) {}
+    /// No-op: no device can be attached in this build.
+    #[inline]
+    pub fn record_write(_dir: &Path, _name: &str, _offset: u64, _bytes: &[u8]) {}
+    /// No-op: no device can be attached in this build.
+    #[inline]
+    pub fn flush_file(_dir: &Path, _name: &str) {}
+    /// No-op: reports that no device handled the directory sync.
+    #[inline]
+    pub fn sync_dir(_dir: &Path) -> bool {
+        false
+    }
+    /// No-op: no device can be attached in this build.
+    #[inline]
+    pub fn record_remove(_dir: &Path, _name: &str) {}
+    /// No-op: no device handled the watermark write.
+    #[inline]
+    pub fn write_watermark(
+        _dir: &Path,
+        _wm: &crate::watermark::Watermark,
+    ) -> Option<crate::error::Result<()>> {
+        None
+    }
+}
+
 pub mod query;
 pub mod readpath;
 pub mod record;

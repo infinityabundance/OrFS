@@ -144,6 +144,32 @@ dependency-free). No performance superiority is claimed.
 OrFS stores xattr names as bounded opaque bytes (≤ 255, no NUL) and enforces one
 uniform access rule independent of namespace: reading an attribute requires read
 permission on the inode; setting or removing one requires write permission. There
-is no special privilege for `security.*`, `trusted.*`, or `system.*` names and no
+There is no special privilege for `security.*`, `trusted.*`, or `system.*` names and no
 `CAP_SYS_ADMIN`/`CAP_FOWNER` override; a caller that needs those semantics must
 enforce them above OrFS.
+
+## 9. Power-loss durability is tested with a *simulated* device, not real hardware
+
+The process-crash court (Phases 2/11) kills the process, but the OS page cache
+survives, so it cannot model a volatile device write-back cache, reordering, or
+torn sectors. Phase 17 adds a controlled **simulated** storage device
+(`src/powerloss.rs`, feature `powerloss`, on by default and compiled out with
+`--no-default-features`): a configurable write-back cache with `barrier` /
+`partial` / `reordered_partial` flushes, optional durable-image damage
+(`tear_tail` / `lost_watermark`), and a `power_fail()` that discards un-flushed
+writes and materialises the surviving image. A whole OrFS volume is run on it and
+recovered independently in `tests/power_loss.rs` (evidence
+`evidence/recovery/power-loss.json`).
+
+What it establishes: OrFS never exposes a partially applied transaction, never
+withdraws committed history, always recovers to a valid committed boundary or
+explicitly refuses; under a device that honours `fsync`, exactly the
+acknowledged-durable `sync` mutations survive.
+
+**What it does not establish:** real-hardware durability. The model is software
+with assumed device semantics — sector-granularity caching and `fsync` behaviour
+are simplifications, and real devices, filesystems, and caches differ. Only an
+instrumented power-loss rig can test real hardware. `sync` still promises only
+what the backing device documents
+(`DurabilityMode::claims_power_loss_durability()` remains `false` for every
+profile). See `docs/POWERLOSS.md`.

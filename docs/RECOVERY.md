@@ -130,9 +130,22 @@ arms a failpoint with the `abort` action inside a child process, kills it with
 invariants. This is a genuine, strong test of OrFS's own logic — no destructor
 runs and in-memory state is gone — but the OS page cache survives a process
 kill, so it does **not** model storage-device reordering, lost write-back cache
-contents, or torn sectors. Power-loss durability is a separate, identified proof
-obligation (`docs/TRANSACTIONS.md`). Evidence:
+contents, or torn sectors. Evidence:
 `evidence/recovery/commit-interruption.json`, `torn-write.json`.
+
+**Phase 17 adds a stronger model.** `src/powerloss.rs` provides a controlled,
+*simulated* storage device (a configurable volatile write-back cache, reordering,
+partial/torn flushes, and a `power_fail()` that discards un-flushed writes) that a
+whole OrFS volume can be run on; `tests/power_loss.rs` triggers un-clean power
+failures at many points and recovers independently. It closes the gap the
+process-crash court could not: under a device that honours `fsync`, every
+acknowledged-durable `sync` mutation survives a power failure; under
+`ordered`/`batched`, an unsynced ack may be lost but committed state is never
+corrupted; under hostile (contract-violating) devices, recovery either reaches a
+valid committed boundary or **refuses** — never a partial transaction, never a
+withdrawn byte. The model is a **simulation**, not real hardware: it proves
+recovery correct relative to its assumed device semantics, not real-hardware
+durability. See `docs/POWERLOSS.md`; evidence `evidence/recovery/power-loss.json`.
 
 `evidence/recovery/segment-rollover.json` records a real mid-flight rollover.
 

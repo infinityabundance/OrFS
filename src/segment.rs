@@ -101,6 +101,8 @@ pub fn discover_segment_ids(dir: &Path) -> Result<Vec<u64>> {
 #[derive(Debug)]
 pub struct Segment {
     id: u64,
+    dir: PathBuf,
+    name: String,
     path: PathBuf,
     file: File,
     len: u64,
@@ -109,14 +111,20 @@ pub struct Segment {
 impl Segment {
     /// Create a new, empty segment. Fails if the file already exists.
     pub fn create(dir: &Path, id: u64) -> Result<Segment> {
-        let path = dir.join(segment_file_name(id)?);
+        let name = segment_file_name(id)?;
+        let path = dir.join(&name);
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create_new(true)
             .open(&path)?;
+        // The simulated power-loss layer records creation so a directory-entry
+        // loss can be modelled; a no-op when no device is attached.
+        crate::powerloss::record_create(dir, &name);
         Ok(Segment {
             id,
+            dir: dir.to_path_buf(),
+            name,
             path,
             file,
             len: 0,
@@ -125,11 +133,14 @@ impl Segment {
 
     /// Open an existing segment for reading and appending.
     pub fn open(dir: &Path, id: u64) -> Result<Segment> {
-        let path = dir.join(segment_file_name(id)?);
+        let name = segment_file_name(id)?;
+        let path = dir.join(&name);
         let file = OpenOptions::new().read(true).write(true).open(&path)?;
         let len = file.metadata()?.len();
         Ok(Segment {
             id,
+            dir: dir.to_path_buf(),
+            name,
             path,
             file,
             len,
@@ -168,6 +179,10 @@ impl Segment {
     /// append frontier; committed bytes are never rewritten by this layer.
     pub fn write_at(&self, offset: u64, buf: &[u8]) -> Result<()> {
         self.file.write_all_at(buf, offset)?;
+        // Capture the write in the simulated device's volatile cache (write-through
+        // to `self.file` keeps ordinary in-session reads correct). No-op without a
+        // device.
+        crate::powerloss::record_write(&self.dir, &self.name, offset, buf);
         Ok(())
     }
 
@@ -191,6 +206,8 @@ impl Segment {
     /// Flush and fsync the segment file.
     pub fn sync(&self) -> Result<()> {
         self.file.sync_all()?;
+        // The device's durability point: promote cached writes per its model.
+        crate::powerloss::flush_file(&self.dir, &self.name);
         Ok(())
     }
 
@@ -325,6 +342,11 @@ impl SegmentLocator {
 /// Fsync a directory so that newly created/renamed entries are durable.
 pub(crate) fn fsync_dir(dir: &Path) -> Result<()> {
     crate::failpoints::check(crate::failpoints::Failpoint::DuringDirectorySync)?;
+    // A simulated device models directory durability itself; when one is attached
+    // to this directory it handles the sync and the real fsync is skipped.
+    if crate::powerloss::sync_dir(dir) {
+        return Ok(());
+    }
     match File::open(dir) {
         Ok(f) => {
             f.sync_all()?;

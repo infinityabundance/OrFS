@@ -137,6 +137,12 @@ impl Watermark {
     /// Durably persist the watermark atomically (temp file, fsync, rename,
     /// directory fsync).
     pub fn write(dir: &Path, wm: &Watermark) -> Result<()> {
+        // Under the simulated power-loss layer the atomic temp-write → rename →
+        // directory-fsync is modelled as one durable file write, so the watermark
+        // can be lost or kept exactly as the device's flush semantics dictate.
+        if let Some(result) = crate::powerloss::write_watermark(dir, wm) {
+            return result;
+        }
         let path = Self::path(dir);
         let tmp = dir.join("commit.watermark.tmp");
         {

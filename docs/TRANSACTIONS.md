@@ -200,9 +200,20 @@ step. This is a genuine, strong test of OrFS's own logic — no destructor runs,
 user-space buffer is flushed, all in-memory state is gone — but the operating
 system's page cache survives, so every byte that reached a `write` syscall is
 still present. It does **not** model storage-device reordering, lost write-back
-caches, or torn sectors. Power-loss durability is a separate proof obligation,
-to be discharged with a controlled virtualized storage fault model executed
-through the prescribed container workflow; it is not claimed here.
+caches, or torn sectors.
+
+**Phase 17 closes this gap with a controlled *simulated* device.**
+`src/powerloss.rs` models a volatile write-back cache whose flush behaviour is
+configurable (`barrier` / `partial` / `reordered_partial`), plus optional
+durable-image damage (`tear_tail` / `lost_watermark`), and a `power_fail()` that
+discards every un-flushed cached write and materialises the surviving image.
+`tests/power_loss.rs` runs a whole OrFS volume on it, triggers power failures at
+many points, and recovers in an independent step; the §35 invariants are asserted
+per run. Under a device that honours `fsync`, all acknowledged-durable `sync`
+mutations survive; under a device that violates its contract, recovery either
+reaches a valid committed boundary or **refuses**. The model is a simulation: it
+proves OrFS correct relative to its assumed device semantics, **not**
+real-hardware durability. See `docs/POWERLOSS.md`.
 
 (`tests/transaction_model.rs` additionally exercises the `error` action
 in-process: the write path is terminated, the log discarded, and the volume
@@ -249,7 +260,9 @@ across generated workloads and durability modes.
   `io_uring` backing engine — Ring W/Ring R — without changing this protocol:
   the same completion barrier is now explicit and a durability `fsync` may be
   submitted with `IOSQE_IO_DRAIN`. See `docs/IO_URING.md`.)
-* No power-loss (device-cache) evidence is produced; only process-crash evidence.
+* No power-loss (device-cache) *real-hardware* evidence is produced; the Phase
+  17 model (`docs/POWERLOSS.md`) is an explicitly simulated device, not an
+  instrumented power-loss rig. It does not claim real-hardware durability.
 * `batched` amortises `fsync` but batching is per-sequencer, not yet the
   multi-writer coalescing of Ring W.
 * Payload semantics for the *data* record types (inode, dentry, extent) belong to

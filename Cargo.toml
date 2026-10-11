@@ -16,10 +16,17 @@ name = "orfs"
 path = "src/main.rs"
 
 [features]
-# Fault-injection failpoints (research §34). Off by default: production builds
+# Fault-injection failpoints (research §37). Off by default: production builds
 # contain a compile-time no-op at every injection site.
-default = []
+#
+# The `powerloss` feature (Phase 17) compiles in the simulated storage-device
+# model (`src/powerloss.rs`). It is inert unless a device is explicitly attached
+# (`powerloss::attach`), which only tests do; a plain `--no-default-features`
+# build carries a no-op stub at every seam instead. It is on by default so the
+# power-loss court runs in the ordinary `cargo test` gate.
+default = ["powerloss"]
 failpoints = []
+powerloss = []
 
 [dependencies]
 # --- Kernel / transport interfaces (version-pinned per directive) ---

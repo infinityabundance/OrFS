@@ -85,8 +85,16 @@ ORFS_TMP_DIR="$ORFS_TARGET_DIR/.tmp"
 mkdir -p "$ORFS_PROJECT_DIR/.cargo-home" "$ORFS_TARGET_DIR" "$ORFS_TMP_DIR"
 
 # docker_run: unprivileged, memory/pid-capped, source tree bind-mounted read-write.
+#
+# Deliberately does NOT `exec`. `exec` replaces the invoking shell with the docker
+# client, so a script that calls `docker_run` a second time would find that second
+# call dead code (it never runs). Running docker as an ordinary child lets one
+# script drive several containers in sequence (scripts/container-endurance.sh) and
+# preserves correct signal handling: in a non-interactive script the terminal's
+# SIGINT/SIGTERM reach the whole foreground process group — this shell *and* the
+# docker client — and `set -e` propagates docker's exit status to the caller.
 docker_run() {
-    exec docker run --rm \
+    docker run --rm \
         --memory="$ORFS_MEM_LIMIT" \
         --memory-swap="$ORFS_MEMSWAP_LIMIT" \
         --cpus="$ORFS_CPUS" \
@@ -114,7 +122,8 @@ docker_run() {
 # seccomp=unconfined` permits it (see scripts/container-uring-test.sh, which
 # re-proves this at run time with scripts/uring-probe.c).
 docker_run_uring() {
-    exec docker run --rm \
+    # See docker_run: no `exec`, so callers may run more than one container.
+    docker run --rm \
         --memory="$ORFS_MEM_LIMIT" \
         --memory-swap="$ORFS_MEMSWAP_LIMIT" \
         --cpus="$ORFS_CPUS" \
@@ -167,7 +176,8 @@ docker_probe_io_uring_default() {
 # with "fusermount3: could not determine username".
 docker_run_kmount() {
     _orfs_write_kmount_passwd
-    exec docker run --rm \
+    # See docker_run: no `exec`, so callers may run more than one container.
+    docker run --rm \
         --memory="$ORFS_MEM_LIMIT" \
         --memory-swap="$ORFS_MEMSWAP_LIMIT" \
         --cpus="$ORFS_CPUS" \

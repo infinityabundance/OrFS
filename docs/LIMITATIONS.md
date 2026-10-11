@@ -47,6 +47,19 @@ other builds, so transient `ENOSPC` is possible under contention. `scripts/lib.s
 therefore sets `TMPDIR` (and the FUSE mount scripts set `CARGO_TARGET_DIR`) to the
 project's bind-mounted drive rather than the container's writable layer.
 
+### 2.1 Pre-existing unremovable mount-test containers (host state)
+
+This host currently carries **12 pre-existing `orfs-kmount:1.99.0` containers** in
+`Up` state that **cannot be removed by `docker rm -f`** — docker reports *"tried to
+kill container, but did not receive an exit event"* (each in uninterruptible sleep,
+holding a defunct `fuse_uring-…`/mount). They predate the present work, were not
+created by any current script, and do **not** affect a run that starts *one*
+container at a time (the project's rule): a single kmount container completes
+cleanly, and **concurrency is the apparent trigger** for the hang. Clearing them
+requires a host Docker restart (`systemctl restart docker`), which is outside this
+repository's control. `scripts/container-fuse-test.sh` uses `--rm` and leaves no
+containers behind when a run completes.
+
 ## 3. Accelerated reads are exactness-preserving, not free
 
 The EKBLOOM read planner only uses a concealed structure when it is compatible

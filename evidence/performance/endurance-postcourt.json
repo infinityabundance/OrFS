@@ -1,0 +1,15 @@
+{
+  "schema": "orfs.evidence.endurance-postcourt.v1",
+  "generated_by": "scripts/container-endurance.sh",
+  "captured_at_utc": "2026-10-11T23:50:57Z",
+  "ran": true,
+  "result": "pass",
+  "courts": [
+    "lib",
+    "namespace_model",
+    "snapshot_model",
+    "concurrency_stress",
+    "transaction_model",
+    "recovery_adversarial"
+  ]
+}

@@ -327,8 +327,10 @@ documented in [`docs/CONCURRENCY.md`](CONCURRENCY.md).
   recorded, not checked (Phase 11 / `docs/SECURITY.md`).
 * No `mknod` (device/FIFO/socket) support; such requests must be rejected by the
   transport.
-* `copy_file_range`, `fallocate` modes, `lseek` SEEK_DATA/HOLE, and locking are
-  not yet implemented (Phase 4+).
+* `copy_file_range`, `fallocate` modes, and `lseek` `SEEK_DATA`/`SEEK_HOLE` were
+  not yet implemented at Phase 3; they are implemented by the FUSE transport since
+  Phase 4 (`docs/FUSE-SEMANTICS.md` §5). Locking is delegated to the kernel (§9 of
+  that document).
 * Snapshot **mounts** and index checkpoint *loading* for mount acceleration are
   Phase 6; Phase 3 provides the records, the derived index, and rebuild
   equivalence.

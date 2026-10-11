@@ -131,9 +131,10 @@ touches plus `O(affected)` node clones, **independent of total retained history*
 **Measured.** `evidence/performance/publish-cost.json` (Phase 27,
 `benches/endurance.rs`) records sustained create/rename/unlink churn at 10k / 100k
 / 1M iterations: the direct publication step — cloning the index, exactly what
-`publish_read_state` does — is **flat at ≈40 ns** at every scale, while the
-per-iteration commit latency stays within a small constant factor (p50 ≈ 49 µs at
-10k iterations vs ≈ 80 µs at 1M). No step is `O(history)`. The tests
+`publish_read_state` does — is **flat at ≈60 ns** at every scale (the separate
+read-view/locator capture is ≈40 ns), while the per-iteration commit latency stays
+within a small constant factor (p50 ≈ 53 µs at 10k iterations vs ≈ 60 µs at 1M,
+over the middle 1 024-iteration window). No step is `O(history)`. The tests
 `tests/concurrency_stress.rs::concurrent_readers_and_writer_never_observe_partial_state`
 exercises 150 commits against 3 spinning readers and confirms bounded
 interference (readers always see whole committed versions; the writer makes
@@ -198,4 +199,6 @@ real-code stress tests are used, as before.
   the native F2 `SessionLoop` remains a single dispatch thread (its ring carries
   requests but completion handling is serial per session), so the concurrency
   benefit there is limited by that existing design, not by any core lock.
-* Full path-copying of the index spines is deferred (§4.1).
+* Full path-copying of the index spines is **implemented** (Phase 27, §4.1): the
+  spines are persistent `PMap`s and the version vectors are shared
+  `VersionHistory`s, so publishing a view no longer copies retained history.

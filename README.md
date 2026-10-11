@@ -50,6 +50,26 @@ enable it (see `docs/FUSE_URING.md`).
 | 12 | Performance court | complete |
 | 13 | Reproducibility repair (independent-audit findings) | complete |
 | 14 | POSIX court closure (§33) | complete |
+| 15 | Real FUSE-over-`io_uring` (F2) transport | complete; **active on this host** |
+| 16 | Measured manifestation frontier end-to-end | complete |
+| 17 | Simulated power-loss durability model | complete |
+| 18 | Lean authoritative read path, planner isolation, extent index | complete |
+| 19 | Concurrent immutable read views (remove the global read lock) | complete |
+| 20 | Persistent historical-root indexes and suffix replay | complete |
+| 21 | Kernel-served FUSE passthrough for immutable snapshots | complete |
+| 22 | Incremental, adaptive generational manifestation | complete |
+| 23 | ENOSPC/device-error recovery hardening and a capacity policy | complete |
+| 24 | Broad POSIX court (pjdfstest; xfstests assessment) | complete |
+| 25 | Close the pjdfstest POSIX deviations | complete |
+| 26 | F2 transport servicing and rigorous concurrent measurement | complete |
+| 27 | Fix publish `O(N²)` churn; large-scale endurance and recovery acceleration | complete |
+| 28 | Native FUSE adversarial hardening and fuzzing | complete |
+| 29 | Independent acceptance audit (gates A–N) | complete |
+| 30 | Consistency repair (docs, scripts, receipts) | complete |
+
+Honest non-claims: the image pixel-surface pyramid is **not materialised** (only
+its geometry is implemented), and no performance superiority of F2 or of the
+manifested read paths is claimed. See `docs/LIMITATIONS.md` and `docs/PERFORMANCE.md`.
 
 ## Development is Docker-only
 

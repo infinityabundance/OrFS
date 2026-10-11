@@ -62,8 +62,9 @@ carry no authoritative weight.
 
 ### I6 — Immutable committed generations
 
-Not yet implemented (Plane C, later phases). No acceleration structure is
-produced in Phase 1.
+No acceleration structure is produced in Phase 1. Concealed generations were
+implemented from Phase 7 onward (`docs/MANIFESTATION.md`) and never alter the
+committed record stream.
 
 ### I7 — No false success
 
@@ -74,8 +75,8 @@ committed root advances only after a complete `TX_COMMIT`.
 ### I8 — Physical capacity is finite
 
 Reservations use checked arithmetic and surface `OrfsError::NoSpace`/overflow
-paths. Quota policy is deferred to a later phase; Phase 1 does not claim a
-capacity policy.
+paths. Phase 1 made no capacity-policy claim; Phase 23 added an explicit capacity
+policy (`docs/CAPACITY.md`).
 
 ## Committed boundary rule
 

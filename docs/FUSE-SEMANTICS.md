@@ -28,7 +28,7 @@ Mount options map explicitly:
 | transport `fuse` | traditional `/dev/fuse` (F0/F1) |
 | transport `fuse-uring` | requests F2 (FUSE-over-`io_uring`); negotiates at runtime, falls back to F1/F0 (Phase 10, `docs/FUSE_URING.md`) |
 | `--backing-io sync` | synchronous `pread`/`pwrite`/`fsync` |
-| `--backing-io uring` | accepted; **falls back to sync**, a warning is printed |
+| `--backing-io uring` | selects the `io_uring` backing engine; falls back to sync **only** if the kernel rejects io_uring (the outcome is reported, never silent) |
 | `--durability sync\|ordered\|batched` | maps to `DurabilityMode` |
 | `--direct-io` | sets `FOPEN_DIRECT_IO` on every open |
 | `--readahead-kb N` | kernel `max_readahead` (0 keeps the kernel default) |
@@ -302,17 +302,26 @@ is recorded here and in `evidence/correctness/posix-results.json`.
 
 ---
 
-## 10. What is not implemented
+## 10. Scope boundaries and delegated behaviour
 
 * Transport `fuse-uring` (FUSE-over-`io_uring`) — implemented in Phase 10 as a
-  native transport adapter; it does not engage on this host, so mounts fall back
-  to F1/F0 (`docs/FUSE_URING.md`). The classical `/dev/fuse` semantics above are
+  native transport adapter and, since Phase 15, **engages for real on this host**
+  (kernel `fuse.enable_uring=Y`, FUSE ABI 7.45): `orfs mount --transport fuse-uring`
+  runs a native session (`docs/FUSE_URING.md`,
+  `evidence/correctness/fuse-uring-f2-engagement.json`). It falls back to F1/F0 only
+  when the kernel cannot offer it. The classical `/dev/fuse` semantics above are
   unchanged and transport-neutral.
-* Backing `io_uring` — Phase 5 (requests fall back to synchronous I/O).
-* FUSE passthrough reads — a later optimization (must never bypass authoritative
-  writes).
+* Backing `io_uring` — implemented in Phase 5 and selected by `--backing-io uring`;
+  it falls back to synchronous I/O **only** when the kernel rejects `io_uring`, and
+  the real outcome is reported (mount message, `OrfsMount::backing_io_used`,
+  `orfs doctor`).
+* FUSE passthrough reads — implemented in Phase 21 for **immutable snapshot** reads
+  only and served by the kernel on a native F2 mount (`docs/FUSE_PASSTHROUGH.md`); a
+  live mutable core is never passthrough-eligible, so it can never bypass
+  authoritative writes.
 * Writeback cache — see §8.
-* Cross-node locking — out of scope.
+* Cross-node locking — out of scope (§9 delegates POSIX record locks and `flock` to
+  the kernel's local lock manager).
 
 ---
 

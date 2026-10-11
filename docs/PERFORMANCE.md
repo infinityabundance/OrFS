@@ -248,22 +248,24 @@ Headline (16 queues, 8 CPUs, warm, 15 pairs):
 
 | metric | F0 | F1 | F2 | significant? |
 |---|---:|---:|---:|---|
-| read 4 KiB, 1 thread (µs) | 14.24 | 15.77 | 13.93 | no |
-| `stat` lookup (µs) | 11.40 | 9.81 | 13.97 | F2 − F1 = +4.16 µs, yes |
-| 16 concurrent 4 KiB readers (ops/s) | 383 490 | 382 577 | 108 094 | F2 slower, yes |
-| 4-thread mixed workload (ops/s) | 20 323 | 19 071 | 19 570 | no |
+| read 4 KiB, 1 thread (µs) | 17.09 | 17.02 | 16.06 | no |
+| `stat` lookup (µs) | 6.76 | 6.70 | 7.61 | F2 − F0 = +0.85 µs, yes |
+| 16 concurrent 4 KiB readers (ops/s) | 485 614 | 475 708 | 113 636 | F2 slower, yes |
+| 4-thread mixed workload (ops/s) | 81 175 | 56 445 | 47 945 | F1 and F2 slower, yes |
 
 **Servicing topology (chosen by measurement):** single session loop. A bounded
-worker pool (latency lane + bulk lane) was implemented and benchmarked; it is
-**significantly slower** on 16 readers (−21 651 ops/s, 95% CI [−32 033, −11 268])
-and adds a significant ~5.2 µs to read-4K latency, because F2's concurrency
-bottleneck at ABI 7.45 is the per-request `COMMIT_AND_FETCH` ring round-trip, not
-dispatch work. The pool remains selectable (`--f2-servicing pool`) and is proven
-byte-equivalent to F0.
+worker pool (latency lane + bulk lane) was implemented and benchmarked; its
+16-reader throughput margin is positive but not decisive (+45 522 ops/s for the
+non-affinity variant, 95% CI [23 229, 67 815]; −431 ops/s with CPU affinity, n.s.),
+and it adds a significant +4.87 µs to read-4K latency (CI [2.90, 6.83]), so the
+recorded decision rule keeps the single loop. F2's concurrency bottleneck at ABI
+7.45 is the per-request `COMMIT_AND_FETCH` ring round-trip, not dispatch work. The
+pool remains selectable (`--f2-servicing pool`) and is proven byte-equivalent to F0.
 
-**Honest conclusion.** Under ABI 7.45, F2 is latency-neutral single-threaded and
-markedly slower under reader concurrency than F0/F1. It is recorded as a real
-transport (the ring carried every request the daemon served), not as a win.
+**Honest conclusion.** Under ABI 7.45, F2 is roughly latency-neutral single-threaded
+(with a few small significant differences; `docs/FUSE_URING.md` §6.3) and markedly
+slower under reader concurrency than F0/F1. It is recorded as a real transport (the
+ring carried every request the daemon served), not as a win.
 
 ---
 

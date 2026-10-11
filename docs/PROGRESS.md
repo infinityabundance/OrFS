@@ -707,8 +707,9 @@ changes what a query returns.
 
 ## Phase 10 — FUSE-over-io_uring transport (F2) with classical fallback
 
-**Complete as implemented; F2 does not engage on this host** (see
-`docs/FUSE_URING.md`). Implements research §17–§19 and directive §16/§17.
+**Complete as implemented**; at Phase 10 F2 did not yet engage on this host, a
+blocker Phase 15 closed (a real F2 mount now works — see `docs/FUSE_URING.md`).
+Implements research §17–§19 and directive §16/§17.
 
 ### Delivered
 
@@ -1120,6 +1121,49 @@ The model is a **simulation with assumed device semantics**, not an instrumented
 power-loss rig. It does not prove real-hardware durability; `sync` still promises
 only what the backing device documents. See `docs/POWERLOSS.md` §5 and
 `docs/LIMITATIONS.md` §9.
+
+## Phase 18 — Lean authoritative read path, planner isolation, extent index
+
+**Complete** (commit `3c927b9`; external review P0 items 3 and 4). The
+authoritative read path became allocation-lean on the hot single-extent case, the
+manifested read planner was isolated behind an exact compatibility check, and the
+extent map gained a binary-search plan so fragmented files resolve in `O(log E + k)`.
+
+### Delivered
+
+* **Zero-allocation hot path** (`src/log.rs`, `src/readpath.rs`) —
+  `Log::read_range_into` writes the authoritative bytes directly into the caller's
+  destination buffer; once a segment handle is cached, a single-extent read
+  allocates nothing. `tests/read_path_lean.rs` proves this with a counting global
+  allocator and proves byte identity with the owning API.
+* **Planner isolation** (`src/readpath.rs`) — every read re-derives the object's
+committed version and root and requires **exact** compatibility with the
+manifested generation identity before consulting any concealed structure; a
+profile EKBLOOM documents as non-accelerating is not even loaded, so a small write
+never waits for a whole-object rebuild (asynchronous E1/E2 manifestation).
+* **Extent index** (`src/extent.rs`) — `ExtentMap::plan_read` binary-searches the
+extent covering an offset and visits only the `k` intersecting extents
+(`O(log E + k)`, never a whole-map scan); the overlay is a single linear merge
+(`O(E)`) instead of drain-sort-rebuild. `plan_read_work` records the visited-extent
+count as an honest, noise-free work metric. Both are pure performance changes with
+an unchanged observable extent sequence.
+* **Latency anatomy** (`tests/latency_anatomy.rs`) — a reproducible per-request
+phase breakdown (dispatch, extent resolve, segment read, assembly, reply) with
+p50/p95/p99 and allocation counts.
+
+### Results (evidence-backed)
+
+On the committed sequential-read and random-read evidence, E1/E2 now **match**
+F0/F1 (previously ~1.9 MB/s): the planner falls back to the authoritative extent
+read because the stored profile is non-accelerating, so the manifested paths cost
+nothing when they cannot help. No speedup is claimed; the deliverables are the
+zero-allocation authoritative path and the documented regression bounds.
+`evidence/performance/latency-anatomy.json`.
+
+### Docs
+
+`docs/PERFORMANCE.md` (§1 latency anatomy, §3 read-selection caveat),
+`docs/SECURITY.md`, `docs/ORFS-SPEC.md`.
 
 ## Phase 19 — Concurrent immutable read views (remove the global read lock)
 
@@ -1539,6 +1583,45 @@ deviation count dropped.
 `docs/FUSE-SEMANTICS.md` §5.1/§5.2/§6/§7/§11.1 and `docs/LIMITATIONS.md` §12 now
 record the closed semantics and that the allowlist holds only the shared
 reference artefact.
+
+## Phase 26 — F2 transport servicing and rigorous concurrent measurement
+
+**Complete** (commit `87da684`). Phase 15 mounted F2 for real; Phase 26 made its
+queue servicing a *measured* choice and replaced the single-shot F2 numbers with a
+**paired** court.
+
+### Delivered
+
+* **Servicing topology** (`src/fuse.rs` `F2Servicing`, `src/fuse_native.rs`) — the
+  session can service its per-CPU ring entries with a single dispatch loop
+  (`single-loop`, the default) or a bounded **worker pool** (`--f2-servicing pool`;
+  `fast`/`bulk` lanes so a small metadata op never queues behind a large read). The
+  session thread alone owns the ring and submits every SQE; workers only dispatch
+  and stage replies into the entry's registered buffers through a documented
+  `unsafe` handoff.
+* **Paired F2 court** (`tests/fuse_uring.rs::f2_court_f0_f1_f2`) — 15 warm pairs of
+  every latency workload and 1→16-reader scaling across simultaneously mounted
+  F0/F1/F2, with per-op samples, two-sided 95% Student-t intervals, paired-t
+  significance, and daemon-reaching request counters; equivalence is proved by an
+  identical operation transcript across profiles.
+* **Decision by measurement** — the pool is chosen only when its 16-reader
+  throughput gain is significantly positive **and** it does not significantly
+  regress read-4K latency; the committed run keeps `single-loop`.
+
+### Results (evidence-backed)
+
+At FUSE ABI 7.45 F2 is **latency-neutral single-threaded** and **does not scale**
+with reader concurrency (≈80 k → 114 k ops/s from 1 to 16 readers, versus ≈77 k →
+486 k for F0), because each request costs a `COMMIT_AND_FETCH` ring round-trip that
+the single ring serialises. No superiority is claimed. Evidence:
+`evidence/performance/f2-concurrency.json` (reader scaling, mixed workload,
+servicing benchmark), `evidence/performance/fuse-uring.json` (per-workload tables),
+`evidence/correctness/fuse-uring-f2-engagement.json` (live `INIT` flags, counters).
+
+### Docs
+
+`docs/FUSE_URING.md` §6 (chosen topology and measurements), `docs/PERFORMANCE.md`
+§4.6.
 
 ## Phase 27 — Fix publish `O(N²)` churn; large-scale endurance and recovery acceleration
 

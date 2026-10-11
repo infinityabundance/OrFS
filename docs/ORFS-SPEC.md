@@ -5,8 +5,8 @@
 read paths.
 
 This document is the **master index** for the OrFS implementation. It states the
-governing laws and objective, maps the build to four correctness planes and
-thirteen ordered phases, and tracks the normative document set. It deliberately
+governing laws and objective, maps the build to four correctness planes and the
+ordered build phases, and tracks the normative document set. It deliberately
 makes **no performance or correctness claim that is not backed by evidence in
 `evidence/`**.
 
@@ -76,11 +76,12 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The thirteen build phases (0–12)
+## 4. The ordered build phases (0–30)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
-phase.
+phase. The early phases are summarised here; `docs/PROGRESS.md` is the detailed
+per-phase record.
 
 | Phase | Area | State |
 |---|---|---|
@@ -97,15 +98,33 @@ phase.
 | 10 | FUSE-over-`io_uring` (Plane D) | **complete; active** — the real F2 session mounts (see `docs/FUSE_URING.md`) |
 | 11 | Security and crash-hardening (all planes) | **complete** |
 | 12 | Performance court (all planes) | **complete** |
+| 13 | Reproducibility repair (independent-audit findings) | **complete** |
+| 14 | POSIX court closure (§33) | **complete** |
+| 15 | Real FUSE-over-`io_uring` (F2) transport | **complete; active** — F2 engages for real on this host |
+| 16 | Measured manifestation frontier end-to-end | **complete** |
+| 17 | Simulated power-loss durability model | **complete** |
+| 18 | Lean authoritative read path, planner isolation, extent index | **complete** |
+| 19 | Concurrent immutable read views (remove the global read lock) | **complete** |
+| 20 | Persistent historical-root indexes and suffix replay | **complete** |
+| 21 | Kernel-served FUSE passthrough for immutable snapshots | **complete** |
+| 22 | Incremental, adaptive generational manifestation | **complete** |
+| 23 | ENOSPC/device-error recovery hardening and a capacity policy | **complete** |
+| 24 | Broad POSIX court (pjdfstest; xfstests assessment) | **complete** |
+| 25 | Close the pjdfstest POSIX deviations | **complete** |
+| 26 | F2 transport servicing and rigorous concurrent measurement | **complete** |
+| 27 | Fix publish `O(N²)` churn; large-scale endurance and recovery acceleration | **complete** |
+| 28 | Native FUSE adversarial hardening and fuzzing | **complete** |
+| 29 | Independent acceptance audit (gates A–N) | **complete** |
+| 30 | Consistency repair (docs, scripts, receipts) | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–12 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–30 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
-- The `orfs` crate builds, its **253** tests (default) pass, and
-  `cargo test --features failpoints` adds the crash-injection court; `cargo fmt
-  -p orfs --check` / `clippy --all-targets -- -D warnings` are clean **inside the
-  pinned container** (`scripts/container-*.sh`).
+- The `orfs` crate builds, its **327** tests (default) pass, and
+  `cargo test --features failpoints` adds the crash-injection court (332 tests in
+  total); `cargo fmt -p orfs --check` / `clippy --all-targets -- -D warnings` are
+  clean **inside the pinned container** (`scripts/container-*.sh`).
 - `src/capabilities.rs` + `orfs doctor` perform a **real** kernel/container
   capability probe (no mutation of host state).
 - The CLI is fully wired: `doctor`, `init`, `inspect`, `verify`, `recover`,
@@ -185,7 +204,7 @@ sibling working tree is required):
 
 ```sh
 scripts/container-build.sh        # cargo build
-scripts/container-test.sh         # cargo test  (253 tests)
+scripts/container-test.sh         # cargo test  (327 tests)
 scripts/container-fuse-test.sh    # real-mount FUSE + performance court
 scripts/container-uring-test.sh   # io_uring integration + backing benchmark
 scripts/container-check.sh        # cargo fmt -p orfs --check + clippy -D warnings

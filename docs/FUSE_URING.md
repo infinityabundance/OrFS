@@ -199,7 +199,7 @@ read from the shared daemon-operation counters (identical bookkeeping for
 F0/F1/F2) and, for F2, the native ring's own `requests_served` counter. This makes
 the claim falsifiable rather than implied: for 16 concurrent readers × 80 ops ×
 8 pairs, all three profiles recorded exactly `10240` daemon read requests, and the
-F2 ring recorded `10264` (reads plus the `OPEN`/`LOOKUP`/`GETATTR` requests the
+F2 ring recorded `10265` (reads plus the `OPEN`/`LOOKUP`/`GETATTR` requests the
 ring also carried). No read was answered above the daemon.
 
 ### 6.2 Queue servicing: single loop vs worker pool (chosen by measurement)
@@ -218,35 +218,44 @@ Measured on this host (16 queues, 8 CPUs), paired, 8 reps:
 
 | topology | 8-reader ops/s | 16-reader ops/s | read-4K mean µs |
 |---|---:|---:|---:|
-| **single loop (chosen)** | **100 694** | **104 876** | **13.10** |
-| pool (fast=2, bulk=6) | 86 976 | 89 349 | 22.77 |
-| pool + CPU affinity | 87 000 | 89 350 | 22.8 |
+| **single loop (chosen)** | **98 737** | **109 770** | **12.71** |
+| pool (fast=2, bulk=6) + CPU affinity | 96 442 | 109 339 | 28.26 |
 
-The pool is **significantly slower** on 16 readers (paired diff −21 651 ops/s,
-95% CI [−32 033, −11 268]) and adds a **significant** ~5.2 µs to read-4K latency
-(CI [3.19, 7.20]). The reason is structural: F2's concurrency bottleneck at ABI
-7.45 is the single-ring `COMMIT_AND_FETCH` round-trip per request, *not* dispatch
-work, so moving dispatch off the session thread only adds a handoff. The chosen
-default is therefore **`single-loop`**; the pool remains selectable
-(`--f2-servicing pool`) and is proven byte-equivalent to F0 by
+(The pooled mode's `describe()` string is shared by both pool variants, so the
+pool-plus-affinity run overwrites the non-affinity run under the same evidence key;
+the paired comparisons below are computed across all three mounted topologies.)
+
+The pool does **not** win the decision. Against the single loop the non-affinity
+pool's 16-reader throughput margin is positive (+45 522 ops/s, 95% CI
+[23 229, 67 815], significant) while the pool-plus-affinity variant's is a wash
+(−431 ops/s, n.s.); but the pool adds a **significant** +4.87 µs to read-4K latency
+(CI [2.90, 6.83]). Under the recorded decision rule — pool default only when the
+16-reader gain is significantly positive *and* read-4K latency has no significant
+regression — the latency regression rejects it. The reason is structural: F2's
+concurrency bottleneck at ABI 7.45 is the single-ring `COMMIT_AND_FETCH` round-trip
+per request, *not* dispatch work, so moving dispatch off the session thread mostly
+adds a handoff. The chosen default is therefore **`single-loop`**; the pool remains
+selectable (`--f2-servicing pool`) and is proven byte-equivalent to F0 by
 `f2_pool_servicing_preserves_semantics`.
 
 ### 6.3 Single-threaded latency (warm, paired, 15 pairs)
 
 | workload | F0 mean µs | F1 mean µs | F2 mean µs | F2−F0 | F2−F1 |
 |---|---:|---:|---:|---|---|
-| read 1 B | 5.17 | 5.74 | 5.53 | n.s. | n.s. |
-| read 64 B | 5.40 | 5.45 | 5.24 | n.s. | n.s. |
-| read 4 KiB | 14.24 | 15.77 | 13.93 | n.s. | n.s. |
-| read 64 KiB | 121.9 | 120.2 | 122.1 | n.s. | n.s. |
-| lookup (`stat`) | 11.40 | 9.81 | 13.97 | n.s. | **+4.16 (sig)** |
-| create+unlink | 237.8 | 293.5 | 268.4 | n.s. | n.s. |
-| `fdatasync` | 49 151 | 48 371 | 46 532 | n.s. | n.s. |
+| read 1 B | 7.82 | 7.82 | 7.90 | n.s. | n.s. |
+| read 64 B | 8.14 | 8.01 | 7.96 | n.s. | n.s. |
+| read 4 KiB | 17.09 | 17.02 | 16.06 | n.s. | n.s. |
+| read 64 KiB | 123.8 | 122.4 | 117.3 | **−6.49 (sig)** | **−5.05 (sig)** |
+| lookup (`stat`) | 6.76 | 6.70 | 7.61 | **+0.85 (sig)** | **+0.91 (sig)** |
+| create+unlink | 100.4 | 141.9 | 125.1 | **+24.7 (sig)** | **−16.8 (sig)** |
+| `fdatasync` | 3 821 | 3 864 | 3 773 | n.s. | **−91.2 (sig)** |
 
-("n.s." = not significant at 95%.) The only single-threaded significant finding
-is that F2's lookup is ~4.2 µs slower than F1's. Reads and writes are
-statistically indistinguishable across F0/F1/F2 — the transport is real, but it is
-not faster for single-threaded latency.
+("n.s." = not significant at 95%.) The single-threaded picture is mixed. F2 is
+statistically indistinguishable from F0/F1 for the byte reads (1 B / 64 B / 4 KiB),
+but it is **slower** for a `stat` lookup (+0.85 µs vs F0, +0.91 µs vs F1) and for
+create+unlink (+24.7 µs vs F0), while it is marginally **faster** for 64 KiB reads
+(−6.49 µs vs F0) and for the write+`fdatasync` workload (−91.2 µs vs F1). The
+transport is real, but it is not uniformly faster or slower single-threaded.
 
 ### 6.4 Concurrency and the sustained mixed workload
 
@@ -254,24 +263,26 @@ Paired, 8 reps, 4 KiB readers:
 
 | readers | F0 ops/s | F1 ops/s | F2 ops/s | F2 vs F0 |
 |---|---:|---:|---:|---|
-| 1 | 72 014 | 76 697 | 81 441 | +9 427 (n.s.) |
-| 2 | 108 290 | 115 382 | 98 913 | n.s. |
-| 4 | 210 739 | 211 741 | 90 942 | **−119 797 (sig)** |
-| 8 | 365 936 | 352 129 | 100 703 | **−265 233 (sig)** |
-| 16 | 383 490 | 382 577 | 108 094 | **−275 395 (sig)** |
+| 1 | 77 364 | 74 924 | 79 895 | +2 532 (n.s.) |
+| 2 | 158 432 | 157 636 | 106 236 | **−52 196 (sig)** |
+| 4 | 288 681 | 284 267 | 110 432 | **−178 250 (sig)** |
+| 8 | 406 221 | 422 814 | 111 344 | **−294 877 (sig)** |
+| 16 | 485 614 | 475 708 | 113 636 | **−371 978 (sig)** |
 
 This is the honest headline: **F2 does not scale with reader concurrency on this
-ABI** (≈81 k → 108 k ops/s from 1 to 16 readers), while F0/F1 scale to ≈383 k.
+ABI** (≈80 k → 114 k ops/s from 1 to 16 readers), while F0/F1 scale to ≈486 k/476 k.
 Each F2 request costs a `COMMIT_AND_FETCH` SQE plus a kernel round-trip, and the
 single ring serialises them; the classical transport answers with a plain write.
-The sustained mixed workload (4 threads, reads/lookups/create-unlink) shows no
-significant difference (F0 20 323, F1 19 071, F2 19 570 ops/s; all intervals
-overlap).
+The sustained mixed workload (4 threads, reads/lookups/create-unlink) now shows both
+non-F0 transports behind F0 (F0 81 175, F1 56 445, F2 47 945 ops/s; F1−F0 and
+F2−F0 both significant), i.e. the classical F1 and the ring F2 both pay for the
+concurrent metadata churn.
 
 > **No superiority is claimed.** The point of the F2 row is that the ring really
 > carries the traffic (equivalence, per-op samples, and the daemon-reaching
 > counters prove it), not that it wins a benchmark. Under ABI 7.45 it is roughly
-> latency-neutral single-threaded and slower under concurrency.
+> latency-neutral single-threaded (a few small significant differences; §6.3) and
+> slower under concurrency.
 
 ### 6.5 Cold vs warm
 
@@ -328,7 +339,12 @@ The forward-compatible commands are wired behind a runtime capability check:
   is `None` (explicit cache invalidation is unavailable on F2).
 * `auto_unmount` is not forwarded to `fusermount3`; teardown is driven by the
   session's own unmount path.
-* FUSE passthrough (research §28.2) is not implemented.
+* FUSE passthrough (research §28.2) is **implemented and engaged** for immutable
+  snapshot reads on a native F2 mount (Phase 21; `docs/FUSE_PASSTHROUGH.md`,
+  `evidence/correctness/fuse-passthrough.json`). The kernel gates it on
+  `capable(CAP_SYS_ADMIN)` (`FUSE_DEV_IOC_BACKING_OPEN`), so the ordinary
+  non-root project uid declines it and falls back to daemon-served reads with
+  identical bytes.
 
 ---
 
@@ -350,7 +366,9 @@ The forward-compatible commands are wired behind a runtime capability check:
 
 * Zero-copy performance is not claimed, and zero-copy is inert at ABI 7.45.
 * `ADD_QUEUE`/`ADD_BUFPOOL` are compiled and cap-checked but not exercisable here.
-* FUSE passthrough is not implemented.
+* FUSE passthrough is implemented (Phase 21) for immutable snapshot reads served
+  by the kernel; see `docs/FUSE_PASSTHROUGH.md`. Its measured warm-cache figure
+  (~27× vs daemon-served) is not a portability claim.
 * No performance superiority over F0/F1 is claimed. The measured results (§6) show
-  F2 is latency-neutral single-threaded and slower under reader concurrency on this
-  ABI; that is reported as found.
+  F2 is roughly latency-neutral single-threaded and slower under reader concurrency
+  on this ABI; that is reported as found.

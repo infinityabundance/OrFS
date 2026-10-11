@@ -2,8 +2,10 @@
 
 **Status:** implemented (Phase 5). This document is normative for the backing-store
 `io_uring` engine (research §17 **Domain A only**, §20 Rings W/R, §21, §22, §26).
-The FUSE transport is **unchanged**: OrFS still speaks traditional `/dev/fuse`
-(transport profile **F1**, not F2). Only *backing* I/O becomes asynchronous.
+Backing I/O becomes asynchronous; the FUSE **transport** is a separate concern
+(`docs/FUSE_URING.md`) — since Phase 10 OrFS also offers FUSE-over-`io_uring`
+(profile **F2**), which engages for real on this host since Phase 15. Nothing in
+this document depends on which transport is used.
 
 Sources: `src/uring.rs` (the sole `io_uring` interface), `src/buffers.rs`
 (registered-buffer lifetime tracking), `src/log.rs` (I/O routing),
@@ -284,14 +286,15 @@ All `unsafe` is confined to the `io-uring` FFI contract, each block justified:
 
 * **Domain B** (FUSE-over-`io_uring`) is implemented in Phase 10 as a native
   transport adapter (discovery, negotiation, codec, and the `io_uring` command
-  layer); it does not engage on the development host. See `docs/FUSE_URING.md`.
+  layer) and, since Phase 15, **engages for real on this host**. See
+  `docs/FUSE_URING.md`; this document is only about the backing engine (Domain A).
 * **Ring B** (asynchronous bloom persistence) is not implemented; no acceleration
   structure is written in this phase.
 * The commit sequencer still writes record-by-record to preserve the Phase 2
   fault-injection court; batched submission is provided and measured but is not
   yet the default commit path.
 * Read concurrency is realized for multi-segment `read_range` and for the batch
-  API; the current FUSE transport serializes core access, so cross-*file* read
-  concurrency is not yet exercised end to end.
+  API. The FUSE read path no longer serializes core access (Phase 19 read views,
+  `docs/CONCURRENCY.md`), so cross-*file* read concurrency is realized end to end.
 * A ring-depth / staging-size sweep is follow-up work; the chosen values are the
   documented small starting configuration.

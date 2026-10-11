@@ -7,10 +7,11 @@ Normative notes for the accelerated read path. Implements research §10
 ## 1. Boundary: EKBLOOM's mathematics vs. OrFS's storage/selection
 
 EKBLOOM is consumed **unchanged** as an immutable, rev-pinned git dependency
-(`ekbloom = { git = "file:///mnt/1tb_kingston/EKBLOOM", rev = "255452e1…", version = "= 0.3.0" }`).
-Pinning to a committed revision makes OrFS builds reproducible independent of
-concurrent, uncommitted edits in EKBLOOM's working tree (see
-[`docs/LIMITATIONS.md`](LIMITATIONS.md) §1 and `evidence/receipts/ekbloom.json`).
+(`ekbloom = { git = "https://github.com/infinityabundance/EKBLOOM", rev = "708c349…", version = "= 0.3.0" }`).
+Pinning to a committed revision on the public `origin/main` makes OrFS builds
+reproducible from a clean checkout, independent of any other checkout on the
+machine (see [`docs/LIMITATIONS.md`](LIMITATIONS.md) §1 and
+`evidence/receipts/{ekbloom,source-commit}.json`).
 OrFS never copies, modifies, or reimplements EKBLOOM's state machine.
 
 The division of labour (research §10):
@@ -55,7 +56,7 @@ convenience wrappers, not needed by the planner), `recovery`, `sweep`,
 `worker`, `asyncpub`.
 
 Version/format are pinned in two places: the `Cargo.toml` git-rev dependency
-(`rev = "255452e1…"`, `= 0.3.0`) and `manifestation::EKBLOOM_VERSION`
+(`rev = "708c349…"`, `= 0.3.0`) and `manifestation::EKBLOOM_VERSION`
 (`"0.3.0"`), which is recorded verbatim in every generation manifest and
 re-checked on every read. The exact rev is in `evidence/receipts/ekbloom.json`.
 

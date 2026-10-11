@@ -3,6 +3,8 @@
 # transient benchmark/test scratch
 /evidence/**/*.tmp
 /evidence/**/*.scratch
+# non-FUSE performance-court smoke outputs (never benchmark evidence)
+/evidence/performance/conventional/
 # mount test scratch outside docker only
 /mnt-scratch
 

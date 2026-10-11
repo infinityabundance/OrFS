@@ -46,8 +46,8 @@ enable it (see `docs/FUSE_URING.md`).
 | 8 | EKBLOOM integration | complete |
 | 9 | Concealed query structures | complete |
 | 10 | FUSE-over-`io_uring` | implemented; not active on this host (see `docs/FUSE_URING.md`) |
-| 11 | Security and crash-hardening | — |
-| 12 | Performance court | — |
+| 11 | Security and crash-hardening | complete |
+| 12 | Performance court | complete |
 
 ## Development is Docker-only
 

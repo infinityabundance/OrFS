@@ -2,7 +2,7 @@
 
 **Status:** the native-Rust FUSE-over-`io_uring` transport adapter is implemented
 and its discovery, negotiation, codec, and `io_uring` command layer are tested.
-A **real F2 mount is not achievable on the development host**, for two
+A **real F2 mount is not achievable on the development host**, for three
 independent reasons documented below (§7). Requesting F2 therefore falls back
 cleanly to F1/F0 with byte-identical contents. No success is fabricated.
 
@@ -235,7 +235,7 @@ the profile-classification rule.
 
 ---
 
-## 7. Why a real F2 mount is not achievable here (two blockers)
+## 7. Why a real F2 mount is not achievable here (three blockers)
 
 Both are *honest, documented* outcomes; neither is worked around by faking
 success.

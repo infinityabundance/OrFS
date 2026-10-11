@@ -11,7 +11,11 @@
 //! * `F2`/`E2` reported **UNAVAILABLE** with the concrete runtime reason.
 //!
 //! It writes `evidence/performance/{sequential-read,random-read,append-write,
-//! fuse-baseline,mount-replay}.json`.
+//! fuse-baseline,mount-replay}.json` when run against real mounts, and the
+//! gitignored `evidence/performance/conventional/` copy of the same files when
+//! run without `ORFS_FUSE_TEST=1`. Namespacing by mount mode means a plain
+//! `cargo test` can never overwrite the benchmark evidence produced under
+//! `scripts/container-fuse-test.sh`.
 //!
 //! ## Running it
 //!
@@ -49,7 +53,17 @@ fn manifest_dir() -> PathBuf {
 }
 
 fn evidence_dir() -> PathBuf {
-    manifest_dir().join("evidence/performance")
+    // The mounted run is the benchmark: it owns `evidence/performance/`. A plain
+    // (non-FUSE) run is a smoke pass, not a benchmark, so it writes to a
+    // gitignored subdirectory and can never clobber the committed benchmark
+    // evidence. The two writers of mount-replay data are therefore also distinct
+    // from `tests/snapshot_model.rs` (which writes `mount-replay-snapshot.json`).
+    let base = manifest_dir().join("evidence/performance");
+    if std::env::var("ORFS_FUSE_TEST").as_deref() == Ok("1") {
+        base
+    } else {
+        base.join("conventional")
+    }
 }
 
 fn unique_scratch(prefix: &str) -> PathBuf {

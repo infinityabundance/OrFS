@@ -137,6 +137,12 @@ frontier (section 5) measures the manifested paths directly.
 All figures are from one recorded run; the machine-generated values (including
 the full config × workload matrix) are in
 `evidence/performance/{fuse-baseline,sequential-read,random-read,append-write,mount-replay}.json`.
+These benchmark files are written by `tests/performance_court.rs` **only under a
+real mount** (`scripts/container-fuse-test.sh`). A plain `cargo test` runs the
+same court as a bounded smoke pass and writes its conventional-only copy to the
+gitignored `evidence/performance/conventional/`, so it can never overwrite the
+benchmark evidence. The snapshot court's mount-replay evidence is namespaced
+separately as `evidence/performance/mount-replay-snapshot.json`.
 
 ### 4.1 Sequential read
 

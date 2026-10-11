@@ -88,37 +88,46 @@ phase.
 | 1 | Authoritative append-only log (Plane A) | **complete** |
 | 2 | Transactions and durability (Plane A) | **complete** |
 | 3 | Namespace and extents (Plane B) | **complete** |
-| 4 | Traditional FUSE transport (Plane D) | planned |
-| 5 | Backing `io_uring` (Plane D) | planned |
-| 6 | Historical snapshots and index checkpoints (Planes A/B) | planned |
-| 7 | Concealed manifestation (Plane C) | planned |
-| 8 | EKBLOOM integration (Plane C) | planned |
-| 9 | Concealed query structures (Plane C) | planned |
-| 10 | FUSE-over-`io_uring` (Plane D) | planned |
-| 11 | Security and crash-hardening (all planes) | planned |
-| 12 | Performance court (all planes) | planned |
+| 4 | Traditional FUSE transport (Plane D) | **complete** |
+| 5 | Backing `io_uring` (Plane D) | **complete** |
+| 6 | Historical snapshots and index checkpoints (Planes A/B) | **complete** |
+| 7 | Concealed manifestation (Plane C) | **complete** |
+| 8 | EKBLOOM integration (Plane C) | **complete** |
+| 9 | Concealed query structures (Plane C) | **complete** |
+| 10 | FUSE-over-`io_uring` (Plane D) | **implemented; not active here** (see `docs/FUSE_URING.md` §7) |
+| 11 | Security and crash-hardening (all planes) | **complete** |
+| 12 | Performance court (all planes) | **complete** |
 
-### Phase 0 status (accurate)
+### Implementation status (accurate)
 
-What actually exists and is verified today:
+Phases 0–12 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
-- The `orfs` crate builds, its tests pass, and `cargo fmt`/`clippy -D warnings`
-  are clean **inside the pinned container** (`scripts/container-*.sh`).
+- The `orfs` crate builds, its **220** tests (default) / **225**
+  (`--features failpoints`) pass, and `cargo fmt -p orfs --check` /
+  `clippy --all-targets -- -D warnings` are clean **inside the pinned container**
+  (`scripts/container-*.sh`).
 - `src/capabilities.rs` + `orfs doctor` perform a **real** kernel/container
   capability probe (no mutation of host state).
-- The error model (`src/error.rs`) is fully populated and maps to POSIX errnos.
-- EKBLOOM `v0.3.0` is consumed as an immutable, rev-pinned git dependency
-  (`ekbloom = { git = "file:///mnt/1tb_kingston/EKBLOOM", rev = "255452e1…", version = "=0.3.0" }`)
-  and exercised by a round-trip test; its state mathematics is not reimplemented
-  here. See `docs/LIMITATIONS.md` §1.
-* Every other CLI subcommand (`mount`, `unmount`, `stat`, `snapshot`,
-  `manifest`, `grow`, `query`, `bench`) is present in the target surface but
-  **explicitly unimplemented**: it rejects with `ENOSYS` naming its owning phase.
-  No placeholder behaviour is advertised as working. `init`, `inspect`,
-  `verify`, and `recover` are genuinely implemented.
+- The CLI is fully wired: `doctor`, `init`, `inspect`, `verify`, `recover`,
+  `mount`/`unmount`, `stat`, `snapshot`, `manifest`, `grow`, `query`, and `bench`
+  are implemented and exercised by tests.
+- EKBLOOM `v0.3.0` is consumed as an immutable, rev-pinned git dependency on the
+  public repository
+  (`ekbloom = { git = "https://github.com/infinityabundance/EKBLOOM", rev = "708c349…", version = "=0.3.0" }`)
+  and exercised by round-trip/equivalence tests; its state mathematics is not
+  reimplemented here. A clean checkout builds with **no** sibling EKBLOOM tree.
+  See `docs/LIMITATIONS.md` §1 and `evidence/receipts/{ekbloom,source-commit}.json`.
 
-Phases 4–12 are **not implemented**. The CLI is intentionally honest about this.
-Phases 0–3 are complete; see `docs/PROGRESS.md`.
+Honest non-claims (see the linked documents):
+
+- **F2** (FUSE-over-`io_uring`) is implemented and negotiated live, but is
+  **not active on this host** (`fuse.enable_uring=0`); requesting it falls back
+  to F1/F0 with byte-identical contents (`docs/FUSE_URING.md` §7,
+  `docs/LIMITATIONS.md` §4).
+- The **image pixel-surface pyramid** is **not materialised**; only geometry is
+  implemented (`docs/QUERY.md` §9.1, `src/image.rs`).
+- No performance superiority is claimed: E1 is slower and the manifestation
+  frontier falls back to the authoritative read (`docs/PERFORMANCE.md`).
 
 ---
 
@@ -134,17 +143,19 @@ Normative implementation documents to be produced. Status is marked honestly.
 | `docs/PROGRESS.md` | Honest per-phase status and delivered artifacts | **exists** |
 | `docs/TRANSACTIONS.md` | Transaction framing, ordering, atomicity, durability modes | **exists** (Phase 2) |
 | `docs/NAMESPACE.md` | Inode/dentry/extent/index semantics, proof obligations | **exists** (Phase 3) |
-| `docs/FUSE-SEMANTICS.md` | POSIX/FUSE operation semantics, handles, cache modes, permissions | planned (Phase 4) |
-| `docs/IO_URING.md` | Backing `io_uring` rings (writer/read/bloom), backpressure, fallback | planned (Phase 5) |
-| `docs/FUSE_URING.md` | FUSE-over-`io_uring` transport, capability negotiation, safe fallback | planned (Phase 10) |
-| `docs/EKBLOOM-INTEGRATION.md` | Manifestation profiles, certified selection, exact fallback | planned (Phase 8) |
-| `docs/RECOVERY.md` | Crash/torn-write recovery, rebuildable indexes, no silent repair | planned (Phase 2+) |
-| `docs/SECURITY.md` | Permission model, hostile-backing-data handling, threat model | planned (Phase 11) |
-| `docs/PERFORMANCE.md` | Benchmark methodology, metrics, reproducibility rules | planned (Phase 12) |
-| `docs/LIMITATIONS.md` | Known limits, kernel-dependence, unsupported capabilities | planned |
+| `docs/FUSE-SEMANTICS.md` | POSIX/FUSE operation semantics, handles, cache modes, permissions | **exists** (Phase 4) |
+| `docs/IO_URING.md` | Backing `io_uring` rings (writer/read/bloom), backpressure, fallback | **exists** (Phase 5) |
+| `docs/SNAPSHOTS.md` | Historical snapshots, index checkpoints, mount cost | **exists** (Phase 6) |
+| `docs/MANIFESTATION.md` | Concealed manifestation engine and physical accounting | **exists** (Phase 7) |
+| `docs/EKBLOOM-INTEGRATION.md` | Manifestation profiles, certified selection, exact fallback | **exists** (Phase 8) |
+| `docs/QUERY.md` | Concealed query structures and the typed query API | **exists** (Phase 9) |
+| `docs/FUSE_URING.md` | FUSE-over-`io_uring` transport, capability negotiation, safe fallback | **exists** (Phase 10) |
+| `docs/RECOVERY.md` | Crash/torn-write recovery, rebuildable indexes, no silent repair | **exists** (Phase 11) |
+| `docs/SECURITY.md` | Permission model, hostile-backing-data handling, threat model | **exists** (Phase 11) |
+| `docs/PERFORMANCE.md` | Benchmark methodology, metrics, reproducibility rules | **exists** (Phase 12) |
+| `docs/LIMITATIONS.md` | Known limits, kernel-dependence, unsupported capabilities | **exists** |
 
-Until a document above is written, this index is the only normative OrFS
-document in `docs/`; treat unimplemented phases as unspecified by code.
+Every normative document above exists; there are no planned-only documents.
 
 ---
 
@@ -154,21 +165,26 @@ All project execution is **Docker-only**: build, tests, lint, fuzzers,
 benchmarks, and mount experiments run inside digest-pinned images with
 memory/swap caps, never on the host (see `scripts/`). Container FUSE and
 `io_uring` still depend on the host kernel; this is documented under
-`docs/LIMITATIONS.md` (pending).
+`docs/LIMITATIONS.md`.
 
 Machine-readable evidence lives under `evidence/`:
 
 - `evidence/receipts/` — host environment, container image IDs, toolchain,
-  EKBLOOM dependency fingerprint, and the `doctor` capability report.
-- `evidence/{correctness,recovery,performance,security}/` — populated by later
-  phases.
+  EKBLOOM dependency fingerprint, source commit, and the `doctor` capability
+  report.
+- `evidence/{correctness,recovery,performance,security}/` — test- and
+  benchmark-generated evidence (POSIX court, recovery, performance court,
+  unsafe audit, hostile-input results).
 
-Reproduce the Phase 0 gates:
+Reproduce the gates (from a clean checkout; the EKBLOOM pin is public, so no
+sibling working tree is required):
 
 ```sh
-scripts/container-build.sh     # cargo build
-scripts/container-test.sh      # cargo test  (tests/smoke.rs)
-scripts/container-check.sh     # cargo fmt -p orfs --check + clippy -D warnings
-scripts/receipts-host.sh       # host-side receipts
+scripts/container-build.sh        # cargo build
+scripts/container-test.sh         # cargo test  (220 tests)
+scripts/container-fuse-test.sh    # real-mount FUSE + performance court
+scripts/container-uring-test.sh   # io_uring integration + backing benchmark
+scripts/container-check.sh        # cargo fmt -p orfs --check + clippy -D warnings
+scripts/receipts-host.sh          # host-side receipts (incl. source-commit.json)
 sh -c '. scripts/lib.sh && docker_run sh scripts/receipts-container.sh'
 ```

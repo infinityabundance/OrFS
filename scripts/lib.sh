@@ -17,15 +17,39 @@ ORFS_BASE_IMAGE="rust:1.99.0-slim-bookworm@sha256:2c3a22f0a5533ea2dd5a16627bc841
 ORFS_IMAGE="${ORFS_IMAGE:-orfs-build:1.99.0}"
 ORFS_KMOUNT_IMAGE="${ORFS_KMOUNT_IMAGE:-orfs-kmount:1.99.0}"
 
-# Absolute paths. The OrFS project consumes the sibling EKBLOOM crate as a
-# rev-pinned git dependency (see docs/LIMITATIONS.md §1). Cargo resolves it from
-# the git repository at $ORFS_PARENT/EKBLOOM, so the parent directory must be
-# mounted at the SAME path inside the container for the pin to resolve.
-ORFS_PROJECT_DIR="$(cd "$(dirname "$0 2>/dev/null || echo .")/.." 2>/dev/null && pwd || pwd)"
-# When lib.sh is sourced from an interactive shell, $0 may be the shell name;
-# fall back to the current directory if the computed path is not the project.
-if [ ! -f "$ORFS_PROJECT_DIR/Cargo.toml" ]; then
-    ORFS_PROJECT_DIR="$(pwd)"
+# Absolute paths. The OrFS project consumes EKBLOOM as a rev-pinned git
+# dependency on the public GitHub repository (see docs/LIMITATIONS.md §1).
+#
+# Resolve the project directory from the *invoking script's own location*, never
+# from the current working directory alone, so every script works no matter what
+# cwd it is launched from. `$0` is the path of the top-level script that sourced
+# this file (`sh scripts/foo.sh`), because POSIX `.`/`source` preserves `$0`; when
+# this file is sourced interactively, `$0` is the shell name and the search
+# falls through to `$PWD`. A candidate wins only if it actually contains
+# `Cargo.toml`; if none does, we fail loudly instead of silently operating on the
+# wrong tree.
+_orfs_is_project() { [ -n "$1" ] && [ -f "$1/Cargo.toml" ]; }
+
+# Honor an explicit override only when it really points at the project.
+if [ -n "${ORFS_PROJECT_DIR:-}" ] && ! _orfs_is_project "$ORFS_PROJECT_DIR"; then
+    ORFS_PROJECT_DIR=""
+fi
+
+if [ -z "${ORFS_PROJECT_DIR:-}" ]; then
+    _orfs_script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd || true)"
+    for _orfs_cand in "$_orfs_script_dir/.." "$_orfs_script_dir" "$(pwd)"; do
+        if _orfs_is_project "$_orfs_cand"; then
+            ORFS_PROJECT_DIR="$(CDPATH= cd -- "$_orfs_cand" && pwd)"
+            break
+        fi
+    done
+    unset _orfs_script_dir _orfs_cand
+fi
+
+if ! _orfs_is_project "${ORFS_PROJECT_DIR:-}"; then
+    echo "orfs: fatal: cannot locate the OrFS project root — no Cargo.toml near \$0='$0' or \$PWD='$(pwd)'." >&2
+    echo "orfs: set ORFS_PROJECT_DIR to the directory containing Cargo.toml." >&2
+    exit 1
 fi
 ORFS_PARENT_DIR="$(cd "$ORFS_PROJECT_DIR/.." && pwd)"
 

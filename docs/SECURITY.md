@@ -204,21 +204,22 @@ or a kind mismatch (a directory handle used for I/O, or vice versa).
 Every `unsafe` site in the crate, its purpose, and its written invariant. This
 table is regenerated from the source at test time
 (`hostile_files::every_unsafe_block_has_a_written_safety_invariant`) and written
-to `evidence/security/unsafe-audit.json`, which asserts that **all 21 sites carry
+to `evidence/security/unsafe-audit.json`, which asserts that **all 22 sites carry
 a `SAFETY:` comment**. Focused tests exercise the safe wrappers
 (`tests/uring_integration.rs`, `tests/fuse_uring.rs`, `tests/log_model.rs`).
 
 | File:line | Site | Safety invariant |
 |---|---|---|
+| `bench.rs:641` | `posix_fadvise(..., POSIX_FADV_DONTNEED)` | The fd is an open regular file; `posix_fadvise` is an advisory hint that dereferences no memory. |
 | `buffers.rs:77` | `unsafe impl Send for AlignedBuffer` | The buffer owns its allocation outright; transferring ownership to another thread transfers no aliasing. |
 | `buffers.rs:87` | `alloc_zeroed(layout)` | `len > 0` so the layout is non-zero; the pointer is checked for null and is owned until `dealloc` with the same layout. |
 | `buffers.rs:108`/`:114` | `slice::from_raw_parts(_mut)` | `ptr` is valid for `len` bytes for the buffer's lifetime; `&mut self` proves exclusivity for the mutable form. |
 | `buffers.rs:127` | `dealloc(ptr, layout)` | `ptr`/`layout` came from `alloc_zeroed` with exactly this layout. |
 | `buffers.rs:155` | `unsafe impl Send for BufferPool` | The pool owns every buffer outright; the `iovec` fields are raw pointers into those owned buffers. |
 | `capabilities.rs:55`/`:56` | `zeroed()` + `uname` | `uname` is a pure query filling a caller-owned struct. |
-| `stats.rs:134`/`:135`, `fuse.rs:1830`/`:1831` | `zeroed()` + `statvfs` | `c` is a valid NUL-terminated path and `st` a valid aligned caller-owned struct. |
-| `fuse.rs:2049` | signal handler body | Performs a single atomic store and returns (async-signal-safe). |
-| `fuse.rs:2174` | `umount2(..., MNT_DETACH)` | `c` is a valid NUL-terminated path; lazy detach cannot block on the caller. |
+| `stats.rs:134`/`:135`, `fuse.rs:1847`/`:1848` | `zeroed()` + `statvfs` | `c` is a valid NUL-terminated path and `st` a valid aligned caller-owned struct. |
+| `fuse.rs:2066` | signal handler body | Performs a single atomic store and returns (async-signal-safe). |
+| `fuse.rs:2191` | `umount2(..., MNT_DETACH)` | `c` is a valid NUL-terminated path; lazy detach cannot block on the caller. |
 | `fuse_uring.rs:865`/`:1025` | `submission().push(&entry)` | The SQE references only the request's encoded bytes, copied into the submission queue. |
 | `uring.rs:437` | `register_buffers(&iov)` | The iovecs point at page-aligned buffers owned by the pool for the registration lifetime. |
 | `uring.rs:586`/`:633` | `buf.as_mut_ptr().add(job.done)` | The buffer is a caller-owned `&[mut] [u8]` that outlives the completion; `done ≤ len`. |

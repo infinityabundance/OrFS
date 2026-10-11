@@ -157,7 +157,7 @@ Mount is **not constant-time**. The two costs are:
 
 Both are measured and reported by `MountReport` (`records_replayed`,
 `bytes_replayed`, `checkpoints_found`, `checkpoints_rejected`, `wall_micros`,
-`full_replay_fallback`). `evidence/performance/mount-replay.json` records
+`full_replay_fallback`). `evidence/performance/mount-replay-snapshot.json` records
 measured full-replay vs checkpoint-mount times on identical logs. Checkpoints pay
 off when the retained log dwarfs the index (namespace-light, write-heavy
 workloads); a checkpoint on a trivially small log can cost more than it saves,
@@ -198,7 +198,7 @@ extended-attribute size and access rules (they are computed, not stored). See
 * (f) Snapshot stability across remount.
 
 Evidence: `evidence/correctness/snapshot-equivalence.json` (per-root
-reconstruction verdicts) and `evidence/performance/mount-replay.json` (measured
+reconstruction verdicts) and `evidence/performance/mount-replay-snapshot.json` (measured
 mount time vs retained history size, with and without checkpoints).
 
 ## 9. CLI

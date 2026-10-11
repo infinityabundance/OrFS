@@ -458,7 +458,7 @@ orfs snapshot mount   <backing> <root> <mnt>      # read-only FUSE
 
 * `evidence/correctness/snapshot-equivalence.json` — per-root reconstruction
   verdicts (historical bytes/size vs the state captured at `R`).
-* `evidence/performance/mount-replay.json` — measured full-replay vs
+* `evidence/performance/mount-replay-snapshot.json` — measured full-replay vs
   checkpoint-mount time on identical logs, across retained-history sizes.
 
 ### Explicitly not implemented in Phase 6
@@ -815,18 +815,19 @@ statement) and `docs/RECOVERY.md` (recovery states, modes, invariants).
   (`Clean` / `RetainedTail { kind, abandoned_bytes, quarantined }`) and
   `OpenMode::ReadOnly` is documented as the degraded/read-only mode (it never
   mutates a byte).
-* **Unsafe audit** — all 21 `unsafe` sites enumerated from source at test time and
+* **Unsafe audit** — all 22 `unsafe` sites enumerated from source at test time and
   confirmed to carry a written `SAFETY:` invariant
   (`evidence/security/unsafe-audit.json`).
 
 ### Tests (inside the container)
 
-* `cargo test`: **215 passing** (92 unit + 9 `concurrency_stress` + 8
+* `cargo test`: **220 passing** (94 unit + 9 `concurrency_stress` + 8
   `ekbloom_read` + 2 `fuse_integration` + 3 `fuse_uring` + 4 `fuzz_decode` +
   23 `hostile_files` + 10 `log_model` + 8 `manifestation` + 8 `namespace_model`
-  + 9 `query` + 8 `recovery_adversarial` + 4 `smoke` + 1 `snapshot_fuse` + 10
-  `snapshot_model` + 9 `transaction_model` + 7 `uring_integration`).
-* `cargo test --features failpoints`: **220 passing** (adds 2 `crash_recovery`
+  + 1 `performance_court` + 9 `query` + 10 `recovery_adversarial` + 4 `smoke` +
+  1 `snapshot_fuse` + 10 `snapshot_model` + 9 `transaction_model` + 7
+  `uring_integration`).
+* `cargo test --features failpoints`: **225 passing** (adds 2 `crash_recovery`
   and the failpoints unit/transaction tests).
 * `cargo fmt -p orfs --check` and `cargo clippy --all-targets -- -D warnings`
   pass; `sh scripts/container-fuse-test.sh` and `sh scripts/container-uring-test.sh`
@@ -908,3 +909,47 @@ statement) and `docs/RECOVERY.md` (recovery states, modes, invariants).
 * Figures are warm-cache, single-run, non-portable (documented caveats).
 * The residual watermark window: bytes committed but not yet watermarked before a
   crash cannot be detected as lost.
+
+## Phase 13 — Reproducibility repair (independent-audit findings)
+
+**Complete.** Addresses the findings of the independent acceptance audit
+(`docs/ACCEPTANCE-AUDIT.md`). No source or test *semantics* changed beyond the
+evidence-namespacing fix below.
+
+### Delivered
+
+* **EKBLOOM re-pin (Gate M).** `ekbloom` is now pinned to an existing commit on
+  the **public** repository — `git = "https://github.com/infinityabundance/EKBLOOM"`,
+  `rev = 708c349128668bf26b50684ce473d8de4058dc31` (`origin/main`, version
+  `0.3.0`) — replacing the dangling local `file://` pin at rev `255452e1` whose
+  history was force-pushed. `Cargo.lock` is updated. The public API surface was
+  already compatible: **no OrFS source change was required**. A clean checkout
+  now builds with no sibling EKBLOOM tree.
+* **`scripts/lib.sh` project-root detection.** The malformed
+  `dirname "$0 2>/dev/null || echo ."` is replaced by a search that prefers the
+  invoking script's own directory (falling back to `$PWD`), accepts a candidate
+  only if it contains `Cargo.toml`, and **fails loudly** otherwise — so the
+  scripts work from any cwd and never silently operate on the wrong tree.
+* **`evidence/receipts/source-commit.json`** now exists; it records the OrFS
+  commit, branch, worktree cleanliness, capture time, and the EKBLOOM pin
+  (url/rev/version). `scripts/receipts-host.sh` generates it (and a
+  public-pin-shaped `ekbloom.json`) from `Cargo.toml`.
+* **Evidence namespacing.** `tests/snapshot_model.rs` writes
+  `evidence/performance/mount-replay-snapshot.json` (was colliding with
+  `tests/performance_court.rs` on `mount-replay.json`). The performance court
+  now writes its **benchmark** evidence only under a real mount; a plain
+  `cargo test` writes a conventional-only copy to the gitignored
+  `evidence/performance/conventional/`. A plain test run can no longer overwrite
+  benchmark evidence.
+* **Documentation synchronised** with the actual behaviour: `ORFS-SPEC.md`
+  (phase + document tables, honest non-claims), `README.md` (phase table),
+  `PROGRESS.md` (counts: 220 default / 225 failpoints; **22** `unsafe` sites),
+  `SECURITY.md` (unsafe table incl. the `bench.rs` site), `FUSE_URING.md` §7
+  (“three blockers”), `LIMITATIONS.md` §1 (public pin), `SNAPSHOTS.md`,
+  `EKBLOOM-INTEGRATION.md`, `PERFORMANCE.md`.
+
+### Evidence
+
+* `evidence/receipts/source-commit.json`, `evidence/receipts/ekbloom.json`.
+* `evidence/performance/mount-replay-snapshot.json`.
+* `evidence/security/unsafe-audit.json` — **22** sites.

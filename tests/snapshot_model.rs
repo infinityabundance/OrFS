@@ -21,7 +21,9 @@
 //!
 //! It also emits the machine-generated evidence
 //! `evidence/correctness/snapshot-equivalence.json` and
-//! `evidence/performance/mount-replay.json`.
+//! `evidence/performance/mount-replay-snapshot.json`. The latter is namespaced
+//! distinctly from the performance court's `evidence/performance/mount-replay.json`
+//! so a plain `cargo test` can never clobber benchmark evidence (or vice versa).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -782,7 +784,7 @@ fn mount_replay_evidence() {
                  Checkpoints pay off when the retained log dwarfs the index.",
     });
     write_json(
-        &manifest_dir().join("evidence/performance/mount-replay.json"),
+        &manifest_dir().join("evidence/performance/mount-replay-snapshot.json"),
         &doc,
     );
 }

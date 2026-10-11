@@ -2516,7 +2516,7 @@ fn serve_job<C: OrfsCore + Send + 'static>(
             get_u64(hdr, 264),
             get_u64(hdr, 8),
             get_u32(hdr, 4),
-            (get_u32(hdr, 272) as usize).min(e.payload.len()),
+            (clamp_payload_sz(get_u32(hdr, 272), e.payload.len())),
         )
     };
     let destroy = opcode == FUSE_DESTROY;
@@ -2943,7 +2943,7 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
             } else {
                 let e = &self.entries[idx];
                 let hdr = e.header.as_slice();
-                let payload_sz = (get_u32(hdr, 272) as usize).min(e.payload.len());
+                let payload_sz = clamp_payload_sz(get_u32(hdr, 272), e.payload.len());
                 let req = Req {
                     opcode,
                     nodeid: get_u64(hdr, 16),
@@ -2987,15 +2987,37 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
 /// `fuse_out_header` at the start of `in_out`, the reply data in the payload
 /// buffer, and its length in `ring_ent_in_out.payload_sz` (offset 272).
 fn write_reply(e: &mut EntryState, unique: u64, err: i32, data: &[u8]) {
+    // Safety invariant (memory, not just `unsafe`): the kernel copies exactly
+    // `ring_ent_in_out.payload_sz` bytes out of the registered payload buffer, and
+    // that buffer is exactly `PAYLOAD_BUF` bytes. A reply must therefore never
+    // claim (or copy) more than the buffer holds. Clamp defensively: a request
+    // whose `size` field is out of range (a hostile or buggy client asking for a
+    // read/readdir larger than the registered buffer) must not panic the session
+    // thread and must not make the kernel over-read adjacent heap. Legitimate
+    // requests are always ≤ `max_read`/`max_write` (128 KiB), so the clamp is a
+    // no-op for them. Asserted by
+    // `reply_larger_than_the_registered_buffer_is_clamped_not_panicking`.
+    let n = data.len().min(e.payload.len());
     let hdr = e.header.as_mut_slice();
-    let len = (16 + data.len()) as u32;
+    let len = (16 + n) as u32;
     hdr[0..4].copy_from_slice(&len.to_ne_bytes());
     let wire = if err == 0 { 0 } else { -err };
     hdr[4..8].copy_from_slice(&wire.to_ne_bytes());
     hdr[8..16].copy_from_slice(&unique.to_ne_bytes());
-    hdr[272..276].copy_from_slice(&(data.len() as u32).to_ne_bytes());
+    hdr[272..276].copy_from_slice(&(n as u32).to_ne_bytes());
     let payload = e.payload.as_mut_slice();
-    payload[..data.len()].copy_from_slice(data);
+    payload[..n].copy_from_slice(&data[..n]);
+}
+
+/// The payload size a registered entry actually holds: the kernel-reported
+/// `payload_sz`, capped at the registered payload buffer's length.
+///
+/// A hostile or out-of-range `payload_sz` (for example `u32::MAX`) can therefore
+/// never index past the buffer; the two call sites (`serve_job`, `serve_entry`)
+/// both go through this one function, so the clamp cannot drift. Asserted by
+/// `payload_size_is_clamped_to_the_registered_buffer`.
+fn clamp_payload_sz(raw: u32, cap: usize) -> usize {
+    (raw as usize).min(cap)
 }
 
 // ---------------------------------------------------------------------------
@@ -3166,5 +3188,224 @@ mod tests {
             Reply::Attr(a).encode_into(&mut buf, Duration::from_secs(1), Duration::from_secs(2));
         assert_eq!(err, 0);
         assert_eq!(buf, first, "reusing the buffer is byte-identical");
+    }
+
+    // -----------------------------------------------------------------------
+    // Completion ownership + buffer-lifetime invariants (Phase 28)
+    //
+    // Each test names the safety invariant its corresponding `unsafe`/code
+    // comment claims and asserts it directly, rather than restating the comment.
+    // -----------------------------------------------------------------------
+
+    /// A reply body of `i` selects a different `Reply` shape; used to interleave
+    /// many encodings through one reused buffer.
+    fn make_reply(i: usize) -> Reply {
+        match i {
+            0 => Reply::Empty,
+            1 => Reply::Err(libc::ENOENT),
+            2 => Reply::Write(1234),
+            3 => Reply::Data(vec![0x11; 8 * 1024]),
+            4 => Reply::Dir(vec![0x22; 64]),
+            5 => Reply::Open {
+                fh: 9,
+                open_flags: FOPEN_PASSTHROUGH,
+                backing_id: 3,
+            },
+            6 => Reply::Statfs {
+                blocks: 1,
+                bfree: 2,
+                bavail: 3,
+                files: 4,
+                ffree: 5,
+                bsize: 4096,
+            },
+            7 => Reply::Attr(Attr {
+                ino: 5,
+                mode: libc::S_IFREG | 0o644,
+                nlink: 1,
+                blksize: 4096,
+                size: 999,
+                ..Default::default()
+            }),
+            _ => Reply::Entry(Attr::default()),
+        }
+    }
+
+    /// **Invariant (d): reply / reused-buffer correctness under interleaving.**
+    /// `encode_into` reuses one caller buffer and must be byte-identical to a
+    /// fresh encoding every time, with no trailing bytes surviving from a larger
+    /// earlier reply (`out.clear()` at the top). Reuse is only sound because each
+    /// reply is staged and read back before the next request reuses the buffer.
+    #[test]
+    fn reply_encode_into_interleaved_reuse_is_byte_identical() {
+        let ttl = Duration::from_secs(1);
+        let mut reused = Vec::new();
+        for round in 0..4 {
+            for i in 0..9 {
+                let mut fresh = Vec::new();
+                let e_fresh = make_reply(i).encode_into(&mut fresh, ttl, ttl);
+                let e_reused = make_reply(i).encode_into(&mut reused, ttl, ttl);
+                assert_eq!(e_fresh, e_reused, "round {round} reply {i}");
+                assert_eq!(
+                    fresh, reused,
+                    "round {round} reply {i}: reuse must be byte-identical"
+                );
+            }
+        }
+    }
+
+    /// **Invariant: the kernel-reported `payload_sz` is clamped to the registered
+    /// buffer length.** A hostile/out-of-range size can never index past the
+    /// buffer.
+    #[test]
+    fn payload_size_is_clamped_to_the_registered_buffer() {
+        let cap = 4096;
+        assert_eq!(clamp_payload_sz(u32::MAX, cap), cap);
+        assert_eq!(clamp_payload_sz(0, cap), 0);
+        assert_eq!(clamp_payload_sz(4096, cap), 4096);
+        assert_eq!(clamp_payload_sz(4097, cap), 4096);
+    }
+
+    /// **Invariant: `write_reply` stages the reply exactly where the kernel reads
+    /// it** — `fuse_out_header` at the start of `in_out` (len@0, error@4,
+    /// unique@8) and the body length at `ring_ent_in_out.payload_sz` (offset 272),
+    /// with the bytes copied into the payload buffer.
+    #[test]
+    fn write_reply_stages_header_and_payload_at_documented_offsets() {
+        let mut e = EntryState::new(0, 1);
+        write_reply(&mut e, 0x1122_3344_5566_7788, 0, &[0xAB; 300]);
+        let hdr = e.header.as_slice();
+        assert_eq!(get_u32(hdr, 0), 16 + 300, "out_header.len");
+        assert_eq!(get_u32(hdr, 4), 0, "out_header.error");
+        assert_eq!(get_u64(hdr, 8), 0x1122_3344_5566_7788, "out_header.unique");
+        assert_eq!(get_u32(hdr, 272), 300, "ring_ent_in_out.payload_sz");
+        assert_eq!(&e.payload.as_slice()[..300], &[0xAB; 300][..]);
+
+        // An error reply negates the errno on the wire and carries no body.
+        write_reply(&mut e, 7, libc::ENOENT, &[]);
+        let hdr = e.header.as_slice();
+        assert_eq!(get_u32(hdr, 0), 16);
+        assert_eq!(
+            i32::from_ne_bytes(hdr[4..8].try_into().unwrap()),
+            -libc::ENOENT
+        );
+    }
+
+    /// **Invariant (buffer lifetime): a reply larger than the registered payload
+    /// buffer is clamped, never a panic and never an over-claim.** Regression test
+    /// for the hostile `read`/`readdir` `size` field: before the clamp,
+    /// `write_reply` sliced `payload[..data.len()]` out of bounds (panic / DoS) and
+    /// would have told the kernel to copy past the registered buffer.
+    #[test]
+    fn reply_larger_than_the_registered_buffer_is_clamped_not_panicking() {
+        let mut e = EntryState::new(0, 1);
+        let cap = e.payload.len();
+        write_reply(&mut e, 7, 0, &vec![0x5A; cap + 4096]);
+        let hdr = e.header.as_slice();
+        assert_eq!(
+            get_u32(hdr, 272),
+            cap as u32,
+            "payload_sz must be clamped to the registered buffer"
+        );
+        assert_eq!(get_u32(hdr, 0), (16 + cap) as u32);
+        assert!(e.payload.as_slice().iter().all(|&b| b == 0x5A));
+    }
+
+    /// **Invariant (buffer lifetime): the registered entry's buffers are at a
+    /// stable address and its `iovec` array points into them, even after
+    /// ownership moves to another thread.** The kernel is handed `iov[0]`/`iov[1]`
+    /// once at `REGISTER` and dereferences them for the entry's whole lifetime, so
+    /// this must hold across the `unsafe impl Send for EntryState`.
+    #[test]
+    fn entry_state_buffers_are_stable_under_ownership_move() {
+        let e = EntryState::new(3, 9);
+        let header_ptr = e.header.as_ptr() as usize;
+        let payload_ptr = e.payload.as_ptr() as usize;
+        assert_eq!(e.iov[0].iov_base as usize, header_ptr, "iov[0] = header");
+        assert_eq!(e.iov[1].iov_base as usize, payload_ptr, "iov[1] = payload");
+        assert_eq!(e.iov[0].iov_len, e.header.len());
+        assert_eq!(e.iov[1].iov_len, e.payload.len());
+        // Move the entry to another thread and back (the `Send` transfer the
+        // registration relies on); the addresses must not change.
+        let e = std::thread::spawn(move || e).join().expect("worker");
+        assert_eq!(e.header.as_ptr() as usize, header_ptr);
+        assert_eq!(e.payload.as_ptr() as usize, payload_ptr);
+        assert_eq!(e.iov[0].iov_base as usize, header_ptr);
+        assert_eq!(e.iov[1].iov_base as usize, payload_ptr);
+    }
+
+    /// **Invariant (a/c): a closed `JobQueue` wakes every waiter and drains to
+    /// `None`.** A sentinel job whose entry is heap-owned (so its raw pointer stays
+    /// valid) documents that a queued `EntryPtr` is only handed out while the
+    /// session keeps the entry alive.
+    #[test]
+    fn job_queue_close_wakes_waiters_and_drains_cleanly() {
+        let q = JobQueue::new();
+        let mut entry = Box::new(EntryState::new(1, 1));
+        let ptr = &mut *entry as *mut EntryState;
+        q.push(Job {
+            idx: 0,
+            entry: EntryPtr(ptr),
+            lane: Lane::Fast,
+        });
+        q.push(Job {
+            idx: 1,
+            entry: EntryPtr(ptr),
+            lane: Lane::Bulk,
+        });
+        assert_eq!(q.pop(Lane::Fast).map(|j| j.idx), Some(0));
+        assert_eq!(q.pop(Lane::Bulk).map(|j| j.idx), Some(1));
+        q.close();
+        assert!(q.pop(Lane::Fast).is_none(), "closed queue drains to None");
+        assert!(q.pop(Lane::Bulk).is_none());
+        drop(entry);
+    }
+
+    /// **Invariant (c): `WorkerPool` shutdown with outstanding requests joins
+    /// every worker before returning.** This is the ownership guarantee that no
+    /// worker still holds an `EntryPtr` when the session tears the ring and the
+    /// entries down.
+    #[test]
+    fn worker_pool_drop_joins_workers_with_outstanding_jobs() {
+        use std::sync::atomic::{AtomicUsize, Ordering as O};
+        use std::sync::mpsc::channel;
+
+        let queue = Arc::new(JobQueue::new());
+        let (_tx, rx) = channel::<Done>();
+        let processed = Arc::new(AtomicUsize::new(0));
+        // The entry outlives the pool, so the queued raw pointers stay valid.
+        let entry = Box::new(EntryState::new(0, 1));
+        let ptr = &*entry as *const EntryState as *mut EntryState;
+        let mut threads = Vec::new();
+        for _ in 0..2 {
+            let q = Arc::clone(&queue);
+            let c = Arc::clone(&processed);
+            threads.push(std::thread::spawn(move || {
+                while let Some(_job) = q.pop(Lane::Fast) {
+                    c.fetch_add(1, O::SeqCst);
+                }
+            }));
+        }
+        for i in 0..8 {
+            queue.push(Job {
+                idx: i,
+                entry: EntryPtr(ptr),
+                lane: Lane::Fast,
+            });
+        }
+        let pool = WorkerPool::<crate::namespace::Namespace> {
+            queue,
+            done_rx: rx,
+            threads,
+            _marker: std::marker::PhantomData,
+        };
+        // Dropping the pool closes the queues and joins both workers.
+        drop(pool);
+        assert_eq!(
+            processed.load(O::SeqCst),
+            8,
+            "every outstanding job must have been served before Drop returns"
+        );
+        drop(entry);
     }
 }

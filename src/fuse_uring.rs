@@ -1525,4 +1525,93 @@ mod tests {
         // Requesting zero-copy never changes the plan on a baseline kernel.
         assert_eq!(plan_queues(&legacy, true), QueuePlan::Baseline);
     }
+
+    // -----------------------------------------------------------------------
+    // Raw 128-byte SQE layout (Phase 28)
+    //
+    // `entry128_set_len` is the one place OrFS writes an `io_uring` ABI field
+    // through a raw pointer (the pinned crate exposes no `sqe->len` setter). These
+    // tests assert the exact layout the safety argument depends on.
+    // -----------------------------------------------------------------------
+
+    /// **Invariant (e): the raw entry is exactly 128 bytes and `entry128_set_len`
+    /// writes only the 4-byte `sqe->len` field at byte offset 24, for any value.**
+    #[test]
+    fn raw_sqe_len_field_is_written_at_the_documented_offset() {
+        assert_eq!(
+            std::mem::size_of::<squeue::Entry128>(),
+            128,
+            "Entry128 is the 64-byte SQE plus the 64-byte command area"
+        );
+        for len in [0u32, 1, 2, 0xDEAD_BEEF, u32::MAX] {
+            let entry = opcode::UringCmd80::new(types::Fd(0), FUSE_IO_URING_CMD_REGISTER)
+                .cmd([0u8; URING_CMD_AREA_SZ])
+                .build()
+                .user_data(0xABCD);
+            let entry = entry128_set_len(entry, len);
+            assert_eq!(
+                read_entry128_len(&entry),
+                len,
+                "sqe->len must land at byte {SQE_LEN_OFFSET}"
+            );
+            // A second write is idempotent and overwrites the first.
+            let entry = entry128_set_len(entry, 2);
+            assert_eq!(read_entry128_len(&entry), 2);
+        }
+    }
+
+    /// Byte offset of the ABI `sqe->len` field within a 128-byte `Entry128`.
+    const SQE_LEN_OFFSET: usize = 24;
+
+    /// Read the raw `sqe->len` field of an [`squeue::Entry128`] (test-only).
+    fn read_entry128_len(entry: &squeue::Entry128) -> u32 {
+        // SAFETY: `Entry128` is `#[repr(C)]` and exactly 128 bytes (asserted
+        // above); byte offset 24 is the ABI `sqe->len` field. `entry128_set_len`
+        // has already initialised those four bytes, so this reads initialised
+        // memory owned by `entry`, reading no padding and aliasing nothing.
+        let got = unsafe {
+            std::ptr::read_unaligned(
+                (entry as *const squeue::Entry128)
+                    .cast::<u8>()
+                    .add(SQE_LEN_OFFSET)
+                    .cast::<[u8; 4]>(),
+            )
+        };
+        u32::from_ne_bytes(got)
+    }
+
+    /// **Invariant: the 80-byte SQE command area decodes totally over arbitrary
+    /// bytes.** `from_sqe_cmd` takes a fixed-size array, so it has no length to
+    /// validate and cannot panic or allocate; the field offsets it reads
+    /// (flags@0, commit_id@8, qid@16, padding@18, union@24) are asserted to
+    /// round-trip, with the unused tail zeroed on encode.
+    #[test]
+    fn cmd_area_decode_is_total_over_arbitrary_bytes() {
+        let mut state = 0x1234_5678_9abc_def0u64;
+        let mut next = || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 33) as u8
+        };
+        for _ in 0..4096 {
+            let mut cmd = [0u8; URING_CMD_AREA_SZ];
+            for b in cmd[..FUSE_URING_CMD_REQ_SZ].iter_mut() {
+                *b = next();
+            }
+            let req = FuseUringCmdReq::from_sqe_cmd(&cmd);
+            let back = req.to_sqe_cmd();
+            assert_eq!(
+                &back[..FUSE_URING_CMD_REQ_SZ],
+                &cmd[..FUSE_URING_CMD_REQ_SZ]
+            );
+            assert!(
+                back[FUSE_URING_CMD_REQ_SZ..].iter().all(|&b| b == 0),
+                "the SQE command area tail must be zeroed on encode"
+            );
+            // The union accessors are total and cannot panic on any input.
+            let _ = req.bufpool();
+            let _ = req.zero_copy_buf_index();
+        }
+    }
 }

@@ -1,7 +1,10 @@
-# OrFS — Security Model, Hardening, and Unsafe Audit (Phase 11)
+# OrFS — Security Model, Hardening, and Unsafe Audit (Phase 11; native-FUSE hardening, Phase 28)
 
 This document is normative for Phase 11 (research directive §28 *filesystem
-security*, §29 *non-withdrawal privacy implications*, §34 *fault injection*).
+security*, §29 *non-withdrawal privacy implications*, §34 *fault injection*) and
+extended in Phase 28 with the native FUSE-over-`io_uring` threat/fuzzing analysis,
+the raw-SQE layout assertions, the completion-ownership and buffer-lifetime
+tests, and the reconciled `unsafe` audit (§3.13, §4.1).
 Every claim below is backed by a test in this repository, a build-time check, or
 a machine-generated evidence file under `evidence/security/`. Where a guarantee
 is **not** provided, it is stated as a limitation rather than implied.
@@ -197,36 +200,141 @@ File-handle validation is uniform: every `read`/`write`/`readdir`/`releasedir`
 looks the handle up in the handle table and returns `EBADF` for an unknown handle
 or a kind mismatch (a directory handle used for I/O, or vice versa).
 
+### 3.13 Native FUSE-over-`io_uring` (F2): buffer lifetimes, SQE layout, completion ownership
+
+`src/fuse_native.rs` owns the `/dev/fuse` descriptor and drives an
+`IORING_SETUP_SQE128` ring; `src/fuse_uring.rs` is the UAPI codec and command
+layer. This is the crate's most `unsafe`-dense surface (37 of the 53 audited
+sites: 27 in `fuse_native.rs`, 4 in `fuse_uring.rs`, 6 in `buffers.rs`), so its
+invariants are **asserted by focused tests**, not merely stated in comments —
+see `tests/native_fuse_fuzz.rs` and the unit tests named below.
+
+**Request decode is total.** `FuseInHeader::from_bytes`,
+`FuseUringEntInOut::from_bytes`, `FuseUringReqHeader::from_bytes`,
+`RingRequest::decode`, and `FuseUringCmdReq::from_sqe_cmd` read fixed-size
+little-endian fields with `.try_into().ok()?`; none uses an input length to size
+an allocation and none can panic (`arbitrary_bytes_never_panic_any_decoder`;
+fuzzed below in §4.1).
+
+**The kernel-reported payload size is clamped.** The per-entry registered
+payload buffer is exactly `PAYLOAD_BUF` (256 KiB). Both the single-loop and the
+worker-pool dispatch paths derive the request payload length through one
+function, `clamp_payload_sz(raw, cap) = min(raw, cap)`, so a hostile or
+out-of-range `size` can never index past the buffer
+(`fuse_native::tests::payload_size_is_clamped_to_the_registered_buffer`).
+
+**The reply never over-claims the registered buffer.** The kernel copies exactly
+`ring_ent_in_out.payload_sz` bytes out of the registered payload buffer, so
+`write_reply` clamps the reply body to the buffer length before staging it.
+This is a Phase 28 fix: an out-of-range `read`/`readdir` `size` used to produce a
+reply body larger than `PAYLOAD_BUF`, which panicked the session thread (index
+out of bounds) and — absent the panic — would have told the kernel to copy past
+the registered buffer
+(`reply_larger_than_the_registered_buffer_is_clamped_not_panicking`).
+
+**Registered buffers are at stable, pinned addresses.** The kernel is handed the
+`iov[0]`/`iov[1]` array once at `REGISTER` and dereferences it for the entry's
+whole lifetime. `EntryState` owns its `AlignedBuffer`s and boxes its `iovec`
+array, so its addresses do not change when it is moved (the
+`unsafe impl Send for EntryState`); asserted by
+`entry_state_buffers_are_stable_under_ownership_move` and, for the underlying
+allocation, `buffers::tests::aligned_buffer_address_is_stable_when_ownership_moves_between_threads`.
+
+**Completion ownership is explicit.** A dispatch worker receives a stable
+`EntryPtr` to one entry **only while `inflight[idx]` is set**, and the session
+thread neither touches that entry nor submits its `COMMIT_AND_FETCH` until the
+matching `Done` returns; `WorkerPool::drop` closes the queues and joins every
+worker **before** the ring and the entries are torn down, so no worker can still
+hold an `EntryPtr` when the buffers are freed
+(`worker_pool_drop_joins_workers_with_outstanding_jobs`,
+`job_queue_close_wakes_waiters_and_drains_cleanly`). A registered buffer is
+releasable only after every referencing completion is reaped **and** its pin is
+dropped; a *cancel* is not a completion
+(`buffers::tests::registered_buffers_are_released_only_after_every_completion_is_reaped`).
+Shutdown with outstanding ring commands submits and drains without panic
+(`tests/fuse_uring.rs::ring_control_cancel_and_shutdown_are_safe`).
+
+**The raw 128-byte SQE layout is asserted.** `entry128_set_len` writes the ABI
+`sqe->len` field (which must be `== 2` for `REGISTER`) through a raw pointer,
+because the pinned `io-uring` crate exposes no setter. A focused test asserts
+`size_of::<Entry128>() == 128` and that a write lands at exactly byte offset 24
+and nowhere else, for several values
+(`fuse_uring::tests::raw_sqe_len_field_is_written_at_the_documented_offset`); the
+80-byte command area is asserted to encode/decode at the documented offsets over
+arbitrary bytes (`cmd_area_decode_is_total_over_arbitrary_bytes`).
+
 ---
 
 ## 4. `unsafe`-block audit
 
-Every `unsafe` site in the crate, its purpose, and its written invariant. This
-table is regenerated from the source at test time
-(`hostile_files::every_unsafe_block_has_a_written_safety_invariant`) and written
-to `evidence/security/unsafe-audit.json`, which asserts that **all 43 sites carry
-a `SAFETY:` comment**. The table below is a representative selection grouped by
-purpose; the committed JSON is the authoritative, source-derived inventory. Focused tests exercise the safe wrappers
-(`tests/uring_integration.rs`, `tests/fuse_uring.rs`, `tests/log_model.rs`).
+Every `unsafe` site in the crate, its purpose, its written invariant, and a
+covering test where one exists. This inventory is regenerated from the source at
+test time (`hostile_files::every_unsafe_block_has_a_written_safety_invariant`)
+and written to `evidence/security/unsafe-audit.json` (schema `v2`), which asserts
+that **all 53 sites carry a `SAFETY:` comment**. The count is **line-based**: one
+entry per source line carrying the `unsafe` token (comment lines are excluded),
+so an expression whose `unsafe` opener and body span two lines counts once (only
+the opener carries the token). The Phase 28 audit reconciled this document with
+the machine-generated count: it read **43** and is now **53**
+(`fuse_native.rs` 27, `buffers.rs` 6, `uring.rs` 5, `fuse_uring.rs` 4, `fuse.rs`
+4, `capabilities.rs` 2, `capacity.rs` 2, `stats.rs` 2, `bench.rs` 1) — the native
+transport surface alone (Phase 15/21/26) is **37** of them. Each JSON entry also
+carries `safety_invariant` (the `SAFETY:` comment text) and `covering_test` (a
+named test where one exists). The table below is a representative selection
+grouped by purpose; the committed JSON is the authoritative inventory. For the
+native-path sites, see §3.13.
 
-| File:line | Site | Safety invariant |
+| File (site) | Purpose | Safety invariant |
 |---|---|---|
-| `bench.rs:641` | `posix_fadvise(..., POSIX_FADV_DONTNEED)` | The fd is an open regular file; `posix_fadvise` is an advisory hint that dereferences no memory. |
-| `buffers.rs:77` | `unsafe impl Send for AlignedBuffer` | The buffer owns its allocation outright; transferring ownership to another thread transfers no aliasing. |
-| `buffers.rs:87` | `alloc_zeroed(layout)` | `len > 0` so the layout is non-zero; the pointer is checked for null and is owned until `dealloc` with the same layout. |
-| `buffers.rs:108`/`:114` | `slice::from_raw_parts(_mut)` | `ptr` is valid for `len` bytes for the buffer's lifetime; `&mut self` proves exclusivity for the mutable form. |
-| `buffers.rs:127` | `dealloc(ptr, layout)` | `ptr`/`layout` came from `alloc_zeroed` with exactly this layout. |
-| `buffers.rs:155` | `unsafe impl Send for BufferPool` | The pool owns every buffer outright; the `iovec` fields are raw pointers into those owned buffers. |
-| `capabilities.rs:55`/`:56` | `zeroed()` + `uname` | `uname` is a pure query filling a caller-owned struct. |
-| `stats.rs:134`/`:135`, `fuse.rs:1847`/`:1848` | `zeroed()` + `statvfs` | `c` is a valid NUL-terminated path and `st` a valid aligned caller-owned struct. |
-| `fuse.rs:2066` | signal handler body | Performs a single atomic store and returns (async-signal-safe). |
-| `fuse.rs:2191` | `umount2(..., MNT_DETACH)` | `c` is a valid NUL-terminated path; lazy detach cannot block on the caller. |
-| `fuse_uring.rs:865`/`:1025` | `submission().push(&entry)` | The SQE references only the request's encoded bytes, copied into the submission queue. |
-| `uring.rs:437` | `register_buffers(&iov)` | The iovecs point at page-aligned buffers owned by the pool for the registration lifetime. |
-| `uring.rs:586`/`:633` | `buf.as_mut_ptr().add(job.done)` | The buffer is a caller-owned `&[mut] [u8]` that outlives the completion; `done ≤ len`. |
-| `uring.rs:764`/`:912` | `sq.push(&entry)` | The caller guarantees every buffer referenced by the entry stays alive until the CQE. |
+| `bench.rs` | `posix_fadvise(..., POSIX_FADV_DONTNEED)` | The fd is an open regular file; `posix_fadvise` is an advisory hint that dereferences no memory. |
+| `buffers.rs` | `unsafe impl Send for AlignedBuffer` / `BufferPool` | The buffer/pool owns its allocation outright; transferring ownership transfers no aliasing. |
+| `buffers.rs` | `alloc_zeroed` / `dealloc` | `len > 0` so the layout is non-zero; the pointer is checked for null and freed exactly once with the same layout. |
+| `buffers.rs` | `slice::from_raw_parts(_mut)` | `ptr` is valid for `len` bytes for the buffer's lifetime; `&mut self` proves exclusivity for the mutable form. |
+| `capabilities.rs` | `zeroed()` + `uname` | `uname` is a pure query filling a caller-owned struct. |
+| `stats.rs`, `capacity.rs`, `fuse.rs` | `zeroed()` + `statvfs` | `c` is a valid NUL-terminated path and `st` a valid aligned caller-owned struct. |
+| `fuse.rs` | signal-handler body | Performs a single atomic store and returns (async-signal-safe). |
+| `fuse.rs` | `umount2(..., MNT_DETACH)` | `c` is a valid NUL-terminated path; lazy detach cannot block on the caller. |
+| `fuse.rs` | direct `mount(2)` / `recvmsg` fd passing | Only owned fds and owned, NUL-terminated buffers are passed; ownership is transferred exactly once. |
+| `fuse_uring.rs` | `entry128_set_len` raw `sqe->len` write | `Entry128` is `repr(C)` and exactly 128 bytes; offset 24 holds `sqe->len`; written through a unique `&mut`. (Asserted: `raw_sqe_len_field_is_written_at_the_documented_offset`.) |
+| `fuse_uring.rs` | `submission().push(&entry)` | The SQE references only the request's encoded bytes, copied into the submission queue. |
+| `fuse_native.rs` | `unsafe impl Send for EntryState` / `EntryPtr` | Each owns its buffers/points into a stable, session-owned `Vec`; transfers exclusive access only. (Asserted: `entry_state_buffers_are_stable_under_ownership_move`.) |
+| `fuse_native.rs` | `FUSE_DEV_IOC_BACKING_OPEN`/`CLOSE` ioctls | `self.fd` is a live `/dev/fuse` fd; the map is `repr(C)` POD; the request number is transcribed from the running kernel and unit-tested. |
+| `fuse_native.rs` | `socketpair`/`recvmsg`/`dup`/`read`/`write`/`close`/`poll` | Each operates on owned fds and owned, correctly-sized buffers; no pointer is retained. |
+| `fuse_native.rs` | `geteuid`/`getegid`, `sched_setaffinity` | Pure queries / a fully-owned, correctly-sized CPU mask that the kernel does not retain. |
+| `uring.rs` | `register_buffers(&iov)`, `push(&entry)`, `buf.as_ptr().add(done)` | The iovecs point at page-aligned pool-owned buffers for the registration lifetime; the entry's buffers outlive the CQE; `done ≤ len`. |
 
-See `evidence/security/unsafe-audit.json` for the machine-generated list.
+See `evidence/security/unsafe-audit.json` for the machine-generated list with each
+site's invariant text and covering test.
+
+### 4.1 Native-FUSE fuzzing and sanitizers (Phase 28)
+
+**Fuzzer.** `tests/native_fuse_fuzz.rs` is a deterministic, seeded, bounded
+in-container mutation fuzzer for the native transport: it starts from valid
+encodings and applies bit flips, byte overwrites, truncation, splicing, extreme
+length words, and zero runs (plus fully random strings), asserting no panic, no
+out-of-bounds/UB, no unbounded allocation, and field-preservation on every
+accepted input. Targets and iteration counts (seed `0x0F35_28FF_7E5E_0001`):
+`FuseInHeader` decode 40 000; `FuseUringReqHeader`/`RingRequest` decode 40 000;
+80-byte SQE command area 20 000; reply encode 10 000 — **110 000 iterations, 0
+panics** (`evidence/security/native-fuse-fuzz.json`). A hostile ring entry with
+an out-of-range `nodeid`/`offset`/`payload_sz` or a bogus `commit_id`/`flags` is
+decoded without panic; the payload-size clamp and reply clamp (§3.13) are the
+consumers' half of that contract and are unit-tested.
+
+`cargo fuzz`/libFuzzer is **not run**: it and Miri both require a nightly
+toolchain, and this project is pinned to stable `1.99.0` and builds offline; Miri
+additionally cannot execute the mount/`io_uring`/ioctl syscalls this code uses.
+
+**Sanitizer.** `valgrind --tool=memcheck` (3.19.0, now installed in the build
+image) runs over the native-path binaries — `buffers`/`fuse_uring`/`fuse_native`
+unit tests and the fuzzer — with `--error-exitcode=1 --leak-check=full
+--errors-for-leak-kinds=definite`: **0 errors, 0 definitely/indirectly lost** in
+every target (`scripts/container-valgrind.sh`;
+`evidence/security/valgrind.json`). AddressSanitizer and ThreadSanitizer are
+**not** run for the same nightly reason, and Miri is inapplicable; this is stated
+as a limitation, not a pass. Valgrind instruments the process's own accesses but
+does not model the kernel copying out of the registered ring buffers — that side
+is covered by the layout/clamp assertions above.
 
 ---
 
@@ -295,6 +403,20 @@ See `evidence/security/unsafe-audit.json` for the machine-generated list.
 12. **Committed-root coverage** — `Log::open` now refuses a committed root that
     extends beyond the canonical bytes that physically exist (a defensive
     invariant against a root dangling past present segments).
+13. **Native F2 reply over-claimed the registered buffer (Phase 28).**
+    `fuse_native::write_reply` copied the reply body into the entry's registered
+    payload buffer with `payload[..data.len()]` and wrote `data.len()` as the
+    kernel-visible `ring_ent_in_out.payload_sz`, without capping it at the buffer
+    length (`PAYLOAD_BUF`, 256 KiB). A FUSE request whose `read`/`readdir` `size`
+    field is out of range (a hostile or buggy client) makes the dispatcher return
+    a body larger than the buffer, so the session thread **panicked** (index out
+    of bounds — a denial of service on the native mount) and, absent the panic,
+    would have told the kernel to copy past the registered buffer. **Fixed**: the
+    body is clamped to the buffer length before staging, and the request-side
+    `payload_sz` clamp is now a single tested function (`clamp_payload_sz`).
+    Regression tests: `reply_larger_than_the_registered_buffer_is_clamped_not_panicking`,
+    `payload_size_is_clamped_to_the_registered_buffer`. The classical F0/F1 path
+    was unaffected (`fuser` bounds the reply itself).
 
 ### Left open, with reasons
 
@@ -321,14 +443,17 @@ See `evidence/security/unsafe-audit.json` for the machine-generated list.
 
 | File | Contents |
 |---|---|
-| `evidence/security/unsafe-audit.json` | Every `unsafe` site + whether it has a `SAFETY:` invariant |
+| `evidence/security/unsafe-audit.json` | Every `unsafe` site (schema v2) + whether it has a `SAFETY:` invariant, that invariant's text, and a covering test where one exists |
 | `evidence/security/hostile-input-results.json` | Real outcomes of a fixed hostile corpus against every decoder |
 | `evidence/security/fuzz-decode.json` | Fuzzing method, seed, per-surface iteration counts, panics = 0 |
+| `evidence/security/native-fuse-fuzz.json` | Native-FUSE fuzzer: seed, per-surface iteration counts (110 000), panics = 0 |
+| `evidence/security/valgrind.json` (+ `valgrind-logs/`) | valgrind memcheck over the native-path unit/fuzz binaries: 0 errors, 0 definitely lost; ASan/Miri/TSan unavailability |
 | `evidence/security/concurrency-stress.json` | Concurrency workloads and the invariants checked; the Loom decision |
 | `evidence/recovery/segment-rollover.json` | A real mid-flight rollover |
 | `evidence/recovery/commit-interruption.json`, `torn-write.json` | Process-crash fault-injection results |
 
 Tests: `tests/hostile_files.rs` (hostile-input court + unsafe audit),
-`tests/fuzz_decode.rs` (bounded mutation fuzzer), `tests/concurrency_stress.rs`
-(concurrency court), `tests/recovery_adversarial.rs` (recovery/adversarial
-court). See `docs/PROGRESS.md` for the exact passing counts.
+`tests/fuzz_decode.rs` (bounded mutation fuzzer), `tests/native_fuse_fuzz.rs`
+(native-FUSE fuzzer), `tests/concurrency_stress.rs` (concurrency court),
+`tests/recovery_adversarial.rs` (recovery/adversarial court). See
+`docs/PROGRESS.md` for the exact passing counts.

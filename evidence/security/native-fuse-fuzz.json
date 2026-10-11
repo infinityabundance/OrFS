@@ -1,0 +1,42 @@
+{
+  "all_ok": true,
+  "assertions": [
+    "no panic or abort on any input",
+    "no out-of-bounds/UB (decoders copy fixed-size fields; no input length sizes an allocation)",
+    "no unbounded allocation (only the bounded reply Vec, <= 16 + 8192 bytes)",
+    "every decoded field is carried through unchanged"
+  ],
+  "cargo_fuzz": {
+    "attempted": true,
+    "ran": false,
+    "reason": "`cargo-fuzz`/libFuzzer and Miri require a nightly toolchain; this project is pinned to stable 1.99.0 and builds offline in one container. A bounded, seeded, deterministic in-container mutation fuzzer is used instead (same method as tests/fuzz_decode.rs)."
+  },
+  "generator": "tests/native_fuse_fuzz.rs",
+  "method": "seeded mutation fuzzing from valid encodings (bit flips, byte overwrites, truncation, splicing, extreme length words, zero runs) plus fully random byte strings",
+  "result": "no panic, abort, hang, or unbounded allocation observed in any iteration",
+  "schema": "orfs.evidence.native-fuse-fuzz.v1",
+  "seed": 1095827162136444929,
+  "targets": [
+    {
+      "iterations": 40000,
+      "panics": 0,
+      "surface": "struct fuse_in_header (FuseInHeader::from_bytes)"
+    },
+    {
+      "iterations": 40000,
+      "panics": 0,
+      "surface": "struct fuse_uring_req_header + RingRequest::decode (FuseUringReqHeader::from_bytes / RingRequest::decode)"
+    },
+    {
+      "iterations": 20000,
+      "panics": 0,
+      "surface": "80-byte SQE cmd area (FuseUringCmdReq::from_sqe_cmd / to_sqe_cmd)"
+    },
+    {
+      "iterations": 10000,
+      "panics": 0,
+      "surface": "reply encoding (RingReply::encode / ok / error)"
+    }
+  ],
+  "total_iterations": 110000
+}

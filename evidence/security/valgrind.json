@@ -1,0 +1,14 @@
+{
+  "schema":"orfs.evidence.valgrind.v1",
+  "ran":true,
+  "tool":"valgrind-3.19.0",
+  "image_digest":"sha256:8116ee721b96b0e99437e90579782878492bef26204c8438d326ad3714ccdcd7",
+  "method":"valgrind --tool=memcheck --error-exitcode=1 --leak-check=full --errors-for-leak-kinds=definite on the native-path unit-test and fuzzer binaries",
+  "asan_miri_tsan":{"available":false,"reason":"nightly-only; the project is pinned to stable 1.99.0 and builds offline, and Miri cannot run mount/io_uring/ioctl"},
+  "targets":[
+    {"target":"lib_buffers","exit_code":0,"error_summary":0,"log":"evidence/security/valgrind-logs/lib_buffers.log"},
+    {"target":"lib_fuse_uring","exit_code":0,"error_summary":0,"log":"evidence/security/valgrind-logs/lib_fuse_uring.log"},
+    {"target":"lib_fuse_native","exit_code":0,"error_summary":0,"log":"evidence/security/valgrind-logs/lib_fuse_native.log"},
+    {"target":"native_fuse_fuzz","exit_code":0,"error_summary":0,"log":"evidence/security/valgrind-logs/native_fuse_fuzz.log"}
+  ]
+}

@@ -1,21 +1,21 @@
 {
   "cached_ext4": {
     "iterations": 200,
-    "max_ns": 7895,
-    "mean_ns": 3581,
-    "min_ns": 3267,
-    "p50_ns": 3517,
-    "p90_ns": 3707
+    "max_ns": 5701,
+    "mean_ns": 3618,
+    "min_ns": 3206,
+    "p50_ns": 3607,
+    "p90_ns": 3757
   },
   "caveat": "all three arms are page-cache warm after warmup, so this measures the per-read dispatch cost, not cold storage; the passthrough arm still avoids the /dev/fuse round-trip, which is why it is reported separately",
   "claim": "a kernel-served passthrough read of an immutable snapshot file avoids the userspace daemon; measured against a daemon-served FUSE read and a cached plain-file read of the same bytes",
   "daemon_served": {
     "iterations": 200,
-    "max_ns": 1024095,
-    "mean_ns": 537474,
-    "min_ns": 447577,
-    "p50_ns": 477553,
-    "p90_ns": 809663
+    "max_ns": 533819,
+    "mean_ns": 452412,
+    "min_ns": 439231,
+    "p50_ns": 448649,
+    "p90_ns": 465932
   },
   "daemon_stats": {
     "bulk_routed": 0,
@@ -62,11 +62,11 @@
   "iterations": 200,
   "passthrough": {
     "iterations": 200,
-    "max_ns": 43692,
-    "mean_ns": 24240,
-    "min_ns": 22412,
-    "p50_ns": 23855,
-    "p90_ns": 25408
+    "max_ns": 58600,
+    "mean_ns": 20185,
+    "min_ns": 16190,
+    "p50_ns": 19326,
+    "p90_ns": 23694
   },
   "passthrough_stats": {
     "bulk_routed": 0,

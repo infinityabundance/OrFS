@@ -3,7 +3,7 @@
   "environment": {
     "arch": "x86_64",
     "cpus": 8,
-    "image_digest": "sha256:e40e40e85910336674268fec578991ae3c0fd985b42be22fd7641fca94cd5af5",
+    "image_digest": "sha256:8116ee721b96b0e99437e90579782878492bef26204c8438d326ad3714ccdcd7",
     "os": "linux",
     "profile": "debug",
     "toolchain": "1.99.0-x86_64-unknown-linux-gnu"
@@ -13,23 +13,23 @@
   "historical_index": {
     "cache_capacity": 8,
     "cached_equals_full_replay": true,
-    "cached_total_micros": 15502,
-    "committed_root": 6585363,
-    "first_materialize_bytes_replayed": 228600,
-    "first_materialize_checkpoint_root": 2808326,
-    "first_materialize_micros": 14574,
+    "cached_total_micros": 29216,
+    "committed_root": 6585666,
+    "first_materialize_bytes_replayed": 228617,
+    "first_materialize_checkpoint_root": 2808402,
+    "first_materialize_micros": 27573,
     "first_materialize_used_checkpoint": true,
-    "full_replay_micros": 5489,
-    "historical_root": 3036926,
-    "history_bytes_before_root": 3036926,
+    "full_replay_micros": 11378,
+    "historical_root": 3037019,
+    "history_bytes_before_root": 3037019,
     "history_commits": 600,
-    "materialize_to_repeated_speedup": 62818.96551724138,
+    "materialize_to_repeated_speedup": 67128.4236153378,
     "method": "resolve (uuid,root) once via the cache: in-log checkpoint + suffix replay, then reuse; persisted under index/historical/",
     "repeated_accesses": 4000,
-    "repeated_nanos_per_access": 232.0,
-    "repeated_total_micros": 928,
-    "speedup_vs_uncached_total": 1416.333376338537,
-    "uncached_total_micros": 21956000
+    "repeated_nanos_per_access": 410.75,
+    "repeated_total_micros": 1643,
+    "speedup_vs_uncached_total": 1557.776560788609,
+    "uncached_total_micros": 45512000
   },
   "note": "A historical root is immutable: it is materialized once (preferably as a checkpoint suffix replay of just [checkpoint_root, root)), then every subsequent lookup/read is an in-memory hit independent of how much earlier history exists. The decoded-byte rows are exact and deterministic; the timings are indicative. `uncached_total_micros` is what the pre-Phase-20 path would cost (a full replay on every access); the log is authoritative and a stale/corrupt accelerator is always dropped and rebuilt.",
   "schema": "orfs.evidence.historical-index.v1",
@@ -38,48 +38,48 @@
     "method": "Index::apply_range_traced replays [start,end) via Log::records_from; decoded bytes must equal end-start",
     "rows": [
       {
-        "decoded_bytes": 6578127,
-        "decoded_fraction_of_a_full_replay": 0.9989011995238531,
+        "decoded_bytes": 6578430,
+        "decoded_fraction_of_a_full_replay": 0.9989012500785798,
         "decoded_is_exactly_the_suffix": true,
-        "end": 6585363,
+        "end": 6585666,
         "records": 2468,
         "start": 7236,
-        "start_fraction_of_history": 0.001098800476146873,
-        "suffix_bytes": 6578127,
-        "total_history_bytes": 6585363
+        "start_fraction_of_history": 0.0010987499214202483,
+        "suffix_bytes": 6578430,
+        "total_history_bytes": 6585666
       },
       {
-        "decoded_bytes": 5596474,
-        "decoded_fraction_of_a_full_replay": 0.849835309002708,
+        "decoded_bytes": 5596775,
+        "decoded_fraction_of_a_full_replay": 0.8498419142422345,
         "decoded_is_exactly_the_suffix": true,
-        "end": 6585363,
+        "end": 6585666,
         "records": 1854,
-        "start": 988889,
-        "start_fraction_of_history": 0.15016469099729202,
-        "suffix_bytes": 5596474,
-        "total_history_bytes": 6585363
+        "start": 988891,
+        "start_fraction_of_history": 0.15015808575776543,
+        "suffix_bytes": 5596775,
+        "total_history_bytes": 6585666
       },
       {
-        "decoded_bytes": 4171553,
-        "decoded_fraction_of_a_full_replay": 0.6334583226467546,
+        "decoded_bytes": 4171795,
+        "decoded_fraction_of_a_full_replay": 0.6334659243271675,
         "decoded_is_exactly_the_suffix": true,
-        "end": 6585363,
+        "end": 6585666,
         "records": 1236,
-        "start": 2413810,
-        "start_fraction_of_history": 0.3665416773532454,
-        "suffix_bytes": 4171553,
-        "total_history_bytes": 6585363
+        "start": 2413871,
+        "start_fraction_of_history": 0.36653407567283247,
+        "suffix_bytes": 4171795,
+        "total_history_bytes": 6585666
       },
       {
-        "decoded_bytes": 2306071,
-        "decoded_fraction_of_a_full_replay": 0.35018130359708344,
+        "decoded_bytes": 2306213,
+        "decoded_fraction_of_a_full_replay": 0.3501867540807566,
         "decoded_is_exactly_the_suffix": true,
-        "end": 6585363,
+        "end": 6585666,
         "records": 618,
-        "start": 4279292,
-        "start_fraction_of_history": 0.6498186964029166,
-        "suffix_bytes": 2306071,
-        "total_history_bytes": 6585363
+        "start": 4279453,
+        "start_fraction_of_history": 0.6498132459192434,
+        "suffix_bytes": 2306213,
+        "total_history_bytes": 6585666
       }
     ]
   }

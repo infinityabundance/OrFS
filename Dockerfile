@@ -24,6 +24,7 @@ RUN set -eux; \
         coreutils \
         file \
         git \
+        valgrind \
     ; \
     rm -rf /var/lib/apt/lists/*
 

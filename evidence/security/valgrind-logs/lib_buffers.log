@@ -1,0 +1,55 @@
+==38== Memcheck, a memory error detector
+==38== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==38== Using Valgrind-3.19.0 and LibVEX; rerun with -h for copyright info
+==38== Command: /mnt/1tb_kingston/OrFS/target/debug/deps/orfs-8a501630a1f1b2c2 buffers::tests --test-threads=1
+==38== Parent PID: 1
+==38== 
+==38== 
+==38== HEAP SUMMARY:
+==38==     in use at exit: 596 bytes in 3 blocks
+==38==   total heap usage: 338 allocs, 335 frees, 116,874 bytes allocated
+==38== 
+==38== 48 bytes in 1 blocks are possibly lost in loss record 2 of 3
+==38==    at 0x48417B4: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==38==    by 0x5B9D3E: alloc (unix.rs:31)
+==38==    by 0x5B9D3E: alloc_impl (alloc.rs:161)
+==38==    by 0x5B9D3E: allocate (alloc.rs:223)
+==38==    by 0x5B9D3E: {closure#0}<std::thread::thread::Inner, std::alloc::System> (sync.rs:823)
+==38==    by 0x5B9D3E: allocate_for_layout<core::mem::maybe_uninit::MaybeUninit<std::thread::thread::Inner>, alloc::sync::{impl#17}::new_uninit_in::{closure_env#0}<std::thread::thread::Inner, std::alloc::System>, fn(*mut u8) -> *mut alloc::sync::ArcInner<core::mem::maybe_uninit::MaybeUninit<std::thread::thread::Inner>>> (sync.rs:2191)
+==38==    by 0x5B9D3E: new_uninit_in<std::thread::thread::Inner, std::alloc::System> (sync.rs:821)
+==38==    by 0x5B9D3E: <std::thread::thread::Thread>::new (thread.rs:102)
+==38==    by 0x5CAB09: std::thread::current::init_current (current.rs:294)
+==38==    by 0x5AD6EF: current_or_unnamed (current.rs:251)
+==38==    by 0x5AD6EF: <std::sync::mpmc::context::Context>::new (context.rs:72)
+==38==    by 0x49B45D: __rust_std_internal_init_fn (context.rs:43)
+==38==    by 0x49B45D: call_once<fn() -> core::cell::Cell<core::option::Option<std::sync::mpmc::context::Context>>, ()> (function.rs:250)
+==38==    by 0x49B45D: unwrap_or_else<core::cell::Cell<core::option::Option<std::sync::mpmc::context::Context>>, fn() -> core::cell::Cell<core::option::Option<std::sync::mpmc::context::Context>>> (option.rs:1065)
+==38==    by 0x49B45D: <std::sys::thread_local::native::lazy::Storage<core::cell::Cell<core::option::Option<std::sync::mpmc::context::Context>>, ()>>::get_or_init_slow::<<std::sync::mpmc::context::Context>::with::CONTEXT::__rust_std_internal_init_fn> (lazy.rs:80)
+==38==    by 0x4B457B: get_or_init<core::cell::Cell<core::option::Option<std::sync::mpmc::context::Context>>, (), fn() -> core::cell::Cell<core::option::Option<std::sync::mpmc::context::Context>>> (lazy.rs:62)
+==38==    by 0x4B457B: {closure#0} (mod.rs:97)
+==38==    by 0x4B457B: call_once<std::sync::mpmc::context::{impl#0}::with::CONTEXT::{constant#0}::{closure_env#0}, (core::option::Option<&mut core::option::Option<core::cell::Cell<core::option::Option<std::sync::mpmc::context::Context>>>>)> (function.rs:250)
+==38==    by 0x4B457B: try_with<core::cell::Cell<core::option::Option<std::sync::mpmc::context::Context>>, std::sync::mpmc::context::{impl#0}::with::{closure_env#1}<std::sync::mpmc::list::{impl#3}::recv::{closure_env#1}<test::event::CompletedTest>, ()>, ()> (local.rs:462)
+==38==    by 0x4B457B: with<std::sync::mpmc::list::{impl#3}::recv::{closure_env#1}<test::event::CompletedTest>, ()> (context.rs:53)
+==38==    by 0x4B457B: <std::sync::mpmc::list::Channel<test::event::CompletedTest>>::recv (list.rs:442)
+==38==    by 0x4C0FF9: recv<test::event::CompletedTest> (mod.rs:1025)
+==38==    by 0x4C0FF9: recv<test::event::CompletedTest> (mpsc.rs:890)
+==38==    by 0x4C0FF9: run_tests<test::console::run_tests_console::{closure_env#2}> (lib.rs:445)
+==38==    by 0x4C0FF9: test::console::run_tests_console (console.rs:328)
+==38==    by 0x4ACF6C: test_main_inner<test::test_main_static::{closure_env#0}> (lib.rs:170)
+==38==    by 0x4ACF6C: test::test_main_static (lib.rs:195)
+==38==    by 0x345752: orfs::main (lib.rs:1)
+==38==    by 0x456B6A: <fn() as core::ops::function::FnOnce<()>>::call_once (library/core/src/ops/function.rs:250)
+==38==    by 0x4780ED: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> (library/std/src/sys/backtrace.rs:166)
+==38==    by 0x4590C0: std::rt::lang_start::<()>::{closure#0} (library/std/src/rt.rs:206)
+==38== 
+==38== LEAK SUMMARY:
+==38==    definitely lost: 0 bytes in 0 blocks
+==38==    indirectly lost: 0 bytes in 0 blocks
+==38==      possibly lost: 48 bytes in 1 blocks
+==38==    still reachable: 548 bytes in 2 blocks
+==38==         suppressed: 0 bytes in 0 blocks
+==38== Reachable blocks (those to which a pointer was found) are not shown.
+==38== To see them, rerun with: --leak-check=full --show-leak-kinds=all
+==38== 
+==38== For lists of detected and suppressed errors, rerun with: -s
+==38== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)

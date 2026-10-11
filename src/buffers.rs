@@ -444,4 +444,46 @@ mod tests {
         assert_eq!(iov.len(), 1);
         assert_eq!(iov[0].iov_len, 8192);
     }
+
+    /// **Invariant (b): a registered buffer is releasable only after every
+    /// referencing completion has been reaped.** Cancelling an operation is not a
+    /// completion, so an op counts as in flight until `end_op` (i.e. until its CQE
+    /// was collected) *and* its pin has been dropped.
+    #[test]
+    fn registered_buffers_are_released_only_after_every_completion_is_reaped() {
+        let pool = BufferPool::new(2, 8192);
+        let mut a = pool.pin().expect("pin a");
+        let mut b = pool.pin().expect("pin b");
+        let _oa = a.begin_op();
+        let _ob = b.begin_op();
+        assert_eq!(pool.in_flight(), 2);
+        assert_eq!(pool.try_release(), Err(ReleaseError::InFlight(2)));
+        // Reap only the first CQE: the buffer is still not releasable.
+        a.end_op();
+        assert_eq!(pool.in_flight(), 1);
+        assert_eq!(pool.try_release(), Err(ReleaseError::InFlight(1)));
+        // Reap the second; now it is the still-live pins that block release.
+        b.end_op();
+        assert_eq!(pool.in_flight(), 0);
+        assert_eq!(pool.try_release(), Err(ReleaseError::Pinned(2)));
+        drop(a);
+        drop(b);
+        assert!(
+            pool.try_release().is_ok(),
+            "release is allowed only once nothing is pinned or in flight"
+        );
+    }
+
+    /// **Invariant (buffer lifetime): an `AlignedBuffer`'s address is stable
+    /// across an ownership move between threads.** The kernel may retain a pointer
+    /// into the buffer for an operation's whole lifetime, so transferring the buffer
+    /// to another thread (the `unsafe impl Send`) must not relocate it.
+    #[test]
+    fn aligned_buffer_address_is_stable_when_ownership_moves_between_threads() {
+        let buf = AlignedBuffer::new(8192, DEFAULT_ALIGN);
+        let addr = buf.as_ptr() as usize;
+        let buf = std::thread::spawn(move || buf).join().expect("worker");
+        assert_eq!(buf.as_ptr() as usize, addr, "address must not change");
+        assert!(buf.as_slice().iter().all(|&b| b == 0));
+    }
 }

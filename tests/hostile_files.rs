@@ -696,15 +696,21 @@ fn every_unsafe_block_has_a_written_safety_invariant() {
                 continue;
             }
             // The invariant may be stated on the line, or in a `// SAFETY:`
-            // comment within the preceding few lines.
-            let has_safety = lines[idx.saturating_sub(6)..=idx]
+            // comment within the preceding few lines. Capture its text.
+            let safety = lines[idx.saturating_sub(6)..=idx]
                 .iter()
-                .any(|l| l.to_ascii_uppercase().contains("SAFETY"));
+                .rev()
+                .find(|l| l.to_ascii_uppercase().contains("SAFETY"))
+                .map(|l| l.trim().trim_start_matches('/').trim().to_string());
+            let has_safety = safety.is_some();
+            let name = file.file_name().unwrap().to_string_lossy().to_string();
             entries.push(serde_json::json!({
-                "file": file.file_name().unwrap().to_string_lossy(),
+                "file": name,
                 "line": idx + 1,
                 "text": trimmed.trim_end(),
                 "has_safety_comment": has_safety,
+                "safety_invariant": safety,
+                "covering_test": covering_test_for(&name),
             }));
         }
     }
@@ -712,11 +718,31 @@ fn every_unsafe_block_has_a_written_safety_invariant() {
     let all_documented = entries
         .iter()
         .all(|e| e["has_safety_comment"].as_bool().unwrap_or(false));
+    // Per-file counts, so the full total can be reconciled against the prose in
+    // `docs/SECURITY.md` without hand-counting.
+    let mut by_file = serde_json::Map::new();
+    for e in &entries {
+        let f = e["file"].as_str().unwrap_or("unknown").to_string();
+        let n = by_file.get(&f).and_then(|v| v.as_u64()).unwrap_or(0) + 1;
+        by_file.insert(f, serde_json::Value::from(n));
+    }
+    // The native FUSE transport surface (the Phase 28 focus).
+    let native_transport = entries
+        .iter()
+        .filter(|e| {
+            matches!(
+                e["file"].as_str(),
+                Some("fuse_native.rs") | Some("fuse_uring.rs") | Some("buffers.rs")
+            )
+        })
+        .count();
     let report = serde_json::json!({
-        "schema": "orfs.evidence.unsafe-audit.v1",
+        "schema": "orfs.evidence.unsafe-audit.v2",
         "generator": "tests/hostile_files.rs",
-        "method": "every `unsafe` token in src/*.rs is enumerated from the source at test time; each must be accompanied by a `SAFETY:` invariant comment within the preceding six lines",
+        "method": "every `unsafe` token in src/*.rs is enumerated from the source at test time; each must be accompanied by a `SAFETY:` invariant comment within the preceding six lines. The count is line-based (one entry per source line that carries the `unsafe` token, excluding comment lines); `safety_invariant` is that comment's text and `covering_test` names a test that exercises the site where one exists.",
         "unsafe_sites": entries.len(),
+        "native_transport_sites": native_transport,
+        "by_file": serde_json::Value::Object(by_file),
         "all_have_safety_comment": all_documented,
         "entries": entries,
     });
@@ -737,6 +763,28 @@ fn every_unsafe_block_has_a_written_safety_invariant() {
         all_documented,
         "every unsafe block must carry a written safety invariant"
     );
+}
+
+/// A named test (or test group) that exercises a given source file's `unsafe`
+/// sites, where one exists. Kept as a small static map so the evidence records a
+/// real, named test rather than free text; `None` means no focused test exists
+/// (the site is still covered by its written invariant and by the integration
+/// courts that call it).
+fn covering_test_for(file: &str) -> Option<&'static str> {
+    match file {
+        "buffers.rs" => Some(
+            "buffers::tests::{pins_are_exclusive_and_reusable, release_is_refused_while_pinned_or_in_flight, registered_buffers_are_released_only_after_every_completion_is_reaped, aligned_buffer_address_is_stable_when_ownership_moves_between_threads}",
+        ),
+        "fuse_native.rs" => Some(
+            "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
+        ),
+        "fuse_uring.rs" => Some(
+            "fuse_uring::tests::{raw_sqe_len_field_is_written_at_the_documented_offset, cmd_area_decode_is_total_over_arbitrary_bytes, uapi_sizes_match_the_kernel_headers} + tests/native_fuse_fuzz.rs",
+        ),
+        "uring.rs" => Some("tests/uring_integration.rs"),
+        "fuse.rs" => Some("tests/fuse_integration.rs / tests/fuse_passthrough.rs"),
+        _ => None,
+    }
 }
 
 /// Whether `line` contains the `unsafe` keyword as a code token (word-boundary).

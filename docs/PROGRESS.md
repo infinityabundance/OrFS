@@ -1592,3 +1592,93 @@ reconstruction remains exact.
 `docs/PERFORMANCE.md` §9 (measured tables), `docs/RECOVERY.md` §8
 (recovery-acceleration relationship), `docs/NAMESPACE.md` §5.0 (persistent index
 representation).
+
+## Phase 28 — Native FUSE adversarial hardening and fuzzing
+
+Phase 11's fuzzing covered the record/log and the FUSE-over-`io_uring` *header*
+decoder; the external review (§5) observed that the native FUSE code
+(`src/fuse_native.rs`, `src/fuse_uring.rs`) is the crate's most `unsafe`-dense
+surface and that its "safety comments are documentation, not a proof of
+soundness". Phase 28 gives that surface dedicated fuzzing, sanitizer coverage,
+and explicit tests of buffer lifetimes, SQE layout, and completion ownership.
+
+### Fuzzer (`tests/native_fuse_fuzz.rs`)
+
+A deterministic, seeded, bounded in-container mutation fuzzer (the
+`tests/fuzz_decode.rs` method, specialised to the native transport). It starts
+from valid encodings and applies bit flips, byte overwrites, truncation,
+splicing, extreme length words, and zero runs, plus fully random strings; every
+decoder is total (fixed-size field copies, no input length sizes an allocation).
+
+* seed `0x0F35_28FF_7E5E_0001`; **110 000 iterations, 0 panics**: `FuseInHeader`
+  decode 40 000; `FuseUringReqHeader`/`RingRequest` decode 40 000 (hostile ring
+  entries: out-of-range `nodeid`/`offset`, zero/oversized `payload_sz`, bogus
+  `commit_id`/`flags`); 80-byte SQE command area 20 000; reply encode 10 000.
+* `evidence/security/native-fuse-fuzz.json`.
+
+### Completion ownership + buffer lifetime (explicit tests)
+
+Each asserts the invariant its neighbour comment claims:
+
+* **Reply over-claim (fixed).** `write_reply` copied the reply body with
+  `payload[..data.len()]` and published `data.len()` as the kernel-visible
+  `payload_sz` without capping it at `PAYLOAD_BUF` (256 KiB). A hostile/buggy
+  `read`/`readdir` `size` made the session thread **panic** (DoS) and would have
+  made the kernel copy past the registered buffer. Fixed by clamping; the
+  request-side clamp is now the single tested `clamp_payload_sz`.
+* Reused-buffer reply encoding is byte-identical under interleaving
+  (`reply_encode_into_interleaved_reuse_is_byte_identical`); header/payload
+  offsets are asserted (`write_reply_stages_header_and_payload_at_documented_offsets`).
+* `EntryState` buffers keep a stable address and `iov` array across an ownership
+  move to another thread (`entry_state_buffers_are_stable_under_ownership_move`;
+  `buffers::tests::aligned_buffer_address_is_stable_when_ownership_moves_between_threads`).
+* `WorkerPool::drop` joins every worker with outstanding jobs before the ring and
+  entries are torn down; a closed `JobQueue` drains to `None`
+  (`worker_pool_drop_joins_workers_with_outstanding_jobs`,
+  `job_queue_close_wakes_waiters_and_drains_cleanly`).
+* A registered buffer is releasable only after every referencing completion is
+  reaped and its pin dropped — a cancel is not a completion
+  (`buffers::tests::registered_buffers_are_released_only_after_every_completion_is_reaped`).
+* Raw 128-byte SQE layout: `size_of::<Entry128>() == 128`, and
+  `entry128_set_len` writes only byte offset 24 for several values
+  (`fuse_uring::tests::raw_sqe_len_field_is_written_at_the_documented_offset`);
+  the command area decodes totally over arbitrary bytes
+  (`cmd_area_decode_is_total_over_arbitrary_bytes`).
+
+### Sanitizer
+
+`valgrind --tool=memcheck` **3.19.0** (now installed in the build image; see
+`scripts/container-valgrind.sh`) over the native-path unit binaries and the
+fuzzer: **0 errors, 0 definitely/indirectly lost** in every target
+(`evidence/security/valgrind.json`). AddressSanitizer/ThreadSanitizer require a
+nightly toolchain and Miri cannot execute mount/`io_uring`/ioctl; all three are
+recorded as **unavailable** rather than faked. Valgrind does not model the
+kernel copying out of the registered buffers — that half is covered by the
+layout/clamp assertions.
+
+### Unsafe audit reconciliation
+
+The machine-generated, line-based count (`tests/hostile_files.rs`, now schema
+`v2` with each site's invariant text and a covering test) is **53**, up from the
+**43** the prose previously claimed: `fuse_native.rs` 27, `buffers.rs` 6,
+`uring.rs` 5, `fuse_uring.rs` 4, `fuse.rs` 4, `capabilities.rs` 2,
+`capacity.rs` 2, `stats.rs` 2, `bench.rs` 1. The native transport surface alone
+is **37**. `docs/SECURITY.md` §3.13/§4/§4.1 now match the evidence.
+
+### Tests (inside the container)
+
+`cargo test`: **327 passed, 0 failed** (`orfs` unit 140 + 25 integration/doc
+targets; `native_fuse_fuzz` adds 5, the native-path unit tests add 11). FUSE
+mount (`container-fuse-test.sh`) and `io_uring` (`container-uring-test.sh`)
+courts unchanged. `valgrind` court: 4/4 targets clean.
+
+### Evidence
+
+`evidence/security/native-fuse-fuzz.json`, `evidence/security/valgrind.json`
+(+ `valgrind-logs/`), refreshed `evidence/security/unsafe-audit.json`.
+
+### Docs
+
+`docs/SECURITY.md` §3.13 (native lifetimes/SQE/completion ownership), §4 (audit
+reconciled to 53), §4.1 (native-FUSE fuzzing + sanitizer status), §6 finding 13,
+§7 evidence table; this file.

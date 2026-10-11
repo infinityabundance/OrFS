@@ -11,13 +11,13 @@
     },
     "bloom_total_bytes": 7438,
     "capacity": {
-      "available_bytes": 101485936640,
+      "available_bytes": 101296615424,
       "block_size": 4096,
       "total_bytes": 1426376364032
     },
     "capacity_policy": {
-      "authoritative_capacity_bytes": 101485944927,
-      "authoritative_headroom_bytes": 101485936640,
+      "authoritative_capacity_bytes": 101296623711,
+      "authoritative_headroom_bytes": 101296615424,
       "authoritative_used_bytes": 8287,
       "degraded": false,
       "degraded_reason": null,
@@ -51,7 +51,7 @@
     "physical_overhead_bytes": 11698,
     "uncommitted_tail_bytes": 0,
     "uuid": "4f724653-0711-4022-8033-445566778899",
-    "volume": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmpBfFqhx"
+    "volume": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmpB2P9TV"
   },
   "ekbloom_bytes_match": true,
   "generator": "tests/manifestation.rs",

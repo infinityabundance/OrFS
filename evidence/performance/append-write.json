@@ -60,10 +60,10 @@
       "generated_by": "src/bench.rs",
       "measurement": {
         "bytes": 262144,
-        "mb_per_s": 5235.132004633142,
+        "mb_per_s": 4443.118644067797,
         "ops": 64,
-        "ops_per_s": 1278108.3995686383,
-        "seconds": 0.000050074
+        "ops_per_s": 1084745.7627118644,
+        "seconds": 0.000059
       },
       "mount_options": "plain directory; no mount",
       "orfs_version": "0.1.0",
@@ -105,10 +105,10 @@
       "generated_by": "src/bench.rs",
       "measurement": {
         "bytes": 262144,
-        "mb_per_s": 6.1005958334548325,
+        "mb_per_s": 8.459074117577206,
         "ops": 64,
-        "ops_per_s": 1489.4032796520587,
-        "seconds": 0.042970229
+        "ops_per_s": 2065.2036419866226,
+        "seconds": 0.03098968
       },
       "mount_options": "transport=fuse backing_io=uring manifest=Some(\"bloom(D=4)\"); F1 (traditional /dev/fuse, io_uring backing)",
       "orfs_version": "0.1.0",
@@ -150,10 +150,10 @@
       "generated_by": "src/bench.rs",
       "measurement": {
         "bytes": 262144,
-        "mb_per_s": 7.5135929926940355,
+        "mb_per_s": 10.493389533662135,
         "ops": 64,
-        "ops_per_s": 1834.3732892319422,
-        "seconds": 0.0348893
+        "ops_per_s": 2561.862679116732,
+        "seconds": 0.024981823
       },
       "mount_options": "transport=fuse-uring backing_io=uring manifest=Some(\"bloom(D=4)\"); F2 (FUSE-over-io_uring, io_uring backing)",
       "orfs_version": "0.1.0",
@@ -195,10 +195,10 @@
       "generated_by": "src/bench.rs",
       "measurement": {
         "bytes": 262144,
-        "mb_per_s": 66.34395324865037,
+        "mb_per_s": 61.798824251342495,
         "ops": 64,
-        "ops_per_s": 16197.254211096282,
-        "seconds": 0.003951287
+        "ops_per_s": 15087.603576987914,
+        "seconds": 0.004241893
       },
       "mount_options": "transport=fuse backing_io=sync manifest=None; F0 (traditional /dev/fuse, sync backing)",
       "orfs_version": "0.1.0",
@@ -240,10 +240,10 @@
       "generated_by": "src/bench.rs",
       "measurement": {
         "bytes": 262144,
-        "mb_per_s": 45.4928349964962,
+        "mb_per_s": 47.33594464953445,
         "ops": 64,
-        "ops_per_s": 11106.649169066455,
-        "seconds": 0.005762314
+        "ops_per_s": 11556.627111702746,
+        "seconds": 0.005537948
       },
       "mount_options": "transport=fuse backing_io=uring manifest=None; F1 (traditional /dev/fuse, io_uring backing)",
       "orfs_version": "0.1.0",
@@ -285,10 +285,10 @@
       "generated_by": "src/bench.rs",
       "measurement": {
         "bytes": 262144,
-        "mb_per_s": 64.64420092612366,
+        "mb_per_s": 64.54721731475954,
         "ops": 64,
-        "ops_per_s": 15782.27561672941,
-        "seconds": 0.004055182
+        "ops_per_s": 15758.597977236213,
+        "seconds": 0.004061275
       },
       "mount_options": "transport=fuse-uring backing_io=uring manifest=None; F2 (FUSE-over-io_uring, io_uring backing)",
       "orfs_version": "0.1.0",

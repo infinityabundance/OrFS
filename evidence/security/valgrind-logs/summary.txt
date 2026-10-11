@@ -1,0 +1,4 @@
+lib_buffers|0|0
+lib_fuse_uring|0|0
+lib_fuse_native|0|0
+native_fuse_fuzz|0|0

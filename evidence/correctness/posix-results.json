@@ -19,7 +19,7 @@
   },
   "generated_by": "tests/fuse_integration.rs",
   "mounted": true,
-  "mountpoint": "/mnt/1tb_kingston/OrFS/target/fuse-it/it-525-1791756087146082245/mnt",
+  "mountpoint": "/mnt/1tb_kingston/OrFS/target/fuse-it/it-20-1791758903499167037/mnt",
   "notes": [
     "readdirplus is negotiated (FUSE_DO_READDIRPLUS) and exercised by ordinary readdir(3) calls",
     "POSIX record locks and flock are delegated to the kernel (ENOSYS); see docs/FUSE-SEMANTICS.md",

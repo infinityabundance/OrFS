@@ -1,0 +1,66 @@
+{
+  "build_profile": "debug",
+  "environment": {
+    "cgroup_memory_max": "8589934592",
+    "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "container_image": null,
+    "cores_visible": 8,
+    "cpu_max": "800000 100000",
+    "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+    "fuse_enable_uring": true,
+    "kernel_release": "7.2.9-2-cachyos",
+    "likely_container": true,
+    "machine": "x86_64",
+    "perf_counters_available": false,
+    "perf_event_paranoid": "2",
+    "ram_total_bytes": 134723346432
+  },
+  "generated_by": "tests/ekbloom_frontier_e2e.rs",
+  "schema": "orfs.ekbloom-search-e2e.v1",
+  "search": {
+    "content_bytes_read": {
+      "indexed": 16384,
+      "scan": 786432
+    },
+    "dataset": {
+      "bytes_per_file": 16384,
+      "files": 48,
+      "needle_matches": 1,
+      "pattern": "NEEDLE-IN-THE-HAYSTACK"
+    },
+    "grep_r_through_mount": {
+      "mean_ns": 1728076.142857143,
+      "min_ns": 1595420,
+      "p50_ns": 1760177,
+      "p95_ns": 1860195,
+      "p99_ns": 1860195,
+      "samples": 7
+    },
+    "honesty": "the typed query API is the only consumer of the trigram index; ordinary `grep -r` reads POSIX contents and uses the authoritative extent path (research §12.1)",
+    "index_build": {
+      "elapsed_ns": 436370759,
+      "objects_attempted": 48,
+      "objects_published": 48,
+      "payload_bytes_on_disk": 1655125,
+      "payload_bytes_total": 1594265
+    },
+    "indexed_query_api": {
+      "mean_ns": 901715.619047619,
+      "min_ns": 843606,
+      "p50_ns": 872549,
+      "p95_ns": 977716,
+      "p99_ns": 1388794,
+      "samples": 21
+    },
+    "indexed_speedup_over_scan": 8.823286715130038,
+    "scan_query_api": {
+      "mean_ns": 7975507.571428572,
+      "min_ns": 7525777,
+      "p50_ns": 7698750,
+      "p95_ns": 9796517,
+      "p99_ns": 10280611,
+      "samples": 21
+    }
+  },
+  "through_fuse": true
+}

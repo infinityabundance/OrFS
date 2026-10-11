@@ -1,29 +1,29 @@
 {
   "authoritative_baseline": {
     "read_1b": {
-      "max_ns": 91,
-      "mean_ns": 26.934,
+      "max_ns": 70,
+      "mean_ns": 20.673,
       "min_ns": 20,
-      "p50_ns": 30,
+      "p50_ns": 20,
       "p95_ns": 30,
-      "p99_ns": 31,
+      "p99_ns": 30,
       "samples": 2000
     },
     "read_4k": {
-      "max_ns": 611,
-      "mean_ns": 86.61,
-      "min_ns": 70,
-      "p50_ns": 80,
-      "p95_ns": 170,
-      "p99_ns": 301,
+      "max_ns": 331,
+      "mean_ns": 52.926,
+      "min_ns": 40,
+      "p50_ns": 50,
+      "p95_ns": 61,
+      "p99_ns": 71,
       "samples": 2000
     },
-    "sequential_mb_per_s": 48366.05166051661
+    "sequential_mb_per_s": 57124.42797995207
   },
   "best_4k_profile": {
-    "p50_ns": 461,
-    "profile": "full",
-    "ratio": 5.001678466796875
+    "p50_ns": 421,
+    "profile": "root",
+    "ratio": 1.001129150390625
   },
   "budget_note": "budget ratios are targets; the measured `ratio` per profile is the real manifested-bytes / logical-bytes figure. Where a target ratio has no profile near it, it is honestly unrepresented rather than fabricated.",
   "budgets": [
@@ -57,44 +57,181 @@
     "reason": "perf is not installed in the pinned image and /proc/sys/kernel/perf_event_paranoid > 1 with CAP_PERFMON dropped, so cycles/instructions/cache-misses/memory-bandwidth are unavailable"
   },
   "logical_bytes": 262144,
+  "phase16": {
+    "fragmented_object": {
+      "construction_ns": 12695518,
+      "defensive_no_extent_map_prefix": {
+        "max_ns": 1340119,
+        "mean_ns": 630685.671875,
+        "min_ns": 19997,
+        "p50_ns": 565098,
+        "p95_ns": 1186041,
+        "p99_ns": 1340119,
+        "samples": 64
+      },
+      "extent_count": 2047,
+      "fragmented": true,
+      "logical_bytes": 523840,
+      "manifested_bytes": 1572304,
+      "manifested_ratio": 3.0014966401954797,
+      "paths_chosen_by_the_planner": [
+        {
+          "path": "path-bloom",
+          "reads": 3000
+        }
+      ],
+      "profile": "path(D=4)",
+      "random_1b": {
+        "authoritative_extent": {
+          "max_ns": 4599,
+          "mean_ns": 890.3515,
+          "min_ns": 100,
+          "p50_ns": 762,
+          "p95_ns": 2284,
+          "p99_ns": 2745,
+          "samples": 2000
+        },
+        "planned_read": {
+          "max_ns": 5261130,
+          "mean_ns": 3307.696,
+          "min_ns": 581,
+          "p50_ns": 671,
+          "p95_ns": 732,
+          "p99_ns": 751,
+          "samples": 2000
+        }
+      },
+      "random_4k": {
+        "authoritative_extent": {
+          "max_ns": 17001,
+          "mean_ns": 10718.866,
+          "min_ns": 7604,
+          "p50_ns": 11692,
+          "p95_ns": 13275,
+          "p99_ns": 13696,
+          "samples": 1000
+        },
+        "planned_read": {
+          "max_ns": 24045,
+          "mean_ns": 8074.648,
+          "min_ns": 5320,
+          "p50_ns": 9388,
+          "p95_ns": 10129,
+          "p99_ns": 11302,
+          "samples": 1000
+        }
+      },
+      "setup_seconds": 0.487988491
+    },
+    "non_fragmented_object": {
+      "construction_ns": 9553046,
+      "defensive_no_extent_map_prefix": {
+        "max_ns": 18625,
+        "mean_ns": 8378.515625,
+        "min_ns": 2175,
+        "p50_ns": 7885,
+        "p95_ns": 15238,
+        "p99_ns": 18625,
+        "samples": 64
+      },
+      "extent_count": 1,
+      "fragmented": false,
+      "logical_bytes": 262144,
+      "manifested_bytes": 787216,
+      "manifested_ratio": 3.00299072265625,
+      "paths_chosen_by_the_planner": [
+        {
+          "path": "path-bloom",
+          "reads": 2000
+        },
+        {
+          "path": "logical-extent",
+          "reads": 1000
+        }
+      ],
+      "profile": "path(D=4)",
+      "random_1b": {
+        "authoritative_extent": {
+          "max_ns": 3206,
+          "mean_ns": 1427.839,
+          "min_ns": 1252,
+          "p50_ns": 1412,
+          "p95_ns": 1503,
+          "p99_ns": 1603,
+          "samples": 2000
+        },
+        "planned_read": {
+          "max_ns": 2397939,
+          "mean_ns": 1879.767,
+          "min_ns": 601,
+          "p50_ns": 681,
+          "p95_ns": 701,
+          "p99_ns": 711,
+          "samples": 2000
+        }
+      },
+      "random_4k": {
+        "authoritative_extent": {
+          "max_ns": 3166,
+          "mean_ns": 1762.15,
+          "min_ns": 1512,
+          "p50_ns": 1753,
+          "p95_ns": 1843,
+          "p99_ns": 1974,
+          "samples": 1000
+        },
+        "planned_read": {
+          "max_ns": 12323,
+          "mean_ns": 2379.412,
+          "min_ns": 2074,
+          "p50_ns": 2365,
+          "p95_ns": 2424,
+          "p99_ns": 2485,
+          "samples": 1000
+        }
+      },
+      "setup_seconds": 0.004471131
+    },
+    "note": "Library-level (no FUSE) phase-16 isolation over a real authoritative log. The authoritative extent read is O(1) for a contiguous object and O(extents) for a fragmented one; the manifested `path` bloom addresses by logical position and is independent of the extent map. The FUSE end-to-end numbers live in evidence/performance/ekbloom-{e2e,fragmented-e2e,search-e2e,e2e-defensive}.json."
+  },
   "profiles": [
     {
       "measured_paths_4k": [
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 84.75,
+          "mean_ns": 87.605,
           "min_ns": 80,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 862,
-        "mean_ns": 339.244,
-        "min_ns": 320,
+        "max_ns": 1563,
+        "mean_ns": 337.2145,
+        "min_ns": 301,
         "p50_ns": 340,
         "p95_ns": 351,
-        "p99_ns": 381,
+        "p99_ns": 361,
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 1386723,
-        "mean_ns": 1175.5775,
-        "min_ns": 460,
-        "p50_ns": 481,
-        "p95_ns": 501,
+        "max_ns": 1384012,
+        "mean_ns": 1122.8285,
+        "min_ns": 391,
+        "p50_ns": 421,
+        "p95_ns": 441,
         "p99_ns": 541,
         "samples": 2000
       },
-      "sequential_mb_per_s": 34026.99896157841,
-      "sequential_seconds": 7.704e-6,
+      "sequential_mb_per_s": 39343.238781329725,
+      "sequential_seconds": 6.663e-6,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 7783018,
+        "construction_ns": 7698914,
         "inode": 100,
         "label": "root",
         "logical_bytes": 262144,
@@ -108,45 +245,45 @@
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 11455.365,
-          "min_ns": 10910,
+          "mean_ns": 10361.94,
+          "min_ns": 10189,
           "path": "checkpoint"
         },
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 87.93,
+          "mean_ns": 86.75,
           "min_ns": 80,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 1563,
-        "mean_ns": 449.0635,
-        "min_ns": 420,
-        "p50_ns": 450,
+        "max_ns": 1443,
+        "mean_ns": 455.4805,
+        "min_ns": 430,
+        "p50_ns": 451,
         "p95_ns": 471,
-        "p99_ns": 491,
+        "p99_ns": 481,
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 1455471,
-        "mean_ns": 1261.569,
-        "min_ns": 501,
-        "p50_ns": 531,
-        "p95_ns": 551,
-        "p99_ns": 581,
+        "max_ns": 1398278,
+        "mean_ns": 1250.767,
+        "min_ns": 521,
+        "p50_ns": 551,
+        "p95_ns": 571,
+        "p99_ns": 591,
         "samples": 2000
       },
-      "sequential_mb_per_s": 1421.8056775901157,
-      "sequential_seconds": 0.000184374,
+      "sequential_mb_per_s": 1498.0684389786727,
+      "sequential_seconds": 0.000174988,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 7865251,
+        "construction_ns": 8093613,
         "inode": 101,
         "label": "sparse(K=1024)",
         "logical_bytes": 262144,
@@ -160,45 +297,45 @@
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 11444.93,
-          "min_ns": 10960,
+          "mean_ns": 10453.475,
+          "min_ns": 10359,
           "path": "checkpoint"
         },
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 85.115,
-          "min_ns": 70,
+          "mean_ns": 85.825,
+          "min_ns": 80,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 1472,
-        "mean_ns": 451.3665,
+        "max_ns": 1644,
+        "mean_ns": 455.8675,
         "min_ns": 421,
         "p50_ns": 451,
         "p95_ns": 471,
-        "p99_ns": 491,
+        "p99_ns": 481,
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 1462033,
-        "mean_ns": 1267.317,
-        "min_ns": 510,
-        "p50_ns": 531,
-        "p95_ns": 561,
+        "max_ns": 1389472,
+        "mean_ns": 1243.6665,
+        "min_ns": 521,
+        "p50_ns": 551,
+        "p95_ns": 571,
         "p99_ns": 581,
         "samples": 2000
       },
-      "sequential_mb_per_s": 1440.280425693235,
-      "sequential_seconds": 0.000182009,
+      "sequential_mb_per_s": 1531.11657545368,
+      "sequential_seconds": 0.000171211,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 7907941,
+        "construction_ns": 8002602,
         "inode": 102,
         "label": "sparse(K=256)",
         "logical_bytes": 262144,
@@ -212,52 +349,52 @@
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 10895.64,
-          "min_ns": 10390,
+          "mean_ns": 11609.255,
+          "min_ns": 11372,
           "path": "history"
         },
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 11043.13,
-          "min_ns": 10800,
+          "mean_ns": 10341.005,
+          "min_ns": 10249,
           "path": "checkpoint"
         },
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 89.215,
+          "mean_ns": 87.26,
           "min_ns": 80,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 2344,
-        "mean_ns": 525.016,
-        "min_ns": 501,
-        "p50_ns": 521,
-        "p95_ns": 541,
-        "p99_ns": 561,
+        "max_ns": 1804,
+        "mean_ns": 541.9355,
+        "min_ns": 511,
+        "p50_ns": 541,
+        "p95_ns": 561,
+        "p99_ns": 571,
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 2840030,
-        "mean_ns": 2038.4815,
+        "max_ns": 2726254,
+        "mean_ns": 1989.5255,
         "min_ns": 591,
-        "p50_ns": 621,
-        "p95_ns": 641,
+        "p50_ns": 622,
+        "p95_ns": 642,
         "p99_ns": 661,
         "samples": 2000
       },
-      "sequential_mb_per_s": 748.8715962199901,
-      "sequential_seconds": 0.000350052,
+      "sequential_mb_per_s": 742.7627496592819,
+      "sequential_seconds": 0.000352931,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 10204569,
+        "construction_ns": 10289324,
         "inode": 103,
         "label": "dense(K=256)",
         "logical_bytes": 262144,
@@ -271,52 +408,52 @@
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 10603.42,
-          "min_ns": 10219,
+          "mean_ns": 11625.025,
+          "min_ns": 11372,
           "path": "history"
         },
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 11022.55,
-          "min_ns": 10790,
+          "mean_ns": 10313.27,
+          "min_ns": 10209,
           "path": "checkpoint"
         },
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 85.46,
+          "mean_ns": 87.665,
           "min_ns": 80,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 1573,
-        "mean_ns": 524.717,
-        "min_ns": 491,
-        "p50_ns": 521,
-        "p95_ns": 541,
+        "max_ns": 2334,
+        "mean_ns": 541.2455,
+        "min_ns": 431,
+        "p50_ns": 541,
+        "p95_ns": 561,
         "p99_ns": 571,
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 2950687,
-        "mean_ns": 2085.496,
-        "min_ns": 581,
-        "p50_ns": 611,
-        "p95_ns": 632,
-        "p99_ns": 652,
+        "max_ns": 2883689,
+        "mean_ns": 2070.018,
+        "min_ns": 571,
+        "p50_ns": 631,
+        "p95_ns": 642,
+        "p99_ns": 661,
         "samples": 2000
       },
-      "sequential_mb_per_s": 755.6193539832701,
-      "sequential_seconds": 0.000346926,
+      "sequential_mb_per_s": 737.0096095994782,
+      "sequential_seconds": 0.000355686,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 9826745,
+        "construction_ns": 10122532,
         "inode": 104,
         "label": "dense(K=64)",
         "logical_bytes": 262144,
@@ -330,21 +467,21 @@
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 10770.955,
-          "min_ns": 10209,
+          "mean_ns": 11664.19,
+          "min_ns": 11381,
           "path": "history"
         },
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 86.555,
+          "mean_ns": 86.76,
           "min_ns": 80,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 1483,
-        "mean_ns": 385.9315,
+        "max_ns": 1372,
+        "mean_ns": 385.704,
         "min_ns": 360,
         "p50_ns": 381,
         "p95_ns": 401,
@@ -352,23 +489,23 @@
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 2996261,
-        "mean_ns": 1965.3825,
+        "max_ns": 3049440,
+        "mean_ns": 1995.545,
         "min_ns": 440,
-        "p50_ns": 461,
-        "p95_ns": 481,
-        "p99_ns": 511,
+        "p50_ns": 471,
+        "p95_ns": 491,
+        "p99_ns": 501,
         "samples": 2000
       },
-      "sequential_mb_per_s": 1504.896839156343,
-      "sequential_seconds": 0.000174194,
+      "sequential_mb_per_s": 1389.328188929639,
+      "sequential_seconds": 0.000188684,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 9046783,
+        "construction_ns": 9172032,
         "inode": 105,
         "label": "full",
         "logical_bytes": 262144,
@@ -382,38 +519,38 @@
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 93.17,
-          "min_ns": 80,
+          "mean_ns": 92.94,
+          "min_ns": 60,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 1603,
-        "mean_ns": 501.0675,
+        "max_ns": 4749,
+        "mean_ns": 507.693,
         "min_ns": 450,
         "p50_ns": 491,
-        "p95_ns": 612,
-        "p99_ns": 712,
+        "p95_ns": 621,
+        "p99_ns": 721,
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 13648945,
-        "mean_ns": 7469.778,
-        "min_ns": 602,
-        "p50_ns": 641,
-        "p95_ns": 672,
-        "p99_ns": 701,
+        "max_ns": 13316371,
+        "mean_ns": 7316.562,
+        "min_ns": 611,
+        "p50_ns": 651,
+        "p95_ns": 692,
+        "p99_ns": 782,
         "samples": 2000
       },
-      "sequential_mb_per_s": 39646.70296430732,
-      "sequential_seconds": 6.612e-6,
+      "sequential_mb_per_s": 41596.95334814345,
+      "sequential_seconds": 6.302e-6,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 10980073,
+        "construction_ns": 11043316,
         "inode": 106,
         "label": "bloom(D=1)",
         "logical_bytes": 262144,
@@ -427,38 +564,38 @@
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 92.18,
-          "min_ns": 80,
+          "mean_ns": 93.51,
+          "min_ns": 90,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 1433,
-        "mean_ns": 506.6675,
-        "min_ns": 450,
+        "max_ns": 1633,
+        "mean_ns": 509.924,
+        "min_ns": 451,
         "p50_ns": 501,
-        "p95_ns": 602,
-        "p99_ns": 731,
+        "p95_ns": 621,
+        "p99_ns": 712,
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 14332438,
-        "mean_ns": 7834.2225,
+        "max_ns": 14003718,
+        "mean_ns": 7659.1055,
         "min_ns": 611,
-        "p50_ns": 652,
-        "p95_ns": 712,
-        "p99_ns": 801,
+        "p50_ns": 651,
+        "p95_ns": 681,
+        "p99_ns": 912,
         "samples": 2000
       },
-      "sequential_mb_per_s": 38761.49637734733,
-      "sequential_seconds": 6.763e-6,
+      "sequential_mb_per_s": 37010.30636735847,
+      "sequential_seconds": 7.083e-6,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 10287023,
+        "construction_ns": 10393038,
         "inode": 107,
         "label": "bloom(D=2)",
         "logical_bytes": 262144,
@@ -472,38 +609,38 @@
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 92.865,
+          "mean_ns": 91.465,
           "min_ns": 80,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 1503,
-        "mean_ns": 508.482,
+        "max_ns": 1583,
+        "mean_ns": 503.911,
         "min_ns": 450,
         "p50_ns": 501,
-        "p95_ns": 581,
+        "p95_ns": 551,
         "p99_ns": 722,
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 14245597,
-        "mean_ns": 7791.5555,
-        "min_ns": 621,
-        "p50_ns": 661,
-        "p95_ns": 721,
-        "p99_ns": 752,
+        "max_ns": 13896768,
+        "mean_ns": 7618.158,
+        "min_ns": 612,
+        "p50_ns": 651,
+        "p95_ns": 712,
+        "p99_ns": 992,
         "samples": 2000
       },
-      "sequential_mb_per_s": 37816.50317368725,
-      "sequential_seconds": 6.932e-6,
+      "sequential_mb_per_s": 37321.184510250576,
+      "sequential_seconds": 7.024e-6,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 10574909,
+        "construction_ns": 10619232,
         "inode": 108,
         "label": "bloom(D=4)",
         "logical_bytes": 262144,
@@ -517,38 +654,38 @@
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 93.265,
+          "mean_ns": 91.5,
           "min_ns": 80,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 1693,
-        "mean_ns": 505.5695,
-        "min_ns": 451,
-        "p50_ns": 501,
-        "p95_ns": 561,
+        "max_ns": 1763,
+        "mean_ns": 504.4375,
+        "min_ns": 410,
+        "p50_ns": 500,
+        "p95_ns": 551,
         "p99_ns": 722,
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 14178732,
-        "mean_ns": 7777.391,
-        "min_ns": 621,
-        "p50_ns": 692,
-        "p95_ns": 731,
-        "p99_ns": 752,
+        "max_ns": 13859238,
+        "mean_ns": 7617.6425,
+        "min_ns": 551,
+        "p50_ns": 691,
+        "p95_ns": 722,
+        "p99_ns": 952,
         "samples": 2000
       },
-      "sequential_mb_per_s": 39766.99029126214,
-      "sequential_seconds": 6.592e-6,
+      "sequential_mb_per_s": 40003.662444681824,
+      "sequential_seconds": 6.553e-6,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 12694107,
+        "construction_ns": 10652554,
         "inode": 109,
         "label": "bloom(D=8)",
         "logical_bytes": 262144,
@@ -562,38 +699,38 @@
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 92.225,
+          "mean_ns": 92.735,
           "min_ns": 80,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 1472,
-        "mean_ns": 508.9,
+        "max_ns": 1512,
+        "mean_ns": 509.2975,
         "min_ns": 451,
         "p50_ns": 501,
-        "p95_ns": 571,
-        "p99_ns": 722,
+        "p95_ns": 561,
+        "p99_ns": 731,
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 14775334,
-        "mean_ns": 8055.1665,
+        "max_ns": 14268804,
+        "mean_ns": 7807.5805,
         "min_ns": 621,
-        "p50_ns": 661,
-        "p95_ns": 711,
-        "p99_ns": 741,
+        "p50_ns": 652,
+        "p95_ns": 722,
+        "p99_ns": 922,
         "samples": 2000
       },
-      "sequential_mb_per_s": 38477.0292088654,
-      "sequential_seconds": 6.813e-6,
+      "sequential_mb_per_s": 41334.59476505834,
+      "sequential_seconds": 6.342e-6,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 11117099,
+        "construction_ns": 13769510,
         "inode": 110,
         "label": "bloom(D=16)",
         "logical_bytes": 262144,
@@ -607,38 +744,38 @@
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 92.725,
-          "min_ns": 90,
+          "mean_ns": 92.33,
+          "min_ns": 80,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 1813,
-        "mean_ns": 785.916,
-        "min_ns": 722,
-        "p50_ns": 772,
-        "p95_ns": 851,
+        "max_ns": 1713,
+        "mean_ns": 788.098,
+        "min_ns": 721,
+        "p50_ns": 781,
+        "p95_ns": 842,
         "p99_ns": 1042,
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 7379346,
-        "mean_ns": 4693.3775,
+        "max_ns": 6946986,
+        "mean_ns": 4480.023,
         "min_ns": 931,
-        "p50_ns": 1002,
+        "p50_ns": 992,
         "p95_ns": 1052,
-        "p99_ns": 1092,
+        "p99_ns": 1292,
         "samples": 2000
       },
-      "sequential_mb_per_s": 31185.343802046154,
-      "sequential_seconds": 8.406e-6,
+      "sequential_mb_per_s": 33415.42383683875,
+      "sequential_seconds": 7.845e-6,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 15534978,
+        "construction_ns": 16024111,
         "inode": 111,
         "label": "regional(D=4,R=65536)",
         "logical_bytes": 262144,
@@ -652,38 +789,38 @@
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 90.55,
+          "mean_ns": 92.83,
           "min_ns": 80,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 2906,
-        "mean_ns": 2001.901,
-        "min_ns": 1913,
-        "p50_ns": 1984,
-        "p95_ns": 2114,
-        "p99_ns": 2285,
+        "max_ns": 3176,
+        "mean_ns": 2052.5415,
+        "min_ns": 1963,
+        "p50_ns": 2034,
+        "p95_ns": 2145,
+        "p99_ns": 2334,
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 7756629,
-        "mean_ns": 6411.1525,
-        "min_ns": 2374,
-        "p50_ns": 2515,
-        "p95_ns": 2705,
-        "p99_ns": 2866,
+        "max_ns": 7325134,
+        "mean_ns": 6262.011,
+        "min_ns": 2414,
+        "p50_ns": 2585,
+        "p95_ns": 2775,
+        "p99_ns": 3055,
         "samples": 2000
       },
-      "sequential_mb_per_s": 19974.39804937519,
-      "sequential_seconds": 0.000013124,
+      "sequential_mb_per_s": 18309.981141300552,
+      "sequential_seconds": 0.000014317,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 18070652,
+        "construction_ns": 19162367,
         "inode": 112,
         "label": "regional(D=8,R=16384)",
         "logical_bytes": 262144,
@@ -697,45 +834,45 @@
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 8915.815,
-          "min_ns": 8836,
+          "mean_ns": 8819.58,
+          "min_ns": 8616,
           "path": "path-bloom"
         },
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 85.155,
+          "mean_ns": 86.355,
           "min_ns": 80,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 1523,
-        "mean_ns": 492.203,
-        "min_ns": 460,
-        "p50_ns": 491,
-        "p95_ns": 520,
-        "p99_ns": 531,
+        "max_ns": 25939,
+        "mean_ns": 510.839,
+        "min_ns": 470,
+        "p50_ns": 501,
+        "p95_ns": 521,
+        "p99_ns": 521,
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 4451082,
-        "mean_ns": 2799.8915,
-        "min_ns": 541,
-        "p50_ns": 571,
-        "p95_ns": 591,
-        "p99_ns": 611,
+        "max_ns": 4295281,
+        "mean_ns": 2744.131,
+        "min_ns": 561,
+        "p50_ns": 591,
+        "p95_ns": 612,
+        "p99_ns": 862,
         "samples": 2000
       },
-      "sequential_mb_per_s": 1778.1636639895812,
-      "sequential_seconds": 0.000147424,
+      "sequential_mb_per_s": 1786.8906096629948,
+      "sequential_seconds": 0.000146704,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 10193850,
+        "construction_ns": 10207411,
         "inode": 113,
         "label": "path(D=1)",
         "logical_bytes": 262144,
@@ -749,45 +886,45 @@
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 8811.56,
-          "min_ns": 8736,
+          "mean_ns": 8845.455,
+          "min_ns": 8576,
           "path": "path-bloom"
         },
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 84.205,
-          "min_ns": 70,
+          "mean_ns": 88.085,
+          "min_ns": 80,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 1493,
-        "mean_ns": 507.3085,
-        "min_ns": 480,
+        "max_ns": 1683,
+        "mean_ns": 499.7115,
+        "min_ns": 470,
         "p50_ns": 501,
-        "p95_ns": 531,
-        "p99_ns": 541,
+        "p95_ns": 511,
+        "p99_ns": 521,
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 3093383,
-        "mean_ns": 2123.094,
-        "min_ns": 551,
-        "p50_ns": 571,
-        "p95_ns": 592,
-        "p99_ns": 621,
+        "max_ns": 3127105,
+        "mean_ns": 2158.647,
+        "min_ns": 511,
+        "p50_ns": 581,
+        "p95_ns": 611,
+        "p99_ns": 942,
         "samples": 2000
       },
-      "sequential_mb_per_s": 1783.4866380014153,
-      "sequential_seconds": 0.000146984,
+      "sequential_mb_per_s": 1791.2862843710711,
+      "sequential_seconds": 0.000146344,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 9417533,
+        "construction_ns": 9316152,
         "inode": 114,
         "label": "path(D=2)",
         "logical_bytes": 262144,
@@ -801,45 +938,45 @@
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 8889.27,
-          "min_ns": 8756,
+          "mean_ns": 9058.66,
+          "min_ns": 8586,
           "path": "path-bloom"
         },
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 86.015,
+          "mean_ns": 86.065,
           "min_ns": 80,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 1082,
-        "mean_ns": 506.2375,
-        "min_ns": 480,
-        "p50_ns": 501,
-        "p95_ns": 521,
-        "p99_ns": 531,
+        "max_ns": 1613,
+        "mean_ns": 496.6005,
+        "min_ns": 470,
+        "p50_ns": 491,
+        "p95_ns": 511,
+        "p99_ns": 521,
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 2680834,
-        "mean_ns": 1915.8115,
-        "min_ns": 541,
-        "p50_ns": 571,
-        "p95_ns": 591,
-        "p99_ns": 612,
+        "max_ns": 2955964,
+        "mean_ns": 2075.1535,
+        "min_ns": 551,
+        "p50_ns": 581,
+        "p95_ns": 611,
+        "p99_ns": 1012,
         "samples": 2000
       },
-      "sequential_mb_per_s": 1785.9288882227506,
-      "sequential_seconds": 0.000146783,
+      "sequential_mb_per_s": 1822.6087923854022,
+      "sequential_seconds": 0.000143829,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 8925306,
+        "construction_ns": 9100147,
         "inode": 115,
         "label": "path(D=4)",
         "logical_bytes": 262144,
@@ -853,45 +990,45 @@
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 8880.715,
-          "min_ns": 8727,
+          "mean_ns": 8849.0,
+          "min_ns": 8616,
           "path": "path-bloom"
         },
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 91.6,
+          "mean_ns": 91.82,
           "min_ns": 80,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 1543,
-        "mean_ns": 511.951,
-        "min_ns": 481,
-        "p50_ns": 511,
-        "p95_ns": 531,
-        "p99_ns": 541,
+        "max_ns": 1012,
+        "mean_ns": 501.514,
+        "min_ns": 471,
+        "p50_ns": 501,
+        "p95_ns": 521,
+        "p99_ns": 531,
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 2433363,
-        "mean_ns": 1801.2035,
+        "max_ns": 2425281,
+        "mean_ns": 1803.748,
         "min_ns": 551,
-        "p50_ns": 581,
-        "p95_ns": 601,
-        "p99_ns": 622,
+        "p50_ns": 591,
+        "p95_ns": 611,
+        "p99_ns": 701,
         "samples": 2000
       },
-      "sequential_mb_per_s": 1789.2200692088757,
-      "sequential_seconds": 0.000146513,
+      "sequential_mb_per_s": 1779.9505689997013,
+      "sequential_seconds": 0.000147276,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 8870364,
+        "construction_ns": 9056827,
         "inode": 116,
         "label": "path(D=8)",
         "logical_bytes": 262144,
@@ -905,59 +1042,59 @@
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 10722.42,
-          "min_ns": 10159,
+          "mean_ns": 11570.745,
+          "min_ns": 11351,
           "path": "history"
         },
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 11049.635,
-          "min_ns": 10820,
+          "mean_ns": 10617.19,
+          "min_ns": 10520,
           "path": "checkpoint"
         },
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 8829.715,
-          "min_ns": 8736,
+          "mean_ns": 8678.78,
+          "min_ns": 8626,
           "path": "path-bloom"
         },
         {
           "certified": true,
           "iterations": 200,
-          "mean_ns": 90.62,
-          "min_ns": 60,
+          "mean_ns": 92.405,
+          "min_ns": 80,
           "path": "logical-extent"
         }
       ],
       "read_1b": {
-        "max_ns": 3216,
-        "mean_ns": 789.455,
+        "max_ns": 3567,
+        "mean_ns": 785.816,
         "min_ns": 751,
         "p50_ns": 782,
-        "p95_ns": 812,
-        "p99_ns": 841,
+        "p95_ns": 802,
+        "p99_ns": 812,
         "samples": 2000
       },
       "read_4k": {
-        "max_ns": 4764235,
-        "mean_ns": 3234.5955,
-        "min_ns": 811,
-        "p50_ns": 851,
-        "p95_ns": 881,
-        "p99_ns": 902,
+        "max_ns": 4530452,
+        "mean_ns": 3138.3305,
+        "min_ns": 831,
+        "p50_ns": 871,
+        "p95_ns": 892,
+        "p99_ns": 972,
         "samples": 2000
       },
-      "sequential_mb_per_s": 529.8171720070657,
-      "sequential_seconds": 0.000494782,
+      "sequential_mb_per_s": 523.9139254572235,
+      "sequential_seconds": 0.000500357,
       "served_paths": {
         "logical-extent": 2000
       },
       "summary": {
         "certification": "built",
         "certification_method": "bench",
-        "construction_ns": 11168905,
+        "construction_ns": 11068473,
         "inode": 117,
         "label": "max-speed",
         "logical_bytes": 262144,

@@ -1593,12 +1593,19 @@ mod tests {
         let store = TrigramStore::new(dir.path());
         let (engine, _) =
             TrigramEngine::start(store.clone(), [0u8; 16], TrigramConfig::default()).unwrap();
+        // A trivially small source can be constructed before the cancellation
+        // lands, turning this into a race with the worker (the engine only
+        // cancels work it has *not yet* completed). Use a source whose
+        // construction takes clearly longer than the submit/cancel handshake so
+        // the cancellation is observed deterministically at the pre- or
+        // post-construction check.
+        let source = vec![b'x'; 2 * 1024 * 1024];
         let handle = engine
             .submit(TrigramJob {
                 inode: 9,
                 inode_version: 1,
                 root: 1,
-                source: b"cancel me please".to_vec(),
+                source,
             })
             .unwrap();
         handle.cancel();

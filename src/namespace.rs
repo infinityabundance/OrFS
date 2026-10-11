@@ -602,6 +602,17 @@ impl Namespace {
         planner.read(&query, |off, len| self.read_extent(inode, root, off, len))
     }
 
+    /// The number of logical extents mapping this regular file at `root`.
+    ///
+    /// The authoritative read scans the extent map linearly, so this count is the
+    /// honest measure of an arbitrary-offset read's work. A read-only diagnostic
+    /// (used by the Phase 16 evidence), like [`Namespace::seek_data_hole`].
+    pub fn extent_count(&self, inode: u64, root: u64) -> Result<usize> {
+        let view = self.view(root)?;
+        let ino = view.inode(inode).ok_or(OrfsError::NotFound)?;
+        Ok(ino.extents.extents().len())
+    }
+
     /// The authoritative logical extent read: the ultimate fallback and the
     /// reference a read planner verifies against. It never consults any
     /// manifested structure.

@@ -1,0 +1,77 @@
+{
+  "build_profile": "debug",
+  "defensive_no_extent_map_baseline": {
+    "authoritative_extent_o1": {
+      "mean_ns": 1716.03125,
+      "min_ns": 1513,
+      "p50_ns": 1673,
+      "p95_ns": 1974,
+      "p99_ns": 2214,
+      "samples": 32
+    },
+    "decode_from_start_prefix": {
+      "mean_ns": 6220.75,
+      "min_ns": 1954,
+      "p50_ns": 6462,
+      "p95_ns": 10950,
+      "p99_ns": 16310,
+      "samples": 32
+    },
+    "measured_paths": [
+      {
+        "certified": true,
+        "mean_ns": 61.516,
+        "min_ns": 50,
+        "path": "path-bloom"
+      },
+      {
+        "certified": true,
+        "mean_ns": 1560.05,
+        "min_ns": 1433,
+        "path": "logical-extent"
+      }
+    ],
+    "note": "The authoritative OrFS read is O(1) via the extent map, so no manifested structure can beat it. This compares it against a defensive baseline without an offset-addressable map (decode-from-start prefix read), where a structure guaranteeing O(1) random access would win.",
+    "paths_chosen_by_the_planner": [
+      {
+        "path": "path-bloom",
+        "reads": 32
+      },
+      {
+        "path": "logical-extent",
+        "reads": 300
+      }
+    ],
+    "planned_read": {
+      "mean_ns": 3091.0625,
+      "min_ns": 2184,
+      "p50_ns": 2344,
+      "p95_ns": 6692,
+      "p99_ns": 21020,
+      "samples": 32
+    }
+  },
+  "generated_by": "tests/ekbloom_frontier_e2e.rs",
+  "object_bytes": 262144,
+  "profile": "path(D=4)",
+  "real_log_4k_planned_vs_authoritative": {
+    "authoritative_extent": {
+      "mean_ns": 1765.0266666666666,
+      "min_ns": 1703,
+      "p50_ns": 1763,
+      "p95_ns": 1814,
+      "p99_ns": 1994,
+      "samples": 300
+    },
+    "planned_read": {
+      "mean_ns": 4152.556666666666,
+      "min_ns": 3838,
+      "p50_ns": 3957,
+      "p95_ns": 4047,
+      "p99_ns": 4639,
+      "samples": 300
+    }
+  },
+  "schema": "orfs.ekbloom-e2e-defensive.v1",
+  "through_fuse": false
+}

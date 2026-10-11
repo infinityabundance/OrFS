@@ -24,10 +24,14 @@ use std::path::Path;
 use std::time::Instant;
 
 use orfs::commit::{CommitSequencer, DurabilityMode};
+use orfs::index::ROOT_INODE;
+use orfs::log::OpenMode;
 use orfs::manifestation::{
     ekbloom_format_version, CertificationState, GenerationManifest, GenerationStore,
-    ManifestationProfile, ManifestationState, MANIFEST_SCHEMA,
+    ManifestationConfig, ManifestationProfile, ManifestationState, ManifestationStatus,
+    MANIFEST_SCHEMA,
 };
+use orfs::namespace::Namespace;
 use orfs::readpath::{ReadPlanner, ReadPlannerConfig, ReadQuery};
 use orfs::record::RecordType;
 use orfs::transaction::TransactionBuilder;
@@ -629,6 +633,184 @@ fn bench_frontier(scratch: &Path) -> serde_json::Value {
 // main
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Phase 16: end-to-end search for where manifestation genuinely wins
+// ---------------------------------------------------------------------------
+
+/// Build one manifested object (optionally fragmented by small scattered writes)
+/// over a real authoritative log and measure `planned_read` vs `read_extent`
+/// (no FUSE). Returns `(json_report)`. `scattered = Some((writes, stride, chunk))`
+/// produces an object whose extent map has many entries.
+fn frontier_object(
+    dir: &Path,
+    data: &[u8],
+    profile: ManifestationProfile,
+    scattered: Option<(u64, u64, u64)>,
+) -> serde_json::Value {
+    let backing = dir.join("backing");
+    let _ = std::fs::remove_dir_all(&backing);
+    std::fs::create_dir_all(dir).expect("p16 dir");
+
+    let (ino, m_bytes, construction_ns, extent_count, logical, setup_seconds) = {
+        let mut ns = Namespace::init(&backing, 1 << 20, DurabilityMode::Ordered).expect("init");
+        let setup = Instant::now();
+        let ino = ns.create(ROOT_INODE, b"obj", 0o644, 0, 0).expect("create");
+        let mut logical = data.len() as u64;
+        if let Some((writes, stride, chunk)) = scattered {
+            let mut buf = vec![0u8; chunk as usize];
+            for i in 0..writes {
+                synth_fill(&mut buf, 0xF00D_0000 ^ i);
+                ns.write_at(ino, i * stride, &buf).expect("scattered write");
+            }
+            logical = (writes - 1) * stride + chunk;
+        } else {
+            ns.write_at(ino, 0, data).expect("write");
+        }
+        ns.sync().expect("sync");
+        let setup_seconds = setup.elapsed().as_secs_f64();
+        ns.enable_manifestation(ManifestationConfig {
+            workers: 1,
+            synchronous: true,
+            profile,
+            max_source_bytes: 64 << 20,
+            ..Default::default()
+        })
+        .expect("enable manifestation");
+        let t = Instant::now();
+        let outcomes = ns.manifest_eligible(Some(ino), profile).expect("manifest");
+        let construction_ns = t.elapsed().as_nanos() as u64;
+        assert!(
+            outcomes
+                .iter()
+                .all(|o| o.status == ManifestationStatus::Published),
+            "manifestation did not publish: {outcomes:?}"
+        );
+        let m = orfs::stats::account_volume(&backing)
+            .map(|a| a.m_ekbloom)
+            .unwrap_or(0);
+        let extents = ns.extent_count(ino, ns.root()).unwrap_or(0) as u64;
+        (ino, m, construction_ns, extents, logical, setup_seconds)
+    };
+
+    // Re-open with the certified planner attached, at the same committed root.
+    let mut ns =
+        Namespace::open(&backing, OpenMode::ReadOnly, DurabilityMode::Ordered).expect("reopen");
+    ns.enable_manifestation(ManifestationConfig {
+        workers: 1,
+        synchronous: true,
+        profile,
+        ..Default::default()
+    })
+    .expect("enable");
+    let root = ns.root();
+
+    let mut rng = Lcg::new(0xF00D_BEEF);
+    let mut auth1 = Vec::new();
+    let mut plan1 = Vec::new();
+    for _ in 0..2_000 {
+        let off = rng.below(logical);
+        let t = Instant::now();
+        let v = ns.read_extent(ino, root, off, 1).expect("auth 1b");
+        auth1.push(t.elapsed().as_nanos() as u64);
+        std::hint::black_box(&v);
+        let t = Instant::now();
+        let v = ns.planned_read(ino, root, off, 1).expect("planned 1b");
+        plan1.push(t.elapsed().as_nanos() as u64);
+        std::hint::black_box(&v.bytes);
+    }
+    let blocks = (logical / 4096).max(1);
+    let mut auth4 = Vec::new();
+    let mut plan4 = Vec::new();
+    for _ in 0..1_000 {
+        let off = rng.below(blocks) * 4096;
+        let t = Instant::now();
+        let v = ns.read_extent(ino, root, off, 4096).expect("auth 4k");
+        auth4.push(t.elapsed().as_nanos() as u64);
+        std::hint::black_box(&v);
+        let t = Instant::now();
+        let v = ns.planned_read(ino, root, off, 4096).expect("planned 4k");
+        plan4.push(t.elapsed().as_nanos() as u64);
+        std::hint::black_box(&v.bytes);
+    }
+
+    // Defensive no-extent-map baseline: read the whole prefix [0, off] (decode
+    // from the start) — the cost a design without an offset-addressable map pays.
+    let mut prefix = Vec::new();
+    let mut rngp = Lcg::new(0x000F_F5E7);
+    for _ in 0..64 {
+        let off = rngp.below(logical);
+        let t = Instant::now();
+        let v = ns.read_extent(ino, root, 0, off + 1).expect("prefix");
+        prefix.push(t.elapsed().as_nanos() as u64);
+        std::hint::black_box(v.last());
+    }
+
+    let chosen: Vec<serde_json::Value> = ns
+        .read_planner()
+        .map(|p| {
+            p.chosen_counts()
+                .into_iter()
+                .map(|(k, c)| serde_json::json!({ "path": k.name(), "reads": c }))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    serde_json::json!({
+        "fragmented": scattered.is_some(),
+        "profile": profile.label(),
+        "logical_bytes": logical,
+        "extent_count": extent_count,
+        "manifested_bytes": m_bytes,
+        "manifested_ratio": m_bytes as f64 / logical as f64,
+        "construction_ns": construction_ns,
+        "setup_seconds": setup_seconds,
+        "random_1b": {
+            "authoritative_extent": percentiles(auth1),
+            "planned_read": percentiles(plan1),
+        },
+        "random_4k": {
+            "authoritative_extent": percentiles(auth4),
+            "planned_read": percentiles(plan4),
+        },
+        "defensive_no_extent_map_prefix": percentiles(prefix),
+        "paths_chosen_by_the_planner": chosen,
+    })
+}
+
+/// Fixed-seed fill (xorshift64) so the corpus is byte-reproducible.
+fn synth_fill(buf: &mut [u8], seed: u64) {
+    let mut s = seed | 1;
+    for b in buf.iter_mut() {
+        s ^= s << 13;
+        s ^= s >> 7;
+        s ^= s << 17;
+        *b = (s & 0xff) as u8;
+    }
+}
+
+fn bench_frontier_phase16(scratch: &Path) -> serde_json::Value {
+    let profile = ManifestationProfile::Path { depth: 4 };
+    let plain = synth_corpus(256 * 1024);
+    let plain_dir = scratch.join("p16-plain");
+    let frag_dir = scratch.join("p16-frag");
+    // A 512 KiB object assembled from 1024 small scattered writes has ~2k extents,
+    // so the authoritative `ExtentMap::plan_read` scan is genuinely O(N).
+    let (writes, stride, chunk) = (1_024u64, 512u64, 64u64);
+    let frag = vec![0u8; ((writes - 1) * stride + chunk) as usize];
+
+    let plain_report = frontier_object(&plain_dir, &plain, profile, None);
+    let frag_report = frontier_object(&frag_dir, &frag, profile, Some((writes, stride, chunk)));
+
+    let _ = std::fs::remove_dir_all(&plain_dir);
+    let _ = std::fs::remove_dir_all(&frag_dir);
+
+    serde_json::json!({
+        "note": "Library-level (no FUSE) phase-16 isolation over a real authoritative log. The authoritative extent read is O(1) for a contiguous object and O(extents) for a fragmented one; the manifested `path` bloom addresses by logical position and is independent of the extent map. The FUSE end-to-end numbers live in evidence/performance/ekbloom-{e2e,fragmented-e2e,search-e2e,e2e-defensive}.json.",
+        "non_fragmented_object": plain_report,
+        "fragmented_object": frag_report,
+    })
+}
+
 fn main() {
     let scratch = std::env::temp_dir().join(format!("orfs-mech-{}", std::process::id()));
     std::fs::create_dir_all(&scratch).expect("scratch");
@@ -639,7 +821,11 @@ fn main() {
     let commit = bench_commit_path(&scratch);
     let trigram = bench_trigram();
     let uring = bench_uring_vs_sync(&scratch);
-    let frontier = bench_frontier(&scratch);
+    let mut frontier = bench_frontier(&scratch);
+    let phase16 = bench_frontier_phase16(&scratch);
+    if let Some(obj) = frontier.as_object_mut() {
+        obj.insert("phase16".to_string(), phase16);
+    }
 
     let mechanisms = serde_json::json!({
         "schema": "orfs.mechanisms.v1",

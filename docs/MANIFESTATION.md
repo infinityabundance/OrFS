@@ -252,3 +252,48 @@ physical figures with the on-disk totals match).
   query API (§12) are Phase 9, delivered in `src/trigram.rs`, `src/query.rs`,
   `src/suffix.rs`, and `src/image.rs`, and documented in `docs/QUERY.md`. They
   are accounted for here (under `M_indexes`) but are not built by this phase.
+
+## 13. Phase 16: where the manifested body actually wins (end to end)
+
+The governing objective is *spend manifested space to maximise speed*, so Phase
+16 measured the concealed body **end to end through a real FUSE mount with real
+POSIX syscalls**, and separated the effect of the structure from FUSE transport
+and the page cache (`tests/ekbloom_frontier_e2e.rs`; evidence
+`evidence/performance/ekbloom-e2e.json` with the `fragmented-e2e`, `search-e2e`,
+and `e2e-defensive` variants and their `-release` counterparts; discussion in
+`docs/PERFORMANCE.md` §5.4–5.6). The honest findings:
+
+* **Random single-byte reads on a large file *do* win — in a release build.**
+  A compatible **certified** `path`/`full`/`max-speed` generation serves a byte
+  from the concealed payload in ~26 ns instead of a backing `pread`, so through
+  the mount a random 1-byte read is ~**1.3–1.4× faster** than the same mount
+  with no manifestation (P50 2955–3166 ns vs 4118 ns). The *uncertified*
+  `bloom(4)` profile is **slower** (5050 ns) because verify-on-use re-reads the
+  authoritative path; a manifest with no *certified* path structure is not a
+  win. In a debug build the planner's per-read overhead hides the win, and that
+  is reported, not omitted.
+* **4 KiB reads do not win.** A path bloom costs one `symbol_at` per byte and
+  the authoritative extent read is already O(1); the planner correctly selects
+  the authoritative path (`paths_chosen_by_the_planner` records this) and the
+  returned bytes are identical.
+* **Fragmented objects win clearly.** `ExtentMap::plan_read` scans the extent
+  list linearly, so an object built from many small scattered writes has an
+  O(N) authoritative read. A certified `path(4)` bloom is fragmentation-agnostic:
+  **1.24× (release) / 1.75× (debug)** for random 1-byte reads, at identical
+  mount options.
+* **Warm page-cache reads are unaffected** (≈110–220 ns for every profile): the
+  kernel cache, not the manifestation, decides that case.
+* **Content search is the big, unambiguous win** and comes from the concealed
+  **trigram index** (under `M_indexes`), not the EKBLOOM `M_ekbloom` ladder: it
+  is **8.6–8.8×** faster than the typed API's own scan and reads **48×** less
+  content. Ordinary `grep -r` does **not** use it (research §12.1) and is a
+  transport-bound scan.
+* **Best value per byte:** `path(8)` (M ≈ 2.5× logical) is within ~4% of the
+  fastest single-byte profile in release, so it is the best space-for-speed
+  point; larger `M` (`path(1)`, `max-speed`) buys no further speed. Notably the
+  best profile is **not the largest** — `max-speed` (7.0×) is not faster than
+  `path(8)` (2.5×).
+
+The bytes any read returns are unchanged with or without a manifested body
+(§8, and the Phase-8/16 equivalence courts), and dropping `.or_bloom/` restores
+byte-identical logical reads.

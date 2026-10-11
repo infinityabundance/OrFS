@@ -2,7 +2,7 @@
   "cache_profile": "write-through",
   "generated_by": "tests/fuse_integration.rs",
   "mounted": true,
-  "mountpoint": "/mnt/1tb_kingston/OrFS/target/fuse-it/it-122-1791710648954987246/mnt",
+  "mountpoint": "/mnt/1tb_kingston/OrFS/target/fuse-it/it-121-1791714236676095543/mnt",
   "notes": [
     "readdirplus is negotiated (FUSE_DO_READDIRPLUS) and exercised by ordinary readdir(3) calls",
     "POSIX record locks and flock are delegated to the kernel (ENOSYS); see docs/FUSE-SEMANTICS.md",

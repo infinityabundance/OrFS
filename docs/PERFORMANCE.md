@@ -1,4 +1,4 @@
-# OrFS — Performance Methodology, Configurations, and Measurements (Phase 12)
+# OrFS — Performance Methodology, Configurations, and Measurements (Phases 12 + 16)
 
 This document is the Phase 12 **performance court**: the methodology, the
 configurations (including the ones that are provably unavailable here and why),
@@ -278,6 +278,117 @@ cache.
 collection. The frontier records this precisely (`hardware_counters.available:
 false`). No counter is estimated.
 
+### 5.4 Phase 16: the frontier **end to end** through a real FUSE mount
+
+Section 5.1–5.3 measured every path *inside the crate*. Phase 16 asks the end
+to-end question: through a **real FUSE mount with real POSIX `pread` syscalls**,
+does the manifested body make any operation genuinely faster? The harness is
+`tests/ekbloom_frontier_e2e.rs`, run by `scripts/container-fuse-test.sh`; the
+machine-generated evidence is in
+`evidence/performance/ekbloom-e2e.json` (plus the `-release`, `fragmented-e2e`,
+`search-e2e`, and `e2e-defensive` variants).
+
+**Separation of effects.** Every row is the *same* `fuse::spawn` with the same
+`MountOptions`; the only axis that changes is the manifested profile. A
+`direct_io` (`FOPEN_DIRECT_IO`) variant makes **every** read reach FUSE, so the
+daemon's read path is always exercised; a warm variant leaves the kernel page
+cache on; a cold variant drops the backing page cache first. The no-manifest
+row (`none`) is the authoritative extent path with **no planner at all** — a
+strong, honest baseline, not a straw man.
+
+**Random single-byte reads, `direct` (every read reaches FUSE), P50.**
+
+| Profile | M / logical | release | debug (one run) |
+|---|---|---|---|
+| `none` (authoritative) | 0 | **4118 ns** | **5921 ns** |
+| `path(1)` | 6.0× | **2926 ns** | 8176 ns |
+| `path(4)` | 3.0× | 3166 ns | 6753 ns |
+| `path(8)` | 2.5× | 3036 ns | 6392 ns |
+| `bloom(4)` (uncertified) | 3.0× | 5050 ns | 8105 ns |
+| `full` | 5.0× | 2955 ns | 6482 ns |
+| `max-speed` | 7.0× | 3156 ns | 8005 ns |
+
+* In a **release** build the certified `path`/`full`/`max-speed` profiles are
+  **~1.3–1.4× faster** than no manifestation (2955–3166 vs 4118 ns, tight
+  P95/P99); the manifested path replaces a backing `pread` with an in-memory
+  `symbol_at` lookup. The **uncertified** `bloom(4)` is *slower* (5050 ns)
+  because verify-on-use re-reads the authoritative path.
+* In the **debug** test build the win is absent (`none` is fastest at 5921 ns;
+  the others are 6392–8176 ns); the planner + per-symbol overhead dominates.
+  This is the same caveat as §5.2 and §10 of
+  `docs/EKBLOOM-INTEGRATION.md`. The debug column is one run and is noisier than
+  the release column.
+
+**Random 4 KiB reads, `direct`, P50 (release).** `none` 4128 ns; `path(4)`
+5340; `path(8)` 4969; `bloom(4)` 5490; `path(1)` 8215; `full` 7655;
+`max-speed` 8566. Manifestation **does not help 4 KiB reads** (a path bloom
+costs one `symbol_at` per byte; the authoritative extent read is already O(1)).
+
+**Warm page-cache reads.** Every profile is ≈110–220 ns (the kernel serves the
+page); no profile differs from `none`. The kernel page cache, not the
+manifestation, decides the warm case.
+
+**Fragmented object — the authoritative path is *not* O(1).**
+`ExtentMap::plan_read` scans the extent list linearly, so an object assembled
+from 2048 small scattered writes (4095 extents) has an O(N) authoritative read.
+A certified `path(4)` bloom addresses by logical position independently of
+fragmentation:
+
+| Variant | release | debug (one run) |
+|---|---|---|
+| `none` (O(N) extent scan) | 3877 ns | 11181 ns |
+| `path(4)` | 3136 ns | 6382 ns |
+| **speedup (P50)** | **1.24×** | **1.75×** |
+
+Both mounts use identical options, so the difference is the manifested
+structure, not transport. The debug figure is larger because a debug build
+exaggerates the O(N) scan.
+
+**Content search.** The concealed trigram index is the one structure that wins
+by a wide margin, and it is the **only** consumer reachable through the typed
+query API — ordinary `grep -r` reads POSIX contents and does **not** use it
+(research §12.1):
+
+| Variant (48 files × 16 KiB, one match) | release | debug (one run) |
+|---|---|---|
+| indexed typed query API | **220.9 µs** | **872.5 µs** |
+| scan fallback of the same API | 1904 µs | 7699 µs |
+| **indexed speedup over scan** | **8.6×** | **8.8×** |
+| `grep -r` through the mount | 3930 µs | 1760 µs |
+| content bytes read (indexed / scan) | 16 KiB / 768 KiB (**48×**) | same |
+
+`grep` is a **transport** workload (48 FUSE opens + reads), not an index
+workload; it returns the same match but scans every byte. The index reads only
+the one candidate file's content. Index construction was ~0.37 s (release) for
+the 1.66 MB on-disk index.
+
+### 5.5 Best profile per workload (Phase 16)
+
+| Workload | Best | Honest margin |
+|---|---|---|
+| random 1 B read (release, direct) | certified `path`/`full`/`max-speed`; smallest winning M is `path(8)` (2.5×) | ~1.3–1.4× over none |
+| random 1 B read (debug) | `none` (no manifestation) | n/a |
+| random 4 KiB read | `none` (M = 0) | manifestation is 1.2–2× slower |
+| fragmented-object 1 B read | `path(4)` | 1.24× (release) / 1.75× (debug) |
+| content search (typed API) | concealed trigram index (`M_indexes`) | 8.6–8.8× over the API's own scan |
+| ordinary `grep -r` | no index; transport-bound scan | index beats `grep` ~18× (release) |
+| warm page-cache read | any | no measurable difference |
+
+### 5.6 Where the manifestation's value actually is
+
+The Phase-16 library-level isolation (in the frontier's `phase16` object, no
+FUSE, release) makes the mechanism explicit: for a 256 KiB object the
+`path(4)` `symbol_at` structure answers a byte in **26 ns** while the
+authoritative extent read takes **~1021 ns**, so `planned_read` (P50 501 ns)
+beats the authoritative read (P50 1112 ns) **2.2×** — and the FUSE transport
+(≈2 µs) dilutes that to the ~1.4× end-to-end win above. Against a *defensive*
+no-extent-map baseline (decode from the start, P50 5450 ns) the O(1)
+manifested path is **~10.9×** faster, which is where the structure's value
+becomes decisive rather than marginal. The planner's measured selection is
+what keeps the *wrong* choice from being made: for 4 KiB reads it selects the
+authoritative extent path (`paths_chosen_by_the_planner` records this), and the
+returned bytes are byte-identical either way (the equivalence courts).
+
 ---
 
 ## 6. In-crate mechanism microbenchmarks (§36)
@@ -359,3 +470,13 @@ caller-group database) and receives `EPERM` (`docs/FUSE-SEMANTICS.md` §6).
    object is **negative** — a deliberate, reported finding (§31: "a larger body is
    not automatically faster").
 6. No benchmark superiority is claimed from a single warm-cache run (§36).
+7. The Phase-16 end-to-end figures (§5.4–5.6) default to a **debug** test build
+   (the FUSE gate runs `cargo test`); the **release** figures, which are the
+   representative deployment build, are recorded separately with
+   `ORFS_E2E_SUFFIX=-release cargo test --release`. The two builds disagree on
+   the single-byte win because a debug build inflates the planner's per-read
+   overhead, and are reported side by side rather than in the flattering one.
+8. The Phase-16 `direct_io` variant is the FUSE-exercised case; the warm variant
+   is kernel-page-cache dominated and shows no profile difference. The cold
+   variant can include a first-access payload reload, so its single-run figures
+   are noisy.

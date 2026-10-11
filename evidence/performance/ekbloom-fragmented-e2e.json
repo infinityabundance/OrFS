@@ -1,0 +1,78 @@
+{
+  "build_profile": "debug",
+  "e2e_random_1b_direct": {
+    "no_manifest": {
+      "mean_ns": 11924.10575,
+      "min_ns": 4198,
+      "p50_ns": 11181,
+      "p95_ns": 21270,
+      "p99_ns": 24967,
+      "samples": 4000
+    },
+    "path_bloom": {
+      "mean_ns": 7227.50875,
+      "min_ns": 5540,
+      "p50_ns": 6382,
+      "p95_ns": 9447,
+      "p99_ns": 11732,
+      "samples": 4000
+    },
+    "speedup": 1.7519586336571609
+  },
+  "environment": {
+    "cgroup_memory_max": "8589934592",
+    "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "container_image": null,
+    "cores_visible": 8,
+    "cpu_max": "800000 100000",
+    "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+    "fuse_enable_uring": true,
+    "kernel_release": "7.2.9-2-cachyos",
+    "likely_container": true,
+    "machine": "x86_64",
+    "perf_counters_available": false,
+    "perf_event_paranoid": "2",
+    "ram_total_bytes": 134723346432
+  },
+  "fragmented_object": {
+    "chunk_bytes": 64,
+    "construction_ns": 63468082,
+    "extent_count_manifested": 4095,
+    "extent_count_no_manifest": 4095,
+    "logical_bytes": 1048128,
+    "manifested_bytes": 3145168,
+    "manifested_profile": "path(D=4)",
+    "manifested_ratio": 3.000748000244245,
+    "scattered_writes": 2048,
+    "setup_ns_no_manifest": 7683642292,
+    "stride_bytes": 512
+  },
+  "generated_by": "tests/ekbloom_frontier_e2e.rs",
+  "library_random_1b": {
+    "authoritative_extent": {
+      "mean_ns": 5708.63775,
+      "min_ns": 280,
+      "p50_ns": 5571,
+      "p95_ns": 10600,
+      "p99_ns": 15659,
+      "samples": 4000
+    },
+    "paths_chosen_by_the_planner": [
+      {
+        "path": "path-bloom",
+        "reads": 4000
+      }
+    ],
+    "planned_read": {
+      "mean_ns": 16958.353,
+      "min_ns": 2044,
+      "p50_ns": 2184,
+      "p95_ns": 3457,
+      "p99_ns": 3767,
+      "samples": 4000
+    }
+  },
+  "note": "ExtentMap::plan_read scans the extent map linearly, so an object built from many small scattered writes has an O(N) authoritative read; a certified path bloom addresses the object by logical position and is independent of fragmentation. The two mounts use identical options, so the difference is attributable to the manifested structure, not to transport.",
+  "schema": "orfs.ekbloom-fragmented-e2e.v1",
+  "through_fuse": true
+}

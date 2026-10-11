@@ -24,4 +24,6 @@ docker_run_kmount sh -c '
     timeout -k 10 900 cargo test --test fuse_uring -- --nocapture --test-threads=1
     echo "--- performance court: conventional baseline + F0/F1/E1 through real mounts ---"
     timeout -k 10 900 cargo test --test performance_court -- --nocapture --test-threads=1
+    echo "--- phase 16: manifestation frontier end to end (byte reads, search, fragmented) ---"
+    timeout -k 10 900 cargo test --test ekbloom_frontier_e2e -- --nocapture --test-threads=1
 '

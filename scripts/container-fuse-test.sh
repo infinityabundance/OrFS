@@ -22,4 +22,6 @@ docker_run_kmount sh -c '
     timeout -k 10 900 cargo test --test snapshot_fuse -- --nocapture --test-threads=1
     echo "--- FUSE-over-io_uring transport equivalence + negotiation/fallback ---"
     timeout -k 10 900 cargo test --test fuse_uring -- --nocapture --test-threads=1
+    echo "--- performance court: conventional baseline + F0/F1/E1 through real mounts ---"
+    timeout -k 10 900 cargo test --test performance_court -- --nocapture --test-threads=1
 '

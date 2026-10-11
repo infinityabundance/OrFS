@@ -639,6 +639,29 @@ fn write_evidence(rec: &Recorder, mountpoint: &Path) -> std::io::Result<()> {
         "cache_profile": "write-through",
         "operations": rec.checks,
         "summary": { "total": total, "passed": passed, "failed": total - passed },
+        "posix33_coverage": {
+            "note": "research/OrFS prompt.md §33 lists a POSIX operation set as a *tested target*. \
+                     Full POSIX compatibility is not claimed until every listed operation passes an \
+                     applicable test. This table records what the court actually exercises today.",
+            "covered": [
+                "create", "open", "read", "write", "append", "truncate",
+                "fallocate", "rename", "unlink", "link", "symlink", "mkdir",
+                "rmdir", "stat", "chmod", "xattr", "readdir", "fsync",
+                "SEEK_DATA", "SEEK_HOLE",
+            ],
+            "not_yet_covered": [
+                "pwrite (exercised indirectly via append_and_seek; not a dedicated case)",
+                "chown (owner is set at setup via setattr; not a compared case)",
+                "utimens (mtime update is exercised indirectly; not a compared case)",
+                "fdatasync (fsync is covered; fdatasync is not separately asserted)",
+                "mmap (not exercised by this court)",
+            ],
+            "delegated_to_kernel": [
+                "POSIX record locks (fcntl F_SETLK/F_GETLK) return ENOSYS and are delegated to the \
+                 kernel; see docs/FUSE-SEMANTICS.md",
+                "flock (delegated to the kernel)",
+            ],
+        },
         "notes": [
             "readdirplus is negotiated (FUSE_DO_READDIRPLUS) and exercised by ordinary readdir(3) calls",
             "POSIX record locks and flock are delegated to the kernel (ENOSYS); see docs/FUSE-SEMANTICS.md",

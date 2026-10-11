@@ -11,6 +11,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
+use orfs::bench::{BenchConfig, BenchParams, Workload};
 use orfs::commit::DurabilityMode;
 use orfs::fuse::{self, BackingIo, MountOptions, StatfsMode, Transport};
 use orfs::log::{scan_log, OpenMode, TailInfo, DEFAULT_SEGMENT_SIZE};
@@ -216,14 +217,37 @@ enum Command {
 
     /// Run the benchmark harness.
     Bench {
-        /// Backing directory.
+        /// Backing directory (an OrFS volume, or a plain directory for
+        /// `--config conventional`).
         backing: PathBuf,
         /// Workload selector.
-        #[arg(long, default_value = "random-4k")]
+        #[arg(long, default_value = "random-read-4k")]
         workload: String,
+        /// Configuration: conventional | f0 | f1 | f2 | e1 | e2.
+        #[arg(long, default_value = "conventional")]
+        config: String,
         /// Output JSON path.
         #[arg(long)]
         output: Option<PathBuf>,
+        /// Logical data size for bulk workloads, in bytes.
+        #[arg(long, default_value_t = 16 * 1024 * 1024)]
+        data_bytes: u64,
+        /// Operation count for latency/IOPS workloads.
+        #[arg(long, default_value_t = 20_000)]
+        iterations: u64,
+        /// Concurrent reader threads.
+        #[arg(long, default_value_t = 4)]
+        readers: usize,
+        /// Region/record size for random I/O, in bytes.
+        #[arg(long, default_value_t = 4096)]
+        region_bytes: u64,
+        /// Durability profile exercised by write/fsync workloads.
+        #[arg(long, default_value = "ordered")]
+        durability: String,
+        /// Drop the page cache before reads (cold-cache control; also enables
+        /// `FOPEN_DIRECT_IO` for the mounted configurations).
+        #[arg(long)]
+        cold: bool,
     },
 
     /// Report real kernel and container capabilities.
@@ -370,13 +394,105 @@ fn run(cli: &Cli) -> Result<()> {
             build,
             no_recurse,
         } => query_cmd(path, pattern, *hex, *limit, *build, *no_recurse, cli.json),
-        Command::Bench { .. } => phase("bench", "Phase 12 (performance court)"),
+        Command::Bench {
+            backing,
+            workload,
+            config,
+            output,
+            data_bytes,
+            iterations,
+            readers,
+            region_bytes,
+            durability,
+            cold,
+        } => bench_cmd(
+            backing,
+            config,
+            workload,
+            output.as_deref(),
+            *data_bytes,
+            *iterations,
+            *readers,
+            *region_bytes,
+            durability,
+            *cold,
+            cli.json,
+        ),
     }
 }
 
-fn phase(what: &str, phase: &'static str) -> Result<()> {
-    let _ = what;
-    Err(OrfsError::Unimplemented(phase))
+// ---------------------------------------------------------------------------
+// bench (performance harness, research §30–§32)
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::too_many_arguments)]
+fn bench_cmd(
+    backing: &Path,
+    config: &str,
+    workload: &str,
+    output: Option<&Path>,
+    data_bytes: u64,
+    iterations: u64,
+    readers: usize,
+    region_bytes: u64,
+    durability: &str,
+    cold: bool,
+    json: bool,
+) -> Result<()> {
+    let config = BenchConfig::parse(config)?;
+    let workload = Workload::parse(workload)?;
+    let durability = DurabilityMode::parse(durability)?;
+    let params = BenchParams {
+        data_bytes,
+        iterations,
+        readers,
+        region_bytes,
+        durability,
+        cold_cache: cold,
+    };
+    let base = MountOptions {
+        durability,
+        direct_io: cold,
+        ..Default::default()
+    };
+    let image = std::env::var("ORFS_IMAGE").ok();
+    let scratch = std::env::temp_dir().join(format!("orfs-bench-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch)?;
+    let report = orfs::bench::run(backing, &scratch, config, workload, &params, &base, image)?;
+    if let Some(path) = output {
+        report.write_json(path)?;
+        eprintln!("orfs: wrote {}", path.display());
+    }
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    } else if report.config_available {
+        let m = &report.measurement;
+        println!(
+            "{} / {}: {} op(s) in {:.6}s = {:.1} op/s, {:.1} MB/s{}",
+            report.config.name(),
+            report.workload.name(),
+            m.ops,
+            m.seconds,
+            m.ops_per_s,
+            m.mb_per_s,
+            m.latency
+                .as_ref()
+                .map(|l| format!(", p50={}ns p95={}ns p99={}ns", l.p50_ns, l.p95_ns, l.p99_ns))
+                .unwrap_or_default(),
+        );
+        for n in &m.notes {
+            println!("  note: {n}");
+        }
+    } else {
+        println!(
+            "{} / {}: UNAVAILABLE — {}",
+            report.config.name(),
+            report.workload.name(),
+            report.unavailable_reason.as_deref().unwrap_or("unknown"),
+        );
+    }
+    let _ = std::fs::remove_dir_all(&scratch);
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

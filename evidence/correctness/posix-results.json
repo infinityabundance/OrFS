@@ -2,7 +2,7 @@
   "cache_profile": "write-through",
   "generated_by": "tests/fuse_integration.rs",
   "mounted": true,
-  "mountpoint": "/mnt/1tb_kingston/OrFS/target/fuse-it/it-529-1791678349061032590/mnt",
+  "mountpoint": "/mnt/1tb_kingston/OrFS/target/fuse-it/it-122-1791683008799463799/mnt",
   "notes": [
     "readdirplus is negotiated (FUSE_DO_READDIRPLUS) and exercised by ordinary readdir(3) calls",
     "POSIX record locks and flock are delegated to the kernel (ENOSYS); see docs/FUSE-SEMANTICS.md",
@@ -136,6 +136,42 @@
       "reference": "copied=4 dst=....2345.."
     }
   ],
+  "posix33_coverage": {
+    "covered": [
+      "create",
+      "open",
+      "read",
+      "write",
+      "append",
+      "truncate",
+      "fallocate",
+      "rename",
+      "unlink",
+      "link",
+      "symlink",
+      "mkdir",
+      "rmdir",
+      "stat",
+      "chmod",
+      "xattr",
+      "readdir",
+      "fsync",
+      "SEEK_DATA",
+      "SEEK_HOLE"
+    ],
+    "delegated_to_kernel": [
+      "POSIX record locks (fcntl F_SETLK/F_GETLK) return ENOSYS and are delegated to the kernel; see docs/FUSE-SEMANTICS.md",
+      "flock (delegated to the kernel)"
+    ],
+    "not_yet_covered": [
+      "pwrite (exercised indirectly via append_and_seek; not a dedicated case)",
+      "chown (owner is set at setup via setattr; not a compared case)",
+      "utimens (mtime update is exercised indirectly; not a compared case)",
+      "fdatasync (fsync is covered; fdatasync is not separately asserted)",
+      "mmap (not exercised by this court)"
+    ],
+    "note": "research/OrFS prompt.md §33 lists a POSIX operation set as a *tested target*. Full POSIX compatibility is not claimed until every listed operation passes an applicable test. This table records what the court actually exercises today."
+  },
   "summary": {
     "failed": 0,
     "passed": 18,

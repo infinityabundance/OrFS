@@ -138,21 +138,40 @@ obligation (`docs/TRANSACTIONS.md`). Evidence:
 
 ---
 
-## 5. Known recovery limitation: trailing-segment loss
+## 5. Trailing-segment loss is detected by the commit watermark (Phase 12)
 
-If the **trailing** committed segment files are physically removed *outside
-OrFS*, the surviving segments still form a contiguous chain, so recovery cannot
-distinguish this from a legitimately shorter log. OrFS then reconstructs the most
-recent **surviving** complete boundary — a strictly earlier, but still *valid*,
-committed root — and does **not** fabricate, reuse, or resurrect any byte. No
-*invalid* committed state is produced, but the removed transactions are gone and
-the reduction is not reported as an error.
+If the **trailing** committed segment files are physically removed or truncated
+*outside* OrFS, the surviving segments still form a contiguous chain, so a pure
+segment scan cannot distinguish this from a legitimately shorter log. Phase 12
+closes this gap with a **durable commit watermark** (`or.log/commit.watermark`):
+the committed root `R` and the physical coordinate `(segment_id,
+segment_valid_len)` of the byte just before `R`, checksummed with CRC32C, written
+atomically at every durability point.
 
-Interior segment removal, sequence breaks, and committed roots dangling past
-present bytes **are** refused (§2.4). Closing the trailing-segment gap would
-require a durable physical-end/segment watermark updated on every commit; that is
-a deliberate design and performance tradeoff, recorded here and in
-`docs/LIMITATIONS.md`.
+On open, `watermark::validate` compares the watermark's committed root with the
+root the surviving bytes support. If the watermark is **ahead**, a committed
+segment has been lost or truncated and the open is **refused** (both read-only and
+read-write), never silently reduced. A missing watermark (a legacy volume) is
+reported as unvalidated (`Ok(None)`), not as an error, so the fix is additive.
+
+```text
+recovered scan root >= watermark root   → open proceeds (history intact)
+recovered scan root <  watermark root   → Err(Corrupt): trailing committed segment missing
+```
+
+Tests: `recovery_adversarial::a_removed_trailing_committed_segment_is_detected_not_silently_recovered`,
+`removing_only_the_watermark_is_tolerated_and_unvalidated`,
+`an_appended_uncommitted_tail_does_not_trip_the_watermark`,
+`hostile_files::truncated_final_segment_does_not_expose_committed_content`, and
+the `watermark` unit tests. The watermark is written *after* the segment is
+fsynced, so it can never certify more durable history than the backing store
+holds. `orfs verify` reports the watermark as a check.
+
+Residual window: because the watermark is written at durability points, a crash
+between committing bytes and persisting the watermark leaves it one point behind;
+loss of exactly those not-yet-watermarked bytes is undetectable. Interior segment
+removal, sequence breaks, and roots dangling past present bytes remain refused as
+before (§2.4).
 
 ---
 

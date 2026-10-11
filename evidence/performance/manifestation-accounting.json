@@ -11,7 +11,7 @@
     },
     "bloom_total_bytes": 6496,
     "capacity": {
-      "available_bytes": 109218824192,
+      "available_bytes": 107878490112,
       "block_size": 4096,
       "total_bytes": 1426376364032
     },
@@ -26,21 +26,21 @@
     "m_checkpoints": 0,
     "m_ekbloom": 5712,
     "m_indexes": 0,
-    "m_log": 7070,
+    "m_log": 7106,
     "m_other": 828,
-    "m_total": 13610,
+    "m_total": 13646,
     "manifested_bytes": 5712,
     "manifested_generations": 2,
     "manifested_inodes": 2,
-    "physical_overhead_bytes": 9503,
+    "physical_overhead_bytes": 9539,
     "uncommitted_tail_bytes": 0,
     "uuid": "4f724653-0711-4022-8033-445566778899",
-    "volume": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmp9oQlg2"
+    "volume": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmpwee2cA"
   },
   "ekbloom_bytes_match": true,
   "generator": "tests/manifestation.rs",
   "model": "logical bytes/counts vs physical categories M_log, M_ekbloom, M_indexes, M_checkpoints, M_other; M_total equals the measured on-disk total",
-  "on_disk_total_bytes": 13610,
+  "on_disk_total_bytes": 13646,
   "schema": "orfs.manifestation-accounting.v1",
   "totals_match": true
 }

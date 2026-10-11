@@ -25,6 +25,7 @@
 //! independent, version-pinned native-Rust dependency; its mathematical state
 //! machine is never reimplemented here.
 
+pub mod bench;
 pub mod buffers;
 pub mod capabilities;
 pub mod checkpoint;
@@ -52,6 +53,7 @@ pub mod transaction;
 pub mod trigram;
 pub mod uring;
 pub mod volume;
+pub mod watermark;
 
 pub use error::{FsError, OrfsError, Result};
 pub use fuse_uring::{FuseUringNegotiation, FuseUringReport, TransportProfile};

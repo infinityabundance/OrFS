@@ -2,6 +2,12 @@
   "all_have_safety_comment": true,
   "entries": [
     {
+      "file": "bench.rs",
+      "has_safety_comment": true,
+      "line": 638,
+      "text": "unsafe {"
+    },
+    {
       "file": "buffers.rs",
       "has_safety_comment": true,
       "line": 77,
@@ -131,5 +137,5 @@
   "generator": "tests/hostile_files.rs",
   "method": "every `unsafe` token in src/*.rs is enumerated from the source at test time; each must be accompanied by a `SAFETY:` invariant comment within the preceding six lines",
   "schema": "orfs.evidence.unsafe-audit.v1",
-  "unsafe_sites": 21
+  "unsafe_sites": 22
 }

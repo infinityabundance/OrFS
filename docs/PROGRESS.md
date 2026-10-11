@@ -844,8 +844,67 @@ statement) and `docs/RECOVERY.md` (recovery states, modes, invariants).
 ### Explicitly left open
 
 * **Logical deletion is not secure erasure** (intrinsic to invariant I1; §29).
-* **Trailing-segment loss** is indistinguishable from a shorter log and recovers
-  to the last surviving valid boundary (no invalid state; documented in
-  `docs/RECOVERY.md` §5 and `docs/LIMITATIONS.md` §6).
 * **Power-loss durability** remains a separate proof obligation; the crash court
   is a process-crash court.
+
+## Phase 12 — Performance court and EKBLOOM manifestation frontier
+
+### Delivered
+
+* **Carry-over fix — trailing committed-segment loss is now detected.** A durable
+  **commit watermark** (`src/watermark.rs`, `or.log/commit.watermark`) records the
+  committed root `R` and its physical coordinate `(segment_id,
+  segment_valid_len)` with a CRC32C at every durability point, after the segment
+  is fsynced. On open (`Log::open_with_pins`) it is validated; a watermark ahead
+  of the surviving committed bytes **refuses** the open instead of silently
+  recovering a shorter history (research §23, §35). It is additive metadata: no
+  committed byte is rewritten. `orfs verify` reports it as a check.
+* **Benchmark harness.** `src/bench.rs` + `orfs bench <backing> --config <c>
+  --workload <w> --output <json>` implements all 15 required workloads and the
+  configurations `conventional`, `F0`, `F1`, `E1` (measured) and `F2`, `E2`
+  (reported UNAVAILABLE with the concrete reason `fuse.enable_uring=0`). Each
+  report carries the environment (CPU model, cores, RAM, kernel, compiler, image),
+  mount options, durability, data size, and workload details.
+* **In-crate microbenchmarks.** `benches/mechanisms.rs` (dependency-free,
+  `harness = false`): commit path, trigram `plan` vs naive scan, io_uring vs sync,
+  and the EKBLOOM manifestation frontier. Writes `mechanisms.json` and
+  `ekbloom-frontier.json`.
+* **EKBLOOM manifestation frontier (§31).** For a fixed 256 KiB object, vary `M`
+  across EKBLOOM profiles; measure `P(M)` (P50/P95/P99), physical bytes,
+  construction time, and per-path min/mean. Measured ratios span ≈1×–7×; budgets
+  0.5× and 16×–64× are unreachable and marked. The manifested paths are ≈80–100×
+  slower than the authoritative extent read for a cache-resident object; the
+  planner falls back; the best profile (`full`, 5×) is **not** the largest.
+* **Performance court.** `tests/performance_court.rs` drives `orfs::bench` end to
+  end: conventional baseline always; `F0`/`F1`/`E1` through real mounts under
+  `scripts/container-fuse-test.sh`; `F2`/`E2` marked unavailable.
+* **POSIX court re-run** with §33 coverage recorded in `posix-results.json`.
+
+### Tests (inside the container)
+
+* `watermark` unit tests (round-trip, tamper, validate).
+* `recovery_adversarial`: removed-trailing-segment detection, watermark-only
+  removal tolerated, appended tail does not trip the watermark.
+* `hostile_files`: truncated committed segment detected.
+* `performance_court`: conventional + F0/F1/E1 sweep (mount under the kmount
+  container).
+
+### Evidence
+
+* `evidence/performance/fuse-baseline.json` — mount facts + full config × workload matrix.
+* `evidence/performance/sequential-read.json`, `random-read.json`, `append-write.json`.
+* `evidence/performance/mount-replay.json` — mount/recovery/search/snapshot.
+* `evidence/performance/mechanisms.json` — commit path, trigram, io_uring vs sync.
+* `evidence/performance/ekbloom-frontier.json` — the manifestation frontier.
+* `evidence/performance/backing-uring.json`, `fuse-uring.json` (regenerated/kept).
+* `evidence/correctness/posix-results.json` — POSIX court + §33 coverage.
+
+### Explicitly not measured / left open
+
+* `F2`/`E2` numbers: **UNAVAILABLE** on this host (`fuse.enable_uring=0`).
+* Hardware counters (`perf`): unavailable (`perf` absent; `perf_event_paranoid=2`).
+* `fio`/`hyperfine`/`Criterion`/`Divan`: not used (documented blockers in
+  `docs/PERFORMANCE.md` §7).
+* Figures are warm-cache, single-run, non-portable (documented caveats).
+* The residual watermark window: bytes committed but not yet watermarked before a
+  crash cannot be detected as lost.

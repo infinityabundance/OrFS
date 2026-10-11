@@ -229,49 +229,99 @@ fn segment_containing(log_dir: &Path, offset: u64) -> u64 {
 }
 
 #[test]
-fn deleting_a_trailing_committed_segment_yields_a_closed_valid_boundary_or_a_refusal() {
+fn a_removed_trailing_committed_segment_is_detected_not_silently_recovered() {
     let td = TempDir::new().unwrap();
     let mut ns = init(td.path(), 512);
-    for i in 0..12u64 {
+    for i in 0..10u64 {
         let f = ns
             .create(
                 orfs::index::ROOT_INODE,
-                format!("f{i}").as_bytes(),
+                format!("g{i}").as_bytes(),
                 0o644,
                 0,
                 0,
             )
             .unwrap();
-        ns.write_at(f, 0, &[i as u8; 200]).unwrap();
+        ns.write_at(f, 0, &[i as u8; 180]).unwrap();
     }
     ns.sync().unwrap();
     let root = ns.root();
     drop(ns);
 
+    // Sanity: the intact volume opens cleanly and its durable watermark matches
+    // the committed root.
+    {
+        let vol = Volume::open(td.path(), OpenMode::ReadOnly).unwrap();
+        assert_eq!(vol.log.committed_end_offset(), root);
+        let wm = vol.log.durable_watermark().expect("a durable watermark");
+        assert_eq!(wm.committed_root, root);
+        assert_eq!(wm.physical_end(), root);
+    }
+
     let log_dir = Volume::log_dir(td.path());
     let ids = discover_segment_ids(&log_dir).unwrap();
     assert!(ids.len() >= 2, "need multiple segments, got {ids:?}");
+    // The segment holding the last committed byte (`root - 1`) is the trailing
+    // committed segment whose loss must be detected.
     let victim = segment_containing(&log_dir, root);
     std::fs::remove_file(log_dir.join(segment_file_name(victim).unwrap())).unwrap();
 
-    let before = snapshot_tree(td.path());
     match Volume::open(td.path(), OpenMode::ReadOnly) {
-        Ok(vol) => {
-            // The trailing committed segment was physically removed (outside
-            // OrFS). Recovery must NOT fabricate or reuse bytes: it reconstructs
-            // the most recent *surviving* complete boundary, a strictly earlier
-            // root, and never an invalid one. Suffix-segment loss is therefore a
-            // reported reduction, never silent resurrection (see docs/RECOVERY.md).
-            let recovered = vol.log.committed_end_offset();
-            assert!(recovered <= root);
-            assert!(vol.log.is_boundary(recovered));
-        }
-        Err(_) => {
-            // A gap/sequence break is also an acceptable (and stricter) refusal.
-        }
+        Err(_) => {}
+        Ok(vol) => panic!(
+            "trailing committed segment {victim} was removed but recovery returned root {} \
+             (expected detection/refusal)",
+            vol.log.committed_end_offset()
+        ),
     }
-    // Either way, nothing was rewritten or repaired.
-    assert_eq!(before, snapshot_tree(td.path()));
+}
+
+/// Removing only the watermark is tolerated (a legacy volume is *unvalidated*,
+/// not refusable): the fix is additive metadata and must never brick a volume
+/// whose committed segments are all intact.
+#[test]
+fn removing_only_the_watermark_is_tolerated_and_unvalidated() {
+    let td = TempDir::new().unwrap();
+    let mut ns = init(td.path(), 1 << 20);
+    let f = ns
+        .create(orfs::index::ROOT_INODE, b"w", 0o644, 0, 0)
+        .unwrap();
+    ns.write_at(f, 0, b"watermark").unwrap();
+    ns.sync().unwrap();
+    let root = ns.root();
+    drop(ns);
+
+    let wm_path = orfs::watermark::Watermark::path(&Volume::log_dir(td.path()));
+    assert!(wm_path.exists(), "a durable watermark was written");
+    std::fs::remove_file(&wm_path).unwrap();
+
+    let vol = Volume::open(td.path(), OpenMode::ReadOnly).unwrap();
+    assert_eq!(vol.log.committed_end_offset(), root);
+    assert_eq!(vol.log.durable_watermark(), None);
+}
+
+/// A torn/uncommitted tail appended *after* the committed root must not trip the
+/// watermark: the watermark tracks durable *committed* history, not raw physical
+/// bytes.
+#[test]
+fn an_appended_uncommitted_tail_does_not_trip_the_watermark() {
+    let td = TempDir::new().unwrap();
+    let mut ns = init(td.path(), 1 << 20);
+    let f = ns
+        .create(orfs::index::ROOT_INODE, b"t", 0o644, 0, 0)
+        .unwrap();
+    ns.write_at(f, 0, b"tail").unwrap();
+    ns.sync().unwrap();
+    let root = ns.root();
+    drop(ns);
+
+    append_to_last_segment(td.path(), &[0x4F, 0x52, 0x46, 0x53, 1, 0, 0, 0]);
+    let vol = Volume::open(td.path(), OpenMode::ReadWrite).unwrap();
+    assert_eq!(vol.log.committed_end_offset(), root);
+    assert_eq!(
+        vol.log.durable_watermark().map(|w| w.committed_root),
+        Some(root)
+    );
 }
 
 #[test]

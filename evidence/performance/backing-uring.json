@@ -25,42 +25,42 @@
       }
     },
     "random_read": {
-      "speedup_uring_batched_over_sync": 0.7342756339135154,
-      "speedup_uring_over_sync": 0.7130211275026318,
+      "speedup_uring_batched_over_sync": 0.6702007700631438,
+      "speedup_uring_over_sync": 0.6668405227551116,
       "sync": {
-        "mb_per_s": 10951.18501259747,
-        "ops_per_s": 2673629.1534661795,
-        "seconds": 0.014960938
+        "mb_per_s": 12971.677106264591,
+        "ops_per_s": 3166913.3560216287,
+        "seconds": 0.012630595
       },
       "uring": {
-        "mb_per_s": 7808.426285172172,
-        "ops_per_s": 1906354.0735283624,
-        "seconds": 0.020982461
+        "mb_per_s": 8650.039942551992,
+        "ops_per_s": 2111826.1578496075,
+        "seconds": 0.018940953
       },
       "uring_batched": {
-        "mb_per_s": 8041.188317229197,
-        "ops_per_s": 1963180.7415110345,
-        "seconds": 0.020375098
+        "mb_per_s": 8693.627985628982,
+        "ops_per_s": 2122467.769928951,
+        "seconds": 0.018845987
       }
     },
     "sequential_append": {
       "bytes": 81920000,
-      "speedup_uring_batched_over_sync": 0.7936847377548144,
-      "speedup_uring_over_sync": 0.298716744287655,
+      "speedup_uring_batched_over_sync": 2.3008226665771003,
+      "speedup_uring_over_sync": 1.2521688831822844,
       "sync": {
-        "mb_per_s": 4512.647311052725,
-        "ops_per_s": 1101720.5349249816,
-        "seconds": 0.018153424
+        "mb_per_s": 1031.8080526673523,
+        "ops_per_s": 251906.26285824028,
+        "seconds": 0.079394612
       },
       "uring": {
-        "mb_per_s": 1348.0033128761106,
-        "ops_per_s": 329102.3713076442,
-        "seconds": 0.060771364
+        "mb_per_s": 1291.997936966966,
+        "ops_per_s": 315429.1838298257,
+        "seconds": 0.063405674
       },
       "uring_batched": {
-        "mb_per_s": 3581.61929765285,
-        "ops_per_s": 874418.7738410279,
-        "seconds": 0.022872336
+        "mb_per_s": 2374.0073551338223,
+        "ops_per_s": 579591.6394369684,
+        "seconds": 0.034507054
       }
     },
     "uring_stats_after_workload": {

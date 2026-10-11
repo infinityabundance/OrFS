@@ -3,75 +3,75 @@
   "measured_selection_model": [
     {
       "class": "byte",
-      "ewma_ns": 95.85620466298143,
+      "ewma_ns": 103.68637944399428,
       "path": "path-bloom",
       "samples": 69
     },
     {
       "class": "byte",
-      "ewma_ns": 277.415753162011,
+      "ewma_ns": 595.1311258433054,
       "path": "history",
       "samples": 30
     },
     {
       "class": "byte",
-      "ewma_ns": 792.9026233281791,
+      "ewma_ns": 918.0372809677702,
       "path": "checkpoint",
       "samples": 26
     },
     {
       "class": "byte",
-      "ewma_ns": 2500.1099999999997,
+      "ewma_ns": 5464.16,
       "path": "logical-extent",
       "samples": 4
     },
     {
       "class": "medium(<=64K)",
-      "ewma_ns": 121316.0,
+      "ewma_ns": 122241.19999999998,
       "path": "path-bloom",
       "samples": 2
     },
     {
       "class": "medium(<=64K)",
-      "ewma_ns": 486247.0,
+      "ewma_ns": 478904.0,
       "path": "history",
       "samples": 1
     },
     {
       "class": "medium(<=64K)",
-      "ewma_ns": 324054.0,
+      "ewma_ns": 318925.0,
       "path": "checkpoint",
       "samples": 1
     },
     {
       "class": "medium(<=64K)",
-      "ewma_ns": 2372.8116549520687,
+      "ewma_ns": 2383.676515589639,
       "path": "logical-extent",
       "samples": 30
     },
     {
       "class": "small(<=4K)",
-      "ewma_ns": 36027.09999999999,
+      "ewma_ns": 36323.09999999999,
       "path": "path-bloom",
       "samples": 2
     },
     {
       "class": "small(<=4K)",
-      "ewma_ns": 6319.791580026373,
+      "ewma_ns": 5472.278366107237,
       "path": "history",
-      "samples": 21
+      "samples": 88
     },
     {
       "class": "small(<=4K)",
-      "ewma_ns": 21672.499999999996,
+      "ewma_ns": 22776.6,
       "path": "checkpoint",
       "samples": 2
     },
     {
       "class": "small(<=4K)",
-      "ewma_ns": 1999.5750364412215,
+      "ewma_ns": 2055.4030634581804,
       "path": "logical-extent",
-      "samples": 312
+      "samples": 245
     }
   ],
   "note": "Each path is timed directly (min/mean over offsets x iterations). Selection uses the measured EWMA model (see src/readpath.rs); the ordinary logical extent read is itself a measured candidate, so the planner never picks a manifested path that is slower than the authoritative one. Absolute latencies are from an unoptimized test build, so per-symbol loops dominate; selection, not the absolute figure, is the point.",
@@ -82,7 +82,7 @@
     },
     {
       "path": "history",
-      "reads": 49
+      "reads": 116
     },
     {
       "path": "checkpoint",
@@ -90,17 +90,17 @@
     },
     {
       "path": "logical-extent",
-      "reads": 341
+      "reads": 274
     }
   ],
   "schema": "orfs.readpath.v1",
   "workloads": [
     {
       "authoritative": {
-        "mean_ns": 1458.9125,
-        "min_ns": 1393
+        "mean_ns": 1466.6725000000001,
+        "min_ns": 1403
       },
-      "best_manifested_mean_ns": 57.67625,
+      "best_manifested_mean_ns": 57.7525,
       "inode": 5,
       "inode_version": 3,
       "iterations_per_offset": 200,
@@ -116,28 +116,28 @@
         {
           "certified": true,
           "iterations": 4,
-          "mean_ns": 3458.02375,
+          "mean_ns": 3518.03125,
           "min_ns": 100,
           "path": "checkpoint"
         },
         {
           "certified": true,
           "iterations": 4,
-          "mean_ns": 117.08375,
+          "mean_ns": 106.40625,
           "min_ns": 90,
           "path": "history"
         },
         {
           "certified": true,
           "iterations": 4,
-          "mean_ns": 1458.9125,
-          "min_ns": 1393,
+          "mean_ns": 1466.6725000000001,
+          "min_ns": 1403,
           "path": "logical-extent"
         },
         {
           "certified": true,
           "iterations": 4,
-          "mean_ns": 57.67625,
+          "mean_ns": 57.7525,
           "min_ns": 50,
           "path": "path-bloom"
         }
@@ -145,14 +145,14 @@
       "selected_paths": {
         "path-bloom": 4
       },
-      "speedup_vs_authoritative": 25.294857068550744
+      "speedup_vs_authoritative": 25.395827020475306
     },
     {
       "authoritative": {
-        "mean_ns": 1729.64375,
-        "min_ns": 1613
+        "mean_ns": 1715.965,
+        "min_ns": 1654
       },
-      "best_manifested_mean_ns": 53199.89875,
+      "best_manifested_mean_ns": 53439.761249999996,
       "inode": 5,
       "inode_version": 3,
       "iterations_per_offset": 200,
@@ -168,36 +168,36 @@
         {
           "certified": true,
           "iterations": 4,
-          "mean_ns": 64560.606250000004,
-          "min_ns": 63699,
+          "mean_ns": 66750.57500000001,
+          "min_ns": 66283,
           "path": "checkpoint"
         },
         {
           "certified": true,
           "iterations": 4,
-          "mean_ns": 102221.32625,
-          "min_ns": 99846,
+          "mean_ns": 99496.58374999999,
+          "min_ns": 98714,
           "path": "history"
         },
         {
           "certified": true,
           "iterations": 4,
-          "mean_ns": 1729.64375,
-          "min_ns": 1613,
+          "mean_ns": 1715.965,
+          "min_ns": 1654,
           "path": "logical-extent"
         },
         {
           "certified": true,
           "iterations": 4,
-          "mean_ns": 53199.89875,
-          "min_ns": 52738,
+          "mean_ns": 53439.761249999996,
+          "min_ns": 52938,
           "path": "path-bloom"
         }
       ],
       "selected_paths": {
         "logical-extent": 4
       },
-      "speedup_vs_authoritative": 0.03251216244091066
+      "speedup_vs_authoritative": 0.03211026695969754
     }
   ]
 }

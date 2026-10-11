@@ -358,6 +358,34 @@ impl Volume {
             detail: format!("root R={root}"),
         });
 
+        // The durable commit watermark certifies the committed prefix; if it
+        // certifies more history than survives, a trailing committed segment is
+        // missing (the open would already have refused, but report it too).
+        checks.push(
+            match crate::watermark::Watermark::read(&Volume::log_dir(&self.root_dir)) {
+                Ok(Some(wm)) => VerifyCheck {
+                    name: "commit_watermark".to_string(),
+                    ok: wm.committed_root <= root,
+                    detail: format!(
+                        "committed_root={} segment={} valid_len={} physical_end={}",
+                        wm.committed_root,
+                        wm.segment_id,
+                        wm.segment_valid_len,
+                        wm.physical_end(),
+                    ),
+                },
+                Ok(None) => VerifyCheck::ok(
+                    "commit_watermark",
+                    "absent (legacy volume; completeness unvalidated by the watermark)".to_string(),
+                ),
+                Err(e) => VerifyCheck {
+                    name: "commit_watermark".to_string(),
+                    ok: false,
+                    detail: e.to_string(),
+                },
+            },
+        );
+
         let contiguous = self.log.extents().windows(2).all(|w| w[0].end() == w[1].id);
         checks.push(VerifyCheck {
             name: "segment_continuity".to_string(),

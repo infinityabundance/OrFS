@@ -33,4 +33,6 @@ $RUNNER sh -c '
     timeout -k 10 900 cargo test --test fuse_uring -- --nocapture --test-threads=1
     echo "--- backing I/O benchmark (writes evidence/performance/backing-uring.json) ---"
     timeout -k 10 900 cargo bench --bench backing_io
+    echo "--- in-crate mechanism microbenchmarks + EKBLOOM frontier (writes evidence/performance/mechanisms.json and ekbloom-frontier.json) ---"
+    timeout -k 10 900 cargo bench --bench mechanisms
 '

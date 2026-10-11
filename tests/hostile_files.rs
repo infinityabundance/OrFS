@@ -630,16 +630,24 @@ fn truncated_final_segment_does_not_expose_committed_content() {
     file.set_len(len.saturating_sub(5)).unwrap();
     file.sync_all().unwrap();
 
-    // A torn *final* segment is a harmless tail: scanning must not error, and the
-    // reported committed root never exceeds the pre-truncation root.
+    // A torn *final* segment is no longer silently treated as a harmless tail
+    // when the durable watermark certifies committed history beyond it: if the
+    // truncation removed committed bytes, the open is refused (research §23, §35).
+    // If it only removed bytes beyond the committed root, the open stays valid.
     let scan = scan_log(&log_dir).unwrap();
     assert!(scan.committed_end_offset <= committed_root);
-
-    // Any recovered handle agrees exactly with the scan and reports a valid
-    // committed boundary; the surviving committed prefix is readable.
-    let vol = Volume::open(td.path(), OpenMode::ReadOnly).unwrap();
-    assert_eq!(vol.log.committed_end_offset(), scan.committed_end_offset);
-    assert!(vol.log.is_boundary(vol.log.committed_end_offset()));
+    if scan.committed_end_offset < committed_root {
+        assert!(
+            Volume::open(td.path(), OpenMode::ReadOnly).is_err(),
+            "truncating committed bytes must be detected by the commit watermark"
+        );
+    } else {
+        // The recovered handle agrees exactly with the scan and reports a valid
+        // committed boundary; the surviving committed prefix is readable.
+        let vol = Volume::open(td.path(), OpenMode::ReadOnly).unwrap();
+        assert_eq!(vol.log.committed_end_offset(), scan.committed_end_offset);
+        assert!(vol.log.is_boundary(vol.log.committed_end_offset()));
+    }
 }
 
 #[test]

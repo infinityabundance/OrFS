@@ -94,18 +94,50 @@ bytes unrecoverable, and a party able to read the backing store (or to mount an
 earlier committed root) can still read them. The **backing directory should be
 protected more strictly than the logical mount**. See `docs/SECURITY.md` §2.
 
-## 6. Trailing-segment loss is indistinguishable from a shorter log
+## 6. Trailing-segment loss is now detected (Phase 12)
 
-If the *trailing* committed segment files are physically removed outside OrFS,
-the surviving segments still form a contiguous chain, so recovery reconstructs
-the most recent **surviving** complete committed boundary and reports that
-(strictly earlier) root. No invalid state is produced and no byte is fabricated,
-but the removed transactions are lost without an error. Interior gaps, sequence
-breaks, and committed roots dangling past present bytes **are** refused. See
-`docs/RECOVERY.md` §5. Detecting trailing loss would require a durable
-physical-end watermark written on every commit.
+**Fixed in Phase 12.** If the *trailing* committed segment files are physically
+removed or truncated outside OrFS, a pure segment scan would still see a
+contiguous chain and silently recover a strictly earlier root. OrFS now records a
+**durable commit watermark** (`or.log/commit.watermark`) at every durability
+point: the committed root `R` and the physical coordinate
+`(segment_id, segment_valid_len)` just before `R`, with a CRC32C. On open the
+watermark is validated against the surviving committed bytes; if it certifies
+more history than survives, the open **refuses** rather than silently recovering
+a shorter log (research §23, §35).
 
-## 7. Extended-attribute access rule
+Properties of the fix:
+
+* **Additive, non-withdrawal-respecting.** The watermark is new metadata; it never
+  rewrites a committed byte and never changes the record stream.
+* **Written only after the bytes it describes are durable**, so it can never
+  certify more durable history than the backing store holds. It is written at
+  `sync`/`flush`/batch-sync points (per-commit under `sync` durability).
+* **A missing watermark is tolerated, not fatal**: a legacy volume (or one whose
+  watermark is deleted) opens as *unvalidated*; the next durability point
+  establishes one. Interior gaps, sequence breaks, and roots dangling past present
+  bytes remain refused as before.
+* **Cost.** The watermark adds a small (36-byte) `write-tmp → rename → fsync` at
+  each durability point. This is a deliberate space/robustness-for-writes tradeoff;
+  it is not on the ordered/buffered hot path (only at sync points).
+
+Residual window: a crash *between* committing bytes and persisting the watermark
+leaves the watermark one durability point behind, so loss of exactly those
+not-yet-watermarked bytes cannot be detected. This is inherent to any scheme that
+cannot rewrite committed history. See `docs/RECOVERY.md` §5.
+
+## 7. Performance: no portability claim, and F2/E2 remain unavailable
+
+Phase 12 measured real configurations (`conventional`, `F0`, `F1`, `E1`) on one
+host/container; the full methodology and numbers are in `docs/PERFORMANCE.md`. The
+figures are **warm-cache single-run** measurements and are not a portable
+benchmark. `fio`, `hyperfine`, and `perf` are absent from the pinned image, and
+hardware counters are additionally blocked by `perf_event_paranoid=2` and dropped
+`CAP_PERFMON`; Criterion/Divan were not added (the pinned build is offline-capable
+and dependency-free). F2/E2 remain unavailable because `fuse.enable_uring=0`
+(§4). No performance superiority is claimed.
+
+## 8. Extended-attribute access rule
 
 OrFS stores xattr names as bounded opaque bytes (≤ 255, no NUL) and enforces one
 uniform access rule independent of namespace: reading an attribute requires read

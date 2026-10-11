@@ -36,6 +36,7 @@ use crate::transaction::{
     bracket_checksum, verify_bracket, AbortReason, TxAbortPayload, TxBeginPayload, TxCommitPayload,
 };
 use crate::uring::{BackingEngine, ReadJob, UringConfig, UringReport};
+use crate::watermark;
 
 /// Default segment size policy: 64 MiB per segment file.
 pub const DEFAULT_SEGMENT_SIZE: u64 = 64 * 1024 * 1024;
@@ -488,6 +489,46 @@ pub fn scan_log(dir: &Path) -> Result<LogScan> {
     })
 }
 
+/// Map a recovered committed root to its physical `(segment, valid_len)` witness.
+///
+/// Used to seed the in-memory watermark from the recovered root so a legacy
+/// volume establishes protection at its next durability point.
+fn recovered_watermark(committed: u64, locator: &SegmentLocator) -> watermark::Watermark {
+    if committed == 0 {
+        let segment_id = locator.extents().first().map(|e| e.id).unwrap_or(0);
+        return watermark::Watermark {
+            committed_root: 0,
+            segment_id,
+            segment_valid_len: 0,
+        };
+    }
+    match locator.locate(committed - 1) {
+        Some((segment_id, phys)) => watermark::Watermark {
+            committed_root: committed,
+            segment_id,
+            segment_valid_len: phys + 1,
+        },
+        None => {
+            let segment_id = locator
+                .extents()
+                .iter()
+                .rev()
+                .find(|e| e.id < committed)
+                .map(|e| e.id)
+                .unwrap_or(0);
+            let segment_valid_len = locator
+                .extent_of(segment_id)
+                .map(|e| e.valid_len)
+                .unwrap_or(0);
+            watermark::Watermark {
+                committed_root: committed,
+                segment_id,
+                segment_valid_len,
+            }
+        }
+    }
+}
+
 /// Re-validate every committed transaction's typed bracket in `records`.
 ///
 /// Used by `orfs verify --deep`. Returns the number of committed transactions
@@ -859,6 +900,11 @@ pub struct Log {
     /// What recovery observed and did when this handle was opened (research §23,
     /// §35). [`RecoveryDisposition::Clean`] for a freshly created log.
     recovery: RecoveryDisposition,
+    /// The latest committed-prefix watermark observed in memory. Set whenever a
+    /// root is published; persisted at the next durability point (research §23).
+    watermark: Option<watermark::Watermark>,
+    /// The watermark last written durably to disk.
+    durable_watermark: Option<watermark::Watermark>,
 }
 
 impl Log {
@@ -905,6 +951,8 @@ impl Log {
             io: BackingEngine::Sync,
             pins: RootPins::new(),
             recovery: RecoveryDisposition::Clean,
+            watermark: None,
+            durable_watermark: None,
         })
     }
 
@@ -933,6 +981,12 @@ impl Log {
         let mut locator = SegmentLocator::from_extents(scan.extents.clone())?;
         let mut writer = None;
         let mut quarantined = false;
+
+        // Validate the durable commit watermark *before* acting on the volume. A
+        // watermark ahead of the surviving committed bytes means a trailing
+        // committed segment is missing or truncated: refuse, never silently
+        // recover a shorter history (research §23, §35).
+        let disk_watermark = watermark::validate(dir, committed)?;
 
         if mode == OpenMode::ReadWrite {
             if scan.physical_end > committed {
@@ -984,6 +1038,10 @@ impl Log {
                 quarantined,
             },
         };
+        // The recovered committed root is the best in-memory watermark. It is
+        // persisted at the next durability point (establishing protection for a
+        // legacy volume that predates the watermark on its first write).
+        let recovered_wm = Some(recovered_watermark(committed, &locator));
         // The committed root must be physically covered by canonical bytes. A
         // deleted or truncated *committed* segment can otherwise leave a root
         // pointing past the bytes that exist (research §35: the recovered root is
@@ -1012,6 +1070,8 @@ impl Log {
             io: BackingEngine::Sync,
             pins,
             recovery,
+            watermark: recovered_wm,
+            durable_watermark: disk_watermark,
         })
     }
 
@@ -1399,6 +1459,44 @@ impl Log {
         self.committed_record_count = self.next_sequence_number;
         self.boundaries.push(end);
         self.stats.committed_bytes = end;
+        // Record an in-memory watermark for the newly committed prefix. It is
+        // persisted at the next durability point (research §23).
+        self.watermark = Some(watermark::Watermark {
+            committed_root: end,
+            segment_id: self
+                .writer
+                .as_ref()
+                .map(|w| w.id)
+                .unwrap_or_else(|| self.locator.extents().last().map(|e| e.id).unwrap_or(0)),
+            segment_valid_len: match &self.writer {
+                Some(w) if end >= w.id => end - w.id,
+                _ => 0,
+            },
+        });
+        Ok(())
+    }
+
+    /// The committed-prefix watermark most recently observed in memory.
+    pub fn watermark(&self) -> Option<watermark::Watermark> {
+        self.watermark
+    }
+
+    /// The committed-prefix watermark last written durably to disk, if any.
+    pub fn durable_watermark(&self) -> Option<watermark::Watermark> {
+        self.durable_watermark
+    }
+
+    /// Persist the in-memory watermark if it has advanced beyond the durable one.
+    ///
+    /// Called only after the segment bytes are fsynced, so the watermark can
+    /// never certify more durable history than the backing store holds.
+    fn persist_watermark(&mut self) -> Result<()> {
+        if let Some(wm) = self.watermark {
+            if self.durable_watermark != Some(wm) {
+                watermark::Watermark::write(&self.dir, &wm)?;
+                self.durable_watermark = Some(wm);
+            }
+        }
         Ok(())
     }
 
@@ -1595,6 +1693,8 @@ impl Log {
                 }
             }
         }
+        // The bytes are durable: now make the completeness witness durable too.
+        self.persist_watermark()?;
         Ok(())
     }
 

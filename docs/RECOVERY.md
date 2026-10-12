@@ -292,3 +292,43 @@ Opening `R` *distinct* historical roots whose prefixes grow with `R` costs
 `O(R·L)` total; the in-memory LRU and persisted accelerator remove the replay only
 for repeated access to a *given* root. The relationship is linear and is reported
 as measured, never as constant-time.
+
+### 8.1 Derived discovery and the binary accelerator (Phase 43)
+
+Mount recovery still performs the mandatory `scan_log` validation of every
+committed record, but Phase 43 removes the **additional whole-log checkpoint
+discovery scan** on a warm restart:
+
+* a **derived, append-only committed-root directory** under `index/roots/` records
+  checkpoint record offsets and verified historical-index locations together with
+  the committed root its completed scans covered (the **watermark**). When the
+directory is complete for the prefix, `mount_index` reads the newest recorded
+checkpoint offset directly instead of scanning every record header. Every
+candidate it names is still read from the log and fully validated, and the suffix
+is still replayed (`DiscoverySource::Catalogue`); a directory that over-claims its
+bound, has a hole, or cannot be folded is distrusted (`DiscoverySource::LogScan`).
+  This is the same discipline as the Phase-42 manifestation catalogue
+  (`src/manifestation.rs`): fixed-size CRC32C-framed records, a `CURRENT` pointer,
+  sealed segments, and folded summaries. It is derived and reconstructible, so it
+  never needs to be authoritative.
+* the **binary historical accelerator** (§6.1 of `docs/SNAPSHOTS.md`) replaces the
+  legacy JSON envelope, so a warm historical-root open parses a small validated
+  header and packed inode/directory tables rather than a large JSON document.
+
+**Quick open vs. complete audit.** Recovery reports distinguish them explicitly
+(`MountReport::discovery_source`, `MountReport::audited()`):
+`DiscoverySource::ValidatedAccelerator` is a **quick open** (the log was not
+replayed) and is reachable only through the deliberate `mount_index_quick`-style
+entry point `checkpoint::open_index_quick`; `Catalogue`, `LogScan`, and
+`FullReplay` are **audits**. Ordinary `Namespace::open` calls `mount_index`, which
+is always an audit and never trusts an accelerator for the committed root.
+`checkpoint::mount_index` / `checkpoint::mount_index_at` fall back to
+`checkpoint::mount_index_scan` semantics (a pure whole-log audit) whenever any
+derived structure is absent or untrusted, so **authoritative reconstruction is
+always available and is used** rather than a fast path asserting unverified
+history.
+
+Evidence: `evidence/performance/historical-fast.json` (measured at an 8 000-op
+history: directory-assisted mount vs. the pre-Phase-43 scan, a validated quick
+open vs. the audited mount, and binary vs. legacy accelerator load, with an honest
+note about what is and is not improved).

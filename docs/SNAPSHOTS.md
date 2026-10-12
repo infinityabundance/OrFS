@@ -179,13 +179,10 @@ Both are fixed:
    only `[checkpoint_root, R)` (`checkpoint::mount_index_at`) — and every later
    lookup/read is a pure cache hit with no replay, independent of history size.
 * **Persisted accelerator.** On materialization the index is written (best-effort,
-   temp-file + rename) to `index/historical/<root>.v1.json` as a **derived**
-   accelerator, so a **remount** can reuse it without any replay. The document
-   binds a schema tag, the volume UUID, the root, a BLAKE3 digest over the inner
-   snapshot, and the snapshot text; on load the UUID, root, envelope digest, the
-   inner snapshot's own self-digest, and the committed-boundary property are all
-   re-checked. A `Snapshot` opened over a volume also reuses a valid persisted
-   accelerator (`materialize_index`).
+  temp-file + rename) to `index/historical/<root>.v2.bin` as a **derived**
+  accelerator, so a **remount** can reuse it without any replay. A `Snapshot`
+  opened over a volume also reuses a valid persisted accelerator
+  (`materialize_index`). The format is described in §6.1.
 
 **The log always wins.** Neither layer is authoritative. A historical index is
 only ever *produced* by the same replay the log yields. A persisted accelerator
@@ -194,20 +191,146 @@ dropped and the index is rebuilt from the log; a derived file never overrides
 committed history. Because roots are immutable, a cache entry is never stale: any
 later commit lands beyond `R` and cannot change `L[0:R]`.
 
+### 6.1 Persistent historical accelerator: the binary format (Phase 43)
+
+The Phase-20 accelerator wrapped the index's JSON snapshot inside a JSON
+envelope, so a large history paid parsing, allocation, and materialization before
+the index was usable. Phase 43 replaces the write side with an **immutable,
+versioned binary container** and keeps a backward-compatible **read** of the
+legacy JSON form.
+
+```text
+  v2 binary accelerator, `index/historical/<root>.v2.bin`:
+
+  off  size field
+  0    8    magic "ORFSHIX2"
+  8    4    version = 2
+  12   4    header_len = 88
+  16   16   volume uuid            (volume identity)
+  32   8    root                   (the committed boundary)
+  40   8    blob_offset = 88       (explicit offset)
+  48   8    blob_len               (explicit length)
+  56   8    asserted inode count
+  64   8    asserted dentry count
+  72   4    flags (0)
+  76   4    reserved
+  80   8    reserved
+  88   ..   packed index blob
+  end  32   BLAKE3 digest over every preceding byte
+
+  packed index blob (offset/length table of contents at its front):
+  magic "ORIX", version, root, next_inode_id, five counts, then five
+  directly addressable tables: inode, directory-entry, named-snapshot,
+  checkpoint, and directory-key.
+```
+
+Validation is strictly ordered so that **no mapped byte becomes trusted before it
+is checked**: (1) the container is at least header + digest long; (2) magic,
+format version, and declared header length are exact; (3) the volume UUID and root
+match the requested `(uuid, root)`; (4) the declared offsets and lengths tile the
+file exactly, using checked arithmetic; (5) the whole-representation BLAKE3
+digest matches. Only then is the packed blob decoded, its own table of contents
+re-checked, and the asserted inode/dentry counts and root cross-checked against
+the decoded index.
+
+The blob is decoded from a **read-only `mmap`** of the file when the platform
+supplies one (with an ordinary read as the fallback), so validating the small
+header and the digest does not require materialising the file. The directory-key
+table preserves the exact set of directory entries — including directories with no
+visible children — so `decode_packed(encode_packed(i)) == i` exactly, which the
+legacy JSON form does not guarantee.
+
+**Backward compatibility / migration.** The legacy `index/historical/<root>.v1.json`
+document is still read (`historical::load_persisted_historical` prefers the binary
+form and falls back to the JSON form). No migration step is required and no
+existing volume is invalidated: the next materialization of a root simply writes
+the binary form, and both forms decode to the same index.
+
+### 6.2 Committed-root directory (Phase 43)
+
+Mount discovery and historical-root discovery both had to scan the whole log's
+record headers to *find* an in-log checkpoint. Phase 43 adds a **derived,
+append-only committed-root directory** under `index/roots/`, modelled on the
+Phase-42 manifestation catalogue:
+
+```text
+  index/roots/CURRENT            pointer to the active segment ("ORCQ", CRC32C)
+  index/roots/seg-<n:010>.cat    fixed-size CRC32C-framed records, append-only
+  index/roots/sum-<n:010>.sum    folded "latest per key" summary, immutable
+```
+
+Each record carries a kind (checkpoint location, verified historical-index
+location, or watermark), the committed root a completed scan covered (the
+**watermark**), a checkpoint record offset where applicable, and — for a verified
+accelerator — its whole-representation digest. A **watermark** record is appended
+*last*, so a crash mid-publication can never claim a completeness the scan did not
+establish; the directory is complete for checkpoint locations in `[0, W)` exactly
+when a watermark `W` is present. A directory that claims a bound beyond the log's
+committed root, has a missing interior segment, or fails to fold is **distrusted**
+and the caller scans authoritatively.
+
+`checkpoint::mount_index` and `checkpoint::mount_index_at` consult the directory
+first and fall back to the header scan; every candidate offset it names is still
+read from the log and fully validated, and the suffix is replayed. The directory
+can therefore only ever cost a *fallback* or *extra replay* — never a wrong result
+— and it never hides a checkpoint the log has.
+
+**Publishing is writable-open only.** Only a writable head mount
+(`Namespace::open` with `OpenMode::ReadWrite`) best-effort *publishes* the
+`index/roots/` directory after a completed scan; the pure-scan audit
+(`mount_index_scan`), historical views (`mount_index_at`), and read-only opens
+(`mount_index_readonly`) **consult** it but never write it. This preserves
+`docs/RECOVERY.md`'s read-only guarantee that a read-only open modifies *not a
+single on-disk byte*.
+
+### 6.3 Quick open vs. complete audit (Phase 43, integrity contract)
+
+The system distinguishes two operations, and both carry it in their report:
+
+* A **quick open** reuses a persisted accelerator validated for exactly
+  `(uuid, root)` (identity, root, whole-representation digest, committed
+  boundary). It does not replay the log. `checkpoint::open_index_quick` and a
+  persisted hit in `HistoricalIndexCache` are quick opens;
+  `MountReport::discovery_source` is
+  `DiscoverySource::ValidatedAccelerator` and `MountReport::audited()` is
+  `false`.
+* A **complete audit** reads and validates authoritative records. The report's
+  `DiscoverySource` is `Catalogue` (directory-assisted discovery, but the
+  checkpoint record was read from the log), `LogScan` (header-scan discovery), or
+  `FullReplay` (whole-log replay), and `audited()` is `true`.
+
+`checkpoint::mount_index` (the mount path) is always an **audit**; it never trusts
+the accelerator for the committed root. A caller that deliberately wants the fast
+path uses `checkpoint::open_index_quick`, which falls back to `mount_index` when
+the accelerator is absent or cannot be trusted. `checkpoint::mount_index_scan` is
+the always-available authoritative audit that ignores every derived structure.
+
+If the derived directory or an accelerator is corrupt, missing, or untrusted, the
+audited reconstruction remains available and is used. **A fast path never asserts
+history it has not verified.**
+
+Evidence: `evidence/performance/historical-fast.json` (correctness, adversarial
+fallback verdicts, and measured accelerator load, mount recovery, and
+historical-root open costs, with an honest note).
+
 ### Mount cost — measured, not claimed
 
 Mount is **not constant-time**. The two costs are:
 
-* discovery: `O(#records)` header reads;
+* discovery: `O(#records)` header reads — or `O(1)` directory lookups when the
+derived committed-root directory is complete for the prefix (§6.2);
 * replay: `O(bytes after the newest valid checkpoint)`.
 
 Both are measured and reported by `MountReport` (`records_replayed`,
 `bytes_replayed`, `checkpoints_found`, `checkpoints_rejected`, `wall_micros`,
-`full_replay_fallback`). `evidence/performance/mount-replay-snapshot.json` records
-measured full-replay vs checkpoint-mount times on identical logs. Checkpoints pay
-off when the retained log dwarfs the index (namespace-light, write-heavy
-workloads); a checkpoint on a trivially small log can cost more than it saves,
-and the evidence says so.
+`full_replay_fallback`, and `discovery_source`).
+`evidence/performance/mount-replay-snapshot.json` records measured full-replay vs
+checkpoint-mount times (and the directory-assisted restart) on identical logs, and
+`evidence/performance/historical-fast.json` records the same at an 8 000-op scale.
+Checkpoints pay off when the retained log dwarfs the index (namespace-light,
+write-heavy workloads); a checkpoint on a trivially small log can cost more than
+it saves, and the evidence says so. The directory removes only the *discovery*
+scan; the checkpoint's embedded index must still be decoded.
 
 ## 7. Extended attributes (research §8)
 
@@ -247,12 +370,22 @@ extended-attribute size and access rules (they are computed, not stored). See
   index equals full replay for many roots; the in-memory cache is a hard LRU
   bound; an absent, torn, or tampered persisted accelerator falls back to correct
   replay; and a remount reuses a persisted historical index without replaying.
+* (h) **Phase 43** — a quick open returns byte-identical state to the audited
+  reconstruction at the same root; the binary container is smaller and decodes
+  faster than the legacy JSON form; a torn, truncated, corrupt-header, or
+  corrupt-digest accelerator, a foreign volume uuid, a missing committed-root
+  directory, and a corrupt (bogus-offset, torn, holed, or over-claiming) directory
+  **all** fall back to the authoritative reconstruction and never return wrong
+  bytes or a wrong root.
 
 Evidence: `evidence/correctness/snapshot-equivalence.json` (per-root
 reconstruction verdicts), `evidence/performance/mount-replay-snapshot.json`
-(measured mount time vs retained history size, with and without checkpoints), and
+(measured mount time vs retained history size, with and without checkpoints),
 `evidence/performance/historical-index.json` (first-materialization vs
-repeated-access cost, and exact decoded-byte proportionality of suffix replay).
+repeated-access cost, and exact decoded-byte proportionality of suffix replay),
+and `evidence/performance/historical-fast.json` (Phase 43: accelerator load,
+mount recovery, and historical-root open costs, plus the adversarial fallback
+verdicts).
 
 ## 9. CLI
 

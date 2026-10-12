@@ -582,12 +582,62 @@ checkpoints) and the **decode of the checkpoint's embedded index** remain — an
 at 8 000 ops the checkpoints also inflate the log (×1.5) and their embedded-index
 decode matches the replay, so the checkpointed mount is a wash (and was slower in
 an earlier, more loaded run). The crossover
-ahead. The crossover
 is real and reported, not hidden: checkpoints pay off once the skipped replay
 dominates those costs (e.g. 2 000 ops: 60 ms vs 74 ms; 500 ops: 15 ms vs 20 ms).
 At 8 000 ops it is a wash (313 ms vs 312 ms). Snapshot historical accelerators
 (`snapshot_historical_cache`: cold vs warm p50 ≈ 0.53 ms each for a small index)
 likewise trade replay for an `O(index)` JSON decode.
+
+### 9.5 Phase 43 — the persistent historical fast path
+
+Source: `tests/historical_fast.rs` (bounded in `cargo test`) and the opt-in
+`scripts/container-historical-fast.sh` sweep; evidence
+`evidence/performance/historical-fast.json`. The figures below are the **release**
+opt-in sweep at an 8 000-op history (checkpoint every 500; 166 MB retained; 15
+checkpoints) and 2 000 distinct historical roots; the evidence file records its own
+profile and environment.
+
+**A. Mount recovery — the discovery scan, not the replay.** The Phase-43 derived
+committed-root directory (§6.2 of `docs/SNAPSHOTS.md`) removes the whole-log
+checkpoint *discovery* scan on a warm restart:
+
+| path | first open | scan-only (pre-Phase-43) | directory-assisted |
+|---|---:|---:|---:|
+| 8 000 ops, 166 MB retained | 78.1 ms (scan + publish) | 60.4 ms | **47.7 ms** |
+
+The directory-assisted mount is ~1.27× the pre-Phase-43 mount here. It is **not**
+constant-time: the checkpoint's embedded index must still be decoded and its suffix
+replayed, so this is a real but bounded win, and it is reported as measured.
+
+**B. Quick open vs. complete audit.** A **validated quick open**
+(`checkpoint::open_index_quick`: a persisted binary accelerator for exactly the
+committed root, log *not* replayed) is **14.5 ms** against the audited
+directory-assisted mount's **47.7 ms** at the same root — ~3.4× — and its report
+says `audited() == false`. Ordinary `Namespace::open` stays an audit; the fast path
+is opt-in and distinguishable.
+
+**C. Accelerator load — binary vs. legacy JSON.** For the same 8 017-inode index:
+
+| form | bytes | load (mean) | bytes allocated | minor page faults |
+|---|---:|---:|---:|---:|
+| binary container (v2) | 2.89 MB | **16.0 ms** | 28.7 MB | **4** |
+| legacy JSON envelope (v1) | 18.4 MB | 51.8 ms | 120.6 MB | 1 165 |
+
+The binary form is 6.4× smaller and ~3.2× faster to load, allocating ~4× fewer
+bytes and touching far fewer pages. This is what a warm historical-root open pays
+instead of a JSON parse.
+
+**D. Historical-root opens.** Across 2 000 distinct roots of a 2 000-op
+small-payload history: cold (replay) p50 **24.4 ms**, warm (persisted binary
+accelerator) p50 **19.5 ms**. The warm open is dominated by `Log::open`'s own
+validation scan, not by the accelerator, so the accelerator tuning gives ~1.25× —
+reported honestly rather than as a headline.
+
+**Where this does not help.** A mount with no usable checkpoint still replays the
+whole log; a *cold* historical-root open still reconstructs; and the derived
+directory and accelerators are never authoritative — a corrupt, torn, truncated,
+foreign, or over-claiming one always falls back to the authoritative
+reconstruction (see the adversarial courts in `tests/historical_fast.rs`).
 
 ---
 

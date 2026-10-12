@@ -1,0 +1,111 @@
+{
+  "accelerator_load": {
+    "binary_allocations_per_load": 26991.0,
+    "binary_bytes": 221969,
+    "binary_bytes_allocated_per_load": 2085434.0,
+    "binary_load_ns": 3723205,
+    "binary_minor_page_faults_per_load": 3.0,
+    "index_inode_count": 617,
+    "legacy_allocations_per_load": 27612.0,
+    "legacy_bytes_allocated_per_load": 11825096.0,
+    "legacy_json_bytes": 1403226,
+    "legacy_json_load_ns": 44092715,
+    "legacy_minor_page_faults_per_load": 53.25,
+    "method": "load the persisted accelerator for the committed root, binary container vs. legacy JSON envelope, mean over repeated loads",
+    "reps": 20,
+    "root": 6365722,
+    "size_ratio_json_over_binary": 6.3217206006244115,
+    "speedup_legacy_over_binary": 11.84267720955467
+  },
+  "build_profile": "debug (unoptimized) unless built with --release; absolute times are host/build dependent, byte counts are exact",
+  "environment": {
+    "arch": "x86_64",
+    "cpus": 8,
+    "image_digest": "sha256:8116ee721b96b0e99437e90579782878492bef26204c8438d326ad3714ccdcd7",
+    "os": "linux",
+    "profile": "debug"
+  },
+  "format_version": 1,
+  "generator": "tests/historical_fast.rs",
+  "historical_root_open": {
+    "cold_open_ns": {
+      "count": 64,
+      "max_ns": 34725281,
+      "mean_ns": 23659405,
+      "min_ns": 13341129,
+      "p50_ns": 23055772,
+      "p95_ns": 34535608,
+      "p99_ns": 34705283
+    },
+    "history_ops": 400,
+    "method": "Snapshot::open_dir for distinct roots of a small-payload history: cold (no accelerator) replays from a checkpoint; warm loads the persisted accelerator. The discovery directory is already complete, so cold opens differ only by the accelerator.",
+    "roots_sampled": 64,
+    "warm_open_ns": {
+      "count": 24,
+      "max_ns": 16284214,
+      "mean_ns": 14615016,
+      "min_ns": 14049016,
+      "p50_ns": 14451424,
+      "p95_ns": 16147080,
+      "p99_ns": 16284214
+    },
+    "warm_sample": 24
+  },
+  "mount_quick_open": {
+    "audited_catalogue_mount_ns": {
+      "count": 3,
+      "max_ns": 31590780,
+      "mean_ns": 31412017,
+      "min_ns": 31303275,
+      "p50_ns": 31341997,
+      "p95_ns": 31590780,
+      "p99_ns": 31590780
+    },
+    "method": "checkpoint::open_index_quick loads a validated accelerator for exactly the committed root: a quick open (log not replayed), never an audit. Compare against the catalogue-assisted audited mount on the same volume.",
+    "quick_open_is_an_audit": false,
+    "quick_open_ns": {
+      "count": 5,
+      "max_ns": 3537971,
+      "mean_ns": 3503493,
+      "min_ns": 3471378,
+      "p50_ns": 3499550,
+      "p95_ns": 3537971,
+      "p99_ns": 3537971
+    },
+    "speedup_audit_over_quick_open": 9.01753568755693
+  },
+  "mount_recovery": {
+    "method": "mount_index cold completes a scan and publishes the derived committed-root directory; mount_index warm consults it and skips the whole-log discovery scan; mount_index_scan is the pre-Phase-43 algorithm (always scans)",
+    "rows": [
+      {
+        "checkpoint_every": 100,
+        "checkpoints_found": 5,
+        "index_inode_count": 617,
+        "mount_catalogue_ns": {
+          "count": 3,
+          "max_ns": 31590780,
+          "mean_ns": 31412017,
+          "min_ns": 31303275,
+          "p50_ns": 31341997,
+          "p95_ns": 31590780,
+          "p99_ns": 31590780
+        },
+        "mount_cold_scan_and_publish_ns": 41039306,
+        "mount_scan_only_ns": {
+          "count": 3,
+          "max_ns": 34276084,
+          "mean_ns": 34076961,
+          "min_ns": 33832170,
+          "p50_ns": 34122629,
+          "p95_ns": 34276084,
+          "p99_ns": 34276084
+        },
+        "ops": 600,
+        "retained_bytes": 6365722,
+        "speedup_scan_over_catalogue": 1.0807869144682145
+      }
+    ]
+  },
+  "note": "This file measures where Phase 43 does and does not help, honestly. (1) The binary accelerator replaces a large JSON envelope with a small validated header plus packed inode/directory tables, so a *warm* historical-root open (and a validated quick open) parses fewer bytes and allocates less; a *cold* open is largely unchanged because it is dominated by the log reconstruction, not by the accelerator. (2) The committed-root directory lets a warm restart skip the whole-log checkpoint discovery scan, but the checkpoint's embedded index must still be decoded, and a mount with no usable checkpoint still replays the whole log. The directory and every accelerator are derived state: a corrupt, torn, truncated, foreign, or missing one always falls back to the authoritative reconstruction. Allocation and page-fault figures are process-global deltas and may be perturbed by concurrently running tests.",
+  "schema": "orfs.evidence.historical-fast.v1"
+}

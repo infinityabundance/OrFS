@@ -332,7 +332,7 @@ impl Namespace {
     /// Create a new volume and open it as a namespace.
     pub fn init(dir: &Path, segment_size: u64, durability: DurabilityMode) -> Result<Namespace> {
         let volume = Volume::init(dir, segment_size)?;
-        Namespace::from_volume(volume, durability)
+        Namespace::from_volume(volume, durability, true)
     }
 
     /// Deterministic variant of [`Namespace::init`] for tests and evidence.
@@ -344,20 +344,26 @@ impl Namespace {
         durability: DurabilityMode,
     ) -> Result<Namespace> {
         let volume = Volume::init_with_uuid(dir, segment_size, uuid, created_at_unix_secs)?;
-        Namespace::from_volume(volume, durability)
+        Namespace::from_volume(volume, durability, true)
     }
 
     /// Open an existing volume as a namespace, rebuilding the index from the log.
     pub fn open(dir: &Path, mode: OpenMode, durability: DurabilityMode) -> Result<Namespace> {
         let volume = Volume::open(dir, mode)?;
-        Namespace::from_volume(volume, durability)
+        // A read-only open must not write derived state (the committed-root
+        // directory); it still *consults* it, so discovery stays fast.
+        Namespace::from_volume(volume, durability, mode == OpenMode::ReadWrite)
     }
 
-    fn from_volume(volume: Volume, durability: DurabilityMode) -> Result<Namespace> {
+    fn from_volume(volume: Volume, durability: DurabilityMode, publish: bool) -> Result<Namespace> {
         // Checkpoint-aware mount: discover the newest valid index checkpoint,
         // load and validate it, then replay only the records committed after it;
         // fall back to an earlier checkpoint or to full replay (research §24).
-        let (index, mount_report) = crate::checkpoint::mount_index(&volume.log)?;
+        let (index, mount_report) = if publish {
+            crate::checkpoint::mount_index(&volume.log)?
+        } else {
+            crate::checkpoint::mount_index_readonly(&volume.log)?
+        };
         // Publish the initial immutable read view before the namespace is shared.
         let initial: Arc<dyn CoreRead> = Arc::new(ReadState::new_interior(
             index.root(),

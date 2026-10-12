@@ -785,6 +785,37 @@ impl Index {
             _ => Ok(None),
         }
     }
+
+    // -- packed binary accelerator payload (Phase 43) ----------------------
+
+    /// Encode the index to the immutable, **packed binary** accelerator payload.
+    ///
+    /// This is the JSON-free counterpart of [`Index::encode_snapshot`]. It packs
+    /// the identical logical content — the inode, dentry, named-snapshot, and
+    /// checkpoint tables — into one little-endian document with an explicit table
+    /// of contents (offset/length per table), so a persisted historical
+    /// accelerator can be decoded without parsing a JSON envelope or materialising
+    /// an intermediate tree of `serde` values.
+    ///
+    /// The representation is **derived**: the authoritative log remains the only
+    /// source of truth. A consumer must still bind the payload to `(uuid, root)`
+    /// and verify a digest over the whole container; [`Index::decode_packed`] only
+    /// checks the payload's own internal consistency.
+    pub fn encode_packed(&self) -> Vec<u8> {
+        packed::encode(self)
+    }
+
+    /// Decode a packed binary accelerator payload produced by
+    /// [`Index::encode_packed`].
+    ///
+    /// Every offset, length, and count is validated with checked arithmetic before
+    /// any byte is trusted, and a payload that is torn, truncated, or internally
+    /// inconsistent is rejected with [`OrfsError::Corrupt`] / [`OrfsError::Overflow`]
+    /// rather than partially applied. The returned index is still only valid for a
+    /// matching committed root; callers confirm that against the log.
+    pub fn decode_packed(bytes: &[u8]) -> Result<Index> {
+        packed::decode(bytes)
+    }
 }
 
 /// Resolve a record's subject inode: prefer the payload's explicit id, falling
@@ -1087,5 +1118,514 @@ impl Snapshot {
                 .collect(),
         );
         index
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Packed binary accelerator payload (Phase 43)
+//
+// A compact, JSON-free encoding of an [`Index`]. Layout:
+//
+// ```text
+//   magic          u32    "ORIX"
+//   version        u32    1
+//   root           u64
+//   next_inode_id  u64
+//   inode_count    u32    records in table 0
+//   dentry_count   u32    records in table 1
+//   snapshot_count u32    records in table 2
+//   checkpoint_count u32  records in table 3
+//   parent_count   u32    records in table 4
+//   toc            [5]    (offset:u64, len:u64) per table, offsets relative to the
+//                         payload start; tables are contiguous and cover the tail
+//   tables         ...    inode, dentry, named-snapshot, checkpoint, directory-key
+// ```
+//
+// The table of contents makes each table **directly addressable**: a reader can
+// locate the dentry table without decoding the inode table. All little-endian.
+//
+// Table 4 lists every key of the index's directory map, *including directories
+// with no visible children*. Without it the decode would invent an empty entry
+// for every directory inode, which is not the exact structure a log replay
+// builds; with it, `decode_packed(encode_packed(i)) == i` exactly.
+mod packed {
+    use super::*;
+
+    const MAGIC: u32 = 0x4F52_4958; // "ORIX"
+    const VERSION: u32 = 1;
+    const N_TABLES: usize = 5;
+    /// Fixed prefix: magic/version/root/next_inode_id/5 counts/5 toc entries.
+    const PREFIX: usize = 4 + 4 + 8 + 8 + 4 * 5 + N_TABLES * 16;
+
+    fn corrupt(what: &str) -> OrfsError {
+        OrfsError::Corrupt(format!("packed index: {what}"))
+    }
+
+    fn rd_u32(b: &[u8], off: usize) -> Result<u32> {
+        let end = off.checked_add(4).ok_or(OrfsError::Overflow {
+            what: "packed index offset",
+        })?;
+        let s = b.get(off..end).ok_or_else(|| corrupt("truncated u32"))?;
+        Ok(u32::from_le_bytes(s.try_into().expect("4 bytes")))
+    }
+
+    fn rd_u64(b: &[u8], off: usize) -> Result<u64> {
+        let end = off.checked_add(8).ok_or(OrfsError::Overflow {
+            what: "packed index offset",
+        })?;
+        let s = b.get(off..end).ok_or_else(|| corrupt("truncated u64"))?;
+        Ok(u64::from_le_bytes(s.try_into().expect("8 bytes")))
+    }
+
+    /// A bounded, checked little-endian cursor over one table slice.
+    struct Reader<'a> {
+        b: &'a [u8],
+        pos: usize,
+    }
+
+    impl<'a> Reader<'a> {
+        fn new(b: &'a [u8]) -> Reader<'a> {
+            Reader { b, pos: 0 }
+        }
+
+        fn remaining(&self) -> usize {
+            self.b.len() - self.pos
+        }
+
+        fn take(&mut self, n: usize) -> Result<&'a [u8]> {
+            let end = self.pos.checked_add(n).ok_or(OrfsError::Overflow {
+                what: "packed index length",
+            })?;
+            let s = self
+                .b
+                .get(self.pos..end)
+                .ok_or_else(|| corrupt("table runs past its end"))?;
+            self.pos = end;
+            Ok(s)
+        }
+
+        fn u8(&mut self) -> Result<u8> {
+            Ok(self.take(1)?[0])
+        }
+
+        fn u32(&mut self) -> Result<u32> {
+            Ok(u32::from_le_bytes(
+                self.take(4)?.try_into().expect("4 bytes"),
+            ))
+        }
+
+        fn u64(&mut self) -> Result<u64> {
+            Ok(u64::from_le_bytes(
+                self.take(8)?.try_into().expect("8 bytes"),
+            ))
+        }
+
+        fn i64(&mut self) -> Result<i64> {
+            Ok(i64::from_le_bytes(
+                self.take(8)?.try_into().expect("8 bytes"),
+            ))
+        }
+
+        /// A length-prefixed byte string. The length is bounded by the bytes
+        /// that physically remain, so a hostile length can never over-read or
+        /// trigger a large speculative allocation here.
+        fn bytes(&mut self) -> Result<Vec<u8>> {
+            let n = self.u32()? as usize;
+            if n > self.remaining() {
+                return Err(corrupt("declared byte-string length exceeds the table"));
+            }
+            Ok(self.take(n)?.to_vec())
+        }
+
+        fn done(&self) -> Result<()> {
+            if self.remaining() != 0 {
+                return Err(corrupt("table has trailing bytes"));
+            }
+            Ok(())
+        }
+    }
+
+    fn p_u32(v: &mut Vec<u8>, x: u32) {
+        v.extend_from_slice(&x.to_le_bytes());
+    }
+    fn p_u64(v: &mut Vec<u8>, x: u64) {
+        v.extend_from_slice(&x.to_le_bytes());
+    }
+    fn p_i64(v: &mut Vec<u8>, x: i64) {
+        v.extend_from_slice(&x.to_le_bytes());
+    }
+    fn p_bytes(v: &mut Vec<u8>, b: &[u8]) {
+        p_u32(v, b.len() as u32);
+        v.extend_from_slice(b);
+    }
+
+    fn encode_inodes(inodes: &[SnapshotInode]) -> Vec<u8> {
+        let mut v = Vec::new();
+        for i in inodes {
+            p_u64(&mut v, i.id);
+            p_u64(&mut v, i.generation);
+            v.push(i.kind);
+            p_u32(&mut v, i.mode);
+            p_u32(&mut v, i.uid);
+            p_u32(&mut v, i.gid);
+            p_u32(&mut v, i.nlink);
+            p_u64(&mut v, i.size);
+            p_i64(&mut v, i.atime_secs);
+            p_u32(&mut v, i.atime_nanos);
+            p_i64(&mut v, i.mtime_secs);
+            p_u32(&mut v, i.mtime_nanos);
+            p_i64(&mut v, i.ctime_secs);
+            p_u32(&mut v, i.ctime_nanos);
+            p_u64(&mut v, i.latest_record_offset);
+            match &i.symlink_target {
+                Some(t) => {
+                    v.push(1);
+                    p_bytes(&mut v, t);
+                }
+                None => v.push(0),
+            }
+            p_u32(&mut v, i.versions.len() as u32);
+            for ver in &i.versions {
+                p_u64(&mut v, ver.version);
+                p_u64(&mut v, ver.record_offset);
+                v.push(ver.kind);
+                p_u32(&mut v, ver.mode);
+                p_u32(&mut v, ver.uid);
+                p_u32(&mut v, ver.gid);
+                p_u32(&mut v, ver.nlink);
+                p_u64(&mut v, ver.size);
+            }
+            p_u32(&mut v, i.xattrs.len() as u32);
+            for (k, val) in &i.xattrs {
+                p_bytes(&mut v, k);
+                p_bytes(&mut v, val);
+            }
+            p_u32(&mut v, i.extents.len() as u32);
+            for e in &i.extents {
+                p_u64(&mut v, e.start);
+                p_u64(&mut v, e.len);
+                match e.data_offset {
+                    Some(off) => {
+                        v.push(1);
+                        p_u64(&mut v, off);
+                    }
+                    None => v.push(0),
+                }
+            }
+        }
+        v
+    }
+
+    fn decode_inodes(table: &[u8], count: usize) -> Result<Vec<SnapshotInode>> {
+        let mut r = Reader::new(table);
+        let mut out = Vec::new();
+        for _ in 0..count {
+            let id = r.u64()?;
+            let generation = r.u64()?;
+            let kind = r.u8()?;
+            let mode = r.u32()?;
+            let uid = r.u32()?;
+            let gid = r.u32()?;
+            let nlink = r.u32()?;
+            let size = r.u64()?;
+            let atime_secs = r.i64()?;
+            let atime_nanos = r.u32()?;
+            let mtime_secs = r.i64()?;
+            let mtime_nanos = r.u32()?;
+            let ctime_secs = r.i64()?;
+            let ctime_nanos = r.u32()?;
+            let latest_record_offset = r.u64()?;
+            let symlink_target = match r.u8()? {
+                0 => None,
+                1 => Some(r.bytes()?),
+                _ => return Err(corrupt("invalid symlink presence flag")),
+            };
+            let n_versions = r.u32()? as usize;
+            if n_versions > r.remaining() / 41 {
+                return Err(corrupt("version count exceeds the table"));
+            }
+            let mut versions = Vec::with_capacity(n_versions);
+            for _ in 0..n_versions {
+                versions.push(SnapshotVersion {
+                    version: r.u64()?,
+                    record_offset: r.u64()?,
+                    kind: r.u8()?,
+                    mode: r.u32()?,
+                    uid: r.u32()?,
+                    gid: r.u32()?,
+                    nlink: r.u32()?,
+                    size: r.u64()?,
+                });
+            }
+            let n_xattrs = r.u32()? as usize;
+            if n_xattrs > r.remaining() / 8 {
+                return Err(corrupt("xattr count exceeds the table"));
+            }
+            let mut xattrs = Vec::with_capacity(n_xattrs);
+            for _ in 0..n_xattrs {
+                let k = r.bytes()?;
+                let val = r.bytes()?;
+                xattrs.push((k, val));
+            }
+            let n_extents = r.u32()? as usize;
+            if n_extents > r.remaining() / 17 {
+                return Err(corrupt("extent count exceeds the table"));
+            }
+            let mut extents = Vec::with_capacity(n_extents);
+            for _ in 0..n_extents {
+                let start = r.u64()?;
+                let len = r.u64()?;
+                let data_offset = match r.u8()? {
+                    0 => None,
+                    1 => Some(r.u64()?),
+                    _ => return Err(corrupt("invalid extent kind flag")),
+                };
+                extents.push(SnapshotExtent {
+                    start,
+                    len,
+                    data_offset,
+                });
+            }
+            out.push(SnapshotInode {
+                id,
+                generation,
+                kind,
+                mode,
+                uid,
+                gid,
+                nlink,
+                size,
+                atime_secs,
+                atime_nanos,
+                mtime_secs,
+                mtime_nanos,
+                ctime_secs,
+                ctime_nanos,
+                symlink_target,
+                latest_record_offset,
+                versions,
+                xattrs,
+                extents,
+            });
+        }
+        r.done()?;
+        Ok(out)
+    }
+
+    fn encode_dentries(dentries: &[SnapshotDentry]) -> Vec<u8> {
+        let mut v = Vec::new();
+        for d in dentries {
+            p_u64(&mut v, d.parent);
+            p_bytes(&mut v, &d.name);
+            p_u64(&mut v, d.child);
+        }
+        v
+    }
+
+    fn decode_dentries(table: &[u8], count: usize) -> Result<Vec<SnapshotDentry>> {
+        let mut r = Reader::new(table);
+        let mut out = Vec::new();
+        for _ in 0..count {
+            let parent = r.u64()?;
+            let name = r.bytes()?;
+            let child = r.u64()?;
+            out.push(SnapshotDentry {
+                parent,
+                name,
+                child,
+            });
+        }
+        r.done()?;
+        Ok(out)
+    }
+
+    fn encode_snapshots(snaps: &[SnapshotRoot]) -> Vec<u8> {
+        let mut v = Vec::new();
+        for s in snaps {
+            p_bytes(&mut v, &s.name);
+            p_u64(&mut v, s.root);
+        }
+        v
+    }
+
+    fn decode_snapshots(table: &[u8], count: usize) -> Result<Vec<SnapshotRoot>> {
+        let mut r = Reader::new(table);
+        let mut out = Vec::new();
+        for _ in 0..count {
+            let name = r.bytes()?;
+            let root = r.u64()?;
+            out.push(SnapshotRoot { name, root });
+        }
+        r.done()?;
+        Ok(out)
+    }
+
+    fn encode_checkpoints(checkpoints: &[SnapshotCheckpoint]) -> Vec<u8> {
+        let mut v = Vec::new();
+        for c in checkpoints {
+            p_u64(&mut v, c.root);
+            p_u64(&mut v, c.inode_count);
+            p_u64(&mut v, c.dentry_count);
+            p_bytes(&mut v, &c.digest);
+        }
+        v
+    }
+
+    fn decode_checkpoints(table: &[u8], count: usize) -> Result<Vec<SnapshotCheckpoint>> {
+        let mut r = Reader::new(table);
+        let mut out = Vec::new();
+        for _ in 0..count {
+            let root = r.u64()?;
+            let inode_count = r.u64()?;
+            let dentry_count = r.u64()?;
+            let digest = r.bytes()?;
+            out.push(SnapshotCheckpoint {
+                root,
+                inode_count,
+                dentry_count,
+                digest,
+            });
+        }
+        r.done()?;
+        Ok(out)
+    }
+
+    /// Encode every key of the index's directory map (sorted ascending), so the
+    /// exact set of directory entries survives a round trip.
+    fn encode_parents(index: &Index) -> Vec<u8> {
+        let mut parents: Vec<u64> = index.children.iter().map(|(p, _)| *p).collect();
+        parents.sort_unstable();
+        let mut v = Vec::with_capacity(parents.len() * 8);
+        for p in parents {
+            p_u64(&mut v, p);
+        }
+        v
+    }
+
+    fn decode_parents(table: &[u8], count: usize) -> Result<Vec<u64>> {
+        let mut r = Reader::new(table);
+        let mut out = Vec::with_capacity(count);
+        let mut last = None;
+        for _ in 0..count {
+            let p = r.u64()?;
+            if let Some(prev) = last {
+                if p <= prev {
+                    return Err(corrupt("directory keys are not strictly ascending"));
+                }
+            }
+            last = Some(p);
+            out.push(p);
+        }
+        r.done()?;
+        Ok(out)
+    }
+
+    pub(super) fn encode(index: &Index) -> Vec<u8> {
+        let snap = Snapshot::from_index(index);
+        let tables: [Vec<u8>; N_TABLES] = [
+            encode_inodes(&snap.inodes),
+            encode_dentries(&snap.dentries),
+            encode_snapshots(&snap.snapshots),
+            encode_checkpoints(&snap.checkpoints),
+            encode_parents(index),
+        ];
+        let total: usize = tables.iter().map(|t| t.len()).sum();
+        let mut out = Vec::with_capacity(PREFIX + total);
+        p_u32(&mut out, MAGIC);
+        p_u32(&mut out, VERSION);
+        p_u64(&mut out, index.root());
+        p_u64(&mut out, index.next_inode_id());
+        p_u32(&mut out, snap.inodes.len() as u32);
+        p_u32(&mut out, snap.dentries.len() as u32);
+        p_u32(&mut out, snap.snapshots.len() as u32);
+        p_u32(&mut out, snap.checkpoints.len() as u32);
+        p_u32(&mut out, tables[4].len() as u32 / 8);
+        let mut off = PREFIX as u64;
+        for t in &tables {
+            p_u64(&mut out, off);
+            p_u64(&mut out, t.len() as u64);
+            off += t.len() as u64;
+        }
+        debug_assert_eq!(out.len(), PREFIX);
+        for t in &tables {
+            out.extend_from_slice(t);
+        }
+        out
+    }
+
+    pub(super) fn decode(b: &[u8]) -> Result<Index> {
+        if b.len() < PREFIX {
+            return Err(corrupt("payload is shorter than the fixed prefix"));
+        }
+        if rd_u32(b, 0)? != MAGIC {
+            return Err(corrupt("bad magic"));
+        }
+        let version = rd_u32(b, 4)?;
+        if version != VERSION {
+            return Err(OrfsError::Compatibility(format!(
+                "packed index version {version}"
+            )));
+        }
+        let root = rd_u64(b, 8)?;
+        let next_inode_id = rd_u64(b, 16)?;
+        let counts = [
+            rd_u32(b, 24)? as usize,
+            rd_u32(b, 28)? as usize,
+            rd_u32(b, 32)? as usize,
+            rd_u32(b, 36)? as usize,
+            rd_u32(b, 40)? as usize,
+        ];
+        // Validate the table of contents: contiguity and coverage of the tail.
+        let mut spans = [(0usize, 0usize); N_TABLES];
+        let mut expected = PREFIX;
+        for (i, span) in spans.iter_mut().enumerate() {
+            let off = rd_u64(b, 44 + i * 16)?;
+            let len = rd_u64(b, 52 + i * 16)?;
+            let off = usize::try_from(off).map_err(|_| OrfsError::Overflow {
+                what: "packed index offset",
+            })?;
+            let len = usize::try_from(len).map_err(|_| OrfsError::Overflow {
+                what: "packed index length",
+            })?;
+            if off != expected {
+                return Err(corrupt("table of contents is not contiguous"));
+            }
+            let end = off.checked_add(len).ok_or(OrfsError::Overflow {
+                what: "packed index table end",
+            })?;
+            if end > b.len() {
+                return Err(corrupt("table runs past the payload end"));
+            }
+            *span = (off, len);
+            expected = end;
+        }
+        if expected != b.len() {
+            return Err(corrupt("payload has trailing bytes after the tables"));
+        }
+        let table = |i: usize| -> &[u8] { &b[spans[i].0..spans[i].0 + spans[i].1] };
+        let inodes = decode_inodes(table(0), counts[0])?;
+        let dentries = decode_dentries(table(1), counts[1])?;
+        let snapshots = decode_snapshots(table(2), counts[2])?;
+        let checkpoints = decode_checkpoints(table(3), counts[3])?;
+        if counts[4] > table(4).len() / 8 {
+            return Err(corrupt("directory-key count exceeds the table"));
+        }
+        let parents = decode_parents(table(4), counts[4])?;
+        let snap = Snapshot {
+            root,
+            next_inode_id,
+            inodes,
+            dentries,
+            snapshots,
+            checkpoints,
+        };
+        let mut index = snap.into_index();
+        // Rebuild the directory map with exactly the encoded key set (so an
+        // unlisted directory carries no entry, matching a log replay exactly).
+        index.children = PMap::from_pairs(parents.iter().map(|p| {
+            let map = index.children.get(p).cloned().unwrap_or_default();
+            (*p, map)
+        }));
+        Ok(index)
     }
 }

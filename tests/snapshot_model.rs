@@ -34,7 +34,10 @@ use std::time::Instant;
 
 use orfs::checkpoint;
 use orfs::commit::DurabilityMode;
-use orfs::historical::{historical_index_path, load_persisted_historical, HistoricalIndexCache};
+use orfs::historical::{
+    historical_accelerator_path, historical_index_path, load_persisted_historical,
+    HistoricalIndexCache,
+};
 use orfs::index::{Index, ROOT_INODE};
 use orfs::inode::InodeType;
 use orfs::log::{Log, OpenMode};
@@ -761,8 +764,8 @@ fn cached_historical_index_equals_full_replay_for_many_roots() {
                 (a, b) => panic!("getattr disagreement at {root}/{inode}: {a:?} vs {b:?}"),
             }
         }
-        // A persisted accelerator now exists for this root.
-        assert!(historical_index_path(&dir, root).exists());
+        // A persisted accelerator now exists for this root (binary form).
+        assert!(historical_accelerator_path(&dir, root).exists());
         checked += 1;
     }
     assert!(
@@ -825,34 +828,69 @@ fn historical_cache_absent_or_corrupt_accelerator_falls_back_to_replay() {
     let dir = td.path().join("index");
 
     let full = Index::from_log(log, root).unwrap();
-    // Materialize via the namespace cache so an accelerator is persisted.
+    // Materialize via the namespace cache so a *binary* accelerator is persisted.
     let cached = ns.historical_cache().resolve(log, root).unwrap();
     assert_eq!(*cached, full);
-    let path = historical_index_path(&dir, root);
-    assert!(path.exists());
+    let path = historical_accelerator_path(&dir, root);
+    let legacy = historical_index_path(&dir, root);
+    assert!(path.exists(), "the binary accelerator must be written");
+    assert!(!legacy.exists(), "new writes use the binary form");
 
-    // A valid accelerator loads (no replay).
+    // A valid accelerator loads via the binary form (no replay).
     let loaded = load_persisted_historical(&dir, &uuid, root).unwrap();
     assert_eq!(loaded.unwrap(), full);
 
-    // Corrupt accelerator: a fresh cache must reject it and replay correctly.
-    std::fs::write(&path, b"{ not a valid accelerator").unwrap();
+    // The legacy JSON form is still readable: write one and drop the binary.
+    let legacy_bytes = orfs::historical::encode_historical(&full, &uuid).unwrap();
+    std::fs::write(&legacy, &legacy_bytes).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    let fresh = HistoricalIndexCache::with_default_capacity(uuid, Some(dir.clone()));
+    let (idx, access) = fresh.resolve_traced(log, root).unwrap();
+    assert_eq!(*idx, full, "a legacy JSON accelerator must still load");
+    assert!(access.persisted_hit);
+    assert_eq!(
+        access.accelerator_format,
+        Some(orfs::historical::AcceleratorFormat::LegacyJson)
+    );
+    assert_eq!(
+        fresh.counts().materializations,
+        0,
+        "no replay on a persisted hit"
+    );
+    std::fs::remove_file(&legacy).unwrap();
+
+    // Corrupt binary accelerator (torn/tampered): a fresh cache must reject it
+    // and replay correctly.
+    let mut good = orfs::historical::encode_historical_accelerator(&full, &uuid).unwrap();
+    let mid = orfs::historical::HISTORICAL_ACCELERATOR_HEADER_LEN + 2;
+    good[mid] ^= 0xFF;
+    std::fs::write(&path, &good).unwrap();
     let fresh = HistoricalIndexCache::with_default_capacity(uuid, Some(dir.clone()));
     let idx = fresh.resolve(log, root).unwrap();
     assert_eq!(*idx, full, "corrupt accelerator must fall back to replay");
     assert_eq!(fresh.counts().persisted_hits, 0);
     assert_eq!(fresh.counts().materializations, 1);
 
-    // Tampered but well-formed JSON is also rejected.
-    let mut tampered = orfs::historical::encode_historical(&full, &uuid).unwrap();
+    // A truncated accelerator is rejected too.
+    let good = orfs::historical::encode_historical_accelerator(&full, &uuid).unwrap();
+    std::fs::write(&path, &good[..good.len() - 5]).unwrap();
+    let fresh = HistoricalIndexCache::with_default_capacity(uuid, Some(dir.clone()));
+    assert_eq!(*fresh.resolve(log, root).unwrap(), full);
+
+    // Tampered legacy JSON is also rejected.
+    std::fs::remove_file(&path).unwrap();
+    let mut tampered = legacy_bytes.clone();
     let m = tampered.len() / 2;
     tampered[m] ^= 0xFF;
-    std::fs::write(&path, &tampered).unwrap();
+    std::fs::write(&legacy, &tampered).unwrap();
     let fresh2 = HistoricalIndexCache::with_default_capacity(uuid, Some(dir.clone()));
     assert_eq!(*fresh2.resolve(log, root).unwrap(), full);
+    std::fs::remove_file(&legacy).unwrap();
+    // `fresh2` re-persisted a binary accelerator; remove it so the final case is
+    // genuinely "no accelerator at all".
+    let _ = std::fs::remove_file(&path);
 
     // Absent accelerator: still correct.
-    std::fs::remove_file(&path).unwrap();
     let fresh3 = HistoricalIndexCache::with_default_capacity(uuid, Some(dir));
     assert_eq!(*fresh3.resolve(log, root).unwrap(), full);
     assert_eq!(fresh3.counts().materializations, 1);
@@ -883,7 +921,7 @@ fn remount_reuses_persisted_historical_index() {
         digest = idx.canonical_digest();
     }
     let dir = td.path().join("index");
-    assert!(historical_index_path(&dir, hist_root).exists());
+    assert!(historical_accelerator_path(&dir, hist_root).exists());
 
     // Remount: reopen the volume read-only.
     let ns = Namespace::open(td.path(), OpenMode::ReadOnly, DurabilityMode::Ordered).unwrap();
@@ -1038,33 +1076,58 @@ fn mount_replay_evidence() {
 
         let vol = Volume::open(td.path(), OpenMode::ReadOnly).unwrap();
         let committed = vol.log.committed_end_offset();
+        let full = Index::from_log(&vol.log, committed).unwrap();
 
-        let mut full_best = u128::MAX;
-        let mut cp_best = u128::MAX;
+        // "After": the directory-assisted mount. The first call completes a scan
+        // (and publishes the directory); later calls avoid the scan entirely.
+        let mut sources = Vec::new();
+        let mut cold_micros = None;
+        let mut warm_best = u128::MAX;
         let mut report_last = None;
-        for _ in 0..3 {
-            let t = Instant::now();
-            let full = Index::from_log(&vol.log, committed).unwrap();
-            full_best = full_best.min(t.elapsed().as_micros());
+        for i in 0..4u32 {
             let t = Instant::now();
             let (mounted, report) = checkpoint::mount_index(&vol.log).unwrap();
-            cp_best = cp_best.min(t.elapsed().as_micros());
-            assert_eq!(full, mounted, "checkpoint mount must equal full replay");
+            let us = t.elapsed().as_micros();
+            assert_eq!(full, mounted, "mount must equal full replay");
+            sources.push(report.discovery_source);
+            if i == 0 {
+                cold_micros = Some(us);
+            } else {
+                warm_best = warm_best.min(us);
+            }
             report_last = Some(report);
         }
+
+        // "Before": the pre-Phase-43 algorithm always performs the whole-log
+        // discovery scan (`mount_index_scan`). It is also the always-available
+        // complete audit, so it ignores the derived directory entirely.
+        let t = Instant::now();
+        let (audited, audit_report) = checkpoint::mount_index_scan(&vol.log).unwrap();
+        let scan_micros = t.elapsed().as_micros();
+        assert_eq!(audited, full);
+        assert!(audit_report.audited());
         let report = report_last.unwrap();
-        let speedup = if cp_best == 0 {
-            serde_json::Value::Null
-        } else {
-            serde_json::json!(full_best as f64 / cp_best as f64)
-        };
+        let cold_micros = cold_micros.unwrap();
+        let catalogued = report.discovery_source == checkpoint::DiscoverySource::Catalogue;
         rows.push(serde_json::json!({
             "writes": writes,
             "checkpoint_interval": interval,
             "retained_bytes": retained_bytes,
-            "full_replay_micros": full_best,
-            "checkpoint_mount_micros": cp_best,
-            "speedup_full_over_checkpoint": speedup,
+            "full_replay_micros": full_best_or(&vol.log, committed),
+            "scan_audit_micros": scan_micros,
+            "catalogue_mount_cold_micros": cold_micros,
+            "catalogue_mount_warm_micros": warm_best,
+            "catalogue_mount_warm_speedup_vs_scan": if warm_best == 0 {
+                serde_json::Value::Null
+            } else {
+                serde_json::json!(scan_micros as f64 / warm_best as f64)
+            },
+            "warm_discovery_source": sources.last().map(|s| serde_json::to_value(s).unwrap()),
+            "warm_used_catalogue": catalogued,
+            "discovery_sources": sources
+                .iter()
+                .map(|s| serde_json::to_value(s).unwrap())
+                .collect::<Vec<_>>(),
             "used_checkpoint": report.used_checkpoint,
             "checkpoint_root": report.checkpoint_root,
             "checkpoints_found": report.checkpoints_found,
@@ -1077,17 +1140,36 @@ fn mount_replay_evidence() {
         "schema": "orfs.evidence.mount-replay.v1",
         "generator": "tests/snapshot_model.rs",
         "build_profile": "debug (unoptimized); ratios are meaningful, absolute times are not",
-        "method": "best-of-three in-process reconstruction on identical logs; \
-                   checkpoint mount = header-scan + load newest valid checkpoint + replay tail",
+        "method": "in-process reconstruction on identical logs; `scan_audit_micros` is the \
+                   pre-Phase-43 algorithm (whole-log header scan + newest valid checkpoint + \
+                   replay tail); `catalogue_mount_cold` completes that scan once and publishes \
+                   the derived committed-root directory, `catalogue_mount_warm` re-mounts using \
+                   it and skips the whole-log discovery scan",
         "rows": rows,
-        "note": "Mount is NOT constant-time: discovery is an O(#records) header scan \
-                 and replay is O(bytes after the checkpoint). Both are measured, not claimed. \
-                 Checkpoints pay off when the retained log dwarfs the index.",
+        "note": "Mount is NOT constant-time: with a checkpoint, replay is O(bytes after the \
+                 checkpoint) and without one it is O(total history). Phase 43 removes the \
+                 whole-log checkpoint *discovery* scan on a warm restart (a catalogue-complete \
+                 directory lookup), but the checkpoint's embedded index must still be decoded, so \
+                 the win grows with the retained log and can be a small loss when the scan was \
+                 already cheap (the rows report both). `catalogue_mount_cold` additionally pays the \
+                 one-time cost of publishing the directory (a few fsyncs). The log always wins: \
+                 every catalogue checkpoint is re-read and re-validated.",
     });
     write_json(
         &manifest_dir().join("evidence/performance/mount-replay-snapshot.json"),
         &doc,
     );
+}
+
+/// A single full-replay timing (best of three) for the evidence row.
+fn full_best_or(log: &Log, committed: u64) -> u128 {
+    let mut best = u128::MAX;
+    for _ in 0..3 {
+        let t = Instant::now();
+        std::hint::black_box(Index::from_log(log, committed).unwrap());
+        best = best.min(t.elapsed().as_micros());
+    }
+    best
 }
 
 /// Environment metadata for evidence documents (mirrors `tests/concurrency_stress.rs`).

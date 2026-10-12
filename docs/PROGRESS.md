@@ -2450,3 +2450,70 @@ Evidence: `evidence/performance/read-planner.json`;
 * Tail sensitivity is bounded independently (calibration budget and
   `MAX_REPLAY_SYMBOLS`); selection keeps an EWMA mean rather than a p99 statistic,
   documented in the module header.
+
+## Phase 45 — Fast historical-root access (binary accelerator + committed-root directory)
+
+**Complete.** Research-programme §7. The persisted historical accelerator embedded
+a serialized index inside a large **JSON** envelope, and mount recovery still did
+a whole-log checkpoint discovery scan (the 8 000-op court showed ~313 ms with
+checkpoints vs ~312 ms without, i.e. discovery/decoding erased the replay win).
+
+### Delivered
+
+* **Binary accelerator** (`src/historical.rs`, `src/index.rs`):
+  `index/historical/<root>.v2.bin` = an 88-byte validated header (magic, version,
+  header length, volume uuid, root, explicit blob offset/length, asserted counts)
+  + a packed index blob (its own `ORIX` table-of-contents addressing inode /
+  directory-entry / named-snapshot / checkpoint / directory-key tables) + a
+  trailing BLAKE3 over every preceding byte. Validation order means no mapped
+  byte is trusted before it is checked (length → magic/version → uuid/root →
+  checked offset tiling → whole-representation digest → decode). Loaded through a
+  read-only `libc::mmap` (read fallback). The legacy `<root>.v1.json` is still
+  read; no migration step. `src/index.rs` gained an **additive**
+  `encode_packed`/`decode_packed` (JSON codec untouched).
+* **Committed-root directory** (`src/historical.rs`, `src/checkpoint.rs`):
+  `index/roots/{CURRENT, seg-<n>.cat, sum-<n>.sum}`, fixed-size CRC32C records
+  (checkpoint / verified-historical-index / watermark) with a latest-per-key fold,
+  mirroring the phase-42 manifestation catalogue. Over-claiming beyond the log, an
+  interior hole, or a failed fold ⇒ **distrusted** and the authoritative scan runs.
+* **Quick open vs complete audit contract**: `DiscoverySource` +
+  `MountReport::audited()`. Only [`DiscoverySource::ValidatedAccelerator`] (via the
+  deliberate `checkpoint::open_index_quick`) is a non-audit; `Catalogue`/`LogScan`/
+  `FullReplay` are audits. `Namespace::open` is **always** an audit that never
+  trusts an accelerator for the committed root. Any missing/torn/tampered/foreign/
+  over-claiming derived structure falls back to authoritative reconstruction.
+
+### Result (release, 8 000-op history; `evidence/performance/historical-fast.json`)
+
+| measurement | before | after |
+|---|---|---|
+| accelerator load (8 017 inodes) | 18.4 MB / 51.8 ms / 120.6 MB alloc / 1 165 minflt | **2.89 MB / 16.0 ms / 28.7 MB / 4 minflt** (6.4× smaller, 3.2× faster) |
+| quick open vs audited mount | 47.7 ms | **14.5 ms** (3.36×, `audited=false`) |
+| mount recovery | 60.4 ms p50 (scan) | **47.7 ms p50** (1.27×) |
+| historical-root cold open (2 000 roots) | 24.4 ms p50 (cold) | 19.5 ms p50 (warm) |
+
+Adversarial: a zero-length/truncated/tampered/foreign accelerator, a
+well-formed accelerator for a *different* root, a missing directory, a corrupt
+directory (bogus offset / garbage / hole / watermark-ahead-of-log), and a
+directory pointing at an older valid checkpoint all fall back to authoritative
+reconstruction and never return wrong bytes or a wrong root.
+
+### Read-only guarantee restored
+
+The subagent's first cut published the derived `index/roots/` directory during
+**every** mount, including read-only opens — which would have violated
+`docs/RECOVERY.md`'s documented invariant that a read-only open modifies *not a
+single on-disk byte*. Phase 45 adds `checkpoint::mount_index_readonly` and threads
+writability from `Namespace::open`: only a writable head mount publishes; the
+scan audit, historical views (`mount_index_at`) and read-only opens consult the
+directory but never write it (`docs/SNAPSHOTS.md` §6.2).
+
+### Honest caveats
+
+* The directory removes only the *discovery* scan; a checkpoint's embedded index
+  still decodes, and a mount with no usable checkpoint still replays the log.
+  A cold historical-root open is unchanged; at small scale the catalogue path can
+  be a small loss (`mount-replay-snapshot.json`: 0.88× at 256 writes, 1.18× at
+  2 048).
+* The `fuse_uring` mount court was not run (environmental); the non-mount
+  snapshot/historical/recovery courts were used.

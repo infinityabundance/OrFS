@@ -129,10 +129,12 @@ per-phase record.
 | 41 | Acceptance audit re-run at HEAD; residual doc-drift closed | **complete** |
 | 42 | Immutable append-only manifestation catalogue (growth-independent publication) | **complete** |
 | 43 | Compiled object read plans; bounded planner lifecycle | **complete** |
+| 44 | Single reproducible automated gate for the docs-receipts check | **complete** |
+| 45 | Fast historical-root access (binary accelerator + committed-root directory) | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–43 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–45 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.1.0 is published on crates.io (see `docs/PUBLISHING.md`).
 

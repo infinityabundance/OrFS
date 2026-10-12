@@ -43,7 +43,9 @@ use std::time::Duration;
 use parking_lot::{Condvar, Mutex, RwLock};
 
 use crate::error::{OrfsError, Result};
-use crate::manifestation::{dir_bytes, Dec, Enc};
+use crate::manifestation::{
+    dir_bytes, Catalogue, CatalogueEntry, Dec, Enc, CAT_FAMILY_TRIGRAM, MANIFEST_DIR_SYNC_INTERVAL,
+};
 use crate::segment::fsync_dir;
 
 /// The concealed subdirectory holding trigram payloads and manifests.
@@ -623,15 +625,22 @@ impl TrigramRecovery {
 pub struct TrigramStore {
     volume_root: PathBuf,
     root_dir: PathBuf,
+    catalogue: Catalogue,
+    /// Serializes catalogue appends/seals across worker threads (mirrors the
+    /// generation store). Shared by every clone.
+    append_lock: Arc<Mutex<()>>,
 }
 
 impl TrigramStore {
     /// The store for a volume backing directory.
     pub fn new(volume_root: &Path) -> TrigramStore {
         let root_dir = volume_root.join(".or_bloom").join(TRIGRAM_DIR);
+        let catalogue = Catalogue::new(root_dir.join("catalogue"), CAT_FAMILY_TRIGRAM);
         TrigramStore {
             volume_root: volume_root.to_path_buf(),
             root_dir,
+            catalogue,
+            append_lock: Arc::new(Mutex::new(())),
         }
     }
 
@@ -640,9 +649,25 @@ impl TrigramStore {
         &self.root_dir
     }
 
+    /// The append-only catalogue directory (`trigram/catalogue/`).
+    pub fn catalogue_dir(&self) -> PathBuf {
+        self.catalogue.dir().to_path_buf()
+    }
+
+    /// The active catalogue segment path (used by tests to plant a torn record).
+    pub fn catalogue_active_segment_path(&self) -> PathBuf {
+        self.catalogue.segment_path(self.catalogue.active_segment())
+    }
+
+    /// Total bytes under the catalogue directory (for accounting/evidence).
+    pub fn catalogue_bytes(&self) -> u64 {
+        dir_bytes(self.catalogue.dir())
+    }
+
     /// Create the directory (idempotent).
     pub fn ensure_dirs(&self) -> Result<()> {
         fs::create_dir_all(&self.root_dir)?;
+        fs::create_dir_all(self.catalogue.dir())?;
         Ok(())
     }
 
@@ -687,14 +712,16 @@ impl TrigramStore {
         Ok(out)
     }
 
-    /// The next unused generation number.
+    /// The next unused generation number, taking the catalogue into account so a
+    /// number is never reused.
     pub fn next_generation(&self) -> Result<u64> {
-        Ok(self
-            .manifest_generations()?
-            .into_iter()
-            .max()
-            .map(|m| m + 1)
-            .unwrap_or(1))
+        let mut max = self.manifest_generations()?.into_iter().max();
+        if let Some((entries, _)) = self.catalogue.latest() {
+            for e in entries.values() {
+                max = Some(max.map_or(e.generation, |m| m.max(e.generation)));
+            }
+        }
+        Ok(max.map(|m| m + 1).unwrap_or(1))
     }
 
     /// Load and validate one manifest by generation number.
@@ -729,10 +756,32 @@ impl TrigramStore {
         TrigramIndex::decode(&bytes)
     }
 
-    /// Publish a generation: payload (tmp+fsync+rename), manifest
-    /// (tmp+fsync+rename+fsync dir), then advertise in `HEAD`.
+    /// Publish a generation: append its immutable catalogue entry, then write the
+    /// payload and manifest.
+    ///
+    /// Catalogue-first ordering guarantees a durable manifest is already
+    /// catalogued; the fast recovery path detects an entry whose payload/manifest
+    /// is missing and falls back to a full scan. No whole-`HEAD` rewrite occurs,
+    /// so publication is O(1) amortized and flat in the generation count.
     pub fn publish(&self, manifest: &TrigramManifest, payload: &[u8]) -> Result<()> {
         self.ensure_dirs()?;
+        let entry = CatalogueEntry {
+            generation: manifest.generation,
+            volume_uuid: manifest.volume_uuid,
+            inode: manifest.inode,
+            inode_version: manifest.inode_version,
+            root: manifest.root,
+            manifest_blake3: manifest.manifest_blake3,
+            payload_blake3: manifest.payload_blake3,
+        };
+        let sealed = {
+            // Serialize the append/seal and run the one-time legacy migration under
+            // the same lock (see the generation store).
+            let _guard = self.append_lock.lock();
+            self.migrate_legacy_catalogue()?;
+            self.catalogue.append(&entry)?
+        };
+
         let payload_path = self.volume_root.join(&manifest.payload_rel_path);
         let tmp = payload_path.with_extension("tri.tmp");
         {
@@ -750,13 +799,12 @@ impl TrigramStore {
             f.sync_all()?;
         }
         fs::rename(&mtmp, &final_path)?;
-        fsync_dir(&self.root_dir)?;
-
-        let mut gens = self.read_head().unwrap_or_default();
-        gens.push(manifest.generation);
-        gens.sort_unstable();
-        gens.dedup();
-        self.write_head(&gens)?;
+        // Batched directory-entry durability (mirrors the generation store): the
+        // manifest contents are durable; its directory entry is made durable for
+        // small volumes and otherwise at the catalogue segment boundary.
+        if manifest.generation <= MANIFEST_DIR_SYNC_INTERVAL || sealed {
+            fsync_dir(&self.root_dir)?;
+        }
         Ok(())
     }
 
@@ -787,17 +835,17 @@ impl TrigramStore {
         let all = self.manifest_generations()?;
         let (candidates, head_used, head_fallback) = match &head {
             Some(list) => {
-                let mut merged = list.clone();
-                for g in &all {
-                    if !merged.contains(g) {
-                        merged.push(*g);
-                    }
-                }
-                merged.sort_unstable();
-                merged.dedup();
-                (merged, true, false)
+                // Sorted-set union (no O(G²) `contains` loop).
+                let mut set: std::collections::BTreeSet<u64> = list.iter().copied().collect();
+                set.extend(all.iter().copied());
+                (set.into_iter().collect::<Vec<_>>(), true, false)
             }
-            None => (all, false, true),
+            None => {
+                let mut v = all;
+                v.sort_unstable();
+                v.dedup();
+                (v, false, true)
+            }
         };
         let mut generations = Vec::new();
         let mut rejected = 0usize;
@@ -816,10 +864,101 @@ impl TrigramStore {
         })
     }
 
+    /// One-time migration for a pre-catalogue volume: when the catalogue has no
+    /// segments but trigram manifests (or a legacy `HEAD`) exist, fold every
+    /// existing manifest's identity into the catalogue in bulk. A volume whose
+    /// catalogue already has segments is left untouched.
+    pub fn migrate_legacy_catalogue(&self) -> Result<bool> {
+        // O(1) fast path (a stat of segment 0); see the generation store.
+        if self.catalogue.segment_path(0).exists() {
+            return Ok(false);
+        }
+        if !self.catalogue.is_empty() {
+            return Ok(false);
+        }
+        let mut gens: std::collections::BTreeSet<u64> =
+            self.manifest_generations()?.into_iter().collect();
+        if let Some(head) = self.read_head() {
+            gens.extend(head);
+        }
+        if gens.is_empty() {
+            return Ok(false);
+        }
+        let mut entries = Vec::with_capacity(gens.len());
+        for g in gens {
+            if let Some(m) = self.load_generation(g)? {
+                entries.push(CatalogueEntry {
+                    generation: m.generation,
+                    volume_uuid: m.volume_uuid,
+                    inode: m.inode,
+                    inode_version: m.inode_version,
+                    root: m.root,
+                    manifest_blake3: m.manifest_blake3,
+                    payload_blake3: m.payload_blake3,
+                });
+            }
+        }
+        self.catalogue.bulk_load(&entries)?;
+        Ok(true)
+    }
+
+    /// Recover the **newest valid manifest per inode** using the append-only
+    /// catalogue (newest usable summary plus only the segments after it). Each
+    /// candidate's payload digest is verified; if any candidate is missing or
+    /// invalid the method falls back to the full validated [`recover`](Self::recover)
+    /// scan, so the result always equals `recover().newest_per_inode()`.
+    pub fn latest_published(&self) -> Result<TrigramLatest> {
+        if let Some((entries, count)) = self.catalogue.latest() {
+            let mut published: BTreeMap<u64, TrigramManifest> = BTreeMap::new();
+            let mut all_valid = true;
+            for (inode, e) in &entries {
+                match self.load_generation(e.generation)? {
+                    Some(m)
+                        if m.inode == *inode
+                            && m.manifest_blake3 == e.manifest_blake3
+                            && self.payload_matches(&m) =>
+                    {
+                        published.insert(*inode, m);
+                    }
+                    _ => all_valid = false,
+                }
+            }
+            if all_valid {
+                return Ok(TrigramLatest {
+                    published,
+                    committed: count,
+                    rejected: 0,
+                    catalogue_used: true,
+                });
+            }
+        }
+        let recovery = self.recover()?;
+        let committed = recovery.generations.len() as u64;
+        Ok(TrigramLatest {
+            published: recovery.newest_per_inode(),
+            committed,
+            rejected: recovery.rejected,
+            catalogue_used: false,
+        })
+    }
+
     /// Bytes under the trigram subdirectory (for accounting/evidence).
     pub fn bytes(&self) -> u64 {
         dir_bytes(&self.root_dir)
     }
+}
+
+/// The result of a catalogue-accelerated recovery of the published trigram set.
+#[derive(Debug, Clone)]
+pub struct TrigramLatest {
+    /// The newest valid manifest per inode.
+    pub published: BTreeMap<u64, TrigramManifest>,
+    /// Distinct committed generations (catalogue record count on the fast path).
+    pub committed: u64,
+    /// Candidates rejected (always `0` on the fast path).
+    pub rejected: usize,
+    /// Whether the fast catalogue path was used.
+    pub catalogue_used: bool,
 }
 
 fn encode_head(generations: &[u64]) -> Vec<u8> {
@@ -881,13 +1020,14 @@ pub struct TrigramState {
 }
 
 impl TrigramState {
-    /// Recover the published set from disk.
+    /// Recover the published set from disk (newest per inode). Uses the
+    /// append-only catalogue when usable, and the full validated scan otherwise.
     pub fn recover(store: TrigramStore, uuid: [u8; 16]) -> Result<Arc<TrigramState>> {
-        let recovery = store.recover()?;
+        let latest = store.latest_published()?;
         Ok(Arc::new(TrigramState {
             store,
             uuid,
-            published: RwLock::new(recovery.newest_per_inode()),
+            published: RwLock::new(latest.published),
         }))
     }
 
@@ -1294,11 +1434,11 @@ impl TrigramEngine {
         uuid: [u8; 16],
         cfg: TrigramConfig,
     ) -> Result<(Arc<TrigramEngine>, TrigramEngineReport)> {
-        let recovery = store.recover()?;
+        let latest = store.latest_published()?;
         let state = Arc::new(TrigramState {
             store: store.clone(),
             uuid,
-            published: RwLock::new(recovery.newest_per_inode()),
+            published: RwLock::new(latest.published),
         });
         let next_generation = store.next_generation()?;
         let workers = if cfg.workers == 0 {
@@ -1332,8 +1472,8 @@ impl TrigramEngine {
             queue_capacity: cfg.queue_capacity,
             synchronous: cfg.synchronous,
             trigram_version: TRIGRAM_VERSION.to_string(),
-            recovered_generations: recovery.generations.len() as u64,
-            recovered_rejected: recovery.rejected,
+            recovered_generations: latest.committed,
+            recovered_rejected: latest.rejected,
         };
         Ok((
             Arc::new(TrigramEngine {
@@ -1585,6 +1725,64 @@ mod tests {
         let recovered = store.recover().unwrap();
         assert_eq!(recovered.generations.len(), 1);
         assert_eq!(recovered.newest_per_inode().len(), 1);
+        // The catalogue-accelerated path agrees with the full scan.
+        let latest = store.latest_published().unwrap();
+        assert_eq!(latest.published.len(), recovered.newest_per_inode().len());
+    }
+
+    #[test]
+    fn catalogue_migrates_a_legacy_volume() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let store = TrigramStore::new(dir.path());
+        store.ensure_dirs().unwrap();
+        let src = b"the quick brown fox".to_vec();
+        let payload = TrigramIndex::build(&src).encode();
+        let digest = *blake3::hash(&payload).as_bytes();
+        let build = |g: u64| {
+            let inode = 1 + (g % 2);
+            TrigramManifest {
+                schema: TRIGRAM_SCHEMA,
+                generation: g,
+                volume_uuid: [3u8; 16],
+                inode,
+                inode_version: 1,
+                root: 4096,
+                source_logical_size: src.len() as u64,
+                source_blake3: *blake3::hash(&src).as_bytes(),
+                posting_encoding: PostingEncoding::DeltaLeb128.code(),
+                trigram_count: 0,
+                posting_count: 0,
+                sketch_bits: 0,
+                sketch: Vec::new(),
+                payload_rel_path: store.payload_rel_path(g, inode, 1, 4096),
+                payload_blake3: digest,
+                payload_bytes: payload.len() as u64,
+                manifest_blake3: [0u8; 32],
+            }
+            .sealed()
+        };
+        for g in 1..=4u64 {
+            store.publish(&build(g), &payload).unwrap();
+        }
+        // Simulate a pre-catalogue volume.
+        std::fs::remove_dir_all(store.catalogue_dir()).unwrap();
+        store.write_head(&(1..=4).collect::<Vec<_>>()).unwrap();
+        let fallback = store.latest_published().unwrap();
+        assert!(!fallback.catalogue_used);
+        assert_eq!(
+            fallback.published.len(),
+            store.recover().unwrap().newest_per_inode().len()
+        );
+        // A publication migrates the legacy manifests, then the fast path is used.
+        store.publish(&build(5), &payload).unwrap();
+        let latest = store.latest_published().unwrap();
+        assert!(latest.catalogue_used);
+        assert_eq!(
+            latest.published.len(),
+            store.recover().unwrap().newest_per_inode().len()
+        );
+        assert_eq!(latest.published.get(&1).map(|m| m.generation), Some(4));
+        assert_eq!(latest.published.get(&2).map(|m| m.generation), Some(5));
     }
 
     #[test]

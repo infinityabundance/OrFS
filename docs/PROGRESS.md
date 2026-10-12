@@ -2308,3 +2308,72 @@ Not re-run (out of the required set, stated plainly): the endurance court and
 `xfstests` (`ran:false`, assessed-not-runnable). The native F2 mount tests are
 legitimately skipped in the non-mount uring court (no `/dev/fuse`); real F2
 engagement is exercised in the kmount court.
+
+## Phase 42 — Immutable append-only manifestation catalogue
+
+**Complete.** Research programme priority 1 ("I'd prioritize this extremely
+highly"): the manifested-generation directory had a growth-dependent cost —
+`GenerationStore::publish` rewrote the whole `HEAD` generation list every time
+(O(G) read+sort+serialize+fsync → ~O(G²) cumulatively) and `recover` merged with a
+linear `Vec::contains`; the concealed trigram registry had the same pattern.
+
+### Delivered
+
+* `src/manifestation.rs` + `src/trigram.rs`: an immutable, append-only
+  **catalogue** (one per family) under `manifests/catalogue/` and
+  `trigram/catalogue/`:
+  * `seg-<index>.cat` — append-only, immutable once sealed, fixed **128-byte**
+    framed records (`body_len ‖ body ‖ crc32c`; body = family, schema,
+    generation, volume uuid, inode, version, committed root, manifest digest,
+    payload digest).
+  * `CURRENT` — small pointer to the active segment, rewritten only at a seal.
+  * `sum-<through>.sum` — immutable folded newest-per-inode summary written at a
+    seal.
+  Publication appends one record (catalogue **before** manifest) and is O(1)
+  amortized; discovery is suffix-proportional (newest-per-inode summary + active
+  segment); recovery no longer re-merges the whole set.
+* Torn/truncated records are detected (length + CRC) and skipped; a corrupt
+  summary is ignored (fall back to an earlier summary or replay); a
+  non-contiguous run is "untrusted" and triggers the full validated scan; a
+  catalogue entry whose manifest/payload is invalid triggers the same.
+  `latest_published()` always equals `recover().newest_per_inode()` on the
+  recoverable set. Derived state only — the authoritative log is untouched and
+  the catalogue rebuilds from manifests.
+* Backward compatibility: legacy volumes recover via the retained `HEAD`+scan
+  fallback; the first new `publish` performs a one-time migration (O(1) `stat`
+  guard on the hot path). Deleting the catalogue is safe.
+* `Cargo.toml`: `[lib] doctest = false` — the library has **zero** doctests
+  (`cargo test --doc` reports 0), and the doctest target is the one that trips
+  the long-documented cargo/rustdoc `--extern` staleness race; disabling it keeps
+  the default gate deterministic with no coverage loss (documented inline).
+
+### Acceptance court (`tests/manifestation_catalogue.rs`, `scripts/container-manifestation-catalogue.sh`)
+
+Publishes/recovers at **1 000 / 10 000 / 100 000 / 1 000 000** generations and
+records publication p50/p99, metadata bytes rewritten, directory ops, recovery
+and RSS; plus torn/corrupt/missing adversarial variants. Default `cargo test` runs
+a bounded correctness test; the heavy sweep is a separate runner.
+
+### Result (release, single run)
+
+Publication **p50 ≈ 2.33 ms and 128 B rewritten per publication, flat across a
+1000× growth in G** (p50 ratio first→last 0.995; the old counterfactual rewrote
+`8·(G+1)+12` B — 8 020 B at G=1 000 → 80 020 B at G=10 000). Fast recovery is
+suffix-proportional (325 µs → 1.46 ms); the full scan is linear (5.8 ms → 29.1 s
+at 1M, I/O-bound and host-load sensitive). **Per-publication work is now
+growth-independent.** Evidence: `evidence/performance/manifestation-catalogue.json`;
+`docs/MANIFESTATION.md` §7.1/§11/§15; `docs/PERFORMANCE.md` §14.
+
+### Honest caveats (documented)
+
+* Manifest-directory `fsync` is now batched (per-publication for small volumes;
+  at the segment boundary past 1 024 generations), so a generation whose
+  directory entry is not yet durable is simply rejected at recovery and the
+  previous committed generation is selected — consistent with manifestations
+  being disposable derived state.
+* The heavy sweep seeds large checkpoints with a bulk fixture; the *publication*
+  cost is measured with real `publish` calls on the G-sized catalogue (recorded in
+  the evidence `note`).
+* `fuse_uring`'s court hit its 900 s timeout in the environment's host memory
+  pressure (swap exhausted); `ekbloom_frontier_e2e` was run directly and passed,
+  and the court does not touch this change.

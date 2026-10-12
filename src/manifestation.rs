@@ -32,12 +32,15 @@
 //!
 //! The payload is written and fsynced by the builder; the manifest is written to
 //! `<gen>.manifest.tmp`, fsynced, atomically renamed to `<gen>.manifest`, and the
-//! directory is fsynced. Only then is the generation **advertised** by updating
-//! `manifests/HEAD`. Recovery selects the newest **valid** committed generation
-//! per inode; a torn manifest or a torn `HEAD` is simply skipped and can never
-//! invalidate an earlier commit. A job cancelled after it wrote some physical
-//! bytes leaves an *orphan* payload that is referenced by no committed manifest
-//! and is therefore invisible to ordinary reads.
+//! directory is fsynced. Discovery is then recorded by **appending** one immutable
+//! entry to the append-only catalogue (`manifests/catalogue/`, see
+//! [`Catalogue`]): publication no longer rewrites a whole `HEAD` list, so its
+//! cost is O(1) amortized and flat in the number of accumulated generations.
+//! Recovery selects the newest **valid** committed generation per inode; a torn
+//! manifest, a torn catalogue record, or a torn legacy `HEAD` is simply skipped
+//! and can never invalidate an earlier commit. A job cancelled after it wrote
+//! some physical bytes leaves an *orphan* payload that is referenced by no
+//! committed manifest and is therefore invisible to ordinary reads.
 //!
 //! # Bounded workers, backpressure, cancellation
 //!
@@ -48,8 +51,8 @@
 //! authoritative commit path never blocks on it. A newer inode version cancels
 //! and supersedes older pending jobs (research §10.3).
 
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::fs::{self, File};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -904,19 +907,570 @@ impl ManifestRecovery {
     }
 }
 
+/// The result of a catalogue-accelerated recovery of the published set.
+#[derive(Debug, Clone)]
+pub struct LatestRecovery {
+    /// The newest valid generation per inode.
+    pub published: BTreeMap<u64, GenerationManifest>,
+    /// The number of distinct committed generations. From the catalogue's folded
+    /// record count on the fast path (equal to the full scan's count on a healthy
+    /// volume), or the full scan's count on the fallback.
+    pub committed: u64,
+    /// Candidates that failed validation (always `0` on the fast catalogue path,
+    /// which falls back to a full scan whenever any candidate is invalid).
+    pub rejected: usize,
+    /// Whether the fast catalogue path was used (`false` = full manifest scan).
+    pub catalogue_used: bool,
+}
+
+// ---------------------------------------------------------------------------
+// The append-only generation catalogue (derived discovery index)
+// ---------------------------------------------------------------------------
+//
+// Publication previously rewrote the whole `HEAD` generation list on every
+// publication (read + sort + serialize + fsync of a file whose length grows with
+// the generation count `G`): O(G) per publication and O(G²) cumulatively, plus an
+// O(G²) `Vec::contains` merge in recovery. The catalogue replaces that with an
+// **immutable, append-only record log**:
+//
+// ```text
+// manifests/catalogue/
+//   CURRENT               small pointer naming the active segment; rewritten
+//                         only when a segment is sealed, never per record
+//   seg-<index:010>.cat   append-only, immutable once sealed; fixed-size records
+//   sum-<through:010>.sum immutable folded "newest per inode" summary
+// ```
+//
+// * **Non-withdrawal** — a sealed segment, like a manifest, is never rewritten;
+//   publication only appends. The authoritative log is untouched.
+// * **Torn-safety** — every record is fixed-size and CRC32C-checksummed; a torn
+//   or truncated tail is detected and skipped, and a corrupt summary is ignored
+//   so recovery falls back to an earlier summary or a full segment replay.
+// * **Reconstructible** — the catalogue is derived: it is rebuildable from the
+//   immutable `*.manifest` files at any time (`recover` scans them when the
+//   catalogue is absent or unusable).
+
+/// Family tag for a generation-manifest catalogue (`"ORCM"`).
+const CAT_FAMILY_MANIFEST: u32 = 0x4F52_434D;
+/// Family tag for a trigram-manifest catalogue (`"ORCT"`), so the two concealed
+/// families can never confuse one another's records.
+pub(crate) const CAT_FAMILY_TRIGRAM: u32 = 0x4F52_4354;
+/// Record/pointer schema.
+const CAT_SCHEMA: u32 = 1;
+const CAT_POINTER_MAGIC: u32 = 0x4F52_4350; // "ORCP"
+const CAT_SUMMARY_MAGIC: u32 = 0x4F52_4353; // "ORCS"
+/// A record body is fixed-size, so framing is unambiguous and an append is one
+/// small write. `family`, `schema`, `generation`, `uuid`, `inode`,
+/// `inode_version`, `root`, `manifest_blake3`, `payload_blake3`.
+const CAT_RECORD_BODY: usize = 4 + 4 + 8 + 16 + 8 + 8 + 8 + 32 + 32;
+/// Bytes of one on-disk record (`body_len` + body + `crc32c`).
+const CAT_RECORD_BYTES: u64 = CAT_RECORD_BODY as u64 + 8;
+/// Seal the active segment once it reaches this size (immutable thereafter).
+const CAT_SEGMENT_BYTES: u64 = 128 * 1024;
+/// A manifest's *contents* are fsynced on every publication; making its
+/// **directory entry** durable needs a directory `fsync`, whose cost grows with
+/// the number of manifest files. Doing that every publication would reintroduce an
+/// O(G) per-publication term, so it is done for small volumes (generation ≤ this)
+/// and otherwise batched to the catalogue segment boundary — at least once every
+/// `CAT_SEGMENT_BYTES` of publication. The catalogue record itself is always
+/// fsynced, and a manifest whose directory entry is not yet durable is simply
+/// rejected at recovery (the fast path falls back and selects the previous,
+/// committed generation).
+pub(crate) const MANIFEST_DIR_SYNC_INTERVAL: u64 = 1024;
+/// Never fold a summary larger than this many inodes: with as many inodes as
+/// generations a folded summary would itself be O(G), so the catalogue declines
+/// to summarise and recovery reads the segments directly.
+const CAT_SUMMARY_MAX_INODES: u32 = 32 * 1024;
+
+/// One immutable catalogue entry: the derived discovery identity of a committed
+/// generation. It binds the generation number to the immutable manifest's
+/// self-digest (`manifest_blake3`), so a number that is later reused is detected.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CatalogueEntry {
+    pub generation: u64,
+    pub volume_uuid: [u8; 16],
+    pub inode: u64,
+    pub inode_version: u64,
+    pub root: u64,
+    pub manifest_blake3: [u8; 32],
+    pub payload_blake3: [u8; 32],
+}
+
+impl CatalogueEntry {
+    fn body(&self, family: u32) -> Vec<u8> {
+        let mut e = Enc::new();
+        e.u32(family);
+        e.u32(CAT_SCHEMA);
+        e.u64(self.generation);
+        e.arr(&self.volume_uuid);
+        e.u64(self.inode);
+        e.u64(self.inode_version);
+        e.u64(self.root);
+        e.arr(&self.manifest_blake3);
+        e.arr(&self.payload_blake3);
+        let v = e.into_vec();
+        debug_assert_eq!(v.len(), CAT_RECORD_BODY);
+        v
+    }
+
+    /// The framed record: `[body_len:u32][body][crc32c:u32]` where the checksum
+    /// covers `body_len || body`.
+    fn encode_record(&self, family: u32) -> Vec<u8> {
+        let body = self.body(family);
+        let mut out = Vec::with_capacity(body.len() + 8);
+        out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        out.extend_from_slice(&body);
+        let crc = crc32c::crc32c(&out);
+        out.extend_from_slice(&crc.to_le_bytes());
+        out
+    }
+
+    /// Decode one framed record, returning the entry and the bytes consumed, or
+    /// `None` for any torn/truncated/corrupt/wrong-family record.
+    fn decode_record(bytes: &[u8], family: u32) -> Option<(CatalogueEntry, usize)> {
+        if bytes.len() < 8 {
+            return None;
+        }
+        let len = u32::from_le_bytes(bytes[0..4].try_into().ok()?) as usize;
+        if len != CAT_RECORD_BODY {
+            return None;
+        }
+        let total = len + 8;
+        if bytes.len() < total {
+            return None;
+        }
+        let stored = u32::from_le_bytes(bytes[len + 4..len + 8].try_into().ok()?);
+        if crc32c::crc32c(&bytes[..len + 4]) != stored {
+            return None;
+        }
+        let mut d = Dec::new(&bytes[4..4 + len]);
+        if d.u32().ok()? != family || d.u32().ok()? != CAT_SCHEMA {
+            return None;
+        }
+        let entry = CatalogueEntry {
+            generation: d.u64().ok()?,
+            volume_uuid: d.arr16().ok()?,
+            inode: d.u64().ok()?,
+            inode_version: d.u64().ok()?,
+            root: d.u64().ok()?,
+            manifest_blake3: d.arr32().ok()?,
+            payload_blake3: d.arr32().ok()?,
+        };
+        if d.remaining() != 0 {
+            return None;
+        }
+        Some((entry, total))
+    }
+}
+
+/// An append-only catalogue over one concealed subdirectory (generation
+/// manifests, or trigram manifests). A `Catalogue` is cheap to clone and holds
+/// no cache: the active segment is read from `CURRENT`, so independent store
+/// instances (and processes) append consistently.
+#[derive(Debug, Clone)]
+pub(crate) struct Catalogue {
+    dir: PathBuf,
+    family: u32,
+}
+
+impl Catalogue {
+    pub(crate) fn new(dir: PathBuf, family: u32) -> Catalogue {
+        Catalogue { dir, family }
+    }
+
+    pub(crate) fn dir(&self) -> &Path {
+        &self.dir
+    }
+
+    fn pointer_path(&self) -> PathBuf {
+        self.dir.join("CURRENT")
+    }
+
+    /// The path of a segment (also used by tests to plant a torn record).
+    pub(crate) fn segment_path(&self, index: u64) -> PathBuf {
+        self.dir.join(format!("seg-{index:010}.cat"))
+    }
+
+    fn summary_path(&self, through: u64) -> PathBuf {
+        self.dir.join(format!("sum-{through:010}.sum"))
+    }
+
+    /// The active segment index. The pointer is authoritative when it decodes; if
+    /// it is missing or torn we must **never** append into a possibly-sealed
+    /// segment, so a fresh segment after the highest existing one is used.
+    pub(crate) fn active_segment(&self) -> u64 {
+        if let Ok(b) = fs::read(self.pointer_path()) {
+            if let Some(idx) = decode_catalogue_pointer(&b, self.family) {
+                return idx;
+            }
+        }
+        self.segment_indices().last().map(|s| s + 1).unwrap_or(0)
+    }
+
+    /// Append one immutable entry. O(1) amortized: one small `O_APPEND` write plus
+    /// an fsync; the segment is sealed only once it passes [`CAT_SEGMENT_BYTES`].
+    /// Returns whether the append sealed the active segment.
+    ///
+    /// The caller holds the store's append lock, so no concurrent append can land
+    /// in a segment while it is being sealed (which would be missed by the
+    /// summary).
+    pub(crate) fn append(&self, entry: &CatalogueEntry) -> Result<bool> {
+        fs::create_dir_all(&self.dir)?;
+        let index = self.active_segment();
+        let path = self.segment_path(index);
+        let record = entry.encode_record(self.family);
+        let size = {
+            let mut f = OpenOptions::new().create(true).append(true).open(&path)?;
+            f.write_all(&record)?;
+            f.sync_all()?;
+            f.metadata()?.len()
+        };
+        if size >= CAT_SEGMENT_BYTES {
+            self.seal(index)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Fold the freshly-sealed active segment into an immutable summary and
+    /// advance the pointer. Prior segments are never rewritten.
+    fn seal(&self, index: u64) -> Result<()> {
+        // Advance the pointer first so later appends go to the next segment and
+        // cannot land in the one we are about to summarise.
+        self.write_pointer(index + 1)?;
+        let (folded, count) = self.fold_through(index);
+        if !folded.is_empty() && folded.len() as u64 <= CAT_SUMMARY_MAX_INODES as u64 {
+            let bytes = encode_catalogue_summary(self.family, index, count, &folded);
+            write_atomic(&self.summary_path(index), &bytes)?;
+        }
+        fsync_dir(&self.dir)?;
+        Ok(())
+    }
+
+    fn write_pointer(&self, index: u64) -> Result<()> {
+        write_atomic(
+            &self.pointer_path(),
+            &encode_catalogue_pointer(self.family, index),
+        )
+    }
+
+    /// Read every valid entry of one segment, stopping at the first torn/corrupt
+    /// record (an append-only log's tail is the only place a tear can occur).
+    fn read_segment(&self, index: u64) -> Vec<CatalogueEntry> {
+        let Ok(bytes) = fs::read(self.segment_path(index)) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        let mut off = 0usize;
+        while off + CAT_RECORD_BYTES as usize <= bytes.len() {
+            match CatalogueEntry::decode_record(&bytes[off..], self.family) {
+                Some((e, used)) => {
+                    out.push(e);
+                    off += used;
+                }
+                None => break,
+            }
+        }
+        out
+    }
+
+    fn segment_indices(&self) -> Vec<u64> {
+        named_indices(&self.dir, "seg-", ".cat")
+    }
+
+    /// Whether the catalogue has no segments (a fresh or pre-catalogue volume).
+    pub(crate) fn is_empty(&self) -> bool {
+        self.segment_indices().is_empty()
+    }
+
+    fn summary_indices(&self) -> Vec<u64> {
+        named_indices(&self.dir, "sum-", ".sum")
+    }
+
+    fn read_summary(&self, through: u64) -> Option<(BTreeMap<u64, CatalogueEntry>, u64)> {
+        let bytes = fs::read(self.summary_path(through)).ok()?;
+        decode_catalogue_summary(&bytes, self.family, through)
+    }
+
+    /// Bulk-write `entries` as fresh segments (with a per-segment summary) and set
+    /// the pointer to a fresh segment. Used by the one-time legacy migration and by
+    /// the scaling-court fixture; the normal append path never calls this. The
+    /// caller must ensure no segments exist yet (it overwrites indices from 0).
+    pub(crate) fn bulk_load(&self, entries: &[CatalogueEntry]) -> Result<()> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+        fs::create_dir_all(&self.dir)?;
+        let per = (CAT_SEGMENT_BYTES / CAT_RECORD_BYTES).max(1) as usize;
+        let nsegs = entries.len().div_ceil(per);
+        let mut folded: BTreeMap<u64, CatalogueEntry> = BTreeMap::new();
+        let mut cum: u64 = 0;
+        for si in 0..nsegs {
+            let lo = si * per;
+            let hi = ((si + 1) * per).min(entries.len());
+            let chunk = &entries[lo..hi];
+            let mut buf = Vec::with_capacity(chunk.len() * CAT_RECORD_BYTES as usize);
+            for e in chunk {
+                buf.extend_from_slice(&e.encode_record(self.family));
+            }
+            fs::write(self.segment_path(si as u64), &buf)?;
+            for e in chunk {
+                insert_newest(&mut folded, e.clone());
+            }
+            cum += chunk.len() as u64;
+            if folded.len() as u64 <= CAT_SUMMARY_MAX_INODES as u64 {
+                let bytes = encode_catalogue_summary(self.family, si as u64, cum, &folded);
+                write_atomic(&self.summary_path(si as u64), &bytes)?;
+            }
+        }
+        // A fresh segment receives subsequent appends.
+        write_atomic(
+            &self.pointer_path(),
+            &encode_catalogue_pointer(self.family, nsegs as u64),
+        )?;
+        fsync_dir(&self.dir)?;
+        Ok(())
+    }
+
+    /// Fold every entry through segment `through`, reusing the newest usable
+    /// summary at or below it (so a seal reads a bounded suffix, not all history).
+    fn fold_through(&self, through: u64) -> (BTreeMap<u64, CatalogueEntry>, u64) {
+        // Prefer the greatest usable summary at or below `through`; try newest
+        // first and stop at the first that decodes (a corrupt one is skipped).
+        let mut sums = self.summary_indices();
+        sums.reverse();
+        let mut base: Option<(u64, BTreeMap<u64, CatalogueEntry>, u64)> = None;
+        for s in sums {
+            if s > through {
+                continue;
+            }
+            if let Some((map, count)) = self.read_summary(s) {
+                base = Some((s, map, count));
+                break;
+            }
+        }
+        let (start, mut map, mut count) = match base {
+            Some((s, m, c)) => (s + 1, m, c),
+            None => (0u64, BTreeMap::new(), 0u64),
+        };
+        for seg in self.segment_indices() {
+            if seg < start || seg > through {
+                continue;
+            }
+            for e in self.read_segment(seg) {
+                count += 1;
+                insert_newest(&mut map, e);
+            }
+        }
+        (map, count)
+    }
+
+    /// The newest entry per inode and the total number of folded records, using
+    /// the newest usable summary plus only the segments after it
+    /// (suffix-proportional). `None` when nothing usable is present, so the caller
+    /// can fall back to a full `*.manifest` scan.
+    pub(crate) fn latest(&self) -> Option<(BTreeMap<u64, CatalogueEntry>, u64)> {
+        let segments = self.segment_indices();
+        let active = *segments.last()?;
+        // The pointer must name an existing segment; otherwise the catalogue is
+        // mid-migration/damaged and the caller should scan manifests instead.
+        if self.active_segment() < active {
+            return None;
+        }
+        // Require a contiguous run of segments from 0: a hole means a whole segment
+        // was lost, so the catalogue cannot be trusted for discovery and the
+        // caller must fall back to a full scan (never silently miss a generation).
+        if segments.len() as u64 != active + 1 {
+            return None;
+        }
+        let (map, count) = self.fold_through(active);
+        if map.is_empty() {
+            return None;
+        }
+        Some((map, count))
+    }
+}
+
+fn insert_newest(map: &mut BTreeMap<u64, CatalogueEntry>, entry: CatalogueEntry) {
+    match map.get(&entry.inode) {
+        Some(cur)
+            if (cur.inode_version, cur.generation) >= (entry.inode_version, entry.generation) => {}
+        _ => {
+            map.insert(entry.inode, entry);
+        }
+    }
+}
+
+/// Ascending, deduplicated indices of files named `<prefix><index><suffix>`.
+fn named_indices(dir: &Path, prefix: &str, suffix: &str) -> Vec<u64> {
+    let mut out = Vec::new();
+    if let Ok(rd) = fs::read_dir(dir) {
+        for ent in rd.flatten() {
+            let name = ent.file_name();
+            let name = name.to_string_lossy();
+            if let Some(stem) = name
+                .strip_prefix(prefix)
+                .and_then(|s| s.strip_suffix(suffix))
+            {
+                if let Ok(i) = stem.parse::<u64>() {
+                    out.push(i);
+                }
+            }
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+fn encode_catalogue_pointer(family: u32, index: u64) -> Vec<u8> {
+    let mut e = Enc::new();
+    e.u32(CAT_POINTER_MAGIC);
+    e.u32(CAT_SCHEMA);
+    e.u32(family);
+    e.u64(index);
+    let body = e.into_vec();
+    let mut out = body.clone();
+    out.extend_from_slice(&crc32c::crc32c(&body).to_le_bytes());
+    out
+}
+
+fn decode_catalogue_pointer(bytes: &[u8], family: u32) -> Option<u64> {
+    let body = bytes.get(..bytes.len().checked_sub(4)?)?;
+    let stored = u32::from_le_bytes(bytes[bytes.len() - 4..].try_into().ok()?);
+    if crc32c::crc32c(body) != stored {
+        return None;
+    }
+    let mut d = Dec::new(body);
+    if d.u32().ok()? != CAT_POINTER_MAGIC || d.u32().ok()? != CAT_SCHEMA || d.u32().ok()? != family
+    {
+        return None;
+    }
+    let index = d.u64().ok()?;
+    if d.remaining() != 0 {
+        return None;
+    }
+    Some(index)
+}
+
+/// A summary folds the **newest entry per inode** through segment `through` plus
+/// the running record count. It is immutable and self-checksummed.
+fn encode_catalogue_summary(
+    family: u32,
+    through: u64,
+    count: u64,
+    folded: &BTreeMap<u64, CatalogueEntry>,
+) -> Vec<u8> {
+    let mut e = Enc::new();
+    e.u32(CAT_SUMMARY_MAGIC);
+    e.u32(CAT_SCHEMA);
+    e.u32(family);
+    e.u64(through);
+    e.u64(count);
+    e.u32(folded.len() as u32);
+    for (inode, entry) in folded {
+        e.u64(*inode);
+        e.u64(entry.inode_version);
+        e.u64(entry.generation);
+        e.u64(entry.root);
+        e.arr(&entry.manifest_blake3);
+    }
+    let body = e.into_vec();
+    let mut out = body.clone();
+    out.extend_from_slice(&crc32c::crc32c(&body).to_le_bytes());
+    out
+}
+
+fn decode_catalogue_summary(
+    bytes: &[u8],
+    family: u32,
+    through: u64,
+) -> Option<(BTreeMap<u64, CatalogueEntry>, u64)> {
+    let body = bytes.get(..bytes.len().checked_sub(4)?)?;
+    let stored = u32::from_le_bytes(bytes[bytes.len() - 4..].try_into().ok()?);
+    if crc32c::crc32c(body) != stored {
+        return None;
+    }
+    let mut d = Dec::new(body);
+    if d.u32().ok()? != CAT_SUMMARY_MAGIC || d.u32().ok()? != CAT_SCHEMA || d.u32().ok()? != family
+    {
+        return None;
+    }
+    if d.u64().ok()? != through {
+        return None;
+    }
+    let count = d.u64().ok()?;
+    let n = d.u32().ok()? as usize;
+    if n > CAT_SUMMARY_MAX_INODES as usize || n > d.remaining() / 56 {
+        return None;
+    }
+    let mut map = BTreeMap::new();
+    for _ in 0..n {
+        let inode = d.u64().ok()?;
+        let inode_version = d.u64().ok()?;
+        let generation = d.u64().ok()?;
+        let root = d.u64().ok()?;
+        let manifest_blake3 = d.arr32().ok()?;
+        map.insert(
+            inode,
+            CatalogueEntry {
+                generation,
+                volume_uuid: [0u8; 16],
+                inode,
+                inode_version,
+                root,
+                manifest_blake3,
+                payload_blake3: [0u8; 32],
+            },
+        );
+    }
+    if d.remaining() != 0 {
+        return None;
+    }
+    Some((map, count))
+}
+
+/// Atomic small-file write: `tmp` → fsync → rename → fsync(dir).
+fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+    let tmp = path.with_extension("tmp");
+    {
+        let mut f = File::create(&tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()?;
+    }
+    fs::rename(&tmp, path)?;
+    if let Some(dir) = path.parent() {
+        fsync_dir(dir)?;
+    }
+    Ok(())
+}
+
 /// The on-disk generation store rooted at `<volume>/.or_bloom`.
 #[derive(Debug, Clone)]
 pub struct GenerationStore {
     volume_root: PathBuf,
     bloom_root: PathBuf,
+    catalogue: Catalogue,
+    /// Serializes catalogue appends/seals across the engine's worker threads so a
+    /// segment is never appended to while it is being summarised. Shared by every
+    /// clone of the store.
+    append_lock: Arc<Mutex<()>>,
 }
 
 impl GenerationStore {
     /// The store for a volume backing directory.
     pub fn new(volume_root: &Path) -> GenerationStore {
+        let bloom_root = volume_root.join(BLOOM_DIR);
+        let catalogue = Catalogue::new(
+            bloom_root.join(MANIFEST_DIR).join("catalogue"),
+            CAT_FAMILY_MANIFEST,
+        );
         GenerationStore {
             volume_root: volume_root.to_path_buf(),
-            bloom_root: volume_root.join(BLOOM_DIR),
+            bloom_root,
+            catalogue,
+            append_lock: Arc::new(Mutex::new(())),
         }
     }
 
@@ -940,15 +1494,31 @@ impl GenerationStore {
         self.bloom_root.join(MANIFEST_DIR)
     }
 
-    /// The `HEAD` advertisement path.
+    /// The `HEAD` advertisement path (legacy discovery; kept read-compatible).
     pub fn head_path(&self) -> PathBuf {
         self.manifest_dir().join("HEAD")
+    }
+
+    /// The append-only catalogue directory (`manifests/catalogue/`).
+    pub fn catalogue_dir(&self) -> PathBuf {
+        self.catalogue.dir().to_path_buf()
+    }
+
+    /// The active catalogue segment path (used by tests to plant a torn record).
+    pub fn catalogue_active_segment_path(&self) -> PathBuf {
+        self.catalogue.segment_path(self.catalogue.active_segment())
+    }
+
+    /// Total bytes under the catalogue directory (for accounting/evidence).
+    pub fn catalogue_bytes(&self) -> u64 {
+        dir_bytes(self.catalogue.dir())
     }
 
     /// Create the payload and manifest directories (idempotent).
     pub fn ensure_dirs(&self) -> Result<()> {
         fs::create_dir_all(self.payload_dir())?;
         fs::create_dir_all(self.manifest_dir())?;
+        fs::create_dir_all(self.catalogue.dir())?;
         Ok(())
     }
 
@@ -1018,9 +1588,16 @@ impl GenerationStore {
         Ok(out)
     }
 
-    /// The next unused generation number (`max + 1`).
+    /// The next unused generation number (`max + 1`), taking both the immutable
+    /// manifests and the catalogue into account so a generation number is never
+    /// reused even when a manifest write failed after its catalogue append.
     pub fn next_generation(&self) -> Result<u64> {
-        let max = self.manifest_generations()?.into_iter().max();
+        let mut max = self.manifest_generations()?.into_iter().max();
+        if let Some((entries, _)) = self.catalogue.latest() {
+            for e in entries.values() {
+                max = Some(max.map_or(e.generation, |m| m.max(e.generation)));
+            }
+        }
         Ok(max.map(|m| m + 1).unwrap_or(1))
     }
 
@@ -1100,13 +1677,19 @@ impl GenerationStore {
         out
     }
 
-    /// Publish a generation: write the manifest, fsync, rename, fsync the
-    /// directory, then advertise it in `HEAD`.
+    /// Publish a generation: append its immutable entry to the append-only
+    /// catalogue, then write the manifest.
     ///
-    /// Torn writes are safe: the manifest is immutable and self-validating, and
-    /// `HEAD` is only a discovery index. A failure before the rename leaves a
-    /// `.tmp` file that is ignored; a failure after it leaves a committed
-    /// manifest that a later `HEAD` update will advertise.
+    /// A catalogue record is immutable and CRC-framed; a torn or truncated record
+    /// is skipped on read. Catalogue-first ordering guarantees that any *durable*
+    /// manifest is already catalogued, so the fast recovery path can never miss a
+    /// committed generation: an entry whose manifest is missing or invalid is
+    /// detected and triggers a full validated scan. A failure before either write
+    /// changes nothing; a failure between them leaves an uncommitted catalogue
+    /// entry that is rejected and never invalidates an earlier commit.
+    ///
+    /// Unlike the previous protocol this never rewrites a whole `HEAD` list: the
+    /// append is O(1) amortized and flat in the number of accumulated generations.
     pub fn publish(&self, manifest: &GenerationManifest) -> Result<()> {
         self.ensure_dirs()?;
         // Optional-space failure injection (Phase 23): an injected ENOSPC/EIO on a
@@ -1118,6 +1701,25 @@ impl GenerationStore {
         {
             return Err(err);
         }
+
+        let entry = CatalogueEntry {
+            generation: manifest.generation,
+            volume_uuid: manifest.volume_uuid,
+            inode: manifest.inode,
+            inode_version: manifest.inode_version,
+            root: manifest.root,
+            manifest_blake3: manifest.manifest_blake3,
+            payload_blake3: manifest.payload_blake3,
+        };
+        let sealed = {
+            // Serialize the append/seal so a segment is never appended to while it
+            // is being summarised (see `Catalogue::append`), and run the one-time
+            // legacy migration under the same lock.
+            let _guard = self.append_lock.lock();
+            self.migrate_legacy_catalogue()?;
+            self.catalogue.append(&entry)?
+        };
+
         let final_path = self.manifest_path(manifest.generation);
         let tmp_path = final_path.with_extension("manifest.tmp");
         {
@@ -1126,15 +1728,12 @@ impl GenerationStore {
             f.sync_all()?;
         }
         fs::rename(&tmp_path, &final_path)?;
-        fsync_dir(&self.manifest_dir())?;
-
-        // Advertise: update HEAD with the union of the existing list and this
-        // generation. A torn HEAD is recovered by a full scan.
-        let mut gens = self.read_head().unwrap_or_default();
-        gens.push(manifest.generation);
-        gens.sort_unstable();
-        gens.dedup();
-        self.write_head(&gens)?;
+        // The manifest's contents are durable; its directory entry is made durable
+        // for small volumes and otherwise batched to the segment boundary (see
+        // `MANIFEST_DIR_SYNC_INTERVAL`), so publication stays O(1) amortized.
+        if manifest.generation <= MANIFEST_DIR_SYNC_INTERVAL || sealed {
+            fsync_dir(&self.manifest_dir())?;
+        }
         Ok(())
     }
 
@@ -1170,17 +1769,20 @@ impl GenerationStore {
         let all = self.manifest_generations()?;
         let (candidates, head_used, head_fallback) = match &head {
             Some(list) => {
-                let mut merged: Vec<u64> = list.clone();
-                for g in &all {
-                    if !merged.contains(g) {
-                        merged.push(*g);
-                    }
-                }
-                merged.sort_unstable();
-                merged.dedup();
-                (merged, true, false)
+                // Sorted-set union of the legacy `HEAD` advertisement and the
+                // directory scan: O(G log G), never the previous O(G²) `contains`
+                // loop. (The catalogue is not needed here: it is a superset of the
+                // manifests, which the scan already enumerates.)
+                let mut set: BTreeSet<u64> = list.iter().copied().collect();
+                set.extend(all.iter().copied());
+                (set.into_iter().collect::<Vec<_>>(), true, false)
             }
-            None => (all, false, true),
+            None => {
+                let mut v = all;
+                v.sort_unstable();
+                v.dedup();
+                (v, false, true)
+            }
         };
 
         let mut accepted: BTreeMap<u64, GenerationManifest> = BTreeMap::new();
@@ -1229,6 +1831,219 @@ impl GenerationStore {
             head_used,
             head_fallback,
         })
+    }
+
+    /// Recover the **newest valid generation per inode** using the append-only
+    /// catalogue: the newest usable folded summary plus only the segments after
+    /// it (so the read is proportional to the catalogue suffix, not all history).
+    ///
+    /// Each newest candidate is validated (manifest self-digest binding, payload
+    /// BLAKE3, overlay chain). If any candidate is missing or invalid — a torn
+    /// catalogue tail, a manifest whose catalogue append was torn, a damaged
+    /// payload — the method transparently falls back to the full validated
+    /// [`recover`](Self::recover) scan, so the result always equals
+    /// `recover().newest_per_inode()`.
+    pub fn latest_published(&self) -> Result<LatestRecovery> {
+        if let Some((entries, count)) = self.catalogue.latest() {
+            let mut published: BTreeMap<u64, GenerationManifest> = BTreeMap::new();
+            let mut all_valid = true;
+            for (inode, e) in &entries {
+                match self.load_generation(e.generation)? {
+                    Some(m)
+                        if m.inode == *inode
+                            && m.manifest_blake3 == e.manifest_blake3
+                            && self.payload_matches(&m).unwrap_or(false)
+                            && self.overlay_chain_ok(&m)? =>
+                    {
+                        published.insert(*inode, m);
+                    }
+                    _ => {
+                        all_valid = false;
+                    }
+                }
+            }
+            if all_valid {
+                return Ok(LatestRecovery {
+                    published,
+                    committed: count,
+                    rejected: 0,
+                    catalogue_used: true,
+                });
+            }
+            // A candidate failed validation: the recoverable set is authoritative,
+            // so fall back to the full validated scan below.
+        }
+        let recovery = self.recover()?;
+        let committed = recovery.generations.len() as u64;
+        Ok(LatestRecovery {
+            published: recovery.newest_per_inode(),
+            committed,
+            rejected: recovery.rejected,
+            catalogue_used: false,
+        })
+    }
+
+    /// Validate `m`'s overlay chain by loading its bases from disk, bounded by
+    /// [`MAX_OVERLAY_DEPTH`]. Equivalent to the ascending check in [`recover`].
+    fn overlay_chain_ok(&self, m: &GenerationManifest) -> Result<bool> {
+        if m.overlay_depth > MAX_OVERLAY_DEPTH {
+            return Ok(false);
+        }
+        match m.base_generation {
+            None => Ok(m.overlay_depth == 0),
+            Some(bg) => {
+                let Some(b) = self.load_generation(bg)? else {
+                    return Ok(false);
+                };
+                if b.inode != m.inode
+                    || m.base_manifest_blake3
+                        .is_some_and(|d| d != b.manifest_blake3)
+                    || m.overlay_depth != b.overlay_depth.saturating_add(1)
+                    || !self.payload_matches(&b).unwrap_or(false)
+                {
+                    return Ok(false);
+                }
+                self.overlay_chain_ok(&b)
+            }
+        }
+    }
+
+    /// Fixture for the scaling court (**not used in production**): bulk-seed
+    /// `count` committed generations `start..start+count` and their catalogue
+    /// without a per-record fsync, so a volume with very many generations can be
+    /// materialised quickly. Every generation is a flattened table referencing one
+    /// shared payload file (`shared_payload_rel`, digest `shared_payload_digest`),
+    /// so a single payload stands in for all of them.
+    ///
+    /// Returns the highest generation seeded.
+    #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn seed_scale(
+        &self,
+        start: u64,
+        count: u64,
+        inodes: u64,
+        version: u64,
+        root: u64,
+        uuid: [u8; 16],
+        shared_payload_rel: &str,
+        shared_payload_digest: [u8; 32],
+    ) -> Result<u64> {
+        assert!(count >= 1, "seed_scale needs at least one generation");
+        let inodes = inodes.max(1);
+        self.ensure_dirs()?;
+        let mut entries: Vec<CatalogueEntry> = Vec::with_capacity(count as usize);
+        for i in 0..count {
+            let g = start + i;
+            let inode = 1 + (g % inodes);
+            let region = ManifestRegion {
+                logical_start: 0,
+                logical_end: 1,
+                owner_generation: g,
+                payload_offset: 0,
+                payload_rel_path: shared_payload_rel.to_string(),
+                payload_blake3: shared_payload_digest,
+                visible_bytes: 1,
+                physical_bytes: 1,
+                profile_kind: 3,
+                certification: 3,
+                ekbloom_object_id: None,
+            };
+            let manifest = GenerationManifest {
+                schema: MANIFEST_SCHEMA,
+                generation: g,
+                volume_uuid: uuid,
+                inode,
+                inode_version: version,
+                root,
+                backend: "scale-fixture".to_string(),
+                ekbloom_version: EKBLOOM_VERSION.to_string(),
+                ekbloom_format: ekbloom_format_version(),
+                profile: "full".to_string(),
+                profile_kind: 3,
+                logical_start: 0,
+                logical_end: 1,
+                physical_start: 0,
+                physical_end: 1,
+                interval: None,
+                depth: None,
+                region_bytes: None,
+                certification: CertificationState::Built,
+                certification_method: "scale-fixture".to_string(),
+                payload_rel_path: String::new(),
+                ekbloom_object_id: None,
+                payload_blake3: [0u8; 32],
+                visible_bytes: 1,
+                physical_bytes: 1,
+                concealed_bytes: 0,
+                source_bytes: 1,
+                components: Vec::new(),
+                base_generation: None,
+                base_manifest_blake3: None,
+                overlay_depth: 0,
+                regions: vec![region],
+                manifest_blake3: [0u8; 32],
+            }
+            .sealed();
+            let path = self.manifest_path(g);
+            let tmp = path.with_extension("manifest.tmp");
+            fs::write(&tmp, manifest.encode())?;
+            fs::rename(&tmp, &path)?;
+            entries.push(CatalogueEntry {
+                generation: g,
+                volume_uuid: uuid,
+                inode,
+                inode_version: version,
+                root,
+                manifest_blake3: manifest.manifest_blake3,
+                payload_blake3: manifest.payload_blake3,
+            });
+        }
+        fsync_dir(&self.manifest_dir())?;
+        self.catalogue.bulk_load(&entries)?;
+        Ok(start + count - 1)
+    }
+
+    /// One-time migration for a pre-catalogue volume: when the catalogue has no
+    /// segments but manifests (or a legacy `HEAD`) already exist, fold every
+    /// existing manifest's discovery identity into the catalogue in bulk so the
+    /// fast path is complete. A volume whose catalogue already has segments is left
+    /// untouched. Returns whether anything was migrated.
+    pub fn migrate_legacy_catalogue(&self) -> Result<bool> {
+        // O(1) fast path: a stat of segment 0 tells us the catalogue is already
+        // initialised, so the common publication path never lists the directory.
+        if self.catalogue.segment_path(0).exists() {
+            return Ok(false);
+        }
+        // Segment 0 is absent: only bulk-load when the catalogue is truly empty
+        // (this rare path may list, but it runs at most once per pre-catalogue
+        // volume).
+        if !self.catalogue.is_empty() {
+            return Ok(false);
+        }
+        let mut gens: BTreeSet<u64> = self.manifest_generations()?.into_iter().collect();
+        if let Some(head) = self.read_head() {
+            gens.extend(head);
+        }
+        if gens.is_empty() {
+            return Ok(false);
+        }
+        let mut entries = Vec::with_capacity(gens.len());
+        for g in gens {
+            if let Some(m) = self.load_generation(g)? {
+                entries.push(CatalogueEntry {
+                    generation: m.generation,
+                    volume_uuid: m.volume_uuid,
+                    inode: m.inode,
+                    inode_version: m.inode_version,
+                    root: m.root,
+                    manifest_blake3: m.manifest_blake3,
+                    payload_blake3: m.payload_blake3,
+                });
+            }
+        }
+        self.catalogue.bulk_load(&entries)?;
+        Ok(true)
     }
 
     /// The total on-disk bytes of committed payloads under `ekbloom/`.
@@ -1373,13 +2188,14 @@ pub struct ManifestationState {
 }
 
 impl ManifestationState {
-    /// Recover the published set from disk.
+    /// Recover the published set from disk (newest per inode). Uses the
+    /// append-only catalogue when usable, and the full validated scan otherwise.
     pub fn recover(store: GenerationStore, uuid: [u8; 16]) -> Result<Arc<ManifestationState>> {
-        let recovery = store.recover()?;
+        let latest = store.latest_published()?;
         let state = ManifestationState {
             store,
             uuid,
-            published: RwLock::new(recovery.newest_per_inode()),
+            published: RwLock::new(latest.published),
         };
         Ok(Arc::new(state))
     }
@@ -2475,13 +3291,13 @@ impl ManifestationEngine {
         cfg: ManifestationConfig,
     ) -> Result<(Arc<ManifestationEngine>, ManifestationEngineReport)> {
         store.ensure_dirs()?;
-        let recovery = store.recover()?;
-        let recovered_generations = recovery.generations.len() as u64;
-        let recovered_rejected = recovery.rejected;
+        let latest = store.latest_published()?;
+        let recovered_generations = latest.committed;
+        let recovered_rejected = latest.rejected;
         let state = Arc::new(ManifestationState {
             store: store.clone(),
             uuid,
-            published: RwLock::new(recovery.newest_per_inode()),
+            published: RwLock::new(latest.published),
         });
         let next_generation = store.next_generation()?;
         let workers = if cfg.workers == 0 {
@@ -2941,6 +3757,51 @@ mod tests {
         let bytes = encode_head(&[3, 1, 2]);
         assert_eq!(decode_head(&bytes), Some(vec![3, 1, 2]));
         assert_eq!(decode_head(&bytes[..bytes.len() - 1]), None);
+    }
+
+    #[test]
+    fn catalogue_record_pointer_and_summary_round_trip() {
+        let e = CatalogueEntry {
+            generation: 9,
+            volume_uuid: [3u8; 16],
+            inode: 4,
+            inode_version: 2,
+            root: 100,
+            manifest_blake3: [7u8; 32],
+            payload_blake3: [8u8; 32],
+        };
+        let rec = e.encode_record(CAT_FAMILY_MANIFEST);
+        assert_eq!(rec.len(), CAT_RECORD_BYTES as usize);
+        let (back, used) = CatalogueEntry::decode_record(&rec, CAT_FAMILY_MANIFEST).unwrap();
+        assert_eq!(back, e);
+        assert_eq!(used, rec.len());
+        // Wrong family, truncation and tampering are all rejected.
+        assert!(CatalogueEntry::decode_record(&rec, CAT_FAMILY_TRIGRAM).is_none());
+        assert!(
+            CatalogueEntry::decode_record(&rec[..rec.len() - 1], CAT_FAMILY_MANIFEST).is_none()
+        );
+        let mut bad = rec.clone();
+        bad[20] ^= 0xFF;
+        assert!(CatalogueEntry::decode_record(&bad, CAT_FAMILY_MANIFEST).is_none());
+
+        let p = encode_catalogue_pointer(CAT_FAMILY_MANIFEST, 42);
+        assert_eq!(decode_catalogue_pointer(&p, CAT_FAMILY_MANIFEST), Some(42));
+        assert_eq!(decode_catalogue_pointer(&p, CAT_FAMILY_TRIGRAM), None);
+        assert_eq!(
+            decode_catalogue_pointer(&p[..p.len() - 1], CAT_FAMILY_MANIFEST),
+            None
+        );
+
+        let mut folded = BTreeMap::new();
+        folded.insert(e.inode, e.clone());
+        let sum = encode_catalogue_summary(CAT_FAMILY_MANIFEST, 5, 11, &folded);
+        let (map, count) = decode_catalogue_summary(&sum, CAT_FAMILY_MANIFEST, 5).unwrap();
+        assert_eq!(count, 11);
+        assert_eq!(map[&e.inode].generation, e.generation);
+        assert_eq!(map[&e.inode].manifest_blake3, e.manifest_blake3);
+        // A summary addressed to the wrong segment, or corrupt, is rejected.
+        assert!(decode_catalogue_summary(&sum, CAT_FAMILY_MANIFEST, 6).is_none());
+        assert!(decode_catalogue_summary(&sum[..sum.len() - 1], CAT_FAMILY_MANIFEST, 5).is_none());
     }
 
     #[test]

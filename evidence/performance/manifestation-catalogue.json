@@ -1,0 +1,134 @@
+{
+  "assertions": {
+    "fast_catalogue_path_used_at_every_checkpoint": true,
+    "inodes": 64,
+    "publication_growth_ratio_G": 1000.0,
+    "publication_is_growth_independent": true,
+    "publication_p50_ratio_first_to_last": 0.9948594535933448,
+    "publication_p99_ratio_first_to_last": 0.8504376693513457,
+    "publishes_measured_per_checkpoint": 256,
+    "recovery_equals_full_scan_at_every_checkpoint": true
+  },
+  "checkpoints": [
+    {
+      "catalogue_bytes": 164924,
+      "generations": 1000,
+      "inodes": 64,
+      "publication": {
+        "directory_operations_per_publication": 1,
+        "legacy_head_bytes_rewritten_counterfactual": 8020,
+        "metadata_bytes_rewritten_per_publication": 128,
+        "p50_ns": 2342358,
+        "p99_ns": 4169586,
+        "samples": 256
+      },
+      "recovery": {
+        "equals_full_scan": true,
+        "fast_micros": 325,
+        "fast_path_catalogue_used": true,
+        "full_scan_generations": 1256,
+        "full_scan_micros": 5807,
+        "full_scan_rejected": 0
+      },
+      "resident_kib": 4464
+    },
+    {
+      "catalogue_bytes": 1354112,
+      "generations": 10000,
+      "inodes": 64,
+      "publication": {
+        "directory_operations_per_publication": 1,
+        "legacy_head_bytes_rewritten_counterfactual": 80020,
+        "metadata_bytes_rewritten_per_publication": 128,
+        "p50_ns": 2320958,
+        "p99_ns": 3490980,
+        "samples": 256
+      },
+      "recovery": {
+        "equals_full_scan": true,
+        "fast_micros": 371,
+        "fast_path_catalogue_used": true,
+        "full_scan_generations": 10256,
+        "full_scan_micros": 52873,
+        "full_scan_rejected": 0
+      },
+      "resident_kib": 18776
+    },
+    {
+      "catalogue_bytes": 13237728,
+      "generations": 100000,
+      "inodes": 64,
+      "publication": {
+        "directory_operations_per_publication": 1,
+        "legacy_head_bytes_rewritten_counterfactual": 800020,
+        "metadata_bytes_rewritten_per_publication": 128,
+        "p50_ns": 2342930,
+        "p99_ns": 3810557,
+        "samples": 256
+      },
+      "recovery": {
+        "equals_full_scan": true,
+        "fast_micros": 440,
+        "fast_path_catalogue_used": true,
+        "full_scan_generations": 100256,
+        "full_scan_micros": 483330,
+        "full_scan_rejected": 0
+      },
+      "resident_kib": 161248
+    },
+    {
+      "catalogue_bytes": 132069756,
+      "generations": 1000000,
+      "inodes": 64,
+      "publication": {
+        "directory_operations_per_publication": 1,
+        "legacy_head_bytes_rewritten_counterfactual": 8000020,
+        "metadata_bytes_rewritten_per_publication": 128,
+        "p50_ns": 2330317,
+        "p99_ns": 3545973,
+        "samples": 256
+      },
+      "recovery": {
+        "equals_full_scan": true,
+        "fast_micros": 1463,
+        "fast_path_catalogue_used": true,
+        "full_scan_generations": 1000256,
+        "full_scan_micros": 29140975,
+        "full_scan_rejected": 0
+      },
+      "resident_kib": 1584412
+    }
+  ],
+  "design": {
+    "catalogue_dir": "manifests/catalogue/",
+    "pointer": "CURRENT, rewritten only when a segment is sealed",
+    "publication": "O(1) amortized append + fsync (no whole-list rewrite)",
+    "record": "fixed 128 bytes: body_len + family + schema + generation + uuid + inode + inode_version + root + manifest_blake3 + payload_blake3 + crc32c",
+    "recovery_fast": "newest usable summary + only the segments after it (suffix)",
+    "recovery_full": "legacy HEAD union full *.manifest scan, validated (equals a scan)",
+    "segments": "seg-<index:010>.cat, append-only, immutable once sealed (128 KiB)",
+    "summary": "sum-<through:010>.sum, immutable folded newest-per-inode, crc32c"
+  },
+  "environment": {
+    "bench": {
+      "cgroup_memory_max": "8589934592",
+      "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "container_image": null,
+      "cores_visible": 8,
+      "cpu_max": "800000 100000",
+      "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+      "fuse_enable_uring": true,
+      "kernel_release": "7.2.9-2-cachyos",
+      "likely_container": true,
+      "machine": "x86_64",
+      "perf_counters_available": false,
+      "perf_event_paranoid": "2",
+      "ram_total_bytes": 134723346432
+    },
+    "profile": "release",
+    "resident_kib_end": 1584412
+  },
+  "generated_by": "tests/manifestation_catalogue.rs",
+  "note": "Single-run, single-host measurements; absolute nanoseconds are host/build sensitive and the shape is the point. Checkpoints are seeded with a bulk fixture (`GenerationStore::seed_scale`) so a volume with up to 1e6 generations can be materialised without ~1e6*3 fsyncs; the *publication* cost is then measured with real `GenerationStore::publish` calls on top of the G-sized catalogue. `legacy_head_bytes_rewritten_counterfactual` is the old protocol's per-publication HEAD rewrite size (8*(G+1)+12 bytes) computed analytically, not measured.",
+  "schema": "orfs.performance.manifestation-catalogue.v1"
+}

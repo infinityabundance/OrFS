@@ -34,15 +34,21 @@ backing/
 └── .or_bloom/
     ├── ekbloom/      # EKBLOOM payloads ("<inode>-v<version>-r<root>-g<gen>.ekb")
     ├── trigram/      # optional other acceleration families (Phase 9)
+    │   └── catalogue/  # append-only discovery log for trigram manifests
     ├── suffix/
     ├── image/
     ├── directory/
-    └── manifests/    # generation manifests ("<gen>.manifest") + HEAD
+    └── manifests/    # generation manifests ("<gen>.manifest")
+        ├── catalogue/  # append-only discovery log (segments + summary + pointer)
+        │   ├── CURRENT
+        │   ├── seg-<index:010>.cat
+        │   └── sum-<through:010>.sum
+        └── HEAD        # legacy advertisement, read-compatible only
 ```
 
 `src/volume.rs::BLOOM_SUBDIRS` is the single source of truth for the subdirectory
 set. Generation manifests live under `manifests/`; EKBLOOM payloads under
-`ekbloom/`.
+`ekbloom/`; the append-only catalogue under `manifests/catalogue/` (§7.1).
 
 ## 3. Generation identity (research §2 I6, §9)
 
@@ -136,25 +142,71 @@ in-memory published set and the on-disk recovery are empty).
 A generation becomes visible through an explicit, crash-safe protocol:
 
 ```
-1. write payload   (builder writes "<…>.ekb" atomically: tmp + fsync + rename)
-2. write manifest  ("<gen>.manifest.tmp" -> fsync -> rename -> fsync(dir))
-3. fsync           (payload and manifest are durable before advertisement)
-4. publish         (update "manifests/HEAD": tmp -> fsync -> rename -> fsync(dir))
+1. write payload    (builder writes "<…>.ekb" atomically: tmp + fsync + rename)
+2. append catalogue (one immutable, CRC32C-framed record: O_APPEND + fsync)
+3. write manifest   ("<gen>.manifest.tmp" -> fsync -> rename)
+4. batch fsync      (the manifest directory is fsynced for small volumes and
+                     otherwise at the catalogue segment boundary)
 ```
 
-Only after the immutable, self-validating manifest is durable is the generation
-**advertised** in `HEAD`. Recovery selects the **newest valid committed
-generation** per inode:
+The **commit point** is the durable catalogue record together with the durable
+manifest. The catalogue is appended *before* the manifest is written, so any
+durable manifest is already catalogued; a catalogue entry whose manifest is
+missing or invalid is detected at recovery and triggers a full validated scan.
+Publication never rewrites a whole discovery list, so its cost is **O(1)
+[amortized]** and flat in the number of accumulated generations `G`. (Before this
+change publication rewrote the entire `HEAD` generation list — read + sort +
+serialize + fsync a file whose length grows with `G` — i.e. `O(G)` per
+publication and `O(G²)` cumulatively.)
 
-* discovery prefers `HEAD`; if `HEAD` is missing or torn, every `*.manifest` is
-  scanned (the same fallback discipline as index checkpoints);
+Recovery selects the **newest valid committed generation** per inode:
+
+* discovery prefers the append-only catalogue; the legacy `HEAD` advisory and the
+  full `*.manifest` scan remain as the backward-compatible fallback;
 * each candidate is validated by its self-digest and, when the payload is
   present, by its recorded BLAKE3;
 * an invalid candidate is **skipped**, never used, and never invalidates an
   earlier commit.
 
-A torn manifest or torn `HEAD` therefore costs at most the newest generation, not
-correctness. (Verified by `recovery_selects_newest_valid_and_ignores_torn`.)
+A torn manifest, a torn catalogue record, a corrupt catalogue summary, or a torn
+legacy `HEAD` therefore costs at most the newest generation, not correctness.
+(Verified by `recovery_selects_newest_valid_and_ignores_torn` and
+`catalogue_equals_full_scan_and_survives_damage`.)
+
+### 7.1 The append-only generation catalogue
+
+The catalogue (`manifests/catalogue/`) is an immutable, append-only record log
+that replaces the whole-list rewrite:
+
+| file | role |
+|---|---|
+| `seg-<index:010>.cat` | append-only segment; immutable once sealed; fixed 128-byte records |
+| `CURRENT` | small pointer naming the active segment; rewritten **only** when a segment is sealed, never per record |
+| `sum-<through:010>.sum` | immutable folded *newest-per-inode* summary, written at a seal |
+
+A **record** is a fixed body — `family`, schema, `generation`, `volume_uuid`,
+`inode`, `inode_version`, `root`, `manifest_blake3`, `payload_blake3` — framed as
+`body_len || body || crc32c`. A segment is sealed (`sum-<index>.sum` written,
+`CURRENT` advanced) once it passes 128 KiB; a fresh segment then receives further
+appends. Because every record is fixed-size and checksummed, a **torn or
+truncated tail is detected and skipped**, and a **corrupt summary is ignored** so
+recovery re-reads the segments (or an earlier summary). A sealed segment, like a
+manifest, is never rewritten (non-withdrawal).
+
+The summary folds the **newest entry per inode** through the sealed segment, so
+recovery reads the newest usable summary plus **only the segments after it**
+(proportional to the catalogue suffix, not the whole history). The same design is
+used, with a distinct family tag, for the concealed trigram registry
+(`trigram/catalogue/`).
+
+The catalogue is **derived and reconstructible**: deleting `manifests/catalogue/`
+never changes the recoverable set — recovery falls back to the legacy `HEAD`/
+full `*.manifest` scan and the catalogue is re-seeded by the next publication
+(for example `orfs manifest`/`orfs grow`). A manifest-directory `fsync` (whose
+cost grows with `G`) is batched to the seal, keeping publication amortized
+constant; a manifest whose directory entry is not yet durable is simply rejected
+at recovery (the fast path falls back and selects the previous, committed
+generation).
 
 ## 8. Retention policy and rebuild
 
@@ -170,6 +222,8 @@ The retention policy distinguishes:
   example a job cancelled after it wrote physical bytes, or a manifest whose
   payload was torn). `GenerationStore::sweep_orphans` is the only reclamation
   path and removes *only* unreferenced payloads.
+* **the catalogue** — derived discovery state; it is rebuildable (see §7.1) and
+  its segments and summaries are immutable (appended, never rewritten).
 
 EKBLOOM's full-history mode may carry a stronger retention contract of its own;
 this document governs only OrFS's disposable acceleration plane and does not
@@ -235,6 +289,11 @@ generations synchronously, and report per-object outcomes. `orfs mount
 * **Backpressure** — a bounded queue does not starve authoritative commits.
 * **Round-trip** — a randomized (`proptest`) manifest encode/decode round-trips
   and rejects any tampered byte.
+* **Catalogue** — the append-only catalogue round-trips, rejects a wrong-family,
+  truncated, or tampered record/pointer/summary, and (in
+  `tests/manifestation_catalogue.rs`) its accelerated recovery equals a full scan
+  on the recoverable set under a torn record, a corrupt summary, and a missing
+  manifest or payload.
 
 Evidence: `evidence/recovery/manifested-generation.json` (publication,
 cancellation, recovery, version-qualification verdicts and the committed
@@ -425,3 +484,24 @@ manifested-plane recovery grows with the accumulated generation count. See
 **`docs/PERFORMANCE.md` §13** for the numbers and
 `evidence/performance/history-scaling.json` for the evidence; run the sweep with
 `sh scripts/container-history-scaling.sh`.
+
+## 15. The append-only catalogue and its scaling court (reviewer task)
+
+`GenerationStore` and `TrigramStore` discover committed generations through the
+append-only catalogue described in §7.1. The catalogue is **derived** (Plane C) and
+never authoritative: it is rebuilt from the immutable manifests after damage, its
+segments are immutable, and the authoritative log and every manifest are
+untouched by it.
+
+`tests/manifestation_catalogue.rs` is the acceptance/scaling court. Its always-on
+parts assert that the catalogue-accelerated recovery equals a full scan on the
+recoverable set after a torn record, a corrupt summary, and a missing manifest or
+payload, and that per-publication work does not scale with `G`. Its opt-in sweep
+(`ORFS_CATALOGUE_SCALING=1`, run by
+`sh scripts/container-manifestation-catalogue.sh` in a release build) publishes and
+recovers at **1 000 / 10 000 / 100 000 / 1 000 000** accumulated generations and
+records publication p50/p99, metadata bytes rewritten per publication, directory
+operations, recovery time (catalogue-accelerated and full scan), and resident
+memory. It writes `evidence/performance/manifestation-catalogue.json`; the numbers
+and the honest caveats (single run, single host; a bulk fixture for the very large
+checkpoints) are discussed in **`docs/PERFORMANCE.md` §14**.

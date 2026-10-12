@@ -127,10 +127,11 @@ per-phase record.
 | 39 | Group commit extended to ordinary write workloads (both transports) | **complete** |
 | 40 | Whole-system history-scaling court | **complete** |
 | 41 | Acceptance audit re-run at HEAD; residual doc-drift closed | **complete** |
+| 42 | Immutable append-only manifestation catalogue (growth-independent publication) | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–41 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–42 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.1.0 is published on crates.io (see `docs/PUBLISHING.md`).
 

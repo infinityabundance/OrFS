@@ -77,6 +77,7 @@ enable it (see `docs/FUSE_URING.md`).
 | 39 | Group commit extended to ordinary write workloads (both transports) | complete |
 | 40 | Whole-system history-scaling court | complete |
 | 41 | Acceptance audit re-run at HEAD; residual doc-drift closed | complete |
+| 42 | Immutable append-only manifestation catalogue (growth-independent publication) | complete |
 
 Honest non-claims: the image pixel-surface pyramid is **not materialised** (only
 its geometry is implemented), and no performance superiority of F2 or of the

@@ -837,3 +837,75 @@ remount; and the workload is library-level (`Namespace::planned_read`), not a FU
 round trip. `evidence/performance/history-scaling.json` is the machine-generated
 source of truth; a fresh sweep overwrites it and the quoted nanoseconds will move
 (the byte counts and the qualitative shape are stable).
+
+---
+
+## 14. Reviewer task — the append-only generation catalogue (publication cost flat in `G`)
+
+**The defect.** Publication rewrote the entire `HEAD` generation list on every
+publication — read + sort + serialize + fsync a file whose length grows with the
+number of generations `G` — i.e. `O(G)` per publication and `O(G)²` cumulatively;
+recovery re-merged that list into a scan with a linear `Vec::contains`, another
+`O(G)²`. The concealed **trigram** registry had the same pattern.
+
+**The fix.** Both stores now discover committed generations through an immutable,
+append-only catalogue (`manifests/catalogue/`, `trigram/catalogue/`; format and
+guarantees in `docs/MANIFESTATION.md` §7.1): fixed 128-byte CRC32C-framed records
+appended to `seg-*.cat`, a `CURRENT` pointer rewritten only at a seal, and
+immutable folded `sum-*.sum` summaries. Publication appends one record (O(1)
+amortized, no whole-list rewrite); the catalogue-accelerated recovery reads the
+newest usable summary plus only the segments after it (suffix-proportional); a torn
+record, a corrupt summary, or a missing derived file is skipped and recovery falls
+back to the unchanged validated `*.manifest` scan, so the recoverable set is
+exactly a full scan's.
+
+**Court.** `tests/manifestation_catalogue.rs`, run by
+`sh scripts/container-manifestation-catalogue.sh`. A seed fixture materialises
+`G` generations (bulk, to avoid `~1e6·3` fsyncs), then **real**
+`GenerationStore::publish` calls are measured on top of the `G`-sized catalogue;
+recovery is measured both ways. `inodes = 64`, 256 measured publications per
+checkpoint, release build.
+
+| `G` | publish p50 | publish p99 | bytes rewritten / pub | dir ops / pub | fast recovery | full-scan recovery | RSS end |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 000     | 2.34 ms | 4.17 ms | **128 B** | 1 | 325 µs  | 5.8 ms  | 4.4 MiB |
+| 10 000    | 2.32 ms | 3.49 ms | **128 B** | 1 | 371 µs  | 52.9 ms | 18.3 MiB |
+| 100 000   | 2.34 ms | 3.81 ms | **128 B** | 1 | 440 µs  | 483.3 ms | 157.5 MiB |
+| 1 000 000 | 2.33 ms | 3.55 ms | **128 B** | 1 | 1.463 ms | 29.1 s\* | 1.51 GiB |
+
+\* The manifest directory is `fsync`ed on every publication for small volumes
+(`G ≤ 1024`) and past that threshold only at a catalogue segment boundary (every
+128 KiB of publication), because a directory `fsync` costs `O(entries)`; the
+amortized cost is therefore well under one directory fsync per 1 000 publications.
+A 256-sample publication window need not include a seal, so the measured p50 is
+the steady-state append. The full-scan recovery is I/O-bound and **host-load
+sensitive**: four runs measured 4.84–29.1 s for the same 1 000 256-manifest scan,
+while the catalogue-accelerated path stayed at 1.2–1.5 ms.
+
+**Findings, stated honestly.**
+
+1. **Per-publication work is growth-independent (the decisive property).** The
+   metadata bytes rewritten per publication is a constant **128 B** at every
+   checkpoint — versus the old protocol's counterfactual `8·(G+1)+12` bytes
+   (≈8 KB at `G=1 000`, ≈8 MB at `G=1 000 000`). Publication p50 is 2.34 ms →
+   2.33 ms across a **1 000×** growth in `G` (ratio **0.995**; p99 ratio 0.85).
+   The court asserts p50/p99 do not grow linearly with `G`.
+2. **Recovery equals a full scan at every checkpoint**, and the
+   catalogue-accelerated path is suffix-proportional: it stayed at 325 µs →
+   1.463 ms across **1 000×** `G` (it reads the folded newest-per-inode summary
+   plus the suffix segment), whereas the full validated `*.manifest` scan is
+   linear and I/O-bound, 5.8 ms → 29.1 s in this run. The full scan's memory also
+   grows (it holds every manifest: 1.51 GiB RSS at 1M); the fast path is
+   `O(#inodes)`.
+3. **Torn-safety is unchanged.** The always-on court plants a torn record, a
+   corrupt summary and a missing manifest/payload and asserts the recoverable set
+   still equals the full scan's, and never advances past an invalid generation.
+
+**Caveats.** Single run, single host, release build; absolute nanoseconds are
+host/disk sensitive and the *shape* (flat publication, suffix-proportional fast
+recovery, linear full scan) is the point. Large checkpoints are seeded with a bulk
+fixture rather than `G` real publications, and the publication measurement is a
+256-sample window that may not include a (batched) segment seal. The old
+protocol's per-publication byte count is a counterfactual computed from its known
+formula, not measured here. `evidence/performance/manifestation-catalogue.json`
+is the machine-generated source of truth.

@@ -20,6 +20,13 @@ exclude = ["/evidence", "/docs", "/scripts", "/research", "/mnt-scratch"]
 [lib]
 name = "orfs"
 path = "src/lib.rs"
+# The library carries no doc-tests (`cargo test --doc` reports "running 0 tests"),
+# and the doctest target is the one that trips the cargo/rustdoc `--extern`
+# staleness race described under the `endurance` feature below (rustdoc is handed
+# a dependency rlib path that a concurrent test-target build has already
+# replaced). Disabling it keeps the default `cargo test` gate deterministic and
+# loses no coverage.
+doctest = false
 
 [[bin]]
 name = "orfs"

@@ -74,6 +74,7 @@ enable it (see `docs/FUSE_URING.md`).
 | 36 | Publish `orfs` v0.1.0 to crates.io | complete |
 | 37 | Object-localized read selection + allocation-light authoritative fallback | complete |
 | 38 | Docs-from-receipts check; documentation reconciled to evidence | complete |
+| 39 | Group commit extended to ordinary write workloads (both transports) | complete |
 
 Honest non-claims: the image pixel-surface pyramid is **not materialised** (only
 its geometry is implemented), and no performance superiority of F2 or of the

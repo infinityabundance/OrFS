@@ -551,23 +551,6 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         }
     }
 
-    fn check_dir_write(&self, core: &C, req: &Req<'_>, parent: u64, mask: u32) -> Result<(), i32> {
-        let st = core.getattr(parent, core.root()).map_err(|e| errno(&e))?;
-        if st.kind != InodeType::Directory {
-            return Err(libc::ENOTDIR);
-        }
-        if !has_permission_grouped(
-            req.uid,
-            req.gid,
-            &crate::fuse::caller_groups(req.pid),
-            &st,
-            mask,
-        ) {
-            return Err(libc::EACCES);
-        }
-        Ok(())
-    }
-
     #[allow(clippy::too_many_lines)]
     fn serve(&self, req: &Req<'_>) -> Reply {
         match req.opcode {
@@ -671,100 +654,97 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         let uid = get_u32(req.op, 76);
         let gid = get_u32(req.op, 80);
 
-        let mut core = self.fs.inner.core.lock();
-        let st = match core.getattr(req.nodeid, core.root()) {
-            Ok(st) => st,
-            Err(e) => return Reply::Err(errno(&e)),
-        };
-        let is_root = req.uid == 0;
-        let owner_or_root = is_root || req.uid == st.uid;
-        let meta_change = valid & (FATTR_MODE | FATTR_UID | FATTR_GID) != 0;
-        let time_change = valid & (FATTR_ATIME | FATTR_MTIME) != 0;
-        // Linux `ATTR_TOUCH` (both times `UTIME_NOW`, e.g. `utimes(path, NULL)`)
-        // needs only write permission for a non-owner; every other time form
-        // requires ownership (mirrors the classical transport).
-        let touch_like =
-            !meta_change && valid & FATTR_ATIME_NOW != 0 && valid & FATTR_MTIME_NOW != 0;
-        if touch_like {
-            if !owner_or_root
-                && !has_permission_grouped(
-                    req.uid,
-                    req.gid,
-                    &crate::fuse::caller_groups(req.pid),
-                    &st,
-                    0o2,
-                )
-            {
-                return Reply::Err(libc::EACCES);
-            }
-        } else if (meta_change || time_change) && !owner_or_root {
-            return Reply::Err(libc::EPERM);
-        }
-        let uid_changes = valid & FATTR_UID != 0 && uid != st.uid;
-        if uid_changes && !is_root {
-            return Reply::Err(libc::EPERM);
-        }
-        let gid_changes = valid & FATTR_GID != 0 && gid != st.gid;
-        if gid_changes
-            && !is_root
-            && (!owner_or_root || !crate::fuse::caller_in_group(req.pid, req.gid, gid))
-        {
-            return Reply::Err(libc::EPERM);
-        }
+        // The permission model reads the authoritative inode, and the change must be
+        // decided against the same state it commits against, so the whole check +
+        // mutate runs inside one job under the core lock. Routing through
+        // `Inner::mutate` also lets a truncate share a group-commit batch's barrier.
+        let ino_raw = req.nodeid;
+        let actor_uid = req.uid;
+        let actor_gid = req.gid;
+        let actor_pid = req.pid;
+        let groups = crate::fuse::caller_groups(actor_pid);
+        let is_root = actor_uid == 0;
         let writable_fh = valid & FATTR_FH != 0
             && self
                 .fs
                 .inner
                 .handle(fh)
                 .is_some_and(|h| !h.is_dir && (h.flags & libc::O_ACCMODE) != libc::O_RDONLY);
-        if valid & FATTR_SIZE != 0
-            && !writable_fh
-            && !has_permission_grouped(
-                req.uid,
-                req.gid,
-                &crate::fuse::caller_groups(req.pid),
-                &st,
-                0o2,
-            )
-        {
-            return Reply::Err(libc::EACCES);
-        }
-        let mut effective_mode = (valid & FATTR_MODE != 0).then_some(mode & 0o7777);
-        if valid & FATTR_SIZE != 0 && !is_root {
-            let cleared = st.mode & !(libc::S_ISUID | libc::S_ISGID);
-            if cleared != st.mode {
-                effective_mode =
-                    Some(effective_mode.unwrap_or(st.mode) & !(libc::S_ISUID | libc::S_ISGID));
+        let res = self.fs.inner.mutate(move |core| {
+            let st = core.getattr(ino_raw, core.root())?;
+            let owner_or_root = is_root || actor_uid == st.uid;
+            let meta_change = valid & (FATTR_MODE | FATTR_UID | FATTR_GID) != 0;
+            let time_change = valid & (FATTR_ATIME | FATTR_MTIME) != 0;
+            // Linux `ATTR_TOUCH` (both times `UTIME_NOW`, e.g. `utimes(path, NULL)`)
+            // needs only write permission for a non-owner; every other time form
+            // requires ownership (mirrors the classical transport).
+            let touch_like =
+                !meta_change && valid & FATTR_ATIME_NOW != 0 && valid & FATTR_MTIME_NOW != 0;
+            if touch_like {
+                if !owner_or_root
+                    && !has_permission_grouped(actor_uid, actor_gid, &groups, &st, 0o2)
+                {
+                    return Err(OrfsError::PermissionDenied);
+                }
+            } else if (meta_change || time_change) && !owner_or_root {
+                return Err(OrfsError::NotPermitted);
             }
-        }
-        let attrs = SetAttr {
-            mode: effective_mode,
-            uid: (valid & FATTR_UID != 0).then_some(uid),
-            gid: (valid & FATTR_GID != 0).then_some(gid),
-            size: (valid & FATTR_SIZE != 0).then_some(size),
-            atime: if valid & FATTR_ATIME_NOW != 0 {
-                Some(Timespec::new(now_secs(), 0))
-            } else if valid & FATTR_ATIME != 0 {
-                Some(Timespec::new(atime as i64, atimensec))
-            } else {
-                None
-            },
-            mtime: if valid & FATTR_MTIME_NOW != 0 {
-                Some(Timespec::new(now_secs(), 0))
-            } else if valid & FATTR_MTIME != 0 {
-                Some(Timespec::new(mtime as i64, mtimensec))
-            } else {
-                None
-            },
-        };
-        if let Err(e) = core.setattr(req.nodeid, &attrs) {
+            let uid_changes = valid & FATTR_UID != 0 && uid != st.uid;
+            if uid_changes && !is_root {
+                return Err(OrfsError::NotPermitted);
+            }
+            let gid_changes = valid & FATTR_GID != 0 && gid != st.gid;
+            if gid_changes
+                && !is_root
+                && (!owner_or_root || !crate::fuse::caller_in_group(actor_pid, actor_gid, gid))
+            {
+                return Err(OrfsError::NotPermitted);
+            }
+            if valid & FATTR_SIZE != 0
+                && !writable_fh
+                && !has_permission_grouped(actor_uid, actor_gid, &groups, &st, 0o2)
+            {
+                return Err(OrfsError::PermissionDenied);
+            }
+            let mut effective_mode = (valid & FATTR_MODE != 0).then_some(mode & 0o7777);
+            if valid & FATTR_SIZE != 0 && !is_root {
+                let cleared = st.mode & !(libc::S_ISUID | libc::S_ISGID);
+                if cleared != st.mode {
+                    effective_mode =
+                        Some(effective_mode.unwrap_or(st.mode) & !(libc::S_ISUID | libc::S_ISGID));
+                }
+            }
+            let attrs = SetAttr {
+                mode: effective_mode,
+                uid: (valid & FATTR_UID != 0).then_some(uid),
+                gid: (valid & FATTR_GID != 0).then_some(gid),
+                size: (valid & FATTR_SIZE != 0).then_some(size),
+                atime: if valid & FATTR_ATIME_NOW != 0 {
+                    Some(Timespec::new(now_secs(), 0))
+                } else if valid & FATTR_ATIME != 0 {
+                    Some(Timespec::new(atime as i64, atimensec))
+                } else {
+                    None
+                },
+                mtime: if valid & FATTR_MTIME_NOW != 0 {
+                    Some(Timespec::new(now_secs(), 0))
+                } else if valid & FATTR_MTIME != 0 {
+                    Some(Timespec::new(mtime as i64, mtimensec))
+                } else {
+                    None
+                },
+            };
+            core.setattr(ino_raw, &attrs)?;
+            Ok(0)
+        });
+        if let Err(e) = res {
             return Reply::Err(errno(&e));
         }
-        let updated = match core.getattr(req.nodeid, core.root()) {
+        let view = self.read_view();
+        let updated = match view.getattr(ino_raw, view.root()) {
             Ok(st) => st,
             Err(e) => return Reply::Err(errno(&e)),
         };
-        drop(core);
         self.fs.inner.metrics.lock().setattr += 1;
         Reply::Attr(attr_from_stat(&updated))
     }
@@ -786,19 +766,26 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
             Some(v) => v,
             None => return Reply::Err(libc::EINVAL),
         };
-        let mut core = self.fs.inner.core.lock();
-        if let Err(e) = self.check_dir_write(&*core, req, req.nodeid, 0o3) {
-            return Reply::Err(e);
-        }
-        let ino = match core.symlink(req.nodeid, name, target, req.uid, req.gid) {
-            Ok(i) => i,
+        let nodeid = req.nodeid;
+        let actor_uid = req.uid;
+        let actor_gid = req.gid;
+        let groups = crate::fuse::caller_groups(req.pid);
+        let name = name.to_vec();
+        let target = target.to_vec();
+        let res = self.fs.inner.mutate(move |core| {
+            crate::fuse::check_create_uid(core, actor_uid, actor_gid, &groups, nodeid, 0o3)?;
+            let ino = core.symlink(nodeid, &name, &target, actor_uid, actor_gid)?;
+            Ok(ino as i64)
+        });
+        let ino = match res {
+            Ok(i) => i as u64,
             Err(e) => return Reply::Err(errno(&e)),
         };
-        let st = match core.getattr(ino, core.root()) {
+        let view = self.read_view();
+        let st = match view.getattr(ino, view.root()) {
             Ok(st) => st,
             Err(e) => return Reply::Err(errno(&e)),
         };
-        drop(core);
         self.fs.inner.metrics.lock().symlink += 1;
         self.fs.inner.record_lookup(ino);
         Reply::Entry(attr_from_stat(&st))
@@ -814,19 +801,26 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
             return Reply::Err(libc::EOPNOTSUPP);
         }
         let name = trim_name(req.payload);
-        let mut core = self.fs.inner.core.lock();
-        if let Err(e) = self.check_dir_write(&*core, req, req.nodeid, 0o3) {
-            return Reply::Err(e);
-        }
-        let ino = match core.create(req.nodeid, name, mode & 0o7777, req.uid, req.gid) {
-            Ok(i) => i,
+        let nodeid = req.nodeid;
+        let actor_uid = req.uid;
+        let actor_gid = req.gid;
+        let groups = crate::fuse::caller_groups(req.pid);
+        let name = name.to_vec();
+        let perm = mode & 0o7777;
+        let res = self.fs.inner.mutate(move |core| {
+            crate::fuse::check_create_uid(core, actor_uid, actor_gid, &groups, nodeid, 0o3)?;
+            let ino = core.create(nodeid, &name, perm, actor_uid, actor_gid)?;
+            Ok(ino as i64)
+        });
+        let ino = match res {
+            Ok(i) => i as u64,
             Err(e) => return Reply::Err(errno(&e)),
         };
-        let st = match core.getattr(ino, core.root()) {
+        let view = self.read_view();
+        let st = match view.getattr(ino, view.root()) {
             Ok(st) => st,
             Err(e) => return Reply::Err(errno(&e)),
         };
-        drop(core);
         self.fs.inner.metrics.lock().create += 1;
         self.fs.inner.record_lookup(ino);
         Reply::Entry(attr_from_stat(&st))
@@ -838,19 +832,26 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         }
         let mode = get_u32(req.op, 0);
         let name = trim_name(req.payload);
-        let mut core = self.fs.inner.core.lock();
-        if let Err(e) = self.check_dir_write(&*core, req, req.nodeid, 0o3) {
-            return Reply::Err(e);
-        }
-        let ino = match core.mkdir(req.nodeid, name, mode & 0o7777, req.uid, req.gid) {
-            Ok(i) => i,
+        let nodeid = req.nodeid;
+        let actor_uid = req.uid;
+        let actor_gid = req.gid;
+        let groups = crate::fuse::caller_groups(req.pid);
+        let name = name.to_vec();
+        let perm = mode & 0o7777;
+        let res = self.fs.inner.mutate(move |core| {
+            crate::fuse::check_create_uid(core, actor_uid, actor_gid, &groups, nodeid, 0o3)?;
+            let ino = core.mkdir(nodeid, &name, perm, actor_uid, actor_gid)?;
+            Ok(ino as i64)
+        });
+        let ino = match res {
+            Ok(i) => i as u64,
             Err(e) => return Reply::Err(errno(&e)),
         };
-        let st = match core.getattr(ino, core.root()) {
+        let view = self.read_view();
+        let st = match view.getattr(ino, view.root()) {
             Ok(st) => st,
             Err(e) => return Reply::Err(errno(&e)),
         };
-        drop(core);
         self.fs.inner.metrics.lock().mkdir += 1;
         self.fs.inner.record_lookup(ino);
         Reply::Entry(attr_from_stat(&st))
@@ -861,13 +862,18 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
             return Reply::Err(libc::EROFS);
         }
         let name = trim_name(req.payload);
-        let mut core = self.fs.inner.core.lock();
-        if let Err(e) = self.check_dir_write(&*core, req, req.nodeid, 0o3) {
-            return Reply::Err(e);
-        }
-        match core.unlink(req.nodeid, name) {
-            Ok(()) => {
-                drop(core);
+        let nodeid = req.nodeid;
+        let actor_uid = req.uid;
+        let actor_gid = req.gid;
+        let groups = crate::fuse::caller_groups(req.pid);
+        let name = name.to_vec();
+        let res = self.fs.inner.mutate(move |core| {
+            crate::fuse::check_dir_write_uid(core, actor_uid, actor_gid, &groups, nodeid, 0o3)?;
+            core.unlink(nodeid, &name)?;
+            Ok(0)
+        });
+        match res {
+            Ok(_) => {
                 self.fs.inner.metrics.lock().unlink += 1;
                 Reply::Empty
             }
@@ -880,13 +886,18 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
             return Reply::Err(libc::EROFS);
         }
         let name = trim_name(req.payload);
-        let mut core = self.fs.inner.core.lock();
-        if let Err(e) = self.check_dir_write(&*core, req, req.nodeid, 0o3) {
-            return Reply::Err(e);
-        }
-        match core.rmdir(req.nodeid, name) {
-            Ok(()) => {
-                drop(core);
+        let nodeid = req.nodeid;
+        let actor_uid = req.uid;
+        let actor_gid = req.gid;
+        let groups = crate::fuse::caller_groups(req.pid);
+        let name = name.to_vec();
+        let res = self.fs.inner.mutate(move |core| {
+            crate::fuse::check_dir_write_uid(core, actor_uid, actor_gid, &groups, nodeid, 0o3)?;
+            core.rmdir(nodeid, &name)?;
+            Ok(0)
+        });
+        match res {
+            Ok(_) => {
                 self.fs.inner.metrics.lock().rmdir += 1;
                 Reply::Empty
             }
@@ -923,16 +934,20 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
             Some(v) => v,
             None => return Reply::Err(libc::EINVAL),
         };
-        let mut core = self.fs.inner.core.lock();
-        if let Err(e) = self.check_dir_write(&*core, req, req.nodeid, 0o3) {
-            return Reply::Err(e);
-        }
-        if let Err(e) = self.check_dir_write(&*core, req, newdir, 0o3) {
-            return Reply::Err(e);
-        }
-        match core.rename(req.nodeid, oldname, newdir, newname, mode) {
-            Ok(()) => {
-                drop(core);
+        let nodeid = req.nodeid;
+        let actor_uid = req.uid;
+        let actor_gid = req.gid;
+        let groups = crate::fuse::caller_groups(req.pid);
+        let oldname = oldname.to_vec();
+        let newname = newname.to_vec();
+        let res = self.fs.inner.mutate(move |core| {
+            crate::fuse::check_dir_write_uid(core, actor_uid, actor_gid, &groups, nodeid, 0o3)?;
+            crate::fuse::check_dir_write_uid(core, actor_uid, actor_gid, &groups, newdir, 0o3)?;
+            core.rename(nodeid, &oldname, newdir, &newname, mode)?;
+            Ok(0)
+        });
+        match res {
+            Ok(_) => {
                 self.fs.inner.metrics.lock().rename += 1;
                 Reply::Empty
             }
@@ -946,18 +961,24 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         }
         let oldino = get_u64(req.op, 0);
         let newname = trim_name(req.payload);
-        let mut core = self.fs.inner.core.lock();
-        if let Err(e) = self.check_dir_write(&*core, req, req.nodeid, 0o3) {
-            return Reply::Err(e);
-        }
-        if let Err(e) = core.link(oldino, req.nodeid, newname) {
+        let nodeid = req.nodeid;
+        let actor_uid = req.uid;
+        let actor_gid = req.gid;
+        let groups = crate::fuse::caller_groups(req.pid);
+        let newname = newname.to_vec();
+        let res = self.fs.inner.mutate(move |core| {
+            crate::fuse::check_dir_write_uid(core, actor_uid, actor_gid, &groups, nodeid, 0o3)?;
+            core.link(oldino, nodeid, &newname)?;
+            Ok(0)
+        });
+        if let Err(e) = res {
             return Reply::Err(errno(&e));
         }
-        let st = match core.getattr(oldino, core.root()) {
+        let view = self.read_view();
+        let st = match view.getattr(oldino, view.root()) {
             Ok(st) => st,
             Err(e) => return Reply::Err(errno(&e)),
         };
-        drop(core);
         self.fs.inner.metrics.lock().link += 1;
         self.fs.inner.record_lookup(oldino);
         Reply::Entry(attr_from_stat(&st))
@@ -965,9 +986,9 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
 
     fn open(&self, req: &Req<'_>) -> Reply {
         let flags = get_u32(req.op, 0) as i32;
-        let mut core = self.fs.inner.core.lock();
-        let root = core.root();
-        let st = match core.getattr(req.nodeid, root) {
+        let view = self.read_view();
+        let root = view.root();
+        let st = match view.getattr(req.nodeid, root) {
             Ok(st) => st,
             Err(e) => return Reply::Err(errno(&e)),
         };
@@ -992,15 +1013,20 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
             return Reply::Err(libc::EROFS);
         }
         if flags & libc::O_TRUNC != 0 && mask & 0o2 != 0 {
+            // A truncating open is the only mutating part; route it through the
+            // coordinator so it can share a batch's durability barrier.
             let attrs = SetAttr {
                 size: Some(0),
                 ..Default::default()
             };
-            if let Err(e) = core.setattr(req.nodeid, &attrs) {
+            let ino_raw = req.nodeid;
+            if let Err(e) = self.fs.inner.mutate(move |core| {
+                core.setattr(ino_raw, &attrs)?;
+                Ok(0)
+            }) {
                 return Reply::Err(errno(&e));
             }
         }
-        drop(core);
         let fh = self.fs.inner.register_file(req.nodeid, flags);
         let (open_flags, backing_id) = self.attach_passthrough(req.nodeid, flags, fh);
         let mut m = self.fs.inner.metrics.lock();
@@ -1102,39 +1128,41 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
             Some(h) if !h.is_dir => h,
             _ => return Reply::Err(libc::EBADF),
         };
-        let data = &req.payload[..size.min(req.payload.len())];
-        let mut core = self.fs.inner.core.lock();
-        let root = core.root();
-        let st = match core.getattr(req.nodeid, root) {
-            Ok(st) => st,
-            Err(e) => return Reply::Err(errno(&e)),
-        };
-        if !has_permission_grouped(
-            req.uid,
-            req.gid,
-            &crate::fuse::caller_groups(req.pid),
-            &st,
-            0o2,
-        ) {
-            return Reply::Err(libc::EACCES);
-        }
-        let effective = if handle.flags & libc::O_APPEND != 0 {
-            st.size
-        } else {
-            offset
-        };
-        let kill_setid = write_flags & FUSE_WRITE_KILL_SUIDGID != 0
-            || (req.uid != 0
-                && req.uid != st.uid
-                && st.mode & (libc::S_ISUID | libc::S_ISGID) != 0);
-        match core.write_at_killpriv(req.nodeid, effective, data, kill_setid) {
+        let nodeid = req.nodeid;
+        let actor_uid = req.uid;
+        let actor_gid = req.gid;
+        let groups = crate::fuse::caller_groups(req.pid);
+        let append = handle.flags & libc::O_APPEND != 0;
+        let kill_flag = write_flags & FUSE_WRITE_KILL_SUIDGID != 0;
+        // The payload is owned by the kernel for the duration of this call; the
+        // job outlives the call, so it must own its bytes.
+        let data = req.payload[..size.min(req.payload.len())].to_vec();
+        // Everything that depends on the authoritative state — the permission
+        // check, the O_APPEND end-of-file and the killpriv decision — is resolved
+        // *inside* the job, under the core lock, so a concurrent append can never
+        // observe a stale end-of-file. Routing through `Inner::mutate` also lets a
+        // write share a group-commit batch's durability barrier.
+        let res = self.fs.inner.mutate(move |core| {
+            let root = core.root();
+            let st = core.getattr(nodeid, root)?;
+            if !has_permission_grouped(actor_uid, actor_gid, &groups, &st, 0o2) {
+                return Err(OrfsError::PermissionDenied);
+            }
+            let effective = if append { st.size } else { offset };
+            let kill_setid = kill_flag
+                || (actor_uid != 0
+                    && actor_uid != st.uid
+                    && st.mode & (libc::S_ISUID | libc::S_ISGID) != 0);
+            let n = core.write_at_killpriv(nodeid, effective, &data, kill_setid)?;
+            Ok(n as i64)
+        });
+        match res {
             Ok(n) => {
-                drop(core);
                 let mut m = self.fs.inner.metrics.lock();
                 m.writes += 1;
                 m.byte_writes += n as u64;
                 drop(m);
-                Reply::Write(n)
+                Reply::Write(n as u32)
             }
             Err(e) => Reply::Err(errno(&e)),
         }
@@ -1304,19 +1332,26 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         let flags = get_u32(req.op, 0) as i32;
         let mode = get_u32(req.op, 4);
         let name = trim_name(req.payload);
-        let mut core = self.fs.inner.core.lock();
-        if let Err(e) = self.check_dir_write(&*core, req, req.nodeid, 0o3) {
-            return Reply::Err(e);
-        }
-        let ino = match core.create(req.nodeid, name, mode & 0o7777, req.uid, req.gid) {
-            Ok(i) => i,
+        let nodeid = req.nodeid;
+        let actor_uid = req.uid;
+        let actor_gid = req.gid;
+        let groups = crate::fuse::caller_groups(req.pid);
+        let name = name.to_vec();
+        let perm = mode & 0o7777;
+        let res = self.fs.inner.mutate(move |core| {
+            crate::fuse::check_create_uid(core, actor_uid, actor_gid, &groups, nodeid, 0o3)?;
+            let ino = core.create(nodeid, &name, perm, actor_uid, actor_gid)?;
+            Ok(ino as i64)
+        });
+        let ino = match res {
+            Ok(i) => i as u64,
             Err(e) => return Reply::Err(errno(&e)),
         };
-        let st = match core.getattr(ino, core.root()) {
+        let view = self.read_view();
+        let st = match view.getattr(ino, view.root()) {
             Ok(st) => st,
             Err(e) => return Reply::Err(errno(&e)),
         };
-        drop(core);
         let fh = self.fs.inner.register_file(ino, flags);
         let mut m = self.fs.inner.metrics.lock();
         m.create += 1;

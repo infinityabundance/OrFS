@@ -641,7 +641,7 @@ portable benchmark; reproduce with the container scripts.
 
 ---
 
-## 11. Honesty caveats
+## 12. Honesty caveats
 
 1. These are **warm-cache, single-run** figures on one host; they are not a
    portable benchmark result. Reproduce with the container scripts.
@@ -679,8 +679,8 @@ every mutation through `Mutex<Core>` and issued a per-request `fsync`, so the wi
 was invisible through a mount.
 
 Phase 32 adds a per-mount **group-commit coordinator** (`src/group_commit.rs`),
-**opt-in** via `orfs mount --group-commit [--group-commit-batch N]`. Concurrently
-submitted mutating requests (create/mkdir/symlink/mknod/unlink/rmdir) are drained
+**opt-in** via `orfs mount --group-commit [--group-commit-batch N]`. Mutating
+requests are submitted to it instead of taking the core lock directly, drained
 into a batch, executed **sequentially** (so authoritative order, per-transaction
 atomicity and the existing record-offset prediction are untouched), and — for a
 `sync` mount — run with durability temporarily lowered to `ordered` and covered
@@ -689,17 +689,47 @@ acknowledgment contract (I7) is therefore preserved exactly; the expensive
 barrier is amortised. `ordered`/`batched` mounts add no barrier (no semantic
 change).
 
+**Coverage.** Both transports route every mutating handler through the
+coordinator: `write`, `setattr` (including the truncate path and the `O_TRUNC`
+open), `create`/`mkdir`/`mknod`/`symlink`, `unlink`/`rmdir`, `rename`/`link`,
+`setxattr`/`removexattr`, `fallocate` and `copy_file_range` (classical
+`src/fuse.rs`), and the same set on the native F2 dispatcher
+(`src/fuse_native.rs`). Read-only handlers, and the `fsync`/`flush`/`fsyncdir`
+barriers themselves, deliberately keep the direct lock (routing them through the
+coordinator would either defeat or deadlock the barrier). A `write`'s `O_APPEND`
+effective offset, its killpriv decision and the permission check are all resolved
+**inside the job**, under the core lock, so concurrent appends stay correctly
+ordered and never observe a stale end-of-file.
+
 **Correctness** is proven end-to-end: `tests/group_commit_e2e.rs` mounts a real
 volume and runs 8 threads × 500 rounds of concurrent
-create→write→read-back→unlink, asserting every write reads back byte-exact and
-every unlink succeeds (no lost update, no tear, no error). Evidence:
-`evidence/performance/group-commit-e2e.json`.
+create→write→read-back→unlink, plus concurrent writers on one shared file and on
+separate files (`group_commit_concurrent_writers_are_byte_exact`) and concurrent
+`O_APPEND` ordering (`group_commit_append_ordering_is_deterministic`, which
+asserts every appended record survives intact and exactly once), asserting every
+write reads back byte-exact and every unlink succeeds (no lost update, no tear,
+no error). The grouped write path is also crash-tested under `--features
+failpoints`
+(`tests/group_commit.rs::crash::error_during_grouped_write_commit_recovers_to_a_complete_boundary`,
+and the process-crash variant). Evidence:
+`evidence/performance/group-commit-e2e.json`,
+`evidence/performance/group-commit-e2e-writes.json`.
 
-**Honest result — no win claimed here.** On this workload the measured difference
-was **not statistically defensible**: across repeated paired runs the effect
-varied in both directions (e.g. 74 vs 94 ops/s, then 91 vs 73 ops/s) because the
-host was under contention and the per-mutation cost is not dominated by a single
-barrier. The engine-level win needs a larger *prepared backlog* than a
-create/write/unlink mount workload produces. The coordinator is therefore **off
-by default**; it is a correct, tested building block that will matter once a
-transport supplies a deeper concurrent-writer backlog.
+**Honest result — no win claimed here.** The effect is **not statistically
+defensible**. The pure write workload (8 threads × 400 × 4 KiB, `sync`) measured
+grouped/baseline ratios anywhere from **0.97× to 4.31× across runs**: the
+committed evidence `group-commit-e2e-writes.json` records a run at **4.31×**
+(grouped 271 ops/s vs baseline 63 ops/s), while earlier runs on a less loaded
+host measured ~1.0–1.1× (baseline ~250 ops/s). The ratio is dominated by the two
+arms' very different sensitivity to host load: the ungrouped arm pays a
+**per-request `fsync`** whose cost balloons under contention, so the grouped arm
+looks better exactly when the host is busiest. Because a single paired run can
+show anything from parity to ~4×, no reproducible advantage is claimed. Likewise
+the create/unlink churn (`group-commit-e2e.json`) measured 83–91 vs 86–91 ops/s
+— parity. This is consistent with the classical `fuser` session delivering
+requests with little overlap on this host, so the coordinator's batch is often
+effectively a group of one, and a group of one is the single-commit path
+byte-for-byte. The coordinator is therefore **off by default**: a correct, tested
+building block whose benefit needs a workload/transport that supplies a deeper
+concurrent-writer backlog and a barrier-dominated per-op cost (the native F2 pool
+is the intended source).

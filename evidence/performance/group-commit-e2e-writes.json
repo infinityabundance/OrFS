@@ -1,0 +1,14 @@
+{
+  "court": "group-commit-e2e-writes",
+  "threads": 8,
+  "writes_per_thread": 400,
+  "block_bytes": 4096,
+  "durability": "sync",
+  "kernel": "7.2.9-2-cachyos",
+  "results": [
+    {"group_commit": false, "ops": 3200, "seconds": 50.850, "ops_per_s": 62.9},
+    {"group_commit": true, "ops": 3200, "seconds": 11.791, "ops_per_s": 271.4}
+  ],
+  "ratio_on_over_off": 4.313,
+  "note": "Pure write workload at sync durability; single paired run, reported as measured. The coordinator is opt-in and off by default."
+}

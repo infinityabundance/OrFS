@@ -2133,3 +2133,70 @@ Docker `container-check.sh` fmt/clippy gate; see `docs/RECEIPTS.md`.
 
 RESULT: `sh scripts/check-docs-receipts.sh` exits **0** on this commit
 (provenance 3/3 allowed-historical, citations 37/37 ok).
+
+## Phase 39 — Group commit extended to ordinary write workloads (both transports)
+
+**Complete.** External review §"finish the group-commit performance path": the
+Phase 32 coordinator coalesced only a handful of namespace mutations on the
+classical transport, while `write` (and several other mutations) still took the
+core lock directly and the native F2 dispatcher bypassed the coordinator
+entirely.
+
+### Delivered
+
+* `src/fuse.rs` (classical): `write`, `setattr` (including the truncate path and
+the `O_TRUNC` open), `rename`, `link`, `setxattr`, `removexattr`, `fallocate` and
+`copy_file_range` now route through `Inner::mutate`, joining the six handlers
+already coalesced.
+* `src/fuse_native.rs` (F2): the same set now routes through `self.fs.inner.mutate`,
+so the coordinator applies to the native transport too.
+* Read-only handlers and the `fsync`/`flush`/`fsyncdir` barriers deliberately keep
+the direct lock (routing them would defeat or deadlock the barrier).
+
+### Guarantees preserved
+
+* **Ordering** — jobs still run sequentially in submission order under one core
+  lock; each request is one job.
+* **`O_APPEND`** — the effective offset, the killpriv decision and the permission
+  check are all resolved **inside the job** under the core lock, so a later
+  append observes the updated size and concurrent appends cannot collide on a
+  stale end-of-file.
+* **I7** — the batch still lowers `sync`→`ordered`, issues one shared `core.sync()`
+  after every job, and only then replies; a caller whose write succeeded but whose
+  covering barrier failed gets `EIO`, never success.
+* **No re-entrancy** — every `mutate` call is at handler level; jobs capture only
+owned `Send + 'static` data.
+
+### Tests
+
+* `tests/group_commit_e2e.rs`: `group_commit_concurrent_writers_are_byte_exact`
+  (8 threads on one shared file with disjoint pages + 8 threads on separate
+  files), `group_commit_append_ordering_is_deterministic` (8×300 `O_APPEND`
+  records; exact length, every record intact and exactly once),
+  `group_commit_write_workload_measurement`. `scripts/container-fuse-test.sh` now
+  runs `--test group_commit_e2e`.
+* `tests/group_commit.rs`: failpoint crash courts
+  `crash::error_during_grouped_write_commit_recovers_to_a_complete_boundary` and
+  `crash::process_crash_during_grouped_write_commit_recovers_to_a_valid_boundary`.
+
+### Honest result — no defensible win
+
+The pure write workload (8 threads × 400 × 4 KiB, `sync`) measured grouped/baseline
+ratios from **0.97× to 4.31× across runs** — the ratio is dominated by the two
+arms' very different sensitivity to host load (the ungrouped arm pays a
+per-request `fsync`). The committed evidence
+`evidence/performance/group-commit-e2e-writes.json` records one such run at 4.31×
+(grouped 271 vs baseline 63 ops/s); earlier runs on a less loaded host measured
+~1.0–1.1×. Because a single paired run can show parity or ~4×, **no reproducible
+advantage is claimed** and the coordinator stays **off by default**. See
+`docs/PERFORMANCE.md` §11.
+
+### Verified in Docker
+
+`cargo fmt -p orfs --check` and clippy clean; `cargo test` and
+`cargo test --features failpoints` green; the mounted court green
+(`fuse_passthrough` 4, `fuse_integration` 2, `snapshot_fuse` 1, `fuse_uring` 5,
+`group_commit_e2e` 4, `performance_court` 1, `ekbloom_frontier_e2e` 4).
+The native F2 mutating paths are compiled and equivalence-tested but not exercised
+by a live F2 mount on this host (the kernel does not offer `FUSE_OVER_IO_URING`
+here) — stated plainly, as before.

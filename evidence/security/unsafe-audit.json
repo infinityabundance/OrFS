@@ -104,7 +104,7 @@
       "covering_test": "tests/fuse_integration.rs / tests/fuse_passthrough.rs",
       "file": "fuse.rs",
       "has_safety_comment": true,
-      "line": 2203,
+      "line": 2242,
       "safety_invariant": "SAFETY: `c` is a valid NUL-terminated path and `st` is a valid, aligned,",
       "text": "let mut st: libc::statvfs = unsafe { std::mem::zeroed() };"
     },
@@ -112,7 +112,7 @@
       "covering_test": "tests/fuse_integration.rs / tests/fuse_passthrough.rs",
       "file": "fuse.rs",
       "has_safety_comment": true,
-      "line": 2204,
+      "line": 2243,
       "safety_invariant": "SAFETY: `c` is a valid NUL-terminated path and `st` is a valid, aligned,",
       "text": "let rc = unsafe { libc::statvfs(c.as_ptr(), &mut st) };"
     },
@@ -120,7 +120,7 @@
       "covering_test": "tests/fuse_integration.rs / tests/fuse_passthrough.rs",
       "file": "fuse.rs",
       "has_safety_comment": true,
-      "line": 2524,
+      "line": 2563,
       "safety_invariant": "SAFETY: the handler performs only a single atomic store and returns, which is",
       "text": "unsafe {"
     },
@@ -128,7 +128,7 @@
       "covering_test": "tests/fuse_integration.rs / tests/fuse_passthrough.rs",
       "file": "fuse.rs",
       "has_safety_comment": true,
-      "line": 2760,
+      "line": 2799,
       "safety_invariant": "SAFETY: `c` is a valid NUL-terminated path; `umount2` performs a lazy",
       "text": "let rc = unsafe { libc::umount2(c.as_ptr(), libc::MNT_DETACH) };"
     },
@@ -152,7 +152,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 1360,
+      "line": 1395,
       "safety_invariant": "SAFETY: `EntryState` owns its `header`/`payload` allocations; the raw pointers",
       "text": "unsafe impl Send for EntryState {}"
     },
@@ -160,7 +160,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 1515,
+      "line": 1550,
       "safety_invariant": "SAFETY: `self.fd` is a live `/dev/fuse` descriptor owned by this",
       "text": "let rc = unsafe {"
     },
@@ -168,7 +168,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 1570,
+      "line": 1605,
       "safety_invariant": "SAFETY: `self.fd` is live; the request number is transcribed from the",
       "text": "let _ = unsafe {"
     },
@@ -176,7 +176,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 1654,
+      "line": 1689,
       "safety_invariant": "SAFETY: geteuid/getegid are pure queries.",
       "text": "let (uid, gid) = unsafe { (libc::geteuid(), libc::getegid()) };"
     },
@@ -184,7 +184,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 1675,
+      "line": 1710,
       "safety_invariant": "SAFETY: all pointers are valid NUL-terminated C strings (or a valid data",
       "text": "let rc = unsafe {"
     },
@@ -192,7 +192,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 1701,
+      "line": 1736,
       "safety_invariant": "SAFETY: `socketpair` fills the caller-owned 2-element array on success.",
       "text": "if unsafe { libc::socketpair(libc::AF_UNIX, libc::SOCK_STREAM, 0, fds.as_mut_ptr()) } != 0 {"
     },
@@ -200,7 +200,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 1708,
+      "line": 1743,
       "safety_invariant": "SAFETY: `fcntl` with F_SETFD only sets descriptor flags on a valid fd.",
       "text": "unsafe {"
     },
@@ -208,7 +208,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 1722,
+      "line": 1757,
       "safety_invariant": "SAFETY: `child` is a valid fd owned by this process.",
       "text": "unsafe {"
     },
@@ -216,7 +216,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 1729,
+      "line": 1764,
       "safety_invariant": "SAFETY: `parent` is a valid fd owned by this process.",
       "text": "unsafe {"
     },
@@ -224,7 +224,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 1738,
+      "line": 1773,
       "safety_invariant": "SAFETY: `parent` is a valid fd owned by this process.",
       "text": "unsafe {"
     },
@@ -232,7 +232,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 1768,
+      "line": 1803,
       "safety_invariant": "SAFETY: `msghdr` is a plain C struct; zeroing it is a valid initial state",
       "text": "let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };"
     },
@@ -240,7 +240,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 1775,
+      "line": 1810,
       "safety_invariant": "SAFETY: `sock` is a valid connected Unix socket; `msg` describes valid,",
       "text": "let n = unsafe { libc::recvmsg(sock, &mut msg, 0) };"
     },
@@ -248,7 +248,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 1787,
+      "line": 1822,
       "safety_invariant": "SAFETY: `msg` was populated by `recvmsg`; the cmsg helpers walk its",
       "text": "unsafe {"
     },
@@ -256,7 +256,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 1835,
+      "line": 1870,
       "safety_invariant": "SAFETY: `c` is a valid NUL-terminated path; `umount2` performs a lazy",
       "text": "unsafe {"
     },
@@ -264,7 +264,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 1846,
+      "line": 1881,
       "safety_invariant": "SAFETY: `fd` is a valid open /dev/fuse fd; `buf` is a valid writable",
       "text": "let n = unsafe { libc::read(fd, buf.as_mut_ptr().cast(), buf.len()) };"
     },
@@ -272,7 +272,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 1863,
+      "line": 1898,
       "safety_invariant": "SAFETY: `fd` is valid; `buf[off..]` is a valid readable region.",
       "text": "let n = unsafe { libc::write(fd, buf[off..].as_ptr().cast(), buf.len() - off) };"
     },
@@ -280,7 +280,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 2283,
+      "line": 2318,
       "safety_invariant": "SAFETY: `dup` duplicates a valid fd; the returned fd is owned by the caller.",
       "text": "let n = unsafe { libc::dup(fd) };"
     },
@@ -288,7 +288,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 2294,
+      "line": 2329,
       "safety_invariant": "SAFETY: `dup` duplicates a valid fd; the result is a fresh owned fd.",
       "text": "let n = unsafe { libc::dup(fd) };"
     },
@@ -296,7 +296,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 2299,
+      "line": 2334,
       "safety_invariant": "SAFETY: `n` is a fresh, valid descriptor we now exclusively own.",
       "text": "Ok(unsafe { OwnedFd::from_raw_fd(n) })"
     },
@@ -304,7 +304,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 2419,
+      "line": 2454,
       "safety_invariant": "SAFETY: see the type-level invariant. The session transfers exclusive access",
       "text": "unsafe impl Send for EntryPtr {}"
     },
@@ -312,7 +312,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 2562,
+      "line": 2597,
       "safety_invariant": "SAFETY: the session handed us exclusive access to this entry for the whole",
       "text": "let e = unsafe { &mut *job.entry.0 };"
     },
@@ -320,7 +320,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 2618,
+      "line": 2653,
       "safety_invariant": "SAFETY: `mask` is a live, fully-owned byte array of exactly `MAX_CPUS / 8`",
       "text": "unsafe {"
     },
@@ -328,7 +328,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 3093,
+      "line": 3128,
       "safety_invariant": "SAFETY: `pfd` is a valid, owned pollfd describing `fd`.",
       "text": "let rc = unsafe { libc::poll(&mut pfd, 1, 200) };"
     },
@@ -336,7 +336,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 3105,
+      "line": 3140,
       "safety_invariant": "SAFETY: `fd` is a valid open fd; `buf` is a valid writable region.",
       "text": "let n = unsafe { libc::read(fd, buf.as_mut_ptr().cast(), buf.len()) };"
     },
@@ -344,7 +344,7 @@
       "covering_test": "fuse_native::tests::{entry_state_buffers_are_stable_under_ownership_move, reply_larger_than_the_registered_buffer_is_clamped_not_panicking, payload_size_is_clamped_to_the_registered_buffer, reply_encode_into_interleaved_reuse_is_byte_identical} + tests/fuse_uring.rs",
       "file": "fuse_native.rs",
       "has_safety_comment": true,
-      "line": 3158,
+      "line": 3193,
       "safety_invariant": "SAFETY: the fd was produced by `dup` in `launch` and is owned by this thread.",
       "text": "unsafe {"
     },

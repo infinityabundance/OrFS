@@ -206,7 +206,22 @@ bytes: `tests/group_commit.rs::group_commit_is_byte_identical_to_serial_commit`
 asserts that a grouped run and a serial run produce identical committed bytes and
 identical committed digests. The Phase 2/17 correctness and power-loss courts
 (for single-commit byte sequences) therefore continue to apply unchanged, and are
-extended by a process-crash court for the grouped path (§4.2).
+extended by a process-crash court for the grouped path (§4.2), including one whose
+grouped members each carry a **write** (`DATA_EXTENT`)
+(`crash::process_crash_during_grouped_write_commit_recovers_to_a_valid_boundary`).
+
+**Through the transports (Phase 32).** The same ordered-group-commit contract is
+applied end-to-end by the per-mount coordinator in `src/group_commit.rs`
+(`docs/CONCURRENCY.md` §8, `docs/PERFORMANCE.md` §11). Mutating requests from
+**both** transports submit a job to it; the jobs run sequentially in submission
+order under one core lock, and for a `sync` mount the batch is published with
+durability lowered to `ordered` and covered by one shared `fsync` that is issued
+**before any caller is acknowledged** — so the per-caller acknowledgment rule
+above (a caller is acked only once a durable operation covering *its own* bytes
+has completed) is preserved literally, now for ordinary `write` workloads too. A
+`write`'s `O_APPEND` offset, killpriv decision and permission check are resolved
+inside the job against the authoritative inode, so grouping never reorders
+concurrent appends.
 
 ---
 

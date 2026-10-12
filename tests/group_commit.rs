@@ -647,6 +647,74 @@ mod crash {
     use std::path::Path;
     use std::process::{Command, Stdio};
 
+    /// Build a transaction carrying one `DATA_EXTENT` (an engine-level
+    /// representation of a **write**) with a deterministic `len`-byte payload.
+    fn tx_with_write(id: u64, inode: u64, marker: u8, len: usize) -> Transaction {
+        let mut b = TransactionBuilder::new(id).unwrap();
+        b.add(RecordType::DataExtent, inode, 0, vec![marker; len])
+            .unwrap();
+        b.build().unwrap()
+    }
+
+    /// In-process: an injected failure on the *second* member of a group that
+    /// contains a write leaves the first committed at a boundary and no partial
+    /// member visible; an independent reopen verifies every recovery invariant.
+    #[test]
+    fn error_during_grouped_write_commit_recovers_to_a_complete_boundary() {
+        let td = TempDir::new().unwrap();
+        let dir = td.path().to_path_buf();
+
+        // Baseline: one durable transaction that carries a write.
+        let (baseline_root, baseline_bytes, baseline_segments) = {
+            let mut vol = init_volume(&dir, 1 << 20);
+            let mut seq = CommitSequencer::new(&mut vol, DurabilityMode::Sync);
+            let tx = tx_with_write(seq.peek_transaction_id(), 1, 9, 1024);
+            seq.commit(tx).unwrap();
+            seq.flush().unwrap();
+            let root = vol.log.committed_end_offset();
+            let bytes = vol.log.read_committed_bytes().unwrap();
+            let segs = support::snapshot_segments(&vol.log);
+            (root, bytes, segs)
+        };
+
+        // Fail the second member's TX_COMMIT write (skip the first) of a group in
+        // which every member carries a write record.
+        let result = {
+            let mut vol = Volume::open(&dir, OpenMode::ReadWrite).unwrap();
+            let mut seq = CommitSequencer::new(&mut vol, DurabilityMode::Sync);
+            failpoints::configure_one("during_commit_record_write", FailAction::Error, 1);
+            let builders = seq.begin_many(3).unwrap();
+            let txs: Vec<Transaction> = builders
+                .into_iter()
+                .enumerate()
+                .map(|(k, mut b)| {
+                    b.add(
+                        RecordType::DataExtent,
+                        100 + k as u64,
+                        0,
+                        vec![k as u8; 1024],
+                    )
+                    .unwrap();
+                    b.build().unwrap()
+                })
+                .collect();
+            seq.commit_group(txs)
+        };
+        failpoints::clear();
+        assert!(
+            result.is_err(),
+            "the injected mid-group failure must surface"
+        );
+
+        let (verdicts, recovered) =
+            support::verify_recovered(&dir, baseline_root, &baseline_bytes, &baseline_segments);
+        assert!(verdicts.all_ok(), "{verdicts:?}");
+        assert!(
+            recovered >= baseline_root,
+            "recovery must reach at least the baseline boundary"
+        );
+    }
+
     /// In-process: an injected failure on the *second* member of a group leaves
     /// the first committed at a boundary and no partial member visible; an
     /// independent reopen verifies every recovery invariant.
@@ -701,6 +769,9 @@ mod crash {
             return;
         };
         let dir = std::env::var("ORFS_GROUP_CRASH_DIR").expect("ORFS_GROUP_CRASH_DIR");
+        // When set, every grouped member also carries a write record, so the
+        // crash court covers a grouped commit that includes writes.
+        let with_write = std::env::var("ORFS_GROUP_CRASH_WRITE").is_ok();
         let mut vol =
             Volume::open(Path::new(&dir), OpenMode::ReadWrite).expect("child open volume");
         let mut seq = CommitSequencer::new(&mut vol, DurabilityMode::Ordered);
@@ -711,13 +782,13 @@ mod crash {
                 .into_iter()
                 .enumerate()
                 .map(|(k, mut b)| {
-                    b.add(
-                        RecordType::InodeCreate,
-                        i * 3 + k as u64 + 1,
-                        0,
-                        vec![k as u8],
-                    )
-                    .unwrap();
+                    let ino = i * 3 + k as u64 + 1;
+                    b.add(RecordType::InodeCreate, ino, 0, vec![k as u8])
+                        .unwrap();
+                    if with_write {
+                        b.add(RecordType::DataExtent, ino, 0, vec![k as u8; 512])
+                            .unwrap();
+                    }
                     b.build().unwrap()
                 })
                 .collect();
@@ -767,6 +838,64 @@ mod crash {
                 .stderr(Stdio::null())
                 .status()
                 .expect("spawn group crash child");
+            use std::os::unix::process::ExitStatusExt;
+            assert_eq!(
+                status.signal(),
+                Some(libc::SIGABRT),
+                "failpoint {fp}: child was not killed by SIGABRT"
+            );
+
+            let (verdicts, recovered) =
+                support::verify_recovered(&dir, baseline_root, &baseline_bytes, &baseline_segments);
+            assert!(verdicts.all_ok(), "failpoint {fp}: {verdicts:?}");
+            assert!(recovered >= baseline_root);
+        }
+    }
+
+    /// The same process-crash court, but every grouped member carries a **write**
+    /// (`DATA_EXTENT`), so the crash interrupts a grouped commit that includes
+    /// writes. Recovery must still land on a complete, valid transaction boundary.
+    #[test]
+    fn process_crash_during_grouped_write_commit_recovers_to_a_valid_boundary() {
+        for fp in [
+            "during_commit_record_write",
+            "during_record_write",
+            "before_commit",
+        ] {
+            let td = TempDir::new().unwrap();
+            let dir = td.path().to_path_buf();
+
+            // Baseline (no failpoint): three durable write transactions.
+            failpoints::clear();
+            let (baseline_root, baseline_bytes, baseline_segments) = {
+                let mut vol = init_volume(&dir, 1 << 20);
+                let mut seq = CommitSequencer::new(&mut vol, DurabilityMode::Sync);
+                for i in 1..=3u64 {
+                    let tx = tx_with_write(seq.peek_transaction_id(), i, i as u8, 512);
+                    seq.commit(tx).unwrap();
+                }
+                seq.flush().unwrap();
+                let root = vol.log.committed_end_offset();
+                let bytes = vol.log.read_committed_bytes().unwrap();
+                let segs = support::snapshot_segments(&vol.log);
+                (root, bytes, segs)
+            };
+
+            let exe = std::env::current_exe().expect("current exe");
+            let status = Command::new(exe)
+                .args([
+                    "crash::group_crash_child_role",
+                    "--exact",
+                    "--nocapture",
+                    "--test-threads=1",
+                ])
+                .env("ORFS_GROUP_CRASH_CHILD", fp)
+                .env("ORFS_GROUP_CRASH_DIR", &dir)
+                .env("ORFS_GROUP_CRASH_WRITE", "1")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .expect("spawn group write crash child");
             use std::os::unix::process::ExitStatusExt;
             assert_eq!(
                 status.signal(),

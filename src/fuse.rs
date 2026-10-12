@@ -954,91 +954,95 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         let writable_fh = fh
             .and_then(|h| self.inner.handle(h.0))
             .is_some_and(|h| !h.is_dir && (h.flags & libc::O_ACCMODE) != libc::O_RDONLY);
-        let mut core = self.inner.core.lock();
-        let root = core.root();
-        let st = match core.getattr(ino.0, root) {
-            Ok(st) => st,
-            Err(e) => return reply.error(errno(&e)),
-        };
-        let is_root = req.uid() == 0;
-        let owner_or_root = is_root || req.uid() == st.uid;
-        let meta_change = mode.is_some() || uid.is_some() || gid.is_some();
-        let time_change = atime.is_some() || mtime.is_some();
-        // Linux `ATTR_TOUCH` (an explicit `utimensat`/`utimes` with `times == NULL`
-        // or both fields `UTIME_NOW`) is the one time update a *non-owner* may
-        // perform, provided it has write permission. Every other time form (a
-        // specific time, or one field omitted) is `ATTR_TIMES_SET`, which
-        // requires ownership. Because the mount does not use
-        // `default_permissions`, the kernel delegates this check to the daemon.
-        let touch_like = !meta_change
-            && matches!(atime, Some(TimeOrNow::Now))
-            && matches!(mtime, Some(TimeOrNow::Now));
-        if touch_like {
-            if !owner_or_root
-                && !has_permission_grouped(
-                    req.uid(),
-                    req.gid(),
-                    &caller_groups(req.pid()),
-                    &st,
-                    0o2,
-                )
+        // The permission model reads the authoritative inode, and the change must
+        // be decided against the same state it commits against, so the whole check
+        // + mutate runs inside one job under the core lock. That also lets a
+        // truncate share a group-commit batch's durability barrier.
+        let ino_raw = ino.0;
+        let actor_uid = req.uid();
+        let actor_gid = req.gid();
+        let actor_pid = req.pid();
+        let groups = caller_groups(actor_pid);
+        let is_root = actor_uid == 0;
+        let res = self.inner.mutate(move |core| {
+            let root = core.root();
+            let st = core.getattr(ino_raw, root)?;
+            let owner_or_root = is_root || actor_uid == st.uid;
+            let meta_change = mode.is_some() || uid.is_some() || gid.is_some();
+            let time_change = atime.is_some() || mtime.is_some();
+            // Linux `ATTR_TOUCH` (an explicit `utimensat`/`utimes` with `times == NULL`
+            // or both fields `UTIME_NOW`) is the one time update a *non-owner* may
+            // perform, provided it has write permission. Every other time form (a
+            // specific time, or one field omitted) is `ATTR_TIMES_SET`, which
+            // requires ownership. Because the mount does not use
+            // `default_permissions`, the kernel delegates this check to the daemon.
+            let touch_like = !meta_change
+                && matches!(&atime, Some(TimeOrNow::Now))
+                && matches!(&mtime, Some(TimeOrNow::Now));
+            if touch_like {
+                if !owner_or_root
+                    && !has_permission_grouped(actor_uid, actor_gid, &groups, &st, 0o2)
+                {
+                    return Err(OrfsError::PermissionDenied);
+                }
+            } else if (meta_change || time_change) && !owner_or_root {
+                // chmod/chown/utimes with an explicit value require ownership or root.
+                return Err(OrfsError::NotPermitted);
+            }
+            // Changing the *owner* (uid) requires root (Linux `CAP_CHOWN`).
+            let uid_changes = uid.is_some_and(|u| u != st.uid);
+            if uid_changes && !is_root {
+                return Err(OrfsError::NotPermitted);
+            }
+            // A non-root owner may move a file into a group it belongs to — its
+            // effective group or a supplementary group — and only root may do more.
+            // Membership is read from the kernel's own `/proc/<pid>/status`.
+            let gid_changes = gid.is_some_and(|g| g != st.gid);
+            if gid_changes && !is_root {
+                let target = gid.unwrap_or(st.gid);
+                if !owner_or_root || !caller_in_group(actor_pid, actor_gid, target) {
+                    return Err(OrfsError::NotPermitted);
+                }
+            }
+            if size.is_some()
+                && !writable_fh
+                && !has_permission_grouped(actor_uid, actor_gid, &groups, &st, 0o2)
             {
-                return reply.error(Errno::EACCES);
+                return Err(OrfsError::PermissionDenied);
             }
-        } else if (meta_change || time_change) && !owner_or_root {
-            // chmod/chown/utimes with an explicit value require ownership or root.
-            return reply.error(Errno::EPERM);
-        }
-        // Changing the *owner* (uid) requires root (Linux `CAP_CHOWN`).
-        let uid_changes = uid.is_some_and(|u| u != st.uid);
-        if uid_changes && !is_root {
-            return reply.error(Errno::EPERM);
-        }
-        // A non-root owner may move a file into a group it belongs to — its
-        // effective group or a supplementary group — and only root may do more.
-        // The FUSE request carries only the caller's fsgid, so membership is read
-        // from the kernel's own `/proc/<pid>/status` (docs/FUSE-SEMANTICS.md §6).
-        let gid_changes = gid.is_some_and(|g| g != st.gid);
-        if gid_changes && !is_root {
-            let target = gid.unwrap_or(st.gid);
-            if !owner_or_root || !caller_in_group(req.pid(), req.gid(), target) {
-                return reply.error(Errno::EPERM);
+            // Linux clears S_ISUID/S_ISGID when a caller without CAP_FSETID truncates
+            // (FATTR_KILL_SUIDGID, which the high-level API does not surface, so we
+            // approximate CAP_FSETID as uid 0). The resize and the clearing share one
+            // authoritative transaction.
+            let mut effective_mode = mode;
+            if size.is_some() && !is_root {
+                let cleared = st.mode & !(libc::S_ISUID | libc::S_ISGID);
+                if cleared != st.mode {
+                    effective_mode =
+                        Some(effective_mode.unwrap_or(st.mode) & !(libc::S_ISUID | libc::S_ISGID));
+                }
             }
-        }
-        if size.is_some()
-            && !writable_fh
-            && !has_permission_grouped(req.uid(), req.gid(), &caller_groups(req.pid()), &st, 0o2)
-        {
-            return reply.error(Errno::EACCES);
-        }
-        // Linux clears S_ISUID/S_ISGID when a caller without CAP_FSETID truncates
-        // (the kernel signals this as FATTR_KILL_SUIDGID, which the high-level API
-        // does not surface, so we approximate CAP_FSETID as uid 0). The resize and
-        // the clearing then share one authoritative transaction.
-        let mut effective_mode = mode;
-        if size.is_some() && !is_root {
-            let cleared = st.mode & !(libc::S_ISUID | libc::S_ISGID);
-            if cleared != st.mode {
-                effective_mode =
-                    Some(effective_mode.unwrap_or(st.mode) & !(libc::S_ISUID | libc::S_ISGID));
-            }
-        }
-        let attrs = SetAttr {
-            mode: effective_mode,
-            uid,
-            gid,
-            atime: atime.map(time_or_now),
-            mtime: mtime.map(time_or_now),
-            size,
-        };
-        if let Err(e) = core.setattr(ino.0, &attrs) {
+            let attrs = SetAttr {
+                mode: effective_mode,
+                uid,
+                gid,
+                atime: atime.map(time_or_now),
+                mtime: mtime.map(time_or_now),
+                size,
+            };
+            core.setattr(ino_raw, &attrs)?;
+            Ok(0)
+        });
+        if let Err(e) = res {
             return reply.error(errno(&e));
         }
-        let updated = match core.getattr(ino.0, core.root()) {
+        // The committed state is visible through the published read view once the
+        // job (and, under grouping, its covering barrier) has returned.
+        let view = self.read_view();
+        let updated = match view.getattr(ino.0, view.root()) {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
-        drop(core);
         self.inner.metrics.lock().setattr += 1;
         self.invalidate_inode(ino.0);
         reply.attr(&self.options.attr_ttl, &file_attr(&updated));
@@ -1298,27 +1302,35 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         } else {
             return reply.error(Errno::EINVAL);
         };
-        let mut core = self.inner.core.lock();
-        if let Err(e) = check_dir_write(&*core, req, parent.0, 0o2 | 0o1) {
-            return reply.error(errno(&e));
+        let actor_uid = req.uid();
+        let actor_gid = req.gid();
+        let groups = caller_groups(req.pid());
+        let parent_raw = parent.0;
+        let newparent_raw = newparent.0;
+        let old_name = name.as_bytes().to_vec();
+        let new_name = newname.as_bytes().to_vec();
+        let res = self.inner.mutate(move |core| {
+            check_dir_write_uid(core, actor_uid, actor_gid, &groups, parent_raw, 0o2 | 0o1)?;
+            check_dir_write_uid(
+                core,
+                actor_uid,
+                actor_gid,
+                &groups,
+                newparent_raw,
+                0o2 | 0o1,
+            )?;
+            core.rename(parent_raw, &old_name, newparent_raw, &new_name, mode)?;
+            Ok(0)
+        });
+        match res {
+            Ok(_) => {
+                self.inner.metrics.lock().rename += 1;
+                self.invalidate_entry(parent.0, name.as_bytes());
+                self.invalidate_entry(newparent.0, newname.as_bytes());
+                reply.ok();
+            }
+            Err(e) => reply.error(errno(&e)),
         }
-        if let Err(e) = check_dir_write(&*core, req, newparent.0, 0o2 | 0o1) {
-            return reply.error(errno(&e));
-        }
-        if let Err(e) = core.rename(
-            parent.0,
-            name.as_bytes(),
-            newparent.0,
-            newname.as_bytes(),
-            mode,
-        ) {
-            return reply.error(errno(&e));
-        }
-        drop(core);
-        self.inner.metrics.lock().rename += 1;
-        self.invalidate_entry(parent.0, name.as_bytes());
-        self.invalidate_entry(newparent.0, newname.as_bytes());
-        reply.ok();
     }
 
     fn link(
@@ -1332,18 +1344,32 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         if let Err(e) = self.ensure_writable() {
             return reply.error(errno(&e));
         }
-        let mut core = self.inner.core.lock();
-        if let Err(e) = check_dir_write(&*core, req, newparent.0, 0o2 | 0o1) {
+        let actor_uid = req.uid();
+        let actor_gid = req.gid();
+        let groups = caller_groups(req.pid());
+        let old_ino = ino.0;
+        let newparent_raw = newparent.0;
+        let new_name = newname.as_bytes().to_vec();
+        let res = self.inner.mutate(move |core| {
+            check_dir_write_uid(
+                core,
+                actor_uid,
+                actor_gid,
+                &groups,
+                newparent_raw,
+                0o2 | 0o1,
+            )?;
+            core.link(old_ino, newparent_raw, &new_name)?;
+            Ok(0)
+        });
+        if let Err(e) = res {
             return reply.error(errno(&e));
         }
-        if let Err(e) = core.link(ino.0, newparent.0, newname.as_bytes()) {
-            return reply.error(errno(&e));
-        }
-        let st = match core.getattr(ino.0, core.root()) {
+        let view = self.read_view();
+        let st = match view.getattr(ino.0, view.root()) {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
-        drop(core);
         self.inner.metrics.lock().link += 1;
         self.inner.record_lookup(ino.0);
         self.invalidate_entry(newparent.0, newname.as_bytes());
@@ -1378,11 +1404,15 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
                 size: Some(0),
                 ..Default::default()
             };
-            // A truncating open is the only mutating part; take the core lock
-            // only then. A plain open (the common case) is served from the
-            // immutable view with no writer lock.
-            let mut core = self.inner.core.lock();
-            if let Err(e) = core.setattr(ino.0, &attrs) {
+            // A truncating open is the only mutating part; route it through the
+            // coordinator so it can share a batch's durability barrier. A plain
+            // open (the common case) is served from the immutable view with no
+            // writer lock.
+            let ino_raw = ino.0;
+            if let Err(e) = self.inner.mutate(move |core| {
+                core.setattr(ino_raw, &attrs)?;
+                Ok(0)
+            }) {
                 return reply.error(errno(&e));
             }
         }
@@ -1452,39 +1482,45 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             Some(h) if !h.is_dir => h,
             _ => return reply.error(Errno::EBADF),
         };
-        let mut core = self.inner.core.lock();
-        let root = core.root();
-        let st = match core.getattr(ino.0, root) {
-            Ok(st) => st,
-            Err(e) => return reply.error(errno(&e)),
-        };
-        if !has_permission_grouped(req.uid(), req.gid(), &caller_groups(req.pid()), &st, 0o2) {
-            return reply.error(Errno::EACCES);
-        }
-        // O_APPEND: honour the authoritative end-of-file rather than the
-        // possibly-stale offset the kernel supplied.
-        let effective = if handle.flags & libc::O_APPEND != 0 {
-            st.size
-        } else {
-            offset
-        };
-        // Linux clears S_ISUID/S_ISGID on a write by a caller without
-        // CAP_FSETID. With FUSE_HANDLE_KILLPRIV(_V2) negotiated the kernel says so
-        // precisely with FUSE_WRITE_KILL_SUIDGID; the non-owner fallback below
-        // covers a kernel that negotiated only the older capability.
-        let kill_setid = write_flags.contains(WriteFlags::FUSE_WRITE_KILL_SUIDGID)
-            || (req.uid() != 0
-                && req.uid() != st.uid
-                && st.mode & (libc::S_ISUID | libc::S_ISGID) != 0);
-        match core.write_at_killpriv(ino.0, effective, data, kill_setid) {
+        // Everything that depends on the authoritative state — the permission
+        // check, the O_APPEND end-of-file and the killpriv decision — is resolved
+        // *inside* the job, under the core lock, so it observes the same state the
+        // write commits against. Routing through `Inner::mutate` lets a write
+        // share a group-commit batch's durability barrier; concurrency therefore
+        // never resolves a stale append offset or a stale owner/mode.
+        let ino_raw = ino.0;
+        let uid = req.uid();
+        let gid = req.gid();
+        let groups = caller_groups(req.pid());
+        let append = handle.flags & libc::O_APPEND != 0;
+        // The kernel's precise signal (FUSE_HANDLE_KILLPRIV(_V2)). The non-owner
+        // fallback is applied inside the job against the authoritative mode.
+        let kill_flag = write_flags.contains(WriteFlags::FUSE_WRITE_KILL_SUIDGID);
+        // The payload is owned by the kernel for the duration of this call; the
+        // job outlives the call, so it must own its bytes.
+        let data = data.to_vec();
+        let res = self.inner.mutate(move |core| {
+            let root = core.root();
+            let st = core.getattr(ino_raw, root)?;
+            if !has_permission_grouped(uid, gid, &groups, &st, 0o2) {
+                return Err(OrfsError::PermissionDenied);
+            }
+            // O_APPEND: honour the authoritative end-of-file rather than the
+            // possibly-stale offset the kernel supplied.
+            let effective = if append { st.size } else { offset };
+            let kill_setid = kill_flag
+                || (uid != 0 && uid != st.uid && st.mode & (libc::S_ISUID | libc::S_ISGID) != 0);
+            let n = core.write_at_killpriv(ino_raw, effective, &data, kill_setid)?;
+            Ok(n as i64)
+        });
+        match res {
             Ok(n) => {
-                drop(core);
                 let mut m = self.inner.metrics.lock();
                 m.writes += 1;
                 m.byte_writes += n as u64;
                 drop(m);
                 self.invalidate_inode(ino.0);
-                reply.written(n);
+                reply.written(n as u32);
             }
             Err(e) => reply.error(errno(&e)),
         }
@@ -1738,22 +1774,29 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         if flags & libc::XATTR_CREATE != 0 && flags & libc::XATTR_REPLACE != 0 {
             return reply.error(Errno::EINVAL);
         }
-        let mut core = self.inner.core.lock();
-        let root = core.root();
-        let st = match core.getattr(ino.0, root) {
-            Ok(st) => st,
-            Err(e) => return reply.error(errno(&e)),
-        };
-        if !has_permission_grouped(req.uid(), req.gid(), &caller_groups(req.pid()), &st, 0o2) {
-            return reply.error(Errno::EACCES);
-        }
-        let present = core.getxattr(ino.0, name.as_bytes(), root).is_ok();
-        if flags & libc::XATTR_REPLACE != 0 && !present {
-            return reply.error(Errno::ENODATA);
-        }
+        let actor_uid = req.uid();
+        let actor_gid = req.gid();
+        let groups = caller_groups(req.pid());
+        let ino_raw = ino.0;
+        let name_bytes = name.as_bytes().to_vec();
+        let value = value.to_vec();
         let create = flags & libc::XATTR_CREATE != 0;
-        match core.setxattr(ino.0, name.as_bytes(), value, create) {
-            Ok(()) => reply.ok(),
+        let replace = flags & libc::XATTR_REPLACE != 0;
+        let res = self.inner.mutate(move |core| {
+            let root = core.root();
+            let st = core.getattr(ino_raw, root)?;
+            if !has_permission_grouped(actor_uid, actor_gid, &groups, &st, 0o2) {
+                return Err(OrfsError::PermissionDenied);
+            }
+            let present = core.getxattr(ino_raw, &name_bytes, root).is_ok();
+            if replace && !present {
+                return Err(OrfsError::NoData);
+            }
+            core.setxattr(ino_raw, &name_bytes, &value, create)?;
+            Ok(0)
+        });
+        match res {
+            Ok(_) => reply.ok(),
             Err(e) => reply.error(errno(&e)),
         }
     }
@@ -1818,17 +1861,22 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         if let Err(e) = self.ensure_writable() {
             return reply.error(errno(&e));
         }
-        let mut core = self.inner.core.lock();
-        let root = core.root();
-        let st = match core.getattr(ino.0, root) {
-            Ok(st) => st,
-            Err(e) => return reply.error(errno(&e)),
-        };
-        if !has_permission_grouped(req.uid(), req.gid(), &caller_groups(req.pid()), &st, 0o2) {
-            return reply.error(Errno::EACCES);
-        }
-        match core.removexattr(ino.0, name.as_bytes()) {
-            Ok(()) => reply.ok(),
+        let actor_uid = req.uid();
+        let actor_gid = req.gid();
+        let groups = caller_groups(req.pid());
+        let ino_raw = ino.0;
+        let name_bytes = name.as_bytes().to_vec();
+        let res = self.inner.mutate(move |core| {
+            let root = core.root();
+            let st = core.getattr(ino_raw, root)?;
+            if !has_permission_grouped(actor_uid, actor_gid, &groups, &st, 0o2) {
+                return Err(OrfsError::PermissionDenied);
+            }
+            core.removexattr(ino_raw, &name_bytes)?;
+            Ok(0)
+        });
+        match res {
+            Ok(_) => reply.ok(),
             Err(e) => reply.error(errno(&e)),
         }
     }
@@ -1957,58 +2005,58 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         if let Err(e) = self.ensure_writable() {
             return reply.error(errno(&e));
         }
-        let mut core = self.inner.core.lock();
-        let root = core.root();
-        let st = match core.getattr(ino.0, root) {
-            Ok(st) => st,
-            Err(e) => return reply.error(errno(&e)),
-        };
-        if st.kind != InodeType::File {
-            return reply.error(Errno::EISDIR);
-        }
-        let keep = mode & libc::FALLOC_FL_KEEP_SIZE != 0;
-        let punch = mode & libc::FALLOC_FL_PUNCH_HOLE != 0;
-        let zero = mode & libc::FALLOC_FL_ZERO_RANGE != 0;
-        let collapse = mode & libc::FALLOC_FL_COLLAPSE_RANGE != 0;
-        let insert = mode & libc::FALLOC_FL_INSERT_RANGE != 0;
-        let unshare = mode & libc::FALLOC_FL_UNSHARE_RANGE != 0;
-        let result = if collapse || insert || unshare {
-            Err(OrfsError::Unsupported(
-                "fallocate collapse/insert/unshare range".into(),
-            ))
-        } else if punch {
-            // PUNCH_HOLE must be combined with KEEP_SIZE.
-            if !keep {
-                Err(OrfsError::InvalidArgument(
-                    "FALLOC_FL_PUNCH_HOLE requires FALLOC_FL_KEEP_SIZE".into(),
+        let ino_raw = ino.0;
+        let res = self.inner.mutate(move |core| {
+            let root = core.root();
+            let st = core.getattr(ino_raw, root)?;
+            if st.kind != InodeType::File {
+                return Err(OrfsError::IsADirectory);
+            }
+            let keep = mode & libc::FALLOC_FL_KEEP_SIZE != 0;
+            let punch = mode & libc::FALLOC_FL_PUNCH_HOLE != 0;
+            let zero = mode & libc::FALLOC_FL_ZERO_RANGE != 0;
+            let collapse = mode & libc::FALLOC_FL_COLLAPSE_RANGE != 0;
+            let insert = mode & libc::FALLOC_FL_INSERT_RANGE != 0;
+            let unshare = mode & libc::FALLOC_FL_UNSHARE_RANGE != 0;
+            if collapse || insert || unshare {
+                Err(OrfsError::Unsupported(
+                    "fallocate collapse/insert/unshare range".into(),
                 ))
+            } else if punch {
+                // PUNCH_HOLE must be combined with KEEP_SIZE.
+                if !keep {
+                    Err(OrfsError::InvalidArgument(
+                        "FALLOC_FL_PUNCH_HOLE requires FALLOC_FL_KEEP_SIZE".into(),
+                    ))
+                } else {
+                    core.zero_range(ino_raw, offset, length)
+                }
+            } else if zero {
+                core.zero_range(ino_raw, offset, length)
+            } else if keep {
+                // Plain allocation without a size change: a sparse file is already
+                // "allocated" logically, so this is a no-op.
+                Ok(())
             } else {
-                core.zero_range(ino.0, offset, length)
-            }
-        } else if zero {
-            core.zero_range(ino.0, offset, length)
-        } else if keep {
-            // Plain allocation without a size change: a sparse file is already
-            // "allocated" logically, so this is a no-op.
-            Ok(())
-        } else {
-            let end = offset.checked_add(length).ok_or(OrfsError::Overflow {
-                what: "fallocate range",
-            });
-            match end {
-                Ok(end) if end > st.size => core.setattr(
-                    ino.0,
-                    &SetAttr {
-                        size: Some(end),
-                        ..Default::default()
-                    },
-                ),
-                Ok(_) => Ok(()),
-                Err(e) => Err(e),
-            }
-        };
-        match result {
-            Ok(()) => reply.ok(),
+                let end = offset.checked_add(length).ok_or(OrfsError::Overflow {
+                    what: "fallocate range",
+                })?;
+                if end > st.size {
+                    core.setattr(
+                        ino_raw,
+                        &SetAttr {
+                            size: Some(end),
+                            ..Default::default()
+                        },
+                    )
+                } else {
+                    Ok(())
+                }
+            }?;
+            Ok(0)
+        });
+        match res {
+            Ok(_) => reply.ok(),
             Err(e) => reply.error(errno(&e)),
         }
     }
@@ -2065,17 +2113,19 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             return reply.written(0);
         }
         let chunk = len.min(COPY_CHUNK);
-        let mut core = self.inner.core.lock();
-        let root = core.root();
-        let data = match core.read_at(ino_in.0, root, offset_in, chunk as u32) {
-            Ok(d) => d,
-            Err(e) => return reply.error(errno(&e)),
-        };
-        if data.is_empty() {
-            return reply.written(0);
-        }
-        match core.write_at(ino_out.0, offset_out, &data) {
-            Ok(n) => reply.written(n),
+        let in_raw = ino_in.0;
+        let out_raw = ino_out.0;
+        let res = self.inner.mutate(move |core| {
+            let root = core.root();
+            let data = core.read_at(in_raw, root, offset_in, chunk as u32)?;
+            if data.is_empty() {
+                return Ok(0);
+            }
+            let n = core.write_at(out_raw, offset_out, &data)?;
+            Ok(n as i64)
+        });
+        match res {
+            Ok(n) => reply.written(n as u32),
             Err(e) => reply.error(errno(&e)),
         }
     }
@@ -2143,7 +2193,7 @@ pub(crate) fn caller_groups(pid: u32) -> Vec<u32> {
         .unwrap_or_default()
 }
 
-fn check_create_uid<C: OrfsCore>(
+pub(crate) fn check_create_uid<C: OrfsCore>(
     core: &C,
     uid: u32,
     gid: u32,
@@ -2154,7 +2204,7 @@ fn check_create_uid<C: OrfsCore>(
     check_dir_write_uid(core, uid, gid, groups, parent, mask)
 }
 
-fn check_dir_write_uid<C: OrfsCore>(
+pub(crate) fn check_dir_write_uid<C: OrfsCore>(
     core: &C,
     uid: u32,
     gid: u32,
@@ -2167,17 +2217,6 @@ fn check_dir_write_uid<C: OrfsCore>(
         return Err(OrfsError::NotADirectory);
     }
     if !has_permission_grouped(uid, gid, groups, &st, mask) {
-        return Err(OrfsError::PermissionDenied);
-    }
-    Ok(())
-}
-
-fn check_dir_write<C: OrfsCore>(core: &C, req: &Request, parent: u64, mask: u32) -> Result<()> {
-    let st = core.getattr(parent, core.root())?;
-    if st.kind != InodeType::Directory {
-        return Err(OrfsError::NotADirectory);
-    }
-    if !has_permission_grouped(req.uid(), req.gid(), &caller_groups(req.pid()), &st, mask) {
         return Err(OrfsError::PermissionDenied);
     }
     Ok(())

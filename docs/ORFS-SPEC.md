@@ -124,10 +124,11 @@ per-phase record.
 | 36 | Publish `orfs` v0.1.0 to crates.io | **complete** |
 | 37 | Object-localized read selection + allocation-light authoritative fallback | **complete** |
 | 38 | Docs-from-receipts check; documentation reconciled to evidence | **complete** |
+| 39 | Group commit extended to ordinary write workloads (both transports) | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–38 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–39 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.1.0 is published on crates.io (see `docs/PUBLISHING.md`).
 

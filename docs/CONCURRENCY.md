@@ -256,14 +256,24 @@ order. Nothing is published out of order — proven by
   threads, but every authoritative byte is produced by the same serial publication
   path as a single commit. Atomicity, no-partial-visibility, monotonic roots and
   ordered replay are therefore unchanged without qualification.
-* **Concurrency limit.** The FUSE adaptors still serialise *mutating* requests
-  through `Mutex<Core>` (Phase 19 left writers serialised on purpose). The
-  parallel-preparation / group-commit mechanism is therefore realised by callers
-  that submit a batch to `commit_group`; wiring the transports to accumulate
-  concurrent mutating requests behind one coordinator is future work. This is
-  reported honestly in `docs/PERFORMANCE.md` §10: the win appears when a prepared
-  backlog exists, and it is large, but a strictly sequential single writer is
-  unchanged (a group of one is the single-commit path).
+* **Transport wiring (Phase 32).** The FUSE adaptors still serialise *mutating*
+  requests — the core lock was deliberately kept, because parallel *preparation*
+  of untrusted per-request state is future work — but they no longer take it
+  **directly**. Both transports' mutating handlers (`write`, `setattr`/truncate,
+  `create`/`mkdir`/`mknod`/`symlink`, `unlink`/`rmdir`, `rename`/`link`,
+  `setxattr`/`removexattr`, `fallocate`, `copy_file_range`) submit a job to a
+  per-mount group-commit coordinator (`src/group_commit.rs`), which drains a
+  bounded batch of concurrently-arrived jobs and runs them **sequentially, in
+  submission order**, under one core lock. For a `sync` mount the whole batch is
+  published with durability lowered to `ordered` and covered by **one** shared
+  `fsync` before any caller is acknowledged (§3.2 of `docs/TRANSACTIONS.md`), so
+  the I7 contract holds while the barrier is amortised; `ordered`/`batched`
+  mounts add no barrier. Because the jobs run while the worker already holds the
+  core lock, a job must never re-enter the coordinator (no such path exists).
+  Whether this is observable as a speedup depends on the transport actually
+  delivering overlapping requests; on the classical `fuser` session the backlog
+  is shallow, so the win is not realised there (reported honestly in
+  `docs/PERFORMANCE.md` §11).
 
 ### 8.5 Invariants and proof obligations
 

@@ -119,10 +119,11 @@ per-phase record.
 | 31 | Faster commits: ordered group commit + conflict-aware parallel preparation | **complete** |
 | 32 | End-to-end group-commit coordinator (opt-in); correctness court; honest measurement | **complete** |
 | 33 | Review-finding consolidation: read-path timing, native `nlink`, supplementary groups, calibration guarantee, passthrough integrity | **complete** |
+| 34 | crates.io publishing readiness (blocked on the `ekbloom` dependency) | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–33 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–34 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 - The `orfs` crate builds, its **344** tests (default) pass, and
   `cargo test --features failpoints` adds the crash-injection court (352 tests in

@@ -1947,3 +1947,38 @@ candidates never selected), `docs/LIMITATIONS.md` §13 (honest costs: `/proc`
 dependency, the per-version anchor read, and the calibration budget's real
 meaning), the README phase table, and this entry. Phases 29 and 30 were also
 restored to this file to remove the documentation gap between 28 and 31.
+
+## Phase 34 — crates.io publishing readiness (blocked on the `ekbloom` dependency)
+
+**Prepared; publication blocked on one external step.** The crate is now
+publish-ready except for a single dependency constraint that cannot be resolved
+from this repository.
+
+### Delivered
+
+* `Cargo.toml` gains the metadata crates.io expects (`description`, `license`,
+  `repository`, `homepage`, `documentation`, `readme`, five `keywords`, the
+  `filesystem` and `os::unix-apis` categories) and an `exclude` list that keeps
+  the package to source (`evidence/`, `docs/`, `scripts/` omitted).
+* The `publish = false` guard is removed.
+* `LICENSE-MIT` and `LICENSE-APACHE` added, matching the declared
+  `MIT OR Apache-2.0` expression.
+* `docs/PUBLISHING.md` records the exact procedure and the blocker.
+
+### Verified
+
+* The name `orfs` is **available** on crates.io (checked 2026-10-12).
+* `cargo package --list` succeeds and lists the source, tests, benches, manifest,
+  README, Dockerfiles, toolchain pin, and license files (~82 files); no
+  `evidence/`, `docs/`, or `scripts/` entries.
+* `cargo publish --dry-run` fails with a precise, reproducible error:
+  `no matching package named \`ekbloom\` found … location searched: crates.io
+  index`. crates.io requires every dependency to be published there, and EKBLOOM
+  is consumed as a rev-pinned **git** dependency and is not on crates.io.
+
+### Blocker (one external step)
+
+EKBLOOM must be published to crates.io as `ekbloom` 0.3.0 under its own release
+process; OrFS's dependency then becomes `ekbloom = "=0.3.0"` and `cargo publish`
+can run. EKBLOOM's source is never copied into OrFS, so this cannot be worked
+around from here. See `docs/PUBLISHING.md`.

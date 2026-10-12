@@ -3,9 +3,19 @@ name = "orfs"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
-description = "OrFS — non-withdrawal, concealed-expansion FUSE filesystem with io_uring backing and EKBLOOM acceleration"
+description = "OrFS — a non-withdrawal, concealed-expansion FUSE filesystem with io_uring backing and EKBLOOM-accelerated historical reads"
 license = "MIT OR Apache-2.0"
-publish = false
+repository = "https://github.com/infinityabundance/OrFS"
+homepage = "https://github.com/infinityabundance/OrFS"
+documentation = "https://docs.rs/orfs"
+readme = "README.md"
+keywords = ["filesystem", "fuse", "io-uring", "append-only", "snapshot"]
+categories = ["filesystem", "os::unix-apis"]
+# Evidence, docs and scripts are large and are not needed to build the crate.
+# `crates.io` rejects *any* dependency that is not itself published there, so a
+# `cargo publish` also requires the rev-pinned `ekbloom` git dependency to be
+# published first — see `docs/PUBLISHING.md`.
+exclude = ["/evidence", "/docs", "/scripts", "/research", "/mnt-scratch"]
 
 [lib]
 name = "orfs"

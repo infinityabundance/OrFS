@@ -2259,3 +2259,52 @@ reconstruction (not a full remount); the workload is library-level
 cannot be measured at a genuinely *old* fixed root with the public API
 (`manifest_eligible` publishes at the current root; the planner considers
 `latest_for` only), so the manifested arm pins each checkpoint's own root.
+
+## Phase 41 — Acceptance audit re-run at HEAD; residual doc-drift closed
+
+**Complete.** External review item 3: the independent acceptance audit recorded an
+old audited HEAD (`253173d`, phase 28) and its numbers predated phases 33–40.
+Re-ran every gate at the current HEAD and regenerated the audit artifacts.
+
+### Audited revision
+
+`2187a3e` (`phase40: whole-system history-scaling court`), clean tree.
+
+### Results (all fourteen gates A–N PASS; numbers refreshed)
+
+* `cargo test`: **361 passed / 0 failed** (30 suites; was 327);
+  `--features failpoints`: **371 passed / 0 failed** (was 332).
+* `container-fuse-test.sh` green: passthrough 4, fuse_integration 2, snapshot_fuse
+  1, fuse_uring 5 (real F2 engagement logged), group_commit_e2e 4, performance_court
+  1, ekbloom_frontier_e2e 4.
+* `container-uring-test.sh`: `uring_integration` 7/0 under `ORFS_REQUIRE_URING=1`
+  (default seccomp blocks `io_uring_setup`; `seccomp=unconfined` re-proven).
+* `container-posix-test.sh`: pjdfstest OrFS 238 files/46 failing/3777 assertions vs
+  ext4 238/2/28; allowlist gate `result=pass, unclassified=0, stale_allowlist=0`.
+* **Gate M (clean checkout)**: a pristine clone (`/mnt/1tb_kingston/OrFS-audit-clean`,
+  no `.cargo-home`, no `target/`) built and tested in release via
+  `container-reproduce.sh` — **361/0**, 113 crates fetched including
+  `ekbloom v0.3.0` from **crates.io** (the dependency is now the registry release
+  `=0.3.0`, checksum `b02f89ad…`, not a git rev); clone removed afterwards.
+* `scripts/check-docs-receipts.sh`: PASS (citations 37/37); it now classifies the
+  audit receipt as `[current]`.
+
+### Artifacts
+
+* `docs/ACCEPTANCE-AUDIT.md` — regenerated for the new HEAD; gate table, counts,
+  clean-checkout section and remaining-work list updated.
+* `evidence/receipts/acceptance-audit.json` — schema `orfs.evidence.acceptance-audit.v3`
+  with a `supersedes` note for the v2 receipt at `253173d`.
+
+### Residual drift closed (the audit's own remaining-work items 1–3)
+
+* `docs/ORFS-SPEC.md` §4 heading `(0–31)` → `(0–40)`; test counts `344/352` → `361/371`.
+* `docs/FUSE_URING.md` §6.4 concurrency table + prose re-synced to
+  `evidence/performance/f2-concurrency.json` (all rows; significance by 95% CI
+  disjointness) and the mixed-workload line updated.
+* `evidence/receipts/source-commit.json` regenerated at the phase-41 tree.
+
+Not re-run (out of the required set, stated plainly): the endurance court and
+`xfstests` (`ran:false`, assessed-not-runnable). The native F2 mount tests are
+legitimately skipped in the non-mount uring court (no `/dev/fuse`); real F2
+engagement is exercised in the kmount court.

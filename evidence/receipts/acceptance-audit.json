@@ -1,47 +1,114 @@
 {
-  "schema": "orfs.evidence.acceptance-audit.v2",
+  "schema": "orfs.evidence.acceptance-audit.v3",
   "generated_by": "independent adversarial audit (clean-checkout, in-container, verify-by-running)",
-  "audited_head_commit": "253173d",
-  "audited_head_subject": "phase28: native FUSE adversarial hardening and fuzzing",
+  "audited_head_commit": "2187a3e949bd116445988a281db110c13228742b",
+  "audited_head_commit_short": "2187a3e",
+  "audited_head_subject": "phase40: whole-system history-scaling court",
   "audited_branch": "master",
   "audit_utc": "2026-10-12",
   "repo": "/mnt/1tb_kingston/OrFS",
   "supersedes": {
-    "audited_head_commit": "79cc421",
-    "receipt": "evidence/receipts/acceptance-audit.json@v1"
+    "audited_head_commit": "253173d",
+    "receipt": "evidence/receipts/acceptance-audit.json@v2",
+    "note": "v2 audited phase-28 HEAD 253173d. v3 audits phase-40 HEAD 2187a3e; all fourteen gate verdicts remain PASS."
   },
+  "worktree_at_audit_start": {
+    "git_status_short": "clean (empty output)",
+    "note": "The tree was clean at the start. Re-running the courts/benches regenerated 31 evidence files under evidence/ (measured performance jitter); that churn was reverted to HEAD so this audit edits only docs/ACCEPTANCE-AUDIT.md and evidence/receipts/acceptance-audit.json."
+  },
+  "commands_run": [
+    {
+      "step": 1,
+      "command": "git rev-parse HEAD && git log -1 --format=%s && git status --short",
+      "result": "HEAD 2187a3e949bd116445988a281db110c13228742b; subject 'phase40: whole-system history-scaling court'; git status --short empty (clean)"
+    },
+    {
+      "step": 2,
+      "command": "sh -c '. scripts/lib.sh && docker_run sh -c \"cargo fmt -p orfs --check && cargo clippy -p orfs --all-targets -- -D warnings\"'",
+      "result": "PASS — cargo fmt --check silent (clean); clippy 'Finished dev profile', 0 warnings; exit 0"
+    },
+    {
+      "step": 3,
+      "command": "sh scripts/container-test.sh",
+      "result": "PASS — 361 passed, 0 failed, 0 ignored across 30 suites (previous audit: 327)"
+    },
+    {
+      "step": 3,
+      "command": "sh scripts/container-test.sh --features failpoints",
+      "result": "PASS — 371 passed, 0 failed, 0 ignored across 30 suites (previous audit: 332)"
+    },
+    {
+      "step": 4,
+      "command": "sh scripts/container-fuse-test.sh",
+      "result": "PASS — every court green; real F2 engagement logged ('orfs: FUSE-over-io_uring engaged'); see courts_run_from_primary.kmount"
+    },
+    {
+      "step": 5,
+      "command": "sh scripts/container-uring-test.sh",
+      "result": "PASS — default seccomp profile blocks io_uring_setup, so seccomp=unconfined was used; uring_integration 7/0 with ORFS_REQUIRE_URING=1; backing io_uring_available=true"
+    },
+    {
+      "step": 6,
+      "command": "sh scripts/container-posix-test.sh",
+      "result": "PASS — OrFS 238 files/46 failing/3777 assertions; reference ext4 238/2/28; unclassified=0 stale_allowlist=0 result=pass"
+    },
+    {
+      "step": 7,
+      "command": "git clone /mnt/1tb_kingston/OrFS /mnt/1tb_kingston/OrFS-audit-clean && sh /mnt/1tb_kingston/OrFS-audit-clean/scripts/container-reproduce.sh (launched from a different cwd) && sh /mnt/1tb_kingston/OrFS-audit-clean/scripts/container-check.sh",
+      "result": "PASS — pristine empty-cache clone at 2187a3e builds and tests green from the crates.io ekbloom pin; release tests 361/0; clone fmt+clippy clean (exit 0)"
+    },
+    {
+      "step": 8,
+      "command": "sh scripts/check-docs-receipts.sh",
+      "result": "On the committed HEAD tree: PASS (provenance 3 records, 0 failing; citations 37 checked, 37 ok). On the working tree immediately after the container runs: FAIL with 16 citation mismatches, because the courts regenerated evidence (measured jitter). The FAIL is churn-induced, not a doc defect."
+    },
+    {
+      "step": 9,
+      "command": "spot-checks of evidence/{recovery,correctness,performance}/*.json (committed at HEAD)",
+      "result": "A–N artifacts re-read; numbers refreshed where they changed; see gates A–N"
+    },
+    {
+      "step": "extra",
+      "command": "sh scripts/container-history-scaling.sh",
+      "result": "PASS — history_scaling_sweep (release) 1 passed, 0 failed, 1 filtered, 22.85s; writes evidence/performance/history-scaling.json"
+    }
+  ],
   "clean_checkout": {
     "path": "/mnt/1tb_kingston/OrFS-audit-clean",
-    "command": "git clone /mnt/1tb_kingston/OrFS /mnt/1tb_kingston/OrFS-audit-clean && (cd clone && sh scripts/container-reproduce.sh)",
+    "clone_head": "2187a3e949bd116445988a281db110c13228742b",
+    "clone_status": "clean; no .cargo-home and no target/ (empty cache)",
+    "command": "git clone /mnt/1tb_kingston/OrFS /mnt/1tb_kingston/OrFS-audit-clean && (cd elsewhere; sh /mnt/1tb_kingston/OrFS-audit-clean/scripts/container-reproduce.sh)",
     "pristine_result": "PASS",
+    "release_tests": 361,
+    "release_tests_failed": 0,
+    "container_check": "PASS — cargo fmt -p orfs --check + clippy --all-targets -D warnings clean (exit 0)",
     "cargo_home_seeded": false,
-    "ekbloom_pin_rev": "708c349128668bf26b50684ce473d8de4058dc31",
-    "ekbloom_pin_url": "https://github.com/infinityabundance/EKBLOOM",
-    "ekbloom_fetched_from_public_remote": true,
-    "tests_default": 327,
-    "tests_default_failed": 0,
-    "tests_failpoints": 332,
-    "tests_failpoints_failed": 0,
-    "fmt_clippy": "cargo fmt -p orfs --check OK; cargo clippy --all-targets -- -D warnings OK",
-    "lib_sh_root_resolution": "fixed and verified: scripts launched by absolute path from a different cwd operated on the clone, not $PWD",
-    "note": "A genuinely pristine clone with an empty CARGO_HOME builds and tests green. Closes the previous Gate-M failure (dangling file:// EKBLOOM pin at rev 255452e1)."
+    "crates_downloaded": 113,
+    "ekbloom_pin_kind": "registry-exact",
+    "ekbloom_cargo_dependency": "ekbloom = \"=0.3.0\"",
+    "ekbloom_registry": "registry+https://github.com/rust-lang/crates.io-index",
+    "ekbloom_checksum_sha256": "b02f89add93be1429809445c7570c1271a68957702728c95437887243bdcf2cf",
+    "ekbloom_git_dependency_used": false,
+    "lib_sh_root_resolution": "verified: launched by absolute path from a different cwd, the clone's scripts compiled /mnt/1tb_kingston/OrFS-audit-clean (log: 'Compiling orfs v0.1.0 (/mnt/1tb_kingston/OrFS-audit-clean)')",
+    "note": "EKBLOOM is consumed as the published crates.io release ekbloom 0.3.0 (checksum b02f89ad...), not a git rev; a pristine empty-cache clone builds with no sibling EKBLOOM working tree. This supersedes the previous git-pinned Gate-M fix."
   },
-  "courts_run_from_pristine_clone": {
+  "courts_run_from_primary": {
     "kmount": {
       "command": "scripts/container-fuse-test.sh",
-      "passthrough_root": "4 passed, 0 failed",
+      "fuse_passthrough_root": "4 passed, 0 failed (4.31s)",
       "fuse_integration": "2 passed, 0 failed",
       "snapshot_fuse": "1 passed, 0 failed",
-      "fuse_uring": "5 passed, 0 failed (real F2 engagement logged: 'orfs: FUSE-over-io_uring engaged')",
-      "performance_court": "1 passed, 0 failed, 72.84s",
-      "ekbloom_frontier_e2e": "4 passed, 0 failed"
+      "fuse_uring": "5 passed, 0 failed (16.57s; real F2 engagement logged: 'orfs: FUSE-over-io_uring engaged')",
+      "group_commit_e2e": "4 passed, 0 failed (194.68s); honest: group_commit=false 91 ops/s vs true 38 ops/s on create+unlink churn; write workload on/off ratio 1.00x",
+      "performance_court": "1 passed, 0 failed (74.00s)",
+      "ekbloom_frontier_e2e": "4 passed, 0 failed (3.41s)"
     },
     "io_uring": {
       "command": "scripts/container-uring-test.sh",
       "seccomp": "default profile blocks io_uring_setup; seccomp=unconfined required (re-proven by scripts/uring-probe.c)",
       "uring_integration": "7 passed, 0 failed, ORFS_REQUIRE_URING=1",
-      "fuse_uring_nonmount": "5 passed (mount-dependent F2 tests honestly skipped in the non-/dev/fuse container; run for real in the kmount court)",
-      "backing_uring": "io_uring_available=true"
+      "fuse_uring_nonmount": "5 passed, 0 failed (mount-dependent F2 tests honestly skipped in the non-/dev/fuse container; run for real in the kmount court)",
+      "backing_uring": "io_uring_available=true; sync_append 4753.9 MB/s, uring_append 1351.4, uring_append_batched 3481.8; sync_read 12524.7, uring_read 7819.1, uring_read_batched 7855.3 MB/s"
     },
     "posix": {
       "command": "scripts/container-posix-test.sh",
@@ -51,21 +118,22 @@
       "stale_allowlist": 0,
       "result": "pass"
     },
+    "history_scaling": {
+      "command": "scripts/container-history-scaling.sh",
+      "history_scaling_sweep": "1 passed, 0 failed, 1 filtered, 22.85s (release)",
+      "evidence": "evidence/performance/history-scaling.json"
+    },
     "endurance": {
       "command": "scripts/container-endurance.sh",
-      "churn_1M_index_clone_ns": 60,
-      "churn_errors": 0,
-      "extents_max": 199999,
-      "historical_roots": "2000/2000, 0 errors",
-      "remounts_readers_reads": "4 x 4 readers, 297844 reads, 0 errors, monotone roots",
-      "defect": "the advertised post-endurance correctness re-run does NOT execute: scripts/lib.sh docker_run uses `exec`, so the second docker_run in container-endurance.sh is unreachable"
+      "re_run_this_audit": false,
+      "reason_not_rerun": "expensive and outside the required re-run set; the phase-30 fix (lib.sh docker_run no longer execs) is verified by reading, and evidence/performance/endurance-postcourt.json records ran=true result=pass. Not independently re-verified here."
     }
   },
   "gates": {
     "A": {
       "name": "Genuine non-withdrawal",
       "verdict": "PASS",
-      "artifact": "tests/log_model.rs::committed_bytes_never_rewritten_across_appends_and_rollover + torn_tail_is_quarantined_not_truncated; evidence/recovery/torn-write.json (all_verdicts_ok=true, 3 crash failpoints, recovered_root==baseline_root, scan_tail_kind=TornRecord)"
+      "artifact": "tests/log_model.rs::committed_bytes_never_rewritten_across_appends_and_rollover + torn_tail_is_quarantined_not_truncated; evidence/recovery/torn-write.json (all_verdicts_ok=true, 3 crash failpoints, recovered_root==baseline_root==1429, scan_tail_kind in {TornRecord,Uncommitted,TornRecord}, physical bytes retained)"
     },
     "B": {
       "name": "Valid historical roots",
@@ -100,18 +168,18 @@
     "H": {
       "name": "Concealed manifestation",
       "verdict": "PASS",
-      "artifact": "tests/manifestation.rs (generations_are_version_qualified, recovery_selects_newest_valid_and_ignores_torn, drop_all_and_rebuild_yields_identical_logical_bytes, incremental overlay); evidence/recovery/manifested-generation.json (published 2/recovered 2/rejected 0)"
+      "artifact": "tests/manifestation.rs (generations_are_version_qualified, recovery_selects_newest_valid_and_ignores_torn, drop_all_and_rebuild_yields_identical_logical_bytes, incremental overlay); evidence/recovery/manifested-generation.json (all_ok=true, 2 manifests, published 2/recovered 2/rejected 0)"
     },
     "I": {
       "name": "EKBLOOM exact-equivalence",
       "verdict": "PASS",
-      "artifact": "tests/ekbloom_read.rs (proptest_planned_equals_authoritative, compatible_certified_path_serves_an_exact_read); evidence/correctness/ekbloom-read-equivalence.json (equivalent=true per case)",
-      "caveat": "In the in-crate 4 KiB frontier the planner serves 2000/2000 reads via logical-extent fallback for every profile (evidence/performance/ekbloom-frontier.json); exactness holds, the 4 KiB accelerated path is inert"
+      "artifact": "tests/ekbloom_read.rs (proptest_planned_equals_authoritative, compatible_certified_path_serves_an_exact_read); evidence/correctness/ekbloom-read-equivalence.json (equivalent 492/492, mismatches 0, 182 accelerated cases)",
+      "caveat": "In the in-crate 4 KiB frontier every profile serves 2000/2000 reads via logical-extent fallback (evidence/performance/ekbloom-frontier.json, all 18 profiles); exactness holds, the 4 KiB accelerated path is inert"
     },
     "J": {
       "name": "Recovery (incl. ENOSPC/EIO/power-loss)",
       "verdict": "PASS",
-      "artifact": "cargo test --features failpoints: 332 passed/0 failed (tests/crash_recovery.rs::process_crash_at_every_failpoint_recovers_to_a_valid_boundary); evidence/recovery/{torn-write,commit-interruption,segment-rollover}.json; tests/power_loss.rs with evidence/recovery/{power-loss,enospc,device-error}.json (all_invariants_ok=true; errno 28 and 5); tests/recovery_adversarial.rs (watermark, gap, capacity read-only EROFS); evidence/recovery/capacity.json"
+      "artifact": "cargo test --features failpoints: 371 passed/0 failed (tests/crash_recovery.rs::process_crash_at_every_failpoint_recovers_to_a_valid_boundary); evidence/recovery/{torn-write,commit-interruption,segment-rollover}.json; tests/power_loss.rs with evidence/recovery/{power-loss,enospc,device-error}.json (all_invariants_ok=true); tests/recovery_adversarial.rs (watermark, gap, capacity read-only EROFS); evidence/recovery/capacity.json (subsequent_errno=30=EROFS)"
     },
     "K": {
       "name": "Physical accounting",
@@ -127,14 +195,24 @@
     "M": {
       "name": "Reproducibility (pinned container)",
       "verdict": "PASS",
-      "artifact": "clean clone + scripts/container-reproduce.sh (327/0), container-check.sh (fmt+clippy clean), --features failpoints (332/0); public EKBLOOM pin resolves with an empty CARGO_HOME; scripts/lib.sh root resolution fixed"
+      "artifact": "clean clone + scripts/container-reproduce.sh (361/0), container-check.sh (fmt+clippy clean); EKBLOOM resolves as the crates.io registry ekbloom 0.3.0 (checksum b02f89ad...) with an empty CARGO_HOME; no git dependency; scripts/lib.sh root resolution holds"
     },
     "N": {
       "name": "Measured advantage",
       "verdict": "PASS",
-      "artifact": "evidence/performance/ekbloom-e2e-release.json (random 1B direct reads: certified path/full/max-speed 1.3-1.4x faster than none, e.g. 2955 vs 4118 ns P50); ekbloom-search-e2e-release.json (concealed trigram index 8.6x over the same API scan); reproduced from the clean clone",
+      "artifact": "evidence/performance/ekbloom-e2e-release.json (random 1B direct reads: certified path/full/max-speed 1.3-1.4x faster than none, e.g. 2955 vs 4118 ns P50); ekbloom-search-e2e-release.json (concealed trigram index speedup 8.62x over the same API scan)",
       "scope_caveat": "Advantage is narrow: 4 KiB reads do not win (planner falls back to logical-extent), and F2/E1/E2 gain nothing over F0/F1"
     }
+  },
+  "verdict_changes_vs_previous_audit": {
+    "verdicts_changed": "none — all of A–N remain PASS",
+    "numbers_refreshed": [
+      "default tests 327 -> 361; failpoints 332 -> 371",
+      "new kilometers court: group_commit_e2e 4/0",
+      "new court: history-scaling (phase 40), 1/0",
+      "Gate M pin: git rev 708c349... -> crates.io ekbloom =0.3.0 (checksum b02f89ad...); no git dependency",
+      "documentation drift: 7 of 9 previous items fixed by phase 38; 2 remain (ORFS-SPEC phase-range/test-count; FUSE_URING 6.3-6.4 figures)"
+    ]
   },
   "documentation_required_set": {
     "present": [
@@ -144,40 +222,53 @@
     ],
     "newer_present": [
       "CAPACITY.md", "CONCURRENCY.md", "POWERLOSS.md", "MANIFESTATION.md", "SNAPSHOTS.md",
-      "NAMESPACE.md", "QUERY.md", "FUSE_PASSTHROUGH.md", "PROGRESS.md"
+      "NAMESPACE.md", "QUERY.md", "FUSE_PASSTHROUGH.md", "PROGRESS.md", "PUBLISHING.md",
+      "RECEIPTS.md"
     ],
     "missing": [],
-    "drift": [
-      "docs/FUSE_URING.md sec.8 and sec.10 still say 'FUSE passthrough ... is not implemented' while Phase 21 implements it and the passthrough court passes 4/4.",
-      "docs/FUSE-SEMANTICS.md sec.10 still says transport fuse-uring 'does not engage on this host' and lists FUSE passthrough as a future optimization; both false at HEAD.",
-      "docs/IO_URING.md sec.11 still says Domain B (FUSE-over-io_uring) 'does not engage on the development host'; false.",
-      "docs/ORFS-SPEC.md sec.4 says 'thirteen build phases (0-12)' and '253 tests (default)'; the tree has 327 default / 332 failpoints and is at Phase 28. (Its phase/document tables are otherwise now correct.)",
-      "README.md phase table stops at Phase 14, omitting 15-28.",
-      "docs/PROGRESS.md has no Phase 18 or Phase 26 section (headers jump 17->19 and 25->27).",
-      "docs/CONCURRENCY.md sec.7 contradicts sec.4.1 ('path-copying deferred' vs 'implemented in Phase 27').",
-      "docs/CONCURRENCY.md sec.4 quotes ~40 ns for the index clone; evidence/performance/publish-cost.json records index_clone_ns=60.",
-      "docs/FUSE_URING.md sec.6.3-6.4 tables do not match committed evidence: doc F0/F1/F2 16-reader = 383490/382577/108094 vs evidence 485614/475708/113636."
+    "docs_from_receipts_check": {
+      "command": "sh scripts/check-docs-receipts.sh",
+      "on_committed_head_tree": "PASS — provenance 3 records (0 failing); citations 37 checked (37 ok, 0 failing)",
+      "on_working_tree_after_court_runs": "FAIL — 16 citation mismatches, all from evidence regenerated by the runs (measured jitter); not a doc defect"
+    },
+    "drift_fixed_by_phase38": [
+      "FUSE_URING.md sec.8/sec.10 now say passthrough is implemented and engaged",
+      "FUSE-SEMANTICS.md sec.10 now says fuse-uring engages for real",
+      "IO_URING.md sec.11 now says Domain B is implemented (Phase 10)",
+      "README.md phase table now runs to Phase 40",
+      "PROGRESS.md now has Phase 18 and Phase 26 sections",
+      "CONCURRENCY.md sec.7 now says path-copying is implemented (Phase 27)",
+      "CONCURRENCY.md sec.4 now distinguishes ~60 ns index clone from ~40 ns read-view capture"
+    ],
+    "drift_remaining": [
+      "ORFS-SPEC.md sec.4 heading still says 'ordered build phases (0-31)' while the status block says 'Phases 0-40 are implemented', and still claims 344 default / 352 failpoints tests; this audit measured 361 / 371.",
+      "FUSE_URING.md sec.6.3-6.4 16-reader row reads F0 485614 / F1 475708 / F2 113636 but the committed evidence (fuse-uring.json and f2-concurrency.json) records F0 506903 / F1 500147 / F2 113322 (fuse-uring.json last changed at phase 31, so phase 38 re-synced to pre-phase-31 numbers)."
     ]
   },
   "evidence_completeness": {
     "all_present_nonempty_machine_generated": true,
     "empty_or_placeholder": [],
     "committed_roots_reproduces_byte_identically": true,
-    "mont_replay_collision_fixed": "snapshot court now writes evidence/performance/mount-replay-snapshot.json; no two-writer collision",
-    "source_commit_receipt": "present but STALE: records fa38029, not HEAD 253173d",
-    "xfstests": "honest ran=false / assessed-not-runnable record, not fabricated"
+    "new_at_this_head": [
+      "evidence/performance/history-scaling.json (phase 40)",
+      "evidence/performance/group-commit-e2e.json, group-commit-e2e-writes.json, group-commit.json (phases 31/32/39)",
+      "evidence/performance/endurance-postcourt.json (phase 30)",
+      "evidence/performance/ekbloom-read-paths.json",
+      "evidence/receipts/ekbloom.json, crates-io.json, doctor.json"
+    ],
+    "source_commit_receipt": "present but STALE: records 1024b5f, 6 behind HEAD 2187a3e; a regenerable host receipt, classified allowed-historical by check-docs-receipts",
+    "xfstests": "honest ran=false / assessed-not-runnable record, not fabricated",
+    "reverted_churn": "re-running the courts/benches regenerated 31 evidence files under evidence/ (performance jitter); reverted to HEAD so only the two authorized artifacts are edited"
   },
   "overclaims": {
     "none": [
       "F2 FUSE-over-io_uring is correctly claimed active and is backed by a real mount.",
       "FUSE passthrough for immutable snapshots is correctly claimed and measured.",
-      "The image pixel-surface pyramid is correctly claimed not materialised."
+      "The image pixel-surface pyramid is correctly claimed not materialised.",
+      "Group commit is NOT overclaimed: the phase-32 court reports no statistically defensible end-to-end win on a mount workload."
     ],
     "flagged": [
-      "Normative-doc drift: FUSE_URING sec.8/10, FUSE-SEMANTICS sec.10, IO_URING sec.11 still describe F2/passthrough as inactive/unimplemented.",
-      "README phase table and ORFS-SPEC counts inconsistent with the tree.",
-      "PROGRESS.md missing Phase 18 and Phase 26 sections.",
-      "Cross-check only: scripts/container-endurance.sh's post-endurance no-corruption court is dead code because docker_run execs (scripts/lib.sh:89)."
+      "Normative-doc drift: ORFS-SPEC sec.4 phase range/test counts and FUSE_URING sec.6.3-6.4 figures remain stale relative to the tree/evidence (see documentation_required_set.drift_remaining)."
     ]
   },
   "posix_33_reconciliation": {
@@ -192,24 +283,25 @@
     "unclassified": 0,
     "stale_allowlist": 0,
     "result": "pass",
-    "caveat": "The '0 deviations' rests on the mechanical unsupported-node-type classification: mknod for FIFO/block/char/socket returns EOPNOTSUPP, and 3062 of the 3777 failing assertions are 'unsupported_node_downstream' cascades. The only allowlist entry is the shared ext4 artifact (unlink_08/2)."
+    "caveat": "The '0 deviations' rests on the mechanical unsupported-node-type classification: mknod for FIFO/block/char/socket returns EOPNOTSUPP, and the bulk of the 3777 failing assertions are unsupported_node_downstream cascades. The only allowlist entry is the shared ext4 artifact (unlink_08/2)."
   },
   "containers": {
-    "created_by_audit": "kmount / uring / posix / endurance / failpoints / build runs; all --rm-exited and removed",
+    "created_by_audit": "container-reproduce, container-check, container-test (default + failpoints), container-fuse-test (kmount), container-uring-test, container-posix-test, container-history-scaling; all --rm-exited and removed",
+    "stray_build_containers_at_start": "none",
     "unremovable_preexisting": {
-      "count": 12,
+      "orfs_kmount_count": 11,
       "image": "orfs-kmount:1.99.0",
       "error": "docker rm -f -> 'could not kill container: tried to kill container, but did not receive an exit event'",
-      "note": "Predate this audit; not created by it; cannot be removed by it. A single kmount container completes cleanly."
+      "note": "Predate this audit; not created by it; cannot be removed by it (uninterruptible D sleep). A single kmount container completes cleanly. Also present: 2 ekbloom-rust-fuse containers, 1 unnamed (image fd5a395e5480), 1 openssl-rs-court."
     }
   },
   "gaps_prioritized": [
-    "scripts/container-endurance.sh: the post-endurance no-corruption court never runs because scripts/lib.sh docker_run uses `exec` (fix by not exec-ing, or chaining in one sh -c).",
-    "Refresh drifted normative docs: FUSE_URING sec.8/10, FUSE-SEMANTICS sec.10, IO_URING sec.11 (F2/passthrough), CONCURRENCY sec.7 and the 40-vs-60 ns figure, FUSE_URING sec.6.3-6.4 tables.",
-    "Add PROGRESS.md Phase 18 and Phase 26 sections; fix ORFS-SPEC 'thirteen phases'/test count; extend README phase table to 28.",
+    "Re-sync FUSE_URING.md sec.6.3-6.4 to the committed evidence (F0 506903 / F1 500147 / F2 113322 at 16 readers).",
+    "Fix ORFS-SPEC.md: sec.4 heading (0-31 -> 0-40) and test counts (344/352 -> 361/371).",
     "Regenerate evidence/receipts/source-commit.json at HEAD.",
     "Gate N breadth: advantage only for 1B reads and content search; 4 KiB and F2/E1/E2 gain nothing (honest, open research).",
-    "State the pjdfstest classification caveat alongside the '0 deviations' headline.",
-    "Host hygiene: 12 unremovable pre-existing kmount containers; concurrency is the apparent hang trigger."
+    "Group commit is not yet a win on a mount-scale workload (engine-level win needs a larger prepared backlog).",
+    "The docs-from-receipts citation set does not cover the ORFS-SPEC/FUSE_URING figures that drifted.",
+    "Host hygiene: 11 unremovable pre-existing kmount containers; concurrency is the apparent wedging trigger."
   ]
 }

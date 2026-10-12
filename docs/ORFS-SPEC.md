@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–31)
+## 4. The ordered build phases (0–40)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -126,15 +126,16 @@ per-phase record.
 | 38 | Docs-from-receipts check; documentation reconciled to evidence | **complete** |
 | 39 | Group commit extended to ordinary write workloads (both transports) | **complete** |
 | 40 | Whole-system history-scaling court | **complete** |
+| 41 | Acceptance audit re-run at HEAD; residual doc-drift closed | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–40 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–41 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.1.0 is published on crates.io (see `docs/PUBLISHING.md`).
 
-- The `orfs` crate builds, its **344** tests (default) pass, and
-  `cargo test --features failpoints` adds the crash-injection court (352 tests in
+- The `orfs` crate builds, its **361** tests (default) pass, and
+  `cargo test --features failpoints` adds the crash-injection court (371 tests in
   total); `cargo fmt -p orfs --check` / `clippy --all-targets -- -D warnings` are
   clean **inside the pinned container** (`scripts/container-*.sh`).
 - `src/capabilities.rs` + `orfs doctor` perform a **real** kernel/container
@@ -217,7 +218,7 @@ sibling working tree is required):
 
 ```sh
 scripts/container-build.sh        # cargo build
-scripts/container-test.sh         # cargo test  (344 tests)
+scripts/container-test.sh         # cargo test  (361 tests)
 scripts/container-fuse-test.sh    # real-mount FUSE + performance court
 scripts/container-uring-test.sh   # io_uring integration + backing benchmark
 scripts/container-check.sh        # cargo fmt -p orfs --check + clippy -D warnings

@@ -263,20 +263,20 @@ Paired, 8 reps, 4 KiB readers:
 
 | readers | F0 ops/s | F1 ops/s | F2 ops/s | F2 vs F0 |
 |---|---:|---:|---:|---|
-| 1 | 77 364 | 74 924 | 79 895 | +2 532 (n.s.) |
-| 2 | 158 432 | 157 636 | 106 236 | **−52 196 (sig)** |
-| 4 | 288 681 | 284 267 | 110 432 | **−178 250 (sig)** |
-| 8 | 406 221 | 422 814 | 111 344 | **−294 877 (sig)** |
-| 16 | 485 614 | 475 708 | 113 636 | **−371 978 (sig)** |
+| 1 | 78 477 | 80 431 | 76 845 | −1 633 (95% CIs overlap) |
+| 2 | 160 409 | 162 045 | 107 837 | **−52 573 (95% CIs disjoint)** |
+| 4 | 305 010 | 303 062 | 108 242 | **−196 768 (95% CIs disjoint)** |
+| 8 | 427 959 | 421 147 | 113 581 | **−314 377 (95% CIs disjoint)** |
+| 16 | 506 903 | 500 147 | 113 322 | **−393 581 (95% CIs disjoint)** |
 
 This is the honest headline: **F2 does not scale with reader concurrency on this
-ABI** (≈80 k → 114 k ops/s from 1 to 16 readers), while F0/F1 scale to ≈486 k/476 k.
+ABI** (≈77 k → 113 k ops/s from 1 to 16 readers), while F0/F1 scale to ≈507 k/500 k.
 Each F2 request costs a `COMMIT_AND_FETCH` SQE plus a kernel round-trip, and the
 single ring serialises them; the classical transport answers with a plain write.
 The sustained mixed workload (4 threads, reads/lookups/create-unlink) now shows both
-non-F0 transports behind F0 (F0 81 175, F1 56 445, F2 47 945 ops/s; F1−F0 and
-F2−F0 both significant), i.e. the classical F1 and the ring F2 both pay for the
-concurrent metadata churn.
+non-F0 transports behind F0 (F0 83 064, F1 57 157, F2 48 406 ops/s; the F1−F0 and
+F2−F0 95% CIs are disjoint, i.e. both significant), i.e. the classical F1 and the
+ring F2 both pay for the concurrent metadata churn.
 
 > **No superiority is claimed.** The point of the F2 row is that the ring really
 > carries the traffic (equivalence, per-op samples, and the daemon-reaching

@@ -121,10 +121,13 @@ per-phase record.
 | 33 | Review-finding consolidation: read-path timing, native `nlink`, supplementary groups, calibration guarantee, passthrough integrity | **complete** |
 | 34 | crates.io publishing readiness (blocked on the `ekbloom` dependency) | **complete** |
 | 35 | Consume the published `ekbloom` release; publish readiness | **complete** |
+| 36 | Publish `orfs` v0.1.0 to crates.io | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–35 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–36 are implemented; `docs/PROGRESS.md` is the per-phase record.
+
+The crate `orfs` v0.1.0 is published on crates.io (see `docs/PUBLISHING.md`).
 
 - The `orfs` crate builds, its **344** tests (default) pass, and
   `cargo test --features failpoints` adds the crash-injection court (352 tests in

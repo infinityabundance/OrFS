@@ -1,0 +1,32 @@
+{
+  "schema": "orfs.evidence.crates-io-publish.v1",
+  "captured_at_utc": "2026-10-12T10:08:48Z",
+  "crate": "orfs",
+  "version": "0.1.0",
+  "registry": "https://crates.io",
+  "crate_url": "https://crates.io/crates/orfs",
+  "docs_url": "https://docs.rs/orfs",
+  "checksum_sha256": "160aa0dd26fa9cb250544901377b1d9132d1590acba76f738d5618a4d4b38a62",
+  "crate_size_bytes": 532288,
+  "compressed_package_bytes": 532288,
+  "has_lib": true,
+  "bin_names": ["orfs"],
+  "rust_version": "1.89",
+  "edition": "2021",
+  "license": "MIT OR Apache-2.0",
+  "keywords": ["append-only", "filesystem", "fuse", "io-uring", "snapshot"],
+  "categories": ["filesystem", "os::unix-apis"],
+  "published_by": "infinityabundance",
+  "source_commit": "ab181ec3825ed4ce05cecdb2ebee1ba3afc65a1c",
+  "source_commit_short": "ab181ec",
+  "dependency": {
+    "ekbloom": {
+      "requirement": "=0.3.0",
+      "version": "0.3.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum_sha256": "b02f89add93be1429809445c7570c1271a68957702728c95437887243bdcf2cf"
+    }
+  },
+  "how_captured": "cargo publish from the pinned orfs-build:1.99.0 container against the clean tree at commit ab181ec; the remaining fields are the crates.io API record for orfs 0.1.0 (GET https://crates.io/api/v1/crates/orfs).",
+  "note": "crates.io versions are immutable: 0.1.0 cannot be deleted, only yanked. Any source change requires a new version number."
+}

@@ -2024,3 +2024,27 @@ release, which is the only form crates.io accepts.
 ### Environment
 
 Kernel `7.2.9-2-cachyos`, container `orfs-build:1.99.0` (Rust 1.99.0).
+
+## Phase 36 — Publish `orfs` v0.1.0 to crates.io
+
+**Complete.** `orfs` v0.1.0 was published to crates.io from the pinned
+container against the clean tree at commit `ab181ec`.
+
+### Delivered
+
+* `cargo publish` from `orfs-build:1.99.0`: packaged 84 files (2.1 MiB,
+  519.8 KiB compressed), verified by building from the packaged source, and
+  uploaded. crates.io record: crate checksum
+  `sha256:160aa0dd26fa9cb250544901377b1d9132d1590acba76f738d5618a4d4b38a62`,
+  `has_lib = true`, `bin_names = ["orfs"]`, `rust_version = 1.89`,
+  `license = "MIT OR Apache-2.0"`, categories `filesystem` / `os::unix-apis`.
+* `evidence/receipts/crates-io.json` — the published-artifact receipt (crate
+  checksum, size, published-by, source commit, and the resolved `ekbloom`
+  dependency), captured from the crates.io API.
+* `docs/PUBLISHING.md` status updated to *published*, with the binding note that
+  crates.io versions are immutable.
+
+### Notes
+
+* The publication was made possible by Phase 35 (the registry `ekbloom`
+  dependency): crates.io rejects git dependencies.

@@ -18,6 +18,7 @@
 //! `evidence/correctness/ekbloom-read-equivalence.json` and
 //! `evidence/performance/ekbloom-read-paths.json`.
 
+use std::cell::Cell;
 use std::path::Path;
 use std::time::Duration;
 
@@ -322,6 +323,189 @@ fn zero_calibration_budget_serves_authority_before_any_measurement() {
         planner.measurements().is_empty(),
         "no candidate may be timed under a zero calibration budget"
     );
+}
+
+/// Phase 34 — the authoritative fallback is lean: for a request served by the
+/// authoritative path the underlying read runs **exactly once**. With a zero
+/// calibration budget no candidate is timed, so this is a pure fallback.
+#[test]
+fn fallback_does_not_re_execute_the_authoritative_read() {
+    let td = TempDir::new().unwrap();
+    let source = pattern(1024);
+    let store = GenerationStore::new(td.path());
+    publish_generation(
+        &store,
+        31,
+        1,
+        4,
+        &source,
+        ManifestationProfile::Path { depth: 4 },
+        "0.3.0",
+    );
+    let state =
+        ManifestationState::recover(GenerationStore::new(td.path()), UUID).expect("recover state");
+    let planner = ReadPlanner::new(
+        state,
+        ReadPlannerConfig {
+            calibration_budget_ns: 0,
+            ..Default::default()
+        },
+    );
+    let q = ReadQuery {
+        inode: 31,
+        inode_version: 1,
+        root: 4,
+        logical_len: source.len() as u64,
+        offset: 0,
+        length: 128,
+    };
+    let calls = Cell::new(0u32);
+    let planned = planner
+        .read(&q, |off, len| {
+            calls.set(calls.get() + 1);
+            Ok(auth_slice(&source, off, len))
+        })
+        .unwrap();
+    assert_eq!(planned.path, ReadPathKind::LogicalExtent);
+    assert_eq!(planned.bytes, auth_slice(&source, 0, 128));
+    assert!(planned.fallback_reason.is_some());
+    assert_eq!(
+        calls.get(),
+        1,
+        "the authoritative read must run exactly once per request"
+    );
+}
+
+/// Phase 34 — when the calibration pass times the authoritative candidate
+/// (producing its bytes) and the budget then stops the pass, the served
+/// authoritative read must reuse those bytes rather than execute the read a
+/// second time.
+#[test]
+fn calibrated_authoritative_bytes_are_served_without_re_execution() {
+    const SLEEP: Duration = Duration::from_millis(2);
+    let td = TempDir::new().unwrap();
+    let source = pattern(4096);
+    let store = GenerationStore::new(td.path());
+    publish_generation(
+        &store,
+        41,
+        1,
+        5,
+        &source,
+        ManifestationProfile::Path { depth: 4 },
+        "0.3.0",
+    );
+    let state =
+        ManifestationState::recover(GenerationStore::new(td.path()), UUID).expect("recover state");
+    // A budget below the sleep guarantees the calibration pass times only the
+    // authoritative candidate (ordered first) and then stops.
+    let planner = ReadPlanner::new(
+        state,
+        ReadPlannerConfig {
+            calibration_budget_ns: 1_000_000,
+            ..Default::default()
+        },
+    );
+    let q = ReadQuery {
+        inode: 41,
+        inode_version: 1,
+        root: 5,
+        logical_len: source.len() as u64,
+        offset: 0,
+        length: 4096,
+    };
+    let calls = Cell::new(0u32);
+    let planned = planner
+        .read(&q, |off, len| {
+            calls.set(calls.get() + 1);
+            std::thread::sleep(SLEEP);
+            Ok(auth_slice(&source, off, len))
+        })
+        .unwrap();
+    assert_eq!(planned.path, ReadPathKind::LogicalExtent);
+    assert_eq!(planned.bytes, auth_slice(&source, 0, 4096));
+    assert_eq!(
+        calls.get(),
+        1,
+        "calibration's authoritative bytes must be reused, not re-read"
+    );
+}
+
+/// Phase 34 — selection is object-localized: two objects with deliberately
+/// different measured costs must not cross-contaminate each other's choice. Both
+/// share the same size class and candidate kinds, so a purely global
+/// `(kind, size class)` model would let the slow object poison the fast one.
+#[test]
+fn object_localized_selection_does_not_cross_contaminate() {
+    const SLOW: Duration = Duration::from_millis(5);
+    let td = TempDir::new().unwrap();
+    let source = pattern(4096);
+    let store = GenerationStore::new(td.path());
+    publish_generation(
+        &store,
+        100,
+        1,
+        10,
+        &source,
+        ManifestationProfile::Path { depth: 4 },
+        "0.3.0",
+    );
+    publish_generation(
+        &store,
+        200,
+        1,
+        20,
+        &source,
+        ManifestationProfile::Path { depth: 4 },
+        "0.3.0",
+    );
+    let planner = planner_for(td.path());
+    let query = |inode: u64, root: u64| ReadQuery {
+        inode,
+        inode_version: 1,
+        root,
+        logical_len: source.len() as u64,
+        offset: 0,
+        length: 4096,
+    };
+
+    // Object A: a deliberately slow authoritative read. Warm it so its own model
+    // learns both the slow extent and the fast manifested path.
+    for _ in 0..2 {
+        let _ = planner
+            .read(&query(100, 10), |off, len| {
+                std::thread::sleep(SLOW);
+                Ok(auth_slice(&source, off, len))
+            })
+            .unwrap();
+    }
+    // Object B: a fast authoritative read. If B inherited A's slow measurement it
+    // would avoid the authoritative path; localized, it keeps its own fast one.
+    let planned_b = planner
+        .read(&query(200, 20), |off, len| {
+            Ok(auth_slice(&source, off, len))
+        })
+        .unwrap();
+    assert_eq!(
+        planned_b.path,
+        ReadPathKind::LogicalExtent,
+        "object B inherited object A's slow authoritative measurement"
+    );
+    assert_eq!(planned_b.bytes, auth_slice(&source, 0, 4096));
+
+    // Object A, with its own slow authoritative read, prefers its manifested path.
+    let planned_a = planner
+        .read(&query(100, 10), |off, len| {
+            std::thread::sleep(SLOW);
+            Ok(auth_slice(&source, off, len))
+        })
+        .unwrap();
+    assert_eq!(
+        planned_a.path,
+        ReadPathKind::PathBloom,
+        "object A should prefer its manifested path over its own slow authoritative read"
+    );
+    assert_eq!(planned_a.bytes, auth_slice(&source, 0, 4096));
 }
 
 #[test]

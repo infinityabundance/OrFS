@@ -139,9 +139,15 @@ Selection is **mechanical and measured**, never "pick the largest structure":
 
 * The planner keeps an EWMA latency model per `(path, size class)`; size classes
   are `empty`, `byte` (1), `small` (≤4 KiB), `medium` (≤64 KiB), `large` (>64 KiB).
-  The model is keyed by the **full** manifestation identity
+* Selection is **object-localized**. When the queried object has its own
+  measurement for a candidate, that measurement predicts the read; only when it
+  has none does selection fall back to the shared aggregate. A bounded,
+  least-recently-used table holds the per-object models, so a long-lived planner
+  over many objects stays cheap, and two objects with different access
+  characteristics cannot bias each other's choice.
+* Calibration and failure state are keyed by the **full** manifestation identity
   (volume, inode, inode version, root, generation), never by generation alone, so
-  measurements and failure flags cannot leak between objects.
+  calibration and failure flags cannot leak between objects.
 * On the **first** request for a given `(identity, size class)` it **calibrates**:
   each applicable candidate is executed once and *timed* (the timer wraps the
   execution), and the fastest is used. Only candidates actually timed are ever
@@ -150,12 +156,19 @@ Selection is **mechanical and measured**, never "pick the largest structure":
   blindly. Calibration runs under a budget checked before each candidate, so it
   bounds the number of candidates attempted but is not a wall-clock cap on one
   slow candidate (see `docs/LIMITATIONS.md` §13).
-* On subsequent requests it picks the cheapest applicable candidate under the
-  measured model (ties prefer certified paths, then a fixed priority order).
+* On subsequent requests it picks the cheapest *measured* applicable candidate
+  under the object-local model (ties prefer certified paths, then a fixed
+  priority order).
 * A candidate that fails for a generation is barred for that generation, so a
   read never retries a structure that cannot serve the object.
 * A structure cannot slow a read call: if the authoritative extent read measures
   faster (as it does for large reads in an unoptimized build), it is chosen.
+* The authoritative fallback is **allocation-light**: one request's authoritative
+  read is wrapped so it executes **at most once** — when calibration has already
+  produced the authoritative bytes, the fallback serves those rather than
+  re-reading — `'static` fallback reasons are borrowed rather than allocated, and
+  the calibration and selection passes acquire each shared lock a bounded number
+  of times rather than once per candidate.
 
 Measured per-path latencies and the resulting selection are recorded in
 `evidence/performance/ekbloom-read-paths.json`.

@@ -1125,3 +1125,121 @@ returned byte buffer and the authoritative slice; the planning-only overhead is 
 the host is under heavy load and the `fuse_uring` court is environment-sensitive, so
 this is reported plainly rather than approximated. The 16-reader numbers above are
 **thread-level** contention on the shared planner, not a kernel-mount measurement.
+
+## 16. Reviewer task — the index-layout competition court (research §6)
+
+**The question.** The namespace index maps numeric, monotonically allocated
+`u64` inode ids and byte-string directory names with the *same* physical layout
+(a persistent treap, `src/persistent.rs`). Research §6 asks whether a key
+structure that permits something better should use it — and warns that the index
+is published to readers as an immutable snapshot at every commit, so **a faster
+point lookup is insufficient if snapshot publication or namespace mutation
+regresses**.
+
+**Court.** `tests/index_layout.rs`, run by `scripts/container-index-layout.sh`
+(release), writes `evidence/performance/index-layout.json`. It holds candidate
+representations for the inode-id index in one benchmark at retained scales
+**10 000 / 100 000 / 1 000 000** (10 000 000 opt-in via
+`ORFS_INDEX_LAYOUT_10M=1`) and measures point lookup (per-op p50/p99 plus a
+bulk mean that removes the `Instant::now` floor), ordered range enumeration,
+mutation (insert+remove, i.e. two path copies), publication (`Clone` for the
+persistent candidates, one-time seal-rebuild for the static ones), estimated
+structural bytes (`mem_bytes`: nodes/pages + capacities, no allocator slop), and
+build minor page faults. Hardware cache/TLB counters are **unavailable** here
+(`perf_event_paranoid=2`; `perf_counters_available=false` in the evidence), so
+the court records that honestly and reports page faults as the memory proxy.
+
+Candidates: the production treap (`PMap`); two new persistent prototypes — a
+**segmented radix** (`src/radix.rs`) and a **segmented page tree**
+(`src/pagetree.rs`); and three static **sealed** layouts for an immutable
+historical root — a sorted array, a **direct-ordinal** `Vec` (legal because the
+inode-id domain is dense), and a cache-line-packed paged layout with a
+predecessor directory. The court's always-on smoke asserts every candidate
+answers identical lookups and ranges and that the persistent candidates never
+mutate shared history; the prototypes have randomized `BTreeMap` cross-check
+unit tests.
+
+**Measured (one run; release; 200 000 lookups, 512 ranges × 1024, 50 000
+mutation pairs per candidate).**
+
+Persistent candidates (mutation and `Clone` are the decisive columns):
+
+| retained inodes | layout | lookup p50 / bulk-mean (ns) | range /entry (ns) | mutation p50 (ns) | `Clone` (ns) | est. bytes |
+|---:|---|---:|---:|---:|---:|---:|
+| 10 000 | treap (production) | 30 / 33 | 5 | **301** | 30 | 560 000 |
+| 10 000 | radix | 60 / 28 | 2 | 872 | 20 | 960 624 |
+| 10 000 | page-tree | 50 / 21 | 0 | 762 | 20 | 671 312 |
+| 100 000 | treap (production) | 40 / 66 | 6 | **371** | 30 | 5 600 000 |
+| 100 000 | radix | 80 / 49 | 5 | 1 613 | 20 | 9 613 008 |
+| 100 000 | page-tree | 61 / 34 | 1 | 1 062 | 20 | 6 754 832 |
+| 1 000 000 | treap (production) | 60 / 263 | 13 | **501** | 30 | 56 000 000 |
+| 1 000 000 | radix | 100 / 230 | 13 | 1 213 | 20 | 96 126 416 |
+| 1 000 000 | page-tree | 80 / 114 | 4 | 1 332 | 20 | 67 604 432 |
+
+Sealed candidates (no mutation path; the rebuild column is the cost of using a
+static layout as a *live* spine, i.e. per commit, and `Clone`/`Arc::clone` is
+`O(1)` only because the structure is never mutated):
+
+| retained inodes | layout | lookup p50 / bulk-mean (ns) | range /entry (ns) | seal rebuild (ns) | est. bytes |
+|---:|---|---:|---:|---:|---:|
+| 10 000 | sorted-vec | 40 / 11 | 0 | 3 306 | 160 000 |
+| 10 000 | dense-ordinal | 20 / 0 | 0 | 2 584 | 160 016 |
+| 10 000 | paged-sealed | 40 / 13 | 0 | 13 214 | 162 816 |
+| 100 000 | sorted-vec | 51 / 19 | 0 | 43 230 | 1 600 000 |
+| 100 000 | dense-ordinal | 20 / 0 | 0 | 29 564 | 1 600 016 |
+| 100 000 | paged-sealed | 50 / 20 | 0 | 147 342 | 1 616 896 |
+| 1 000 000 | sorted-vec | 70 / 150 | 0 | 391 633 | 16 000 000 |
+| 1 000 000 | dense-ordinal | 20 / 3 | 0 | 787 272 | 16 000 016 |
+| 1 000 000 | paged-sealed | 61 / 79 | 1 | 1 449 394 | 16 131 072 |
+
+**Findings, stated honestly.**
+
+1. **The treap is not beaten on the decisive rule at any scale.** Snapshot
+   publication is `O(1)` for every persistent candidate (`Clone` ≈ 20–30 ns,
+   flat) and for a sealed layout (`Arc` clone) — so publication is never the
+   differentiator. The differentiator is **mutation**: the page tree's
+   insert+remove is **2.4–2.9×** the treap's and the radix's is **2.4–4.3×**,
+   because a page copy moves far more bytes than the treap's `O(log n)` small
+   nodes. Per the decisive rule this is disqualifying, so **the production
+   `inodes` spine is unchanged** — the treap stays.
+2. **A byte-radix is the wrong shape for dense sequential ids.** Inode ids are
+   allocated monotonically, so they are dense and sequential — the adversarial
+   case for a trie. The measured radix has `max_depth = 8` and ~1 entry per leaf
+   at every scale (the split is pushed to the least-significant byte), uses
+   ~1.7× the treap's bytes, and its mutation regresses. The pagetree fixes the
+   density (count-based page splits) and has the best point lookup, but pays the
+   page-copy mutation cost.
+3. **Point-lookup numbers are close and noisy; the ordering is not the story.**
+   p50 lookup is comparable (treap 30–60 ns vs page-tree 50–80 ns) and the bulk
+   mean favours the page tree (its depth is 3–4 vs the treap's ~20, but the
+   treap's nodes are small and hot). Absolute nanoseconds here are
+   host/load-sensitive (the same binary moved the 1 M treap bulk mean between
+   runs), so the *shape* — a depth-bounded, page-dense structure trades cheaper
+   traversal for costlier copies — is what is reported.
+4. **The productive result is for sealed historical indexes.** The
+   **direct-ordinal** layout is near-`O(1)` (bulk mean 0–3 ns, p50 ≈ 20 ns) and
+   ~3.5× more compact than the treap (16 MB vs 56 MB at 1 M) because the id
+   domain is dense. A committed root is immutable and never mutated, so a sealed
+   layout is exactly where the index should stop being a treap; the live,
+   publication-sensitive writer spine is exactly where it should not. The court
+   keeps a sealed static layout as the recommended representation for a
+   historical index; wiring it into the historical cache is follow-up work, not
+   done here.
+
+**Decision.** `evidence/performance/index-layout.json` carries a machine-computed
+`decision` object: `integrate` is `null` (no candidate wins at every scale),
+with the rule and the recommendation above. The prototype layouts remain court
+candidates (`src/radix.rs`, `src/pagetree.rs`); they are separate types and do
+not touch the production index API or the snapshot/immutability guarantees.
+
+**Caveats.** Single run, single host, release build; absolute nanoseconds are
+host/load sensitive and some cells moved between two runs of the same binary.
+`estimated_bytes` is a structural lower bound (capacities, no allocator slop).
+Build minor page faults are reported in the evidence but are only indicative:
+all candidates are built in one process, so after the first the allocator reuses
+faulted pages. Hardware cache/TLB counters were unavailable
+(`perf_event_paranoid=2`). The sealed layouts are measured as **sealed** (their
+publication is an `Arc` clone; their rebuild column is the counterfactual cost of
+using them as a live spine), and the 10 000 000 scale is opt-in and was not run
+for this record. The radix/pagetree unit tests cross-check every operation
+against `BTreeMap`; the court's smoke asserts cross-candidate equality.

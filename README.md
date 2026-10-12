@@ -83,6 +83,7 @@ enable it (see `docs/FUSE_URING.md`).
 | 45 | Fast historical-root access (binary accelerator + committed-root directory) | complete |
 | 46 | Adaptive, bounded group commit; wiring-defect correction (grouping is a ~5× win) | complete |
 | 47 | F2 queue-affine concurrency (recovers F2 to ~88–103% of F0; p99 target unmet) | complete |
+| 48 | Persistent index layout competition (nothing integrated; treap wins on mutation) | complete |
 
 Honest non-claims: the image pixel-surface pyramid is **not materialised** (only
 its geometry is implemented), and no performance superiority of F2 or of the

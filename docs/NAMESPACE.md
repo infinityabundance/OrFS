@@ -224,6 +224,45 @@ and the same byte-for-byte snapshot document (`Index::encode_snapshot`)— so ev
 correctness court, historical reconstruction, and persisted accelerator remains
 exact. Only the cost changed: see `docs/PERFORMANCE.md` §9.
 
+### 5.0.1 Inode-id layout competition (research §6)
+
+Research §6 asks whether the two spines — numeric `u64` inode ids and ordered
+byte-string directory names — should share the same physical layout. They should
+not, and the reviewer's rule is explicit: **a faster point lookup is insufficient
+if snapshot publication or namespace mutation regresses.**
+`tests/index_layout.rs` (run by `scripts/container-index-layout.sh`) holds
+candidate representations for the numeric inode-id index in one benchmark at
+retained scales 10 000 / 100 000 / 1 000 000 (and 10 000 000 opt-in), measuring
+point lookup, ordered range enumeration, mutation, publication (`Clone` vs
+seal-rebuild), structural bytes, and build page faults. Evidence:
+`evidence/performance/index-layout.json`; analysis in `docs/PERFORMANCE.md` §16.
+
+Two persistent prototypes were implemented and compared against the production
+treap:
+
+* `src/radix.rs` — a persistent **segmented radix** (8-bit digits, sorted leaf
+  pages, `O(1)` `Clone`, `O(depth)` path-copy). It is a faithful radix, and the
+  court measures it **losing**: inode ids are allocated monotonically, so they
+  are dense and sequential — the adversarial case for any trie. The split is
+  pushed to the least-significant byte and the tree ends with roughly one entry
+  per leaf (depth 8).
+* `src/pagetree.rs` — a persistent **segmented page tree** (count-based page
+  splits, separator routing, `O(1)` `Clone`). It keeps the page shape but splits
+  by count, so dense keys stay page-dense (depth 3–4 at 1 M). It has the best
+  point lookup of the three, but its mutation regresses ~2.4–2.9× because a page
+  copy moves far more bytes than a treap's `O(log n)` small nodes.
+
+**Decision (measured, not assumed).** Neither prototype wins on the decisive
+rule at any scale (mutation regresses), so **the production `inodes` spine stays
+the persistent treap** and both prototypes remain court candidates. The static
+sealed layouts point at the productive use of the finding: the **direct-ordinal**
+layout (a `Vec` indexed by inode id, legitimate because the id domain is dense)
+is near-`O(1)` and ~3.5× more compact than the treap, so a **sealed historical
+index** — an immutable, never-mutated committed root — is where a non-treap
+layout belongs. The index API, the observable digest/snapshot projection, and the
+snapshot/immutability guarantees are unchanged; nothing in the production path
+was switched.
+
 ### 5.1 Rebuildability and log-wins
 
 * `Index::from_log(log, root)` builds the index purely by replaying committed

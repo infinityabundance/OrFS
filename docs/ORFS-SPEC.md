@@ -133,10 +133,11 @@ per-phase record.
 | 45 | Fast historical-root access (binary accelerator + committed-root directory) | **complete** |
 | 46 | Adaptive, bounded group commit; wiring-defect correction (grouping is a ~5× win) | **complete** |
 | 47 | F2 queue-affine concurrency (recovers F2 to ~88–103% of F0; p99 target unmet) | **complete** |
+| 48 | Persistent index layout competition (nothing integrated; treap wins on mutation) | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–47 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–48 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.1.0 is published on crates.io (see `docs/PUBLISHING.md`).
 

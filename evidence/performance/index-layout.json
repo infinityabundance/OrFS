@@ -1,0 +1,830 @@
+{
+  "assessment": [
+    {
+      "best_sealed_lookup": {
+        "layout": "dense-ordinal",
+        "p50_ns": 20
+      },
+      "page_tree": {
+        "estimated_bytes_ratio_over_treap": 1.1987714285714286,
+        "layout": "page-tree",
+        "lookup_speedup_over_treap": 1.5714285714285714,
+        "mutation_ratio_over_treap": 2.53156146179402,
+        "publish_ratio_over_treap": 0.6666666666666666,
+        "wins_by_decisive_rule": false
+      },
+      "radix": {
+        "estimated_bytes_ratio_over_treap": 1.7154,
+        "layout": "radix",
+        "lookup_speedup_over_treap": 1.1785714285714286,
+        "mutation_ratio_over_treap": 2.8970099667774085,
+        "publish_ratio_over_treap": 0.6666666666666666,
+        "wins_by_decisive_rule": false
+      },
+      "retained_inodes": 10000
+    },
+    {
+      "best_sealed_lookup": {
+        "layout": "dense-ordinal",
+        "p50_ns": 20
+      },
+      "page_tree": {
+        "estimated_bytes_ratio_over_treap": 1.20622,
+        "layout": "page-tree",
+        "lookup_speedup_over_treap": 1.9411764705882353,
+        "mutation_ratio_over_treap": 2.862533692722372,
+        "publish_ratio_over_treap": 0.6666666666666666,
+        "wins_by_decisive_rule": false
+      },
+      "radix": {
+        "estimated_bytes_ratio_over_treap": 1.7166085714285715,
+        "layout": "radix",
+        "lookup_speedup_over_treap": 1.346938775510204,
+        "mutation_ratio_over_treap": 4.347708894878706,
+        "publish_ratio_over_treap": 0.6666666666666666,
+        "wins_by_decisive_rule": false
+      },
+      "retained_inodes": 100000
+    },
+    {
+      "best_sealed_lookup": {
+        "layout": "dense-ordinal",
+        "p50_ns": 20
+      },
+      "page_tree": {
+        "estimated_bytes_ratio_over_treap": 1.207222,
+        "layout": "page-tree",
+        "lookup_speedup_over_treap": 2.307017543859649,
+        "mutation_ratio_over_treap": 2.658682634730539,
+        "publish_ratio_over_treap": 0.6666666666666666,
+        "wins_by_decisive_rule": false
+      },
+      "radix": {
+        "estimated_bytes_ratio_over_treap": 1.716543142857143,
+        "layout": "radix",
+        "lookup_speedup_over_treap": 1.1434782608695653,
+        "mutation_ratio_over_treap": 2.4211576846307383,
+        "publish_ratio_over_treap": 0.6666666666666666,
+        "wins_by_decisive_rule": false
+      },
+      "retained_inodes": 1000000
+    }
+  ],
+  "claim": "for the numeric inode-id index a persistent segmented radix is a candidate that must beat the treap on point lookup WITHOUT regressing snapshot publication or namespace mutation",
+  "decision": {
+    "integrate": null,
+    "recommendation": "keep the production inodes spine as the persistent treap: neither prototype beats it on the decisive rule (the page tree has the best point lookup but its mutation regresses ~2.4-2.9x). Use a sealed static layout — direct-ordinal for the dense inode-id domain — for read-only historical indexes instead.",
+    "rule": "a faster point lookup is insufficient if snapshot publication or namespace mutation regresses",
+    "wins_at_every_scale": []
+  },
+  "design": {
+    "lookup_samples_per_candidate": 200000,
+    "mutation_pairs_per_persistent_candidate": 50000,
+    "paged_page_entries": 64,
+    "radix_leaf_capacity": 32,
+    "range_len": 1024,
+    "range_reps": 512,
+    "scales": [
+      10000,
+      100000,
+      1000000
+    ]
+  },
+  "environment": {
+    "cgroup_memory_max": "8589934592",
+    "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "container_image": null,
+    "cores_visible": 8,
+    "cpu_max": "800000 100000",
+    "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+    "fuse_enable_uring": true,
+    "kernel_release": "7.2.9-2-cachyos",
+    "likely_container": true,
+    "machine": "x86_64",
+    "perf_counters_available": false,
+    "perf_event_paranoid": "2",
+    "ram_total_bytes": 134723346432
+  },
+  "generated_by": "tests/index_layout.rs",
+  "note": "Single run, single host. Absolute nanoseconds are host/build dependent; the *shape* (depth-bounded radix vs pointer-heavy treap) and the ratios are the point. Hardware cache/TLB counters are unavailable at perf_event_paranoid=2 (perf_counters_available is recorded); build minor page faults are reported as the memory proxy. estimated_bytes is a structural lower bound computed from node/entry capacities (no allocator slop). Sealed candidates have no persistent mutation path; their publication column records the one-time seal-rebuild cost instead, because using a static layout as a *live* spine would pay that rebuild per commit. The decisive rule is applied literally: a faster point lookup is insufficient if mutation or publication regresses.",
+  "scales": [
+    {
+      "candidates": [
+        {
+          "build_minor_faults": 152,
+          "build_ns": 4108268,
+          "class": "persistent",
+          "estimated_bytes": 560000,
+          "layout": "treap",
+          "lookup": {
+            "bulk_mean_ns": 33,
+            "checksum": 6143236290858969039,
+            "hits": 100000,
+            "max_ns": 24556,
+            "mean_ns": 47,
+            "min_ns": 10,
+            "p50_ns": 30,
+            "p99_ns": 120,
+            "samples": 200000
+          },
+          "mutation": {
+            "max_ns": 2224,
+            "mean_ns": 304,
+            "min_ns": 250,
+            "note": "one insert+remove pair (2 path copies) per sample",
+            "p50_ns": 301,
+            "p99_ns": 381,
+            "samples": 50000
+          },
+          "publication": {
+            "clone_ns": 30,
+            "seal_rebuild_ns": null
+          },
+          "range": {
+            "checksum": 13993493532881170214,
+            "entries": 500558,
+            "per_entry_ns": 5,
+            "per_range_ns": 5021,
+            "ranges": 512,
+            "total_ns": 2570812
+          },
+          "structure": {
+            "nodes": 10000
+          }
+        },
+        {
+          "build_minor_faults": 106,
+          "build_ns": 15469454,
+          "class": "persistent",
+          "estimated_bytes": 960624,
+          "layout": "radix",
+          "lookup": {
+            "bulk_mean_ns": 28,
+            "checksum": 6143236290858969039,
+            "hits": 100000,
+            "max_ns": 2946,
+            "mean_ns": 61,
+            "min_ns": 40,
+            "p50_ns": 60,
+            "p99_ns": 100,
+            "samples": 200000
+          },
+          "mutation": {
+            "max_ns": 2224,
+            "mean_ns": 873,
+            "min_ns": 681,
+            "note": "one insert+remove pair (2 path copies) per sample",
+            "p50_ns": 872,
+            "p99_ns": 892,
+            "samples": 50000
+          },
+          "publication": {
+            "clone_ns": 20,
+            "seal_rebuild_ns": null
+          },
+          "range": {
+            "checksum": 13993493532881170214,
+            "entries": 500558,
+            "per_entry_ns": 2,
+            "per_range_ns": 2585,
+            "ranges": 512,
+            "total_ns": 1323982
+          },
+          "structure": {
+            "leaf_entries": 10000,
+            "leaves": 9984,
+            "max_depth": 8,
+            "nodes": 46
+          }
+        },
+        {
+          "build_minor_faults": 0,
+          "build_ns": 5388339,
+          "class": "persistent",
+          "estimated_bytes": 671312,
+          "layout": "page-tree",
+          "lookup": {
+            "bulk_mean_ns": 21,
+            "checksum": 6143236290858969039,
+            "hits": 100000,
+            "max_ns": 1363,
+            "mean_ns": 51,
+            "min_ns": 40,
+            "p50_ns": 50,
+            "p99_ns": 61,
+            "samples": 200000
+          },
+          "mutation": {
+            "max_ns": 2605,
+            "mean_ns": 765,
+            "min_ns": 751,
+            "note": "one insert+remove pair (2 path copies) per sample",
+            "p50_ns": 762,
+            "p99_ns": 782,
+            "samples": 50000
+          },
+          "publication": {
+            "clone_ns": 20,
+            "seal_rebuild_ns": null
+          },
+          "range": {
+            "checksum": 13993493532881170214,
+            "entries": 500558,
+            "per_entry_ns": 0,
+            "per_range_ns": 836,
+            "ranges": 512,
+            "total_ns": 428431
+          },
+          "structure": {
+            "internal_pages": 10,
+            "leaf_entries": 10000,
+            "leaf_pages": 312,
+            "max_depth": 3
+          }
+        },
+        {
+          "build_minor_faults": 0,
+          "build_ns": 9748,
+          "class": "sealed",
+          "estimated_bytes": 160000,
+          "layout": "sorted-vec",
+          "lookup": {
+            "bulk_mean_ns": 11,
+            "checksum": 6143236290858969039,
+            "hits": 100000,
+            "max_ns": 2014,
+            "mean_ns": 43,
+            "min_ns": 30,
+            "p50_ns": 40,
+            "p99_ns": 60,
+            "samples": 200000
+          },
+          "mutation": null,
+          "publication": {
+            "clone_ns": null,
+            "seal_rebuild_ns": 3306
+          },
+          "range": {
+            "checksum": 13993493532881170214,
+            "entries": 500558,
+            "per_entry_ns": 0,
+            "per_range_ns": 154,
+            "ranges": 512,
+            "total_ns": 79176
+          },
+          "structure": null
+        },
+        {
+          "build_minor_faults": 0,
+          "build_ns": 2905,
+          "class": "sealed",
+          "estimated_bytes": 160016,
+          "layout": "dense-ordinal",
+          "lookup": {
+            "bulk_mean_ns": 0,
+            "checksum": 6143236290858969039,
+            "hits": 100000,
+            "max_ns": 1422,
+            "mean_ns": 18,
+            "min_ns": 10,
+            "p50_ns": 20,
+            "p99_ns": 21,
+            "samples": 200000
+          },
+          "mutation": null,
+          "publication": {
+            "clone_ns": null,
+            "seal_rebuild_ns": 2584
+          },
+          "range": {
+            "checksum": 13993493532881170214,
+            "entries": 500558,
+            "per_entry_ns": 0,
+            "per_range_ns": 260,
+            "ranges": 512,
+            "total_ns": 133346
+          },
+          "structure": null
+        },
+        {
+          "build_minor_faults": 0,
+          "build_ns": 19456,
+          "class": "sealed",
+          "estimated_bytes": 162816,
+          "layout": "paged-sealed",
+          "lookup": {
+            "bulk_mean_ns": 13,
+            "checksum": 6143236290858969039,
+            "hits": 100000,
+            "max_ns": 1373,
+            "mean_ns": 40,
+            "min_ns": 30,
+            "p50_ns": 40,
+            "p99_ns": 51,
+            "samples": 200000
+          },
+          "mutation": null,
+          "publication": {
+            "clone_ns": null,
+            "seal_rebuild_ns": 13214
+          },
+          "range": {
+            "checksum": 13993493532881170214,
+            "entries": 500558,
+            "per_entry_ns": 0,
+            "per_range_ns": 420,
+            "ranges": 512,
+            "total_ns": 215096
+          },
+          "structure": null
+        }
+      ],
+      "lookup_queries": 200000,
+      "mutation_pairs": 50000,
+      "range_len": 1024,
+      "range_reps": 512,
+      "retained_inodes": 10000,
+      "rss_peak_kib": 6976,
+      "rss_start_kib": 3860
+    },
+    {
+      "candidates": [
+        {
+          "build_minor_faults": 1214,
+          "build_ns": 51341211,
+          "class": "persistent",
+          "estimated_bytes": 5600000,
+          "layout": "treap",
+          "lookup": {
+            "bulk_mean_ns": 66,
+            "checksum": 14045406201955529972,
+            "hits": 100000,
+            "max_ns": 6783,
+            "mean_ns": 82,
+            "min_ns": 20,
+            "p50_ns": 40,
+            "p99_ns": 250,
+            "samples": 200000
+          },
+          "mutation": {
+            "max_ns": 3457,
+            "mean_ns": 380,
+            "min_ns": 330,
+            "note": "one insert+remove pair (2 path copies) per sample",
+            "p50_ns": 371,
+            "p99_ns": 541,
+            "samples": 50000
+          },
+          "publication": {
+            "clone_ns": 30,
+            "seal_rebuild_ns": null
+          },
+          "range": {
+            "checksum": 15456671661473745464,
+            "entries": 523165,
+            "per_entry_ns": 6,
+            "per_range_ns": 6739,
+            "ranges": 512,
+            "total_ns": 3450815
+          },
+          "structure": {
+            "nodes": 100000
+          }
+        },
+        {
+          "build_minor_faults": 1222,
+          "build_ns": 228019482,
+          "class": "persistent",
+          "estimated_bytes": 9613008,
+          "layout": "radix",
+          "lookup": {
+            "bulk_mean_ns": 49,
+            "checksum": 14045406201955529972,
+            "hits": 100000,
+            "max_ns": 2043,
+            "mean_ns": 88,
+            "min_ns": 30,
+            "p50_ns": 80,
+            "p99_ns": 300,
+            "samples": 200000
+          },
+          "mutation": {
+            "max_ns": 11972,
+            "mean_ns": 1136,
+            "min_ns": 330,
+            "note": "one insert+remove pair (2 path copies) per sample",
+            "p50_ns": 1613,
+            "p99_ns": 1633,
+            "samples": 50000
+          },
+          "publication": {
+            "clone_ns": 20,
+            "seal_rebuild_ns": null
+          },
+          "range": {
+            "checksum": 15456671661473745464,
+            "entries": 523165,
+            "per_entry_ns": 5,
+            "per_range_ns": 5779,
+            "ranges": 512,
+            "total_ns": 2959158
+          },
+          "structure": {
+            "leaf_entries": 100000,
+            "leaves": 100000,
+            "max_depth": 8,
+            "nodes": 399
+          }
+        },
+        {
+          "build_minor_faults": 0,
+          "build_ns": 85169762,
+          "class": "persistent",
+          "estimated_bytes": 6754832,
+          "layout": "page-tree",
+          "lookup": {
+            "bulk_mean_ns": 34,
+            "checksum": 14045406201955529972,
+            "hits": 100000,
+            "max_ns": 1863,
+            "mean_ns": 78,
+            "min_ns": 50,
+            "p50_ns": 61,
+            "p99_ns": 281,
+            "samples": 200000
+          },
+          "mutation": {
+            "max_ns": 94885,
+            "mean_ns": 1088,
+            "min_ns": 1051,
+            "note": "one insert+remove pair (2 path copies) per sample",
+            "p50_ns": 1062,
+            "p99_ns": 1153,
+            "samples": 50000
+          },
+          "publication": {
+            "clone_ns": 20,
+            "seal_rebuild_ns": null
+          },
+          "range": {
+            "checksum": 15456671661473745464,
+            "entries": 523165,
+            "per_entry_ns": 1,
+            "per_range_ns": 1229,
+            "ranges": 512,
+            "total_ns": 629321
+          },
+          "structure": {
+            "internal_pages": 101,
+            "leaf_entries": 100000,
+            "leaf_pages": 3124,
+            "max_depth": 4
+          }
+        },
+        {
+          "build_minor_faults": 0,
+          "build_ns": 68476,
+          "class": "sealed",
+          "estimated_bytes": 1600000,
+          "layout": "sorted-vec",
+          "lookup": {
+            "bulk_mean_ns": 19,
+            "checksum": 14045406201955529972,
+            "hits": 100000,
+            "max_ns": 39703,
+            "mean_ns": 60,
+            "min_ns": 40,
+            "p50_ns": 51,
+            "p99_ns": 110,
+            "samples": 200000
+          },
+          "mutation": null,
+          "publication": {
+            "clone_ns": null,
+            "seal_rebuild_ns": 43230
+          },
+          "range": {
+            "checksum": 15456671661473745464,
+            "entries": 523165,
+            "per_entry_ns": 0,
+            "per_range_ns": 240,
+            "ranges": 512,
+            "total_ns": 123197
+          },
+          "structure": null
+        },
+        {
+          "build_minor_faults": 0,
+          "build_ns": 31999,
+          "class": "sealed",
+          "estimated_bytes": 1600016,
+          "layout": "dense-ordinal",
+          "lookup": {
+            "bulk_mean_ns": 0,
+            "checksum": 14045406201955529972,
+            "hits": 100000,
+            "max_ns": 3877,
+            "mean_ns": 19,
+            "min_ns": 10,
+            "p50_ns": 20,
+            "p99_ns": 30,
+            "samples": 200000
+          },
+          "mutation": null,
+          "publication": {
+            "clone_ns": null,
+            "seal_rebuild_ns": 29564
+          },
+          "range": {
+            "checksum": 15456671661473745464,
+            "entries": 523165,
+            "per_entry_ns": 0,
+            "per_range_ns": 289,
+            "ranges": 512,
+            "total_ns": 148074
+          },
+          "structure": null
+        },
+        {
+          "build_minor_faults": 0,
+          "build_ns": 137173,
+          "class": "sealed",
+          "estimated_bytes": 1616896,
+          "layout": "paged-sealed",
+          "lookup": {
+            "bulk_mean_ns": 20,
+            "checksum": 14045406201955529972,
+            "hits": 100000,
+            "max_ns": 29975,
+            "mean_ns": 59,
+            "min_ns": 40,
+            "p50_ns": 50,
+            "p99_ns": 180,
+            "samples": 200000
+          },
+          "mutation": null,
+          "publication": {
+            "clone_ns": null,
+            "seal_rebuild_ns": 147342
+          },
+          "range": {
+            "checksum": 15456671661473745464,
+            "entries": 523165,
+            "per_entry_ns": 0,
+            "per_range_ns": 522,
+            "ranges": 512,
+            "total_ns": 267383
+          },
+          "structure": null
+        }
+      ],
+      "lookup_queries": 200000,
+      "mutation_pairs": 50000,
+      "range_len": 1024,
+      "range_reps": 512,
+      "retained_inodes": 100000,
+      "rss_peak_kib": 18272,
+      "rss_start_kib": 5412
+    },
+    {
+      "candidates": [
+        {
+          "build_minor_faults": 12079,
+          "build_ns": 581381082,
+          "class": "persistent",
+          "estimated_bytes": 56000000,
+          "layout": "treap",
+          "lookup": {
+            "bulk_mean_ns": 263,
+            "checksum": 16916742995902036752,
+            "hits": 100000,
+            "max_ns": 269657,
+            "mean_ns": 337,
+            "min_ns": 20,
+            "p50_ns": 60,
+            "p99_ns": 1453,
+            "samples": 200000
+          },
+          "mutation": {
+            "max_ns": 2495,
+            "mean_ns": 551,
+            "min_ns": 430,
+            "note": "one insert+remove pair (2 path copies) per sample",
+            "p50_ns": 501,
+            "p99_ns": 772,
+            "samples": 50000
+          },
+          "publication": {
+            "clone_ns": 30,
+            "seal_rebuild_ns": null
+          },
+          "range": {
+            "checksum": 7386225629110720512,
+            "entries": 524288,
+            "per_entry_ns": 13,
+            "per_range_ns": 14130,
+            "ranges": 512,
+            "total_ns": 7234574
+          },
+          "structure": {
+            "nodes": 1000000
+          }
+        },
+        {
+          "build_minor_faults": 15800,
+          "build_ns": 2504382562,
+          "class": "persistent",
+          "estimated_bytes": 96126416,
+          "layout": "radix",
+          "lookup": {
+            "bulk_mean_ns": 230,
+            "checksum": 16916742995902036752,
+            "hits": 100000,
+            "max_ns": 6792,
+            "mean_ns": 286,
+            "min_ns": 30,
+            "p50_ns": 100,
+            "p99_ns": 921,
+            "samples": 200000
+          },
+          "mutation": {
+            "max_ns": 4698,
+            "mean_ns": 1203,
+            "min_ns": 460,
+            "note": "one insert+remove pair (2 path copies) per sample",
+            "p50_ns": 1213,
+            "p99_ns": 1263,
+            "samples": 50000
+          },
+          "publication": {
+            "clone_ns": 20,
+            "seal_rebuild_ns": null
+          },
+          "range": {
+            "checksum": 7386225629110720512,
+            "entries": 524288,
+            "per_entry_ns": 13,
+            "per_range_ns": 13728,
+            "ranges": 512,
+            "total_ns": 7029036
+          },
+          "structure": {
+            "leaf_entries": 1000000,
+            "leaves": 1000000,
+            "max_depth": 8,
+            "nodes": 3929
+          }
+        },
+        {
+          "build_minor_faults": 0,
+          "build_ns": 1064903368,
+          "class": "persistent",
+          "estimated_bytes": 67604432,
+          "layout": "page-tree",
+          "lookup": {
+            "bulk_mean_ns": 114,
+            "checksum": 16916742995902036752,
+            "hits": 100000,
+            "max_ns": 2284,
+            "mean_ns": 165,
+            "min_ns": 60,
+            "p50_ns": 80,
+            "p99_ns": 531,
+            "samples": 200000
+          },
+          "mutation": {
+            "max_ns": 25637,
+            "mean_ns": 1333,
+            "min_ns": 1312,
+            "note": "one insert+remove pair (2 path copies) per sample",
+            "p50_ns": 1332,
+            "p99_ns": 1353,
+            "samples": 50000
+          },
+          "publication": {
+            "clone_ns": 20,
+            "seal_rebuild_ns": null
+          },
+          "range": {
+            "checksum": 7386225629110720512,
+            "entries": 524288,
+            "per_entry_ns": 4,
+            "per_range_ns": 4177,
+            "ranges": 512,
+            "total_ns": 2138636
+          },
+          "structure": {
+            "internal_pages": 1007,
+            "leaf_entries": 1000000,
+            "leaf_pages": 31249,
+            "max_depth": 4
+          }
+        },
+        {
+          "build_minor_faults": 0,
+          "build_ns": 1286364,
+          "class": "sealed",
+          "estimated_bytes": 16000000,
+          "layout": "sorted-vec",
+          "lookup": {
+            "bulk_mean_ns": 150,
+            "checksum": 16916742995902036752,
+            "hits": 100000,
+            "max_ns": 16681,
+            "mean_ns": 179,
+            "min_ns": 40,
+            "p50_ns": 70,
+            "p99_ns": 671,
+            "samples": 200000
+          },
+          "mutation": null,
+          "publication": {
+            "clone_ns": null,
+            "seal_rebuild_ns": 391633
+          },
+          "range": {
+            "checksum": 7386225629110720512,
+            "entries": 524288,
+            "per_entry_ns": 0,
+            "per_range_ns": 954,
+            "ranges": 512,
+            "total_ns": 488802
+          },
+          "structure": null
+        },
+        {
+          "build_minor_faults": 0,
+          "build_ns": 770712,
+          "class": "sealed",
+          "estimated_bytes": 16000016,
+          "layout": "dense-ordinal",
+          "lookup": {
+            "bulk_mean_ns": 3,
+            "checksum": 16916742995902036752,
+            "hits": 100000,
+            "max_ns": 22902,
+            "mean_ns": 33,
+            "min_ns": 10,
+            "p50_ns": 20,
+            "p99_ns": 190,
+            "samples": 200000
+          },
+          "mutation": null,
+          "publication": {
+            "clone_ns": null,
+            "seal_rebuild_ns": 787272
+          },
+          "range": {
+            "checksum": 7386225629110720512,
+            "entries": 524288,
+            "per_entry_ns": 0,
+            "per_range_ns": 1019,
+            "ranges": 512,
+            "total_ns": 521983
+          },
+          "structure": null
+        },
+        {
+          "build_minor_faults": 0,
+          "build_ns": 1342036,
+          "class": "sealed",
+          "estimated_bytes": 16131072,
+          "layout": "paged-sealed",
+          "lookup": {
+            "bulk_mean_ns": 79,
+            "checksum": 16916742995902036752,
+            "hits": 100000,
+            "max_ns": 2284,
+            "mean_ns": 111,
+            "min_ns": 40,
+            "p50_ns": 61,
+            "p99_ns": 451,
+            "samples": 200000
+          },
+          "mutation": null,
+          "publication": {
+            "clone_ns": null,
+            "seal_rebuild_ns": 1449394
+          },
+          "range": {
+            "checksum": 7386225629110720512,
+            "entries": 524288,
+            "per_entry_ns": 1,
+            "per_range_ns": 1319,
+            "ranges": 512,
+            "total_ns": 675737
+          },
+          "structure": null
+        }
+      ],
+      "lookup_queries": 200000,
+      "mutation_pairs": 50000,
+      "range_len": 1024,
+      "range_reps": 512,
+      "retained_inodes": 1000000,
+      "rss_peak_kib": 131744,
+      "rss_start_kib": 18272
+    }
+  ],
+  "schema": "orfs.performance.index-layout.v1"
+}

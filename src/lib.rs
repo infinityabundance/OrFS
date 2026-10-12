@@ -47,6 +47,7 @@ pub mod inode;
 pub mod log;
 pub mod manifestation;
 pub mod namespace;
+pub mod pagetree;
 pub mod passthrough;
 pub mod persistent;
 
@@ -134,6 +135,7 @@ pub mod powerloss {
 }
 
 pub mod query;
+pub mod radix;
 pub mod readpath;
 pub mod record;
 pub mod segment;

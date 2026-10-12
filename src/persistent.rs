@@ -177,6 +177,33 @@ impl<K, V> PMap<K, V> {
         self.iter().map(|(_, v)| v)
     }
 
+    /// The number of allocated nodes reachable from this map.
+    pub fn node_count(&self) -> usize {
+        let mut count = 0usize;
+        let mut stack: Vec<&Node<K, V>> = Vec::new();
+        if let Some(root) = self.root.as_deref() {
+            stack.push(root);
+        }
+        while let Some(n) = stack.pop() {
+            count += 1;
+            if let Some(l) = n.left.as_deref() {
+                stack.push(l);
+            }
+            if let Some(r) = n.right.as_deref() {
+                stack.push(r);
+            }
+        }
+        count
+    }
+
+    /// An estimate of the bytes this map's structure occupies: one `Arc`
+    /// allocation (header + `Node`) per node. Deterministic and comparable
+    /// against other layouts; it excludes allocator slop (a lower bound).
+    pub fn mem_bytes(&self) -> usize {
+        let per_node = std::mem::size_of::<Node<K, V>>() + 2 * std::mem::size_of::<usize>();
+        self.node_count() * per_node
+    }
+
     /// The smallest entry whose key is `>= key` (a lower bound). `O(log n)`.
     pub fn successor<Q>(&self, key: &Q) -> Option<(&K, &V)>
     where
@@ -260,6 +287,49 @@ impl<'a, K, V> Iterator for Iter<'a, K, V> {
             cur = c.left.as_deref();
         }
         Some((&n.key, &n.val))
+    }
+}
+
+/// In-order iterator over the `u64`-keyed entries of a [`PMap`] that lie in
+/// `[start, end)`, positioned directly at the first qualifying key.
+pub struct Range<'a, V> {
+    stack: Vec<&'a Node<u64, V>>,
+    end: u64,
+}
+
+impl<'a, V> Iterator for Range<'a, V> {
+    type Item = (&'a u64, &'a V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let n = self.stack.pop()?;
+        if n.key >= self.end {
+            self.stack.clear();
+            return None;
+        }
+        let mut cur = n.right.as_deref();
+        while let Some(c) = cur {
+            self.stack.push(c);
+            cur = c.left.as_deref();
+        }
+        Some((&n.key, &n.val))
+    }
+}
+
+impl<V> PMap<u64, V> {
+    /// Iterate the entries with keys in `[start, end)`, in ascending order, in
+    /// `O(log n + k)` for `k` entries visited.
+    pub fn range(&self, start: u64, end: u64) -> Range<'_, V> {
+        let mut stack = Vec::new();
+        let mut cur = self.root.as_deref();
+        while let Some(n) = cur {
+            if n.key < start {
+                cur = n.right.as_deref();
+            } else {
+                stack.push(n);
+                cur = n.left.as_deref();
+            }
+        }
+        Range { stack, end }
     }
 }
 

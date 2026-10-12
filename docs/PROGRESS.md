@@ -2657,3 +2657,48 @@ attempt hit `io_uring_setup` `ENOMEM`, so 8×4 is the practical ceiling here.
 equivalence and teardown), wired into `scripts/container-fuse-test.sh`; the F2
 kmount court still shows real engagement. fmt/clippy clean; `cargo test` and
 `--features failpoints` green.
+
+## Phase 48 — Persistent index layout competition (§6)
+
+**Complete; nothing integrated (honestly).** The namespace index's `inodes`
+(numeric, monotonic `u64`) and `children` (ordered names) share one physical
+layout (the Phase-27 path-copying treap). Built a **layout-competition court** and
+snapshot-safe prototypes for the inode role, then applied the decisive rule: *a
+faster point lookup is insufficient if publication or mutation regresses*.
+
+### Delivered
+
+* `src/radix.rs` — persistent segmented radix prototype (`RadixMap`, 8-bit digits
+  + sorted leaf pages), copy-on-write, old roots retained.
+* `src/pagetree.rs` — persistent count-split page tree prototype (`PageTree` +
+  separator routing).
+* `src/persistent.rs` — additive observability only (`node_count`, `mem_bytes`,
+  a lower-bound range cursor); the treap itself is unchanged.
+* `tests/index_layout.rs` + `scripts/container-index-layout.sh` — the court, with
+  persistent candidates (treap / radix / page-tree) and **sealed** candidates
+  (sorted-vec / dense-ordinal / paged-sealed). Evidence
+  `evidence/performance/index-layout.json` (with a computed `decision`).
+
+### Result (release, one run; scales 10³/10⁴/10⁶)
+
+Publication (`Clone`) is **O(1) for every persistent candidate (~20–30 ns, flat)**,
+so it never decides. **Mutation decides**, and both prototypes regress: page tree
+**2.4–2.9×** and radix **2.4–4.3×** the treap (301→872→1 613 ns at 10 k→100 k for
+radix vs 301/371/501 for the treap), because copying a page moves far more bytes
+than a treap's `O(log n)` small nodes. The byte-radix also degenerates on the
+*dense, monotonic* inode domain (depth 8, ~1 entry/leaf, 1.7× the bytes).
+`decision.integrate = null`.
+
+**Productive finding:** for the **sealed historical** role, a `dense-ordinal`
+layout (a `Vec` indexed by id) is ~O(1) and **3.5× more compact** than the treap
+(16 MB vs 56 MB at 10⁶) — that is where a non-treap layout belongs (a candidate
+follow-up for the Phase-20 historical-index cache).
+
+### Integrity
+
+Nothing was integrated into the production index; `Index`'s API and the
+snapshot/immutability guarantees are untouched. Cross-candidate equality and
+non-destructive persistence are asserted by the court; the `namespace_model`
+proptest and `snapshot_model` suite stay green. Cache/TLB counters were
+unavailable (`perf_event_paranoid=2`), recorded as such (page faults used as a
+proxy); the 10⁷ scale is implemented but opt-in and was not run.

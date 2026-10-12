@@ -162,6 +162,52 @@ and OrFS never reports it as one:
 `CommitSequencer::flush`. `fsync` on a file does not make its directory entry
 durable, so segment creation always follows a directory `fsync`.
 
+### 3.2 Ordered group commit (Phase 31)
+
+A caller that has several **independently prepared** transactions may publish
+them as one batch with `CommitSequencer::commit_group(txs)` (external review §6,
+P1). Grouping amortises one durability barrier over many transactions without
+weakening any acknowledged-durability contract or reordering the visible commit
+sequence.
+
+**Ordering (unchanged).** Members are published serially, in the order given:
+each member runs the full write-and-publish sequence of §2, so its root is
+strictly greater than the previous member's and every intermediate root is a
+complete transaction boundary. Grouping never reorders the authoritative
+sequence and never exposes a partially applied member.
+
+**One shared barrier.** The durability `fsync` is issued **once**, only after the
+last member's bytes have been written and published. Because a member's bytes are
+written before the barrier, the barrier covers every member.
+
+**Acknowledgment under grouping.** Each member's reply is its own durability
+condition, satisfied by the shared barrier:
+
+| Mode | Group barrier | Every member acked |
+|------|---------------|--------------------|
+| `sync` | one `fsync` after the whole group is published | `DURABLE` (`durable = true`) |
+| `ordered` | none issued by the commit | `PUBLISHED` (`durable = false`) |
+| `batched` | one `fsync` iff the running unsynced count reaches `batch_size` | `DURABLE` if the batch completed, else `PUBLISHED` |
+
+The contract is therefore preserved literally: **a caller is acknowledged only
+once a durable operation that covers its own bytes has completed.** No member is
+ever acked `DURABLE` before the `fsync` that includes its bytes; `ordered`
+members make no durability claim at all. A group containing a single transaction
+is exactly the §2 single-commit path (a group of one), so a strictly sequential
+synchronized writer is unaffected.
+
+**Failure.** If any member fails, the whole group returns the error and **no**
+member is acknowledged (members already published remain committed, each at a
+boundary, but the caller is told the batch failed — never that it succeeded). An
+authoritative-store failure still latches the volume degraded (`docs/CAPACITY.md`).
+
+**Byte-exactness.** Grouping changes only *when* the `fsync` is issued, never the
+bytes: `tests/group_commit.rs::group_commit_is_byte_identical_to_serial_commit`
+asserts that a grouped run and a serial run produce identical committed bytes and
+identical committed digests. The Phase 2/17 correctness and power-loss courts
+(for single-commit byte sequences) therefore continue to apply unchanged, and are
+extended by a process-crash court for the grouped path (§4.2).
+
 ---
 
 ## 4. Fault injection (the fault-injection court)
@@ -223,6 +269,24 @@ real-hardware durability. See `docs/POWERLOSS.md`.
 in-process: the write path is terminated, the log discarded, and the volume
 reopened.)
 
+### 4.2 Grouped-commit crash court (Phase 31)
+
+The same shutdown discipline is applied to the grouped path. Two arms live in
+`tests/group_commit.rs` (feature-gated on `failpoints`):
+
+* an **in-process** arm injects `error` at the second member's `TX_COMMIT` write
+  and reopens the volume independently — the first member must be a complete
+  committed boundary and no partial member may be visible;
+* a **process-crash** arm runs the child role through grouped commits with the
+  `abort` action at `during_commit_record_write`, `during_record_write`, and
+  `before_commit`, then reopens and checks every §35 verdict.
+
+Because a group's bytes are identical to serial commits, the existing blanket
+single-commit crash court (`every_failpoint_leaves_a_valid_recoverable_root`,
+`process_crash_at_every_failpoint_recovers_to_a_valid_boundary`) and the simulated
+power-loss court continue to cover the byte sequence; the grouped arms prove the
+barrier publication cannot expose an incomplete member.
+
 ---
 
 ## 5. Recovery
@@ -268,6 +332,9 @@ across generated workloads and durability modes.
   17 model (`docs/POWERLOSS.md`) is an explicitly simulated device, not an
   instrumented power-loss rig. It does not claim real-hardware durability.
 * `batched` amortises `fsync` but batching is per-sequencer, not yet the
-  multi-writer coalescing of Ring W.
+  multi-writer coalescing of Ring W. (Phase 31 adds **ordered group commit** —
+  `commit_group` amortises one barrier over a batch of prepared transactions on a
+  single sequencer, preserving the serial commit order and the per-mode ack
+  contract of §3.2; it is still one sequencer, not a lock-free multi-writer log.)
 * Payload semantics for the *data* record types (inode, dentry, extent) belong to
   Plane B and are opaque here; only the three structural payloads are interpreted.

@@ -202,3 +202,75 @@ real-code stress tests are used, as before.
 * Full path-copying of the index spines is **implemented** (Phase 27, §4.1): the
   spines are persistent `PMap`s and the version vectors are shared
   `VersionHistory`s, so publishing a view no longer copies retained history.
+
+---
+
+## 8. Conflict-aware parallel preparation (Phase 31)
+
+Phase 19 removed the global lock from **reads**. Phase 31 attacks the remaining
+serialisation on the **write** side without weakening the single authoritative
+order: *prepare concurrently, publish serially* (external review §6 P1).
+
+### 8.1 The two roles
+
+```text
+  parallel PREPARATION (many threads)          serial PUBLICATION (one sequencer)
+  ─────────────────────────────────────         ─────────────────────────────────
+  validate · build payloads · checksums          reserve · seal · write TX_BEGIN
+  extent planning · bracket metadata             write data · TX_COMMIT
+  … one wave of conflict-free ops                publish root · durability barrier
+```
+
+`src/group.rs` provides the preparation engine and `src/commit.rs`
+(`CommitSequencer::commit_group`, §3.2 of `docs/TRANSACTIONS.md`) provides the
+serial, ordered publication. The phase deliberately does **not** parallelise the
+canonical log: publication stays a single serialised append so the commit order is
+unambiguous.
+
+### 8.2 The conflict rule
+
+Every operation is keyed by a [`ConflictKey`] — the inode id it names (which is
+also a directory id for dentry operations), i.e. the per-inode/per-directory rule
+of the review. `conflict_waves` greedily partitions a batch into **waves**: two
+operations with the same key are never placed in the same wave, so they can never
+prepare concurrently, while distinct keys prepare in one wave. A batch whose keys
+all coincide therefore degrades to fully serial preparation (there is nothing to
+parallelise); `tests/group_commit.rs::parallel_preparation_cannot_publish_out_of_order`
+exercises exactly this.
+
+### 8.3 Ordering guarantees
+
+Waves execute in index order, but the prepared transactions are *returned in the
+caller's input order* regardless of which wave built them
+(`prepare_in_waves`), and `commit_group` publishes strictly in that order.
+Consequently the ordering of dependent operations is preserved: a duplicate key
+is always on a later wave than the earlier one, and both are committed in input
+order. Nothing is published out of order — proven by
+`parallel_preparation_cannot_publish_out_of_order` (200 ops, 4 keys) and
+`conflicting_operations_are_not_reordered`.
+
+### 8.4 What it does and does not change
+
+* **Correctness.** A grouped run is byte-for-byte identical to a serial run
+  (`group_commit_is_byte_identical_to_serial_commit`): preparation may run on many
+  threads, but every authoritative byte is produced by the same serial publication
+  path as a single commit. Atomicity, no-partial-visibility, monotonic roots and
+  ordered replay are therefore unchanged without qualification.
+* **Concurrency limit.** The FUSE adaptors still serialise *mutating* requests
+  through `Mutex<Core>` (Phase 19 left writers serialised on purpose). The
+  parallel-preparation / group-commit mechanism is therefore realised by callers
+  that submit a batch to `commit_group`; wiring the transports to accumulate
+  concurrent mutating requests behind one coordinator is future work. This is
+  reported honestly in `docs/PERFORMANCE.md` §10: the win appears when a prepared
+  backlog exists, and it is large, but a strictly sequential single writer is
+  unchanged (a group of one is the single-commit path).
+
+### 8.5 Invariants and proof obligations
+
+| Invariant | Discharged by |
+|-----------|---------------|
+| Conflicting operations never prepare concurrently | `conflict_waves` never puts two equal keys in one wave (`conflict_waves_never_place_equal_keys_together`, `parallel_preparation_cannot_publish_out_of_order`) |
+| Dependent operations keep their order | `prepare_in_waves` returns input order; `commit_group` publishes in that order (`conflicting_operations_are_not_reordered`) |
+| Parallel preparation cannot publish out of order | roots strictly advance and every root is a boundary (`parallel_preparation_cannot_publish_out_of_order`) |
+| Grouping does not change the log | byte- and digest-identical to serial (`group_commit_is_byte_identical_to_serial_commit`) |
+| Concurrent group committers stay consistent and recover exactly | `concurrent_group_committers_land_in_order_and_recover_exactly` |

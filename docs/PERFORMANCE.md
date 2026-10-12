@@ -584,7 +584,60 @@ likewise trade replay for an `O(index)` JSON decode.
 
 ---
 
-## 10. Honesty caveats
+## 10. Phase 31 — ordered group commit and conflict-aware parallel preparation
+
+Source: `tests/group_commit.rs::group_commit_performance_evidence`, run in the
+pinned container. Evidence: `evidence/performance/group-commit.json`
+(paired runs, two-sided 95% t intervals, environment metadata).
+
+**Method.** Each arm commits `writers × 4` prepared transactions against a fresh
+volume in `sync` durability (the strongest barrier, so the effect is the
+barrier). Preparation is done up front for *both* arms and excluded from the
+timed region, so only the durability barrier differs: the baseline issues one
+`fsync` per transaction, the grouped arm issues one `fsync` per batch of 8. Four
+rounds per point, alternating arm order; paired differences are tested with a
+two-sided 95% t interval (df = 3, `t_crit95` = 3.182).
+
+| writers (prepared) | baseline ops/s | grouped ops/s | ratio | baseline latency/op | grouped latency/op | paired Δ ops/s 95% CI | significant |
+|---:|---:|---:|---:|---:|---:|---:|:--:|
+| 1 | 278.8 | 1 132.9 | 4.1× | 3 613 µs | 883 µs | [819, 890] | yes |
+| 2 | 275.8 | 2 240.1 | 8.1× | 3 639 µs | 446 µs | [1 894, 2 035] | yes |
+| 4 | 280.2 | 2 261.0 | 8.1× | 3 575 µs | 442 µs | [1 957, 2 004] | yes |
+| 8 | 280.2 | 2 263.1 | 8.1× | 3 569 µs | 442 µs | [1 965, 2 001] | yes |
+| 16 | 281.6 | 2 194.4 | 7.8× | 3 551 µs | 458 µs | [1 644, 2 182] | yes |
+
+**fsync-per-op latency, before → after.** Baseline per-operation latency is
+dominated by one `fsync` (mean 3.55–3.64 ms, matching the ~3.5 ms barrier this
+phase targets). Under grouping the *amortised* per-operation latency falls to
+0.44–0.88 ms — one barrier spread over eight transactions.
+
+**Single-threaded synchronized writer: no change (as predicted).** A strictly
+sequential writer issues one commit, waits, then the next; there is nothing to
+coalesce. Measured over 120 sequential `sync` commits: p50 = 3 424 µs, p95 =
+5 108 µs, mean = 3 539 µs. A group of one is the single-commit path byte-for-byte
+(`group_commit_is_byte_identical_to_serial_commit`), so grouping is *neutral* for
+this case — it neither helps nor hurts.
+
+**Honest reading.**
+
+* Every row is a significant win, and the mechanism is byte-exact and neutral for
+the single sequential writer. The win is real and large **when a prepared backlog
+exists** — i.e. a writer that prepares several independent transactions before
+submitting them (pipelined/async workloads, or a coordinator batching concurrent
+writers).
+* The `writers` axis here counts prepared transactions fed to one ordered commit
+co-ordinator; the coordinator itself publishes serially (that is the design). It
+is **not** a claim that the FUSE transport now serves `N` concurrent mutating
+requests in parallel: the transports still take `Mutex<Core>` for mutations, and
+wiring them to accumulate a batch behind one coordinator is future work. The
+mechanism and its contracts are landed and tested; the transport plumbing is the
+remaining step.
+* As everywhere in this document, these are warm-cache single-host figures, not a
+portable benchmark; reproduce with the container scripts.
+
+---
+
+## 11. Honesty caveats
 
 1. These are **warm-cache, single-run** figures on one host; they are not a
    portable benchmark result. Reproduce with the container scripts.

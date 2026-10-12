@@ -29,36 +29,36 @@
       "pattern": "NEEDLE-IN-THE-HAYSTACK"
     },
     "grep_r_through_mount": {
-      "mean_ns": 2717955.4285714286,
-      "min_ns": 2545559,
-      "p50_ns": 2644073,
-      "p95_ns": 3246489,
-      "p99_ns": 3246489,
+      "mean_ns": 2814299.1428571427,
+      "min_ns": 2566253,
+      "p50_ns": 2717275,
+      "p95_ns": 3564998,
+      "p99_ns": 3564998,
       "samples": 7
     },
     "honesty": "the typed query API is the only consumer of the trigram index; ordinary `grep -r` reads POSIX contents and uses the authoritative extent path (research §12.1)",
     "index_build": {
-      "elapsed_ns": 406944315,
+      "elapsed_ns": 412088516,
       "objects_attempted": 48,
       "objects_published": 48,
       "payload_bytes_on_disk": 1655125,
       "payload_bytes_total": 1594265
     },
     "indexed_query_api": {
-      "mean_ns": 856596.5238095238,
-      "min_ns": 844739,
-      "p50_ns": 854186,
-      "p95_ns": 866430,
-      "p99_ns": 876919,
+      "mean_ns": 944468.7142857143,
+      "min_ns": 840049,
+      "p50_ns": 862732,
+      "p95_ns": 933744,
+      "p99_ns": 2533702,
       "samples": 21
     },
-    "indexed_speedup_over_scan": 9.882485781785231,
+    "indexed_speedup_over_scan": 9.808835188679682,
     "scan_query_api": {
-      "mean_ns": 8443905.904761905,
-      "min_ns": 8417918,
-      "p50_ns": 8441481,
-      "p95_ns": 8459385,
-      "p99_ns": 8483069,
+      "mean_ns": 8516808.476190476,
+      "min_ns": 8420357,
+      "p50_ns": 8462396,
+      "p95_ns": 8746085,
+      "p99_ns": 8828860,
       "samples": 21
     }
   },

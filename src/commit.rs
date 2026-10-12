@@ -172,6 +172,41 @@ pub struct SyncOutcome {
     pub transactions: u32,
 }
 
+/// The outcome of the write-and-publish phase of a commit, *before* the
+/// durability acknowledgment. Shared by single ([`CommitSequencer::commit`]) and
+/// grouped ([`CommitSequencer::commit_group`]) commits so that grouped commits
+/// can amortise one durability barrier over many published transactions while
+/// still reporting each member's exact ordered position.
+struct Published {
+    transaction_id: u64,
+    root: u64,
+    begin_offset: u64,
+    commit_offset: u64,
+    data_record_count: u64,
+    bracketed_byte_length: u64,
+}
+
+impl Published {
+    fn into_outcome(
+        self,
+        durability: DurabilityMode,
+        state: TxState,
+        durable: bool,
+    ) -> CommitOutcome {
+        CommitOutcome {
+            transaction_id: self.transaction_id,
+            root: self.root,
+            begin_offset: self.begin_offset,
+            commit_offset: self.commit_offset,
+            data_record_count: self.data_record_count,
+            bracketed_byte_length: self.bracketed_byte_length,
+            state,
+            durability,
+            durable,
+        }
+    }
+}
+
 /// The single authoritative commit sequencer.
 ///
 /// Owns the *only* handle by which committed roots advance. Construct one per
@@ -264,7 +299,7 @@ impl<'a> CommitSequencer<'a> {
         result
     }
 
-    fn commit_inner(&mut self, mut tx: Transaction) -> Result<CommitOutcome> {
+    fn commit_inner(&mut self, tx: Transaction) -> Result<CommitOutcome> {
         // A degraded/read-only volume refuses every further mutation with EROFS,
         // even before structural checks: it must not accept writes onto an
         // unreliable store (research I7, I8; §31).
@@ -289,8 +324,21 @@ impl<'a> CommitSequencer<'a> {
             ));
         }
 
+        let published = self.publish_one(tx)?;
+        let root = published.root;
+        let (state, durable) = self.reply_durability(root)?;
+        Ok(published.into_outcome(self.durability, state, durable))
+    }
+
+    /// Perform the entire write-and-publish sequence for one prepared
+    /// transaction, leaving it `Published` and its root installed in memory.
+    ///
+    /// This is the shared body of single ([`Self::commit`]) and grouped
+    /// ([`Self::commit_group`]) commits; it stops *before* the durability
+    /// acknowledgment, which the caller issues (per transaction, or once per
+    /// group). All failpoints on the single-commit path fire exactly as before.
+    fn publish_one(&mut self, mut tx: Transaction) -> Result<Published> {
         let tx_id = tx.id();
-        let durability = self.durability;
         // The id is now consumed regardless of the outcome: never reissue it.
         self.next_tx_id = self.next_tx_id.max(tx_id.saturating_add(1));
 
@@ -390,24 +438,154 @@ impl<'a> CommitSequencer<'a> {
         self.log.publish_root_at(end)?;
         tx.transition(TxState::Published)?;
 
-        // --- 5. durability ack per profile ---------------------------------
-        failpoints::check(Failpoint::AfterPublicationBeforeSync)?;
-        let (state, durable) = self.reply_durability(end)?;
-        if state != tx.state() {
-            tx.transition(state)?;
-        }
-
-        Ok(CommitOutcome {
+        Ok(Published {
             transaction_id: tx_id,
             root: end,
             begin_offset,
             commit_offset: res.logical_offset,
             data_record_count: data_count as u64,
             bracketed_byte_length: bracket.len() as u64,
-            state,
-            durability,
-            durable,
         })
+    }
+
+    /// Allocate `n` consecutive transaction identities from the sequencer.
+    ///
+    /// The identities are reserved in the sequencer immediately, so a later
+    /// `begin`/`commit` on the same sequencer can never reissue them. They may be
+    /// handed to independent workers that build transactions concurrently
+    /// before the whole batch is published (Phase 31, parallel preparation).
+    pub fn begin_many(&mut self, n: usize) -> Result<Vec<crate::transaction::TransactionBuilder>> {
+        let mut out = Vec::with_capacity(n);
+        for _ in 0..n {
+            out.push(self.begin()?);
+        }
+        Ok(out)
+    }
+
+    /// Commit a **group** of independently prepared transactions as one ordered
+    /// batch (Phase 31 — ordered group commit).
+    ///
+    /// # Ordering
+    ///
+    /// Transactions are published **serially, in the order given**, so the
+    /// visible commit sequence is exactly the caller's order: each member's root
+    /// is strictly greater than the previous member's and every intermediate
+    /// root is a complete transaction boundary. Grouping never reorders the
+    /// authoritative sequence.
+    ///
+    /// # Acknowledgment contract under grouping
+    ///
+    /// The whole group shares **one** durability barrier, issued only after every
+    /// member's bytes have been written and published:
+    ///
+    /// * `sync` — one `fsync` covers the entire group; every member is acked
+    ///   [`TxState::Durable`] with `durable == true`.
+    /// * `ordered` — no `fsync`; every member is acked [`TxState::Published`]
+    ///   (`durable == false`). Ordering and visibility only.
+    /// * `batched { batch_size }` — the group's size is added to the running
+    ///   unsynced count; if the batch completes, one `fsync` covers every member
+    ///   still unsynced and the whole group is acked [`TxState::Durable`],
+    ///   otherwise the whole group is acked [`TxState::Published`].
+    ///
+    /// In every mode the barrier runs **after** every member's bytes are on the
+    /// backing store, so no member is acked `Durable` before the `fsync` that
+    /// covers *its own* bytes has completed. A caller is never acknowledged for a
+    /// durability condition its own bytes did not satisfy.
+    ///
+    /// # Failure
+    ///
+    /// If any member fails, the group returns the error and **no** member is
+    /// acknowledged: members already published remain committed (each is
+    /// individually atomic and sits at a transaction boundary), but the caller is
+    /// told the batch failed, never that it succeeded. As with a single commit,
+    /// an authoritative-store failure latches the volume degraded.
+    pub fn commit_group(&mut self, txs: Vec<Transaction>) -> Result<Vec<CommitOutcome>> {
+        let result = self.commit_group_inner(txs);
+        if let Err(e) = &result {
+            if e.is_authoritative_store_failure() {
+                self.log.degrade(e.to_string());
+            }
+        }
+        result
+    }
+
+    fn commit_group_inner(&mut self, txs: Vec<Transaction>) -> Result<Vec<CommitOutcome>> {
+        if txs.is_empty() {
+            return Ok(Vec::new());
+        }
+        if self.log.is_degraded() {
+            let reason = self
+                .log
+                .capacity()
+                .degraded_reason()
+                .unwrap_or("unrecoverable authoritative-store failure");
+            return Err(OrfsError::ReadOnly(format!("volume degraded: {reason}")));
+        }
+        // Validate the whole group *before* writing anything: either every member
+        // is prepared and no transaction is open, or nothing is published.
+        for tx in &txs {
+            if tx.state() != TxState::Prepared {
+                return Err(OrfsError::InvalidArgument(format!(
+                    "transaction {} is not prepared (state {})",
+                    tx.id(),
+                    tx.state()
+                )));
+            }
+        }
+        if self.log.open_transaction().is_some() {
+            return Err(OrfsError::InvalidArgument(
+                "a transaction is already open in the log".into(),
+            ));
+        }
+
+        let count = txs.len();
+        let mut published = Vec::with_capacity(count);
+        for tx in txs {
+            published.push(self.publish_one(tx)?);
+        }
+
+        // One shared durability barrier for the whole group, issued strictly
+        // after every member's bytes are written and published.
+        let oldest_root = published[0].root;
+        let (state, durable) = self.group_durability(oldest_root, count)?;
+        let durability = self.durability;
+        Ok(published
+            .into_iter()
+            .map(|p| p.into_outcome(durability, state, durable))
+            .collect())
+    }
+
+    /// Issue the shared durability barrier for a group of `count` transactions
+    /// whose oldest newly-published root is `oldest_root`, and report the ack
+    /// state every member shares (see [`CommitSequencer::commit_group`]).
+    fn group_durability(&mut self, oldest_root: u64, count: usize) -> Result<(TxState, bool)> {
+        failpoints::check(Failpoint::AfterPublicationBeforeSync)?;
+        let count = u32::try_from(count).unwrap_or(u32::MAX);
+        match self.durability {
+            DurabilityMode::Sync => {
+                self.log.sync()?;
+                self.unsynced = 0;
+                self.oldest_unsynced = None;
+                Ok((TxState::Durable, true))
+            }
+            DurabilityMode::Ordered => {
+                self.unsynced = self.unsynced.saturating_add(count);
+                self.oldest_unsynced.get_or_insert(oldest_root);
+                Ok((TxState::Published, false))
+            }
+            DurabilityMode::Batched { batch_size } => {
+                self.unsynced = self.unsynced.saturating_add(count);
+                self.oldest_unsynced.get_or_insert(oldest_root);
+                if self.unsynced >= batch_size {
+                    self.log.sync()?;
+                    self.unsynced = 0;
+                    self.oldest_unsynced = None;
+                    Ok((TxState::Durable, true))
+                } else {
+                    Ok((TxState::Published, false))
+                }
+            }
+        }
     }
 
     /// Abandon `tx` by writing `TX_BEGIN .. TX_ABORT`. The committed root does
@@ -622,6 +800,7 @@ impl<'a> CommitSequencer<'a> {
     }
 
     fn reply_durability(&mut self, root: u64) -> Result<(TxState, bool)> {
+        failpoints::check(Failpoint::AfterPublicationBeforeSync)?;
         match self.durability {
             DurabilityMode::Sync => {
                 self.log.sync()?;

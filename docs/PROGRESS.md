@@ -1765,3 +1765,76 @@ courts unchanged. `valgrind` court: 4/4 targets clean.
 `docs/SECURITY.md` §3.13 (native lifetimes/SQE/completion ownership), §4 (audit
 reconciled to 53), §4.1 (native-FUSE fuzzing + sanitizer status), §6 finding 13,
 §7 evidence table; this file.
+
+## Phase 31 — Faster commits: ordered group commit + conflict-aware parallel preparation
+
+**Complete.** External review §6 P1. The authoritative durability path is
+unchanged byte-for-byte; grouping changes only *when* the barrier is issued, and
+preparation is parallelised while publication stays serial.
+
+### Delivered
+
+* `src/commit.rs` — the write-and-publish body was extracted into
+  `publish_one`, shared by `commit` and the new `commit_group`. `commit_group`
+  publishes its members **serially, in input order** (each root strictly advances,
+  each root a boundary) and then issues **one shared durability barrier** whose
+  acknowledgment contract per mode (`sync`/`ordered`/`batched`) is documented on
+  the method and in `docs/TRANSACTIONS.md` §3.2. `begin_many` reserves
+  identities for a batch so independent workers can build transactions
+  concurrently.
+* `src/group.rs` — conflict-aware parallel preparation: `conflict_keys`,
+  `conflict_waves` (greedy first-fit; equal keys never share a wave),
+  `group_is_conflict_free`, `prepare_in_waves` (prepares each conflict-free wave
+  concurrently, returns transactions in input order), and `prepare_and_commit`
+  (prepare in waves, then publish as one ordered group). Publication is never
+  parallel.
+
+### Guarantees
+
+* **Ordering.** Members publish in the caller's order; prepared results return in
+  input order regardless of wave. Dependent operations keep their relative order.
+* **Acknowledgment.** A caller is acked only once a durable operation covering its
+  own bytes has completed: `sync` after the shared `fsync`; `ordered` never claims
+  durability; `batched` after the batch's sync point. A group of one is the
+  single-commit path.
+* **Conflict rule.** Same-key (per inode/directory) operations are never prepared
+  concurrently.
+* **Byte-exactness.** A grouped run is byte- and digest-identical to a serial run,
+  so the Phase 2/17 correctness and power-loss courts apply unchanged; the
+  grouped path adds its own crash court.
+
+### Tests (inside the container)
+
+* `cargo test`: **344 passed, 0 failed** (was 327): +5 `src/group.rs` unit tests
+  and +12 `tests/group_commit.rs` integration tests (ack per durability mode,
+  byte-identical to serial, conflicts not reordered, cannot publish out of order,
+  concurrency stress, performance evidence).
+* `cargo test --features failpoints`: **352 passed, 0 failed** — adds the grouped
+  crash court (`crash::error_during_grouped_commit_recovers_to_a_complete_boundary`,
+  `crash::process_crash_during_grouped_commit_recovers_to_a_valid_boundary` over
+  `during_commit_record_write` / `during_record_write` / `before_commit`).
+* FUSE mount (`container-fuse-test.sh`) and `io_uring`
+  (`container-uring-test.sh`) courts unchanged and green; `cargo fmt -p orfs
+  --check` and `cargo clippy --all-targets -- -D warnings` clean.
+
+### Evidence
+
+`evidence/performance/group-commit.json` (paired runs + 95% t CIs + environment).
+In `sync`, amortised per-op latency falls from 3.55–3.64 ms to 0.44–0.88 ms (4.1×
+at one prepared writer to 8.1× at two–eight, all significant); a strictly
+sequential single writer is unchanged (p50 3.424 ms — a group of one). See
+`docs/PERFORMANCE.md` §10.
+
+### Docs
+
+`docs/TRANSACTIONS.md` §3.2 (group-commit contract/ordering/ack per mode) and
+§4.2 (grouped crash court), `docs/CONCURRENCY.md` §8 (conflict-aware parallel
+preparation), `docs/PERFORMANCE.md` §10, this entry, and the README/spec phase
+tables.
+
+### Residuals
+
+The FUSE adaptors still serialise mutating requests through `Mutex<Core>`; the
+group-commit / parallel-preparation mechanism is landed and tested but is realised
+by callers that submit a batch, and wiring the transports to accumulate concurrent
+mutating requests behind one coordinator is future work.

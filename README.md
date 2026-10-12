@@ -66,6 +66,7 @@ enable it (see `docs/FUSE_URING.md`).
 | 28 | Native FUSE adversarial hardening and fuzzing | complete |
 | 29 | Independent acceptance audit (gates A–N) | complete |
 | 30 | Consistency repair (docs, scripts, receipts) | complete |
+| 31 | Faster commits: ordered group commit + conflict-aware parallel preparation | complete |
 
 Honest non-claims: the image pixel-surface pyramid is **not materialised** (only
 its geometry is implemented), and no performance superiority of F2 or of the

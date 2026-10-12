@@ -1,0 +1,184 @@
+{
+  "any_significant": true,
+  "durability": "sync (the strongest barrier; grouping amortises the fsync)",
+  "environment": {
+    "cgroup_memory_max": "8589934592",
+    "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "container_image": null,
+    "cores_visible": 8,
+    "cpu_max": "800000 100000",
+    "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+    "fuse_enable_uring": true,
+    "kernel_release": "7.2.9-2-cachyos",
+    "likely_container": true,
+    "machine": "x86_64",
+    "perf_counters_available": false,
+    "perf_event_paranoid": "2",
+    "ram_total_bytes": 134723346432
+  },
+  "generator": "tests/group_commit.rs",
+  "honesty": "concurrent synchronized writers share one barrier under grouping; the win is expected only once writers contend. Where a row is not significant it is reported as such rather than claimed.",
+  "method": "paired runs, alternating arm order per round; two-sided 95% t intervals on small samples; grouped batch=8; all transactions prepared up front (preparation excluded from the timed region for both arms, so only the durability barrier differs)",
+  "rows": [
+    {
+      "baseline": {
+        "mean_latency_us": 3613.2224374999996,
+        "ops_per_sec_ci95_high": 320.2752981913342,
+        "ops_per_sec_ci95_low": 237.28018190627765,
+        "ops_per_sec_mean": 278.7777400488059
+      },
+      "grouped": {
+        "batch": 8,
+        "mean_latency_us": 882.7741875,
+        "ops_per_sec_ci95_high": 1155.8354746149328,
+        "ops_per_sec_ci95_low": 1110.0214178449608,
+        "ops_per_sec_mean": 1132.9284462299468
+      },
+      "paired_ops_per_sec": {
+        "ci95_high": 889.7936134667177,
+        "ci95_low": 818.5077988955638,
+        "mean_diff": 854.1507061811408,
+        "metric": "grouped_minus_baseline",
+        "pairs": 4,
+        "significant": true,
+        "t": 76.25381188161947,
+        "t_crit95": 3.182
+      },
+      "rounds": 4,
+      "transactions_per_round": 4,
+      "writers": 1
+    },
+    {
+      "baseline": {
+        "mean_latency_us": 3639.15215625,
+        "ops_per_sec_ci95_high": 305.2967039417073,
+        "ops_per_sec_ci95_low": 246.2583280341911,
+        "ops_per_sec_mean": 275.7775159879492
+      },
+      "grouped": {
+        "batch": 8,
+        "mean_latency_us": 446.47309375,
+        "ops_per_sec_ci95_high": 2291.5919929756706,
+        "ops_per_sec_ci95_low": 2188.6627260297923,
+        "ops_per_sec_mean": 2240.1273595027315
+      },
+      "paired_ops_per_sec": {
+        "ci95_high": 2034.6253280203305,
+        "ci95_low": 1894.0743590092338,
+        "mean_diff": 1964.3498435147822,
+        "metric": "grouped_minus_baseline",
+        "pairs": 4,
+        "significant": true,
+        "t": 88.94369417788293,
+        "t_crit95": 3.182
+      },
+      "rounds": 4,
+      "transactions_per_round": 8,
+      "writers": 2
+    },
+    {
+      "baseline": {
+        "mean_latency_us": 3574.567953125,
+        "ops_per_sec_ci95_high": 301.09235047864667,
+        "ops_per_sec_ci95_low": 259.3379401474671,
+        "ops_per_sec_mean": 280.2151453130569
+      },
+      "grouped": {
+        "batch": 8,
+        "mean_latency_us": 442.28565625,
+        "ops_per_sec_ci95_high": 2281.6978222561875,
+        "ops_per_sec_ci95_low": 2240.378012955215,
+        "ops_per_sec_mean": 2261.0379176057013
+      },
+      "paired_ops_per_sec": {
+        "ci95_high": 2004.4836738091838,
+        "ci95_low": 1957.1618707761056,
+        "mean_diff": 1980.8227722926447,
+        "metric": "grouped_minus_baseline",
+        "pairs": 4,
+        "significant": true,
+        "t": 266.3879082134452,
+        "t_crit95": 3.182
+      },
+      "rounds": 4,
+      "transactions_per_round": 16,
+      "writers": 4
+    },
+    {
+      "baseline": {
+        "mean_latency_us": 3569.265296875,
+        "ops_per_sec_ci95_high": 282.18260872975696,
+        "ops_per_sec_ci95_low": 278.1652937220027,
+        "ops_per_sec_mean": 280.1739512258798
+      },
+      "grouped": {
+        "batch": 8,
+        "mean_latency_us": 441.8833125,
+        "ops_per_sec_ci95_high": 2280.861629111148,
+        "ops_per_sec_ci95_low": 2245.3026779820907,
+        "ops_per_sec_mean": 2263.0821535466193
+      },
+      "paired_ops_per_sec": {
+        "ci95_high": 2000.720460823433,
+        "ci95_low": 1965.0959438180464,
+        "mean_diff": 1982.9082023207397,
+        "metric": "grouped_minus_baseline",
+        "pairs": 4,
+        "significant": true,
+        "t": 354.22874077594196,
+        "t_crit95": 3.182
+      },
+      "rounds": 4,
+      "transactions_per_round": 32,
+      "writers": 8
+    },
+    {
+      "baseline": {
+        "mean_latency_us": 3551.43203515625,
+        "ops_per_sec_ci95_high": 289.2852625761417,
+        "ops_per_sec_ci95_low": 273.99171240802195,
+        "ops_per_sec_mean": 281.6384874920818
+      },
+      "grouped": {
+        "batch": 8,
+        "mean_latency_us": 457.83774609375,
+        "ops_per_sec_ci95_high": 2459.043812350724,
+        "ops_per_sec_ci95_low": 1929.7611072194213,
+        "ops_per_sec_mean": 2194.4024597850726
+      },
+      "paired_ops_per_sec": {
+        "ci95_high": 2181.983273016608,
+        "ci95_low": 1643.5446715693736,
+        "mean_diff": 1912.7639722929907,
+        "metric": "grouped_minus_baseline",
+        "pairs": 4,
+        "significant": true,
+        "t": 22.607647161540847,
+        "t_crit95": 3.182
+      },
+      "rounds": 4,
+      "transactions_per_round": 64,
+      "writers": 16
+    }
+  ],
+  "schema": "orfs.evidence.group-commit.v1",
+  "single_writer_sequential_sync": {
+    "mean_us": 3539.210183333332,
+    "note": "one writer, one transaction at a time: grouping does not apply, so group commit cannot (and does not) change this path; a group of one is byte-identical to a single commit (group_commit_is_byte_identical_to_serial_commit)",
+    "p50_us": 3424.272,
+    "p95_us": 5107.714,
+    "samples": 120
+  },
+  "workload": {
+    "group_batch": 8,
+    "ops_per_writer": 4,
+    "rounds": 4,
+    "writers": [
+      1,
+      2,
+      4,
+      8,
+      16
+    ]
+  }
+}

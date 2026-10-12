@@ -61,16 +61,30 @@ Exit codes:
 | `1` | at least one stale/unknown/diverged receipt or at least one citation mismatch/error (the report itemises each) |
 | `2` | `python3` is not on `PATH` |
 
-### Why it is not wired into `container-check.sh`
+### The reproducible gate entry point
+
+`scripts/check-all.sh` is the single host entry point that runs the cheap,
+deterministic gates in order:
+
+```sh
+sh scripts/check-all.sh          # fmt/lint (container) + this check + full test suite (container)
+sh scripts/check-all.sh --fast   # fmt/lint (container) + this check only
+```
+
+It calls `scripts/container-check.sh` (fmt + clippy in the pinned container),
+then `check-docs-receipts.sh` (host), then `scripts/container-test.sh`. The
+mounted FUSE / `io_uring` / POSIX courts are deliberately excluded because they
+need `/dev/fuse`, `CAP_SYS_ADMIN` and an unconfined seccomp profile, which a
+hosted CI runner generally cannot grant; run them explicitly. A CI job can call
+`check-all.sh` directly.
+
+### Why it is not folded into `container-check.sh`
 
 `scripts/container-check.sh` is the *in-container* `cargo fmt -p orfs --check` +
 `clippy` gate, and the project contract is that compilation/test tooling runs only
 inside the pinned container (see `docs/LIMITATIONS.md`, `README.md`). This check
-is deliberately host-side and Docker-free, so folding it into the container gate
-would misrepresent both. There is no host-side CI aggregator or `Makefile` /
-`.github/` workflow in the repository to attach to, so the invocation above is
-the entry point. A CI job should run it as a plain host step (no container
-required).
+is host-side and Docker-free (it needs only `sh`, `git`, `python3`), so it stays a
+separate step that `check-all.sh` sequences after the container gate.
 
 ## 3. What is covered — and what is not
 

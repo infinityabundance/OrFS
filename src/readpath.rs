@@ -737,7 +737,7 @@ fn state_at(body: &EkbloomBody, pos: u64) -> Result<EkSnapshot> {
              symbols exceeds the {MAX_REPLAY_SYMBOLS}-symbol bound"
         )));
     }
-    let mut omega = machine.init();
+    let mut omega = machine.init(&body.core)?;
     let mut i = 0u64;
     while i < pos {
         machine.reveal(&body.core, &mut omega)?;

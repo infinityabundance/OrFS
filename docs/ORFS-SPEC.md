@@ -120,10 +120,11 @@ per-phase record.
 | 32 | End-to-end group-commit coordinator (opt-in); correctness court; honest measurement | **complete** |
 | 33 | Review-finding consolidation: read-path timing, native `nlink`, supplementary groups, calibration guarantee, passthrough integrity | **complete** |
 | 34 | crates.io publishing readiness (blocked on the `ekbloom` dependency) | **complete** |
+| 35 | Consume the published `ekbloom` release; publish readiness | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–34 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–35 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 - The `orfs` crate builds, its **344** tests (default) pass, and
   `cargo test --features failpoints` adds the crash-injection court (352 tests in
@@ -134,12 +135,13 @@ Phases 0–34 are implemented; `docs/PROGRESS.md` is the per-phase record.
 - The CLI is fully wired: `doctor`, `init`, `inspect`, `verify`, `recover`,
   `mount`/`unmount`, `stat`, `snapshot`, `manifest`, `grow`, `query`, and `bench`
   are implemented and exercised by tests.
-- EKBLOOM `v0.3.0` is consumed as an immutable, rev-pinned git dependency on the
-  public repository
-  (`ekbloom = { git = "https://github.com/infinityabundance/EKBLOOM", rev = "708c349…", version = "=0.3.0" }`)
-  and exercised by round-trip/equivalence tests; its state mathematics is not
-  reimplemented here. A clean checkout builds with **no** sibling EKBLOOM tree.
-  See `docs/LIMITATIONS.md` §1 and `evidence/receipts/{ekbloom,source-commit}.json`.
+- EKBLOOM `v0.3.0` is consumed **unchanged** as an exact-version crates.io
+  dependency (`ekbloom = "=0.3.0"`) and exercised by round-trip/equivalence
+  tests; its state mathematics is not reimplemented here. A clean checkout builds
+  with **no** sibling EKBLOOM tree. (Before Phase 35 it was a rev-pinned git
+  dependency; that form is not publishable, because crates.io rejects git
+  dependencies.) See `docs/LIMITATIONS.md` §1 and
+  `evidence/receipts/{ekbloom,source-commit}.json`.
 
 Honest non-claims (see the linked documents):
 

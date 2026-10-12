@@ -6,11 +6,12 @@ Normative notes for the accelerated read path. Implements research §10
 
 ## 1. Boundary: EKBLOOM's mathematics vs. OrFS's storage/selection
 
-EKBLOOM is consumed **unchanged** as an immutable, rev-pinned git dependency
-(`ekbloom = { git = "https://github.com/infinityabundance/EKBLOOM", rev = "708c349…", version = "= 0.3.0" }`).
-Pinning to a committed revision on the public `origin/main` makes OrFS builds
+EKBLOOM is consumed **unchanged** as an exact-version crates.io dependency
+(`ekbloom = "=0.3.0"`).
+Consuming the published release (rather than a git revision) makes OrFS builds
 reproducible from a clean checkout, independent of any other checkout on the
-machine (see [`docs/LIMITATIONS.md`](LIMITATIONS.md) §1 and
+machine, and is the only dependency form crates.io accepts when publishing OrFS
+(see [`docs/LIMITATIONS.md`](LIMITATIONS.md) §1 and
 `evidence/receipts/{ekbloom,source-commit}.json`).
 OrFS never copies, modifies, or reimplements EKBLOOM's state machine.
 
@@ -39,7 +40,7 @@ used; nothing private is reached into.
 | `EkbloomBody` | root | the loaded/validated body (`core`, `history`, `checkpoints`, `blooms`, `certificates`, `logical_len`, `machine_id`, `core_hash`, `object_id`, `generation`, `profiles`) |
 | `reader::open_bytes` | `reader` | parse + structurally validate a `.ekb` image |
 | `verify`, `VerificationReport`, `CheckOutcome` | root | recompute the certification of every structure |
-| `machine_by_id`, `OrMachine` (`init`/`reveal`/`check_core`), `MACHINE_NL2` | root | drive the authoritative machine (history/checkpoint/tail reads) |
+| `machine_by_id`, `OrMachine` (`init(core) -> Result<Snapshot>`, `reveal`, `check_core`), `MACHINE_NL2` | root | drive the authoritative machine (history/checkpoint/tail reads) |
 | `History` (`snapshot_at`, `logical_len`, `core_hash`, `verify_against`) | root | the full per-position state projection |
 | `CheckpointSet` (`restart_point`, `restore`, `interval`) | root | sparse/complete restart states |
 | `bloom::{Certification, BloomKind, BloomShell, Outcome}` | `bloom` | certification states, kinds, shell envelope |
@@ -55,10 +56,18 @@ Items **not** used: `filesystem::OrFs` (OrFS has its own namespace/FUSE plane),
 convenience wrappers, not needed by the planner), `recovery`, `sweep`,
 `worker`, `asyncpub`.
 
-Version/format are pinned in two places: the `Cargo.toml` git-rev dependency
-(`rev = "708c349…"`, `= 0.3.0`) and `manifestation::EKBLOOM_VERSION`
-(`"0.3.0"`), which is recorded verbatim in every generation manifest and
-re-checked on every read. The exact rev is in `evidence/receipts/ekbloom.json`.
+Version/format are pinned in two places: the `Cargo.toml` registry dependency
+(`ekbloom = "=0.3.0"`) and `manifestation::EKBLOOM_VERSION` (`"0.3.0"`), which is
+recorded verbatim in every generation manifest and re-checked on every read. The
+exact version and its crates.io checksum are in `evidence/receipts/ekbloom.json`.
+
+> Note (Phase 35): the published `0.3.0` is newer than the git revision OrFS used
+> before (47 source files vs 30 at rev `708c3491`). One consuming call site
+> changed — `OrMachine::init` now takes the core bytes and returns
+> `Result<Snapshot>` — and was updated in `src/readpath.rs::state_at`. The crate
+> root surface OrFS uses (`create`, `write_body`, `machine_by_id`, `verify`,
+> `History`, `CheckpointSet`, the bloom modules, `Snapshot`, `NL2`, …) is
+> unchanged; the full test suite passes against the published release.
 
 ## 3. Generation identity (research §2 I6)
 

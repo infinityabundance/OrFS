@@ -2,7 +2,7 @@
 name = "orfs"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.89"
 description = "OrFS — a non-withdrawal, concealed-expansion FUSE filesystem with io_uring backing and EKBLOOM-accelerated historical reads"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/infinityabundance/OrFS"
@@ -54,18 +54,14 @@ nix = { version = "0.31", default-features = false, features = [
 ] }
 
 # --- Acceleration engine (independent, version-pinned native-Rust dependency) ---
-# Consumed as a rev-pinned git dependency on the separately-versioned EKBLOOM
-# crate, fetched from the public GitHub repository below. EKBLOOM is developed
-# concurrently and independently; pinning to an immutable git revision that
-# exists on `origin/main` makes OrFS builds reproducible from a clean checkout
-# (no sibling working tree required) and immune to uncommitted edits. Source is
-# never copied into OrFS; the mathematical state machinery lives in EKBLOOM.
-#
-# Re-pinned in Phase 13: the previous pin (a local `file://` URL at rev
-# 255452e1) no longer resolved because EKBLOOM's history was force-pushed; the
-# rev is now an existing commit on the public `origin/main`. See
-# evidence/receipts/ekbloom.json and docs/LIMITATIONS.md §1.
-ekbloom = { git = "https://github.com/infinityabundance/EKBLOOM", rev = "708c349128668bf26b50684ce473d8de4058dc31", version = "=0.3.0" }
+# EKBLOOM is developed concurrently and independently; OrFS consumes it as an
+# exact-version crates.io dependency, never by copying its source. The `=0.3.0`
+# requirement pins the published release whose contents were verified equal to
+# the previously pinned git revision
+# `708c349128668bf26b50684ce473d8de4058dc31` (see docs/LIMITATIONS.md §1 and
+# evidence/receipts/ekbloom.json). Publishing OrFS to crates.io requires this
+# registry form, because crates.io rejects git dependencies (Phase 35).
+ekbloom = "=0.3.0"
 
 # --- CLI / diagnostics ---
 clap = { version = "4", features = ["derive"] }

@@ -671,7 +671,7 @@ fn decode_hex(s: &str) -> Result<Vec<u8>> {
         .chars()
         .filter(|c| !c.is_whitespace())
         .collect();
-    if cleaned.len() % 2 != 0 {
+    if !cleaned.len().is_multiple_of(2) {
         return Err(OrfsError::InvalidArgument(
             "hex pattern must have an even number of digits".into(),
         ));

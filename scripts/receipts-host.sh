@@ -52,30 +52,32 @@ KMOUNT_ID="$(docker image inspect -f '{{.Id}}' "$ORFS_KMOUNT_IMAGE" 2>/dev/null 
   printf '}\n'
 } > "$R/container.json"
 
-# --- ekbloom.json (rev-pinned dependency, public GitHub) -------------------
-# The pin is parsed from Cargo.toml so the receipt always reflects the manifest
-# rather than a mutable sibling working tree.
+# --- ekbloom.json (exact-version registry dependency) ----------------------
+# Parsed from Cargo.toml so the receipt reflects the manifest, never a mutable
+# sibling tree. Phase 35 moved EKBLOOM from a rev-pinned git dependency to the
+# published crates.io release, so the pin is now `registry-exact`: the exact
+# version plus the resolved checksum recorded in Cargo.lock.
 EK_DEP_LINE="$(sed -n 's/^ekbloom *= *//p' "$ORFS_PROJECT_DIR/Cargo.toml" | head -n1)"
-EK_URL="$(printf '%s' "$EK_DEP_LINE" | sed -n 's/.*git *= *"\([^"]*\)".*/\1/p')"
-EK_REV="$(printf '%s' "$EK_DEP_LINE" | sed -n 's/.*rev *= *"\([^"]*\)".*/\1/p')"
-EK_VER="$(printf '%s' "$EK_DEP_LINE" | sed -n 's/.*version *= *"=\([^"]*\)".*/\1/p')"
-EK_SHORT="$(printf '%s' "$EK_REV" | cut -c1-7)"
+EK_VER="$(printf '%s' "$EK_DEP_LINE" | sed -n 's/^"=\([^"]*\)"$/\1/p')"
+# The lockfile is the authoritative record of the resolved source + checksum.
+EK_CHECKSUM="$(awk -F'"' '/name = "ekbloom"/{f=1} f&&/checksum/{print $2; exit}' "$ORFS_PROJECT_DIR/Cargo.lock")"
+EK_PREV_REV="708c349128668bf26b50684ce473d8de4058dc31"
 {
   printf '{\n'
-  printf '  "schema": "orfs.evidence.ekbloom-pin.v1",\n'
+  printf '  "schema": "orfs.evidence.ekbloom-pin.v2",\n'
   printf '  "captured_at_utc": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf '  "crate": "ekbloom",\n'
   printf '  "version": "%s",\n' "$EK_VER"
-  printf '  "pin_kind": "git-rev-public",\n'
-  printf '  "git_url": "%s",\n' "$EK_URL"
-  printf '  "rev": "%s",\n' "$EK_REV"
-  printf '  "rev_short": "%s",\n' "$EK_SHORT"
-  printf '  "resolved_source": "git+%s?rev=%s#%s",\n' "$EK_URL" "$EK_REV" "$EK_REV"
-  printf '  "cargo_dependency": "ekbloom = { git = \\"%s\\", rev = \\"%s\\", version = \\"=%s\\" }",\n' "$EK_URL" "$EK_REV" "$EK_VER"
-  printf '  "version_pin_in_manifest": "%s",\n' "$EK_VER"
+  printf '  "pin_kind": "registry-exact",\n'
+  printf '  "registry": "https://github.com/rust-lang/crates.io-index",\n'
+  printf '  "checksum": "sha256:%s",\n' "$EK_CHECKSUM"
+  printf '  "checksum_sha256": "%s",\n' "$EK_CHECKSUM"
+  printf '  "resolved_source": "registry+https://github.com/rust-lang/crates.io-index",\n'
+  printf '  "cargo_dependency": "ekbloom = \\"=%s\\"",\n' "$EK_VER"
+  printf '  "previous_git_pin": { "url": "https://github.com/infinityabundance/EKBLOOM", "rev": "%s", "note": "replaced in Phase 35 because crates.io rejects git dependencies; the published 0.3.0 is newer than this revision" },\n' "$EK_PREV_REV"
   printf '  "copied_into_orfs": false,\n'
   printf '  "reproducible_from_clean_checkout": true,\n'
-  printf '  "why": "EKBLOOM is developed concurrently and independently; pinning to an immutable commit on the public origin/main makes every clean OrFS checkout build without any sibling working tree.",\n'
+  printf '  "why": "EKBLOOM is developed concurrently and independently; consuming the exact published crates.io release makes every clean OrFS checkout build with no sibling working tree, and is the only form crates.io accepts for publishing OrFS.",\n'
   printf '  "public_items_orfs_depends_on": [\n'
   printf '    "ManifestationProfile", "create", "write_body", "inspect", "EkbloomBody",\n'
   printf '    "verify", "VerificationReport", "machine_by_id", "MACHINE_NL2", "History",\n'
@@ -102,9 +104,10 @@ if [ -n "$(git -C "$ORFS_PROJECT_DIR" status --porcelain -- ':!evidence/receipts
   printf '  "orfs_git_commit_short": "%s",\n' "$SRC_SHORT"
   printf '  "orfs_git_branch": "%s",\n' "$SRC_BRANCH"
   printf '  "orfs_worktree_dirty": %s,\n' "$SRC_DIRTY"
-  printf '  "ekbloom_pin_rev": "%s",\n' "$EK_REV"
-  printf '  "ekbloom_pin_url": "%s",\n' "$EK_URL"
-  printf '  "ekbloom_pin_version": "%s"\n' "$EK_VER"
+  printf '  "ekbloom_pin_kind": "registry-exact",\n'
+  printf '  "ekbloom_version": "%s",\n' "$EK_VER"
+  printf '  "ekbloom_checksum_sha256": "%s",\n' "$EK_CHECKSUM"
+  printf '  "ekbloom_repository": "https://github.com/infinityabundance/EKBLOOM"\n'
   printf '}\n'
 } > "$R/source-commit.json"
 

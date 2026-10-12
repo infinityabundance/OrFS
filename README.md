@@ -16,8 +16,8 @@ OrFS is two laws made executable:
   spending storage, memory, and construction work to accelerate reads.
 
 `or.log` is the source of truth. EKBLOOM is the acceleration engine (consumed
-as an independent, rev-pinned git dependency; see `docs/LIMITATIONS.md`). FUSE
-is the Linux interface.
+as an independent, exact-version crates.io dependency; see `docs/LIMITATIONS.md`).
+FUSE is the Linux interface.
 
 ## Status
 
@@ -70,6 +70,7 @@ enable it (see `docs/FUSE_URING.md`).
 | 32 | End-to-end group-commit coordinator (opt-in); correctness court; honest measurement | complete |
 | 33 | Review-finding consolidation: read-path timing, native `nlink`, supplementary groups, calibration guarantee, passthrough integrity | complete |
 | 34 | crates.io publishing readiness (blocked on the `ekbloom` dependency) | complete |
+| 35 | Consume the published `ekbloom` release; publish readiness | complete |
 
 Honest non-claims: the image pixel-surface pyramid is **not materialised** (only
 its geometry is implemented), and no performance superiority of F2 or of the

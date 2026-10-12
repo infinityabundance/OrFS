@@ -1982,3 +1982,45 @@ EKBLOOM must be published to crates.io as `ekbloom` 0.3.0 under its own release
 process; OrFS's dependency then becomes `ekbloom = "=0.3.0"` and `cargo publish`
 can run. EKBLOOM's source is never copied into OrFS, so this cannot be worked
 around from here. See `docs/PUBLISHING.md`.
+
+## Phase 35 — Consume the published `ekbloom` release; publish readiness
+
+**Complete.** The Phase 34 publishing blocker is resolved by moving OrFS's
+EKBLOOM dependency from a rev-pinned git dependency to the published crates.io
+release, which is the only form crates.io accepts.
+
+### Delivered
+
+* `Cargo.toml`: `ekbloom = { git = …, rev = …, version = "=0.3.0" }` →
+  `ekbloom = "=0.3.0"`; `rust-version` bumped `1.85` → `1.89` (EKBLOOM's MSRV).
+  `Cargo.lock` now records
+  `registry+https://github.com/rust-lang/crates.io-index` with checksum
+  `sha256:b02f89ad…`.
+* `src/readpath.rs::state_at`: the one consuming API change — `OrMachine::init`
+  now takes the core bytes and returns `Result<Snapshot>` — became
+  `machine.init(&body.core)?`.
+* `scripts/receipts-host.sh`: emits an `ekbloom-pin.v2` receipt (`pin_kind:
+  registry-exact`, version, checksum, resolved source, previous git pin) and a
+  refreshed `source-commit.json`; the version is parsed from `Cargo.toml` and the
+  checksum from `Cargo.lock`, so the receipt cannot drift from the manifest.
+* Docs: `LIMITATIONS.md` §1 rewritten for the registry dependency (including the
+  version-number collision note and the newer-release consequence);
+  `EKBLOOM-INTEGRATION.md` §1/§2 + the `init` signature; `ORFS-SPEC.md`; the
+  README; `PUBLISHING.md`; and this entry.
+
+### Verified
+
+* The published `0.3.0` is **newer** than the pinned revision (47 source files
+  vs 30; new modules include `machine_rans`, `machine_store`, `planner`,
+  `tiles`, `blocks`, `packed`). It was consumed read-only as a dependency; no
+  EKBLOOM source was read into or copied into OrFS to make the change.
+* `cargo build` clean; `cargo test` all green — including
+  `tests/ekbloom_read.rs` (manifested-vs-authoritative equivalence) and the
+  EKBLOOM roundtrip tests — which is the evidence that the upgrade preserved
+  OrFS's contract.
+* The name `orfs` remains available; `cargo package --list` still yields the
+  source-only package.
+
+### Environment
+
+Kernel `7.2.9-2-cachyos`, container `orfs-build:1.99.0` (Rust 1.99.0).

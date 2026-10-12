@@ -1,37 +1,52 @@
 # OrFS — Known Limitations
 
-## 1. EKBLOOM is an independent, rev-pinned public dependency
+## 1. EKBLOOM is an independent, published public dependency
 
 OrFS depends on **EKBLOOM** (`ekbloom` 0.3.0), a separate crate developed
 independently and, at times, **concurrently** by another process. EKBLOOM is
-**not** vendored or copied into OrFS. To keep OrFS builds reproducible despite
-that concurrent development, OrFS consumes EKBLOOM as an **immutable git
-revision of a public repository**:
+**not** vendored or copied into OrFS. Since Phase 35 OrFS consumes EKBLOOM as an
+**exact-version crates.io dependency**:
 
 ```toml
-ekbloom = { git = "https://github.com/infinityabundance/EKBLOOM", rev = "708c349128668bf26b50684ce473d8de4058dc31", version = "=0.3.0" }
+ekbloom = "=0.3.0"
 ```
+
+Before Phase 35 the dependency was a rev-pinned git dependency on
+`https://github.com/infinityabundance/EKBLOOM` at rev `708c3491`. That form is
+**not publishable**: crates.io rejects any dependency that is not itself on
+crates.io, which blocked `cargo publish` for OrFS. Switching to the published
+`=0.3.0` release was therefore required to publish OrFS, and was a deliberate,
+reviewed dependency change (Phase 35).
 
 Consequences:
 
-* Every build fetches exactly the committed source at rev `708c349` (EKBLOOM
-  `origin/main`, version `0.3.0`), **regardless of any other checkout** on the
-  machine. `Cargo.lock` records the resolved
-  `git+https://github.com/infinityabundance/EKBLOOM?rev=708c349…#708c349…`
-  source, so the pin is locked.
-* The pin is an existing commit on the public `origin/main`, so a **clean
-  `git clone` of OrFS builds with no sibling EKBLOOM working tree**. (This
-  replaced an earlier local `file://` pin at rev `255452e1`, which stopped
-  resolving when EKBLOOM's history was force-pushed; see Phase 13.)
-* Cargo needs `git` to fetch the dependency. The `rust:1.99.0-slim-bookworm`
-  base image ships no `git`, so both `Dockerfile` and `Dockerfile.kmount`
-  install it.
+* Every build fetches exactly `ekbloom` 0.3.0 from crates.io. `Cargo.lock`
+  records the resolved `registry+https://github.com/rust-lang/crates.io-index`
+  source and the checksum
+  `b02f89add93be1429809445c7570c1271a68957702728c95437887243bdcf2cf`, so the
+  version is locked.
+* **The published 0.3.0 is newer than the previously pinned revision.** The
+  crates.io release has 47 source files where rev `708c3491` had 30 (new
+  modules such as `machine_rans`, `machine_store`, `planner`, `tiles`, `blocks`,
+  `packed`). One consuming call site changed with it: `Machine::init` now takes
+the core bytes and returns `Result<Snapshot>` (`src/readpath.rs::state_at`), so
+  the call became `machine.init(&body.core)?`. The full OrFS test suite
+  (including the manifested-vs-authoritative equivalence courts and the EKBLOOM
+  roundtrip tests) passes against the published release, which is the evidence
+  that the upgrade preserved OrFS's contract. No EKBLOOM source was read into or
+  copied into OrFS to make the change.
+* A **version-number collision** was resolved in favour of crates.io: the older
+  pinned revision and the published release were both labelled `0.3.0`. crates.io
+  versions are immutable, so the published source is authoritative for that
+  number and any future repin must use a new version.
+* No `git` is needed to build OrFS any more; the dependency comes from the
+  registry. (The base images still install `git` for other tooling.)
 * OrFS never modifies, copies, or reimplements EKBLOOM's source or its state
-  machine. The exact revision and the list of consumed public items are recorded
+  machine. The exact version and the list of consumed public items are recorded
   in `evidence/receipts/ekbloom.json`; the source commit and pin are recorded in
   `evidence/receipts/source-commit.json`; the item-by-item contract is in
   `docs/EKBLOOM-INTEGRATION.md`.
-* Re-pinning is a deliberate, reviewable act: change the `rev` (and
+* Re-pinning is a deliberate, reviewable act: change the version (and
   `evidence/receipts/{ekbloom,source-commit}.json`, and `Cargo.lock`) together.
 
 ## 2. Host kernel use for FUSE and io_uring

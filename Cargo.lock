@@ -211,10 +211,12 @@ dependencies = [
 [[package]]
 name = "ekbloom"
 version = "0.3.0"
-source = "git+https://github.com/infinityabundance/EKBLOOM?rev=708c349128668bf26b50684ce473d8de4058dc31#708c349128668bf26b50684ce473d8de4058dc31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b02f89add93be1429809445c7570c1271a68957702728c95437887243bdcf2cf"
 dependencies = [
  "blake3",
  "crc32fast",
+ "libc",
  "loom",
 ]
 

@@ -1,0 +1,402 @@
+{
+  "affine_entries_per_queue": 4,
+  "affine_rings": 8,
+  "environment": {
+    "cpu_count": 8,
+    "image_digest": "sha256:a41df86df391732ab467b5bedc8b4a17c0df437fa180b5230417a6a8339d97ac",
+    "kernel_release": "7.2.9-2-cachyos"
+  },
+  "generated_by": "tests/f2_concurrency.rs::f2_concurrency_readers_1_to_32",
+  "levels": [
+    1,
+    2,
+    4,
+    8,
+    16,
+    32
+  ],
+  "method": "paired, order-balanced reader scaling on simultaneously-mounted F0/F1/F2-single/F2-affine; direct_io=on and TTL=0 so every read is a real transport round-trip",
+  "ops_per_thread": 100,
+  "pairs": 5,
+  "results": {
+    "F0_1": {
+      "ops_per_sec_ci95_high": 29066.3600001183,
+      "ops_per_sec_ci95_low": 25092.560064424768,
+      "ops_per_sec_mean": 27079.460032271534,
+      "p50_us": 17.613,
+      "p95_us": 36.728,
+      "p999_us": 73.577,
+      "p99_us": 57.667,
+      "profile": "F0",
+      "readers": 1,
+      "samples": 500
+    },
+    "F0_16": {
+      "ops_per_sec_ci95_high": 205064.31645482828,
+      "ops_per_sec_ci95_low": 160754.36271128934,
+      "ops_per_sec_mean": 182909.3395830588,
+      "p50_us": 34.355,
+      "p95_us": 101.78,
+      "p999_us": 353.641,
+      "p99_us": 177.65200000000002,
+      "profile": "F0",
+      "readers": 16,
+      "samples": 8000
+    },
+    "F0_2": {
+      "ops_per_sec_ci95_high": 60866.640772835,
+      "ops_per_sec_ci95_low": 47043.39916602583,
+      "ops_per_sec_mean": 53955.01996943042,
+      "p50_us": 16.921,
+      "p95_us": 40.085,
+      "p999_us": 78.07600000000001,
+      "p99_us": 60.452999999999996,
+      "profile": "F0",
+      "readers": 2,
+      "samples": 1000
+    },
+    "F0_32": {
+      "ops_per_sec_ci95_high": 204982.32590082797,
+      "ops_per_sec_ci95_low": 180408.95344436463,
+      "ops_per_sec_mean": 192695.6396725963,
+      "p50_us": 72.326,
+      "p95_us": 337.41,
+      "p999_us": 1576.296,
+      "p99_us": 810.856,
+      "profile": "F0",
+      "readers": 32,
+      "samples": 16000
+    },
+    "F0_4": {
+      "ops_per_sec_ci95_high": 114487.73243604957,
+      "ops_per_sec_ci95_low": 87138.56943649372,
+      "ops_per_sec_mean": 100813.15093627165,
+      "p50_us": 17.561999999999998,
+      "p95_us": 32.741,
+      "p999_us": 70.932,
+      "p99_us": 51.004999999999995,
+      "profile": "F0",
+      "readers": 4,
+      "samples": 2000
+    },
+    "F0_8": {
+      "ops_per_sec_ci95_high": 178759.28545070748,
+      "ops_per_sec_ci95_low": 141933.14427919977,
+      "ops_per_sec_mean": 160346.21486495362,
+      "p50_us": 23.373,
+      "p95_us": 31.349,
+      "p999_us": 68.918,
+      "p99_us": 49.382000000000005,
+      "profile": "F0",
+      "readers": 8,
+      "samples": 4000
+    },
+    "F1_1": {
+      "ops_per_sec_ci95_high": 29447.28426018194,
+      "ops_per_sec_ci95_low": 24890.05248499334,
+      "ops_per_sec_mean": 27168.66837258764,
+      "p50_us": 17.353,
+      "p95_us": 39.273,
+      "p999_us": 60.363,
+      "p99_us": 54.351,
+      "profile": "F1",
+      "readers": 1,
+      "samples": 500
+    },
+    "F1_16": {
+      "ops_per_sec_ci95_high": 216105.55465474128,
+      "ops_per_sec_ci95_low": 200351.05205360128,
+      "ops_per_sec_mean": 208228.30335417128,
+      "p50_us": 31.628999999999998,
+      "p95_us": 76.543,
+      "p999_us": 293.839,
+      "p99_us": 138.829,
+      "profile": "F1",
+      "readers": 16,
+      "samples": 8000
+    },
+    "F1_2": {
+      "ops_per_sec_ci95_high": 58156.87402237507,
+      "ops_per_sec_ci95_low": 51207.848182780894,
+      "ops_per_sec_mean": 54682.36110257798,
+      "p50_us": 17.261999999999997,
+      "p95_us": 32.199999999999996,
+      "p999_us": 57.848,
+      "p99_us": 50.335,
+      "profile": "F1",
+      "readers": 2,
+      "samples": 1000
+    },
+    "F1_32": {
+      "ops_per_sec_ci95_high": 210361.29831409117,
+      "ops_per_sec_ci95_low": 136662.92280176893,
+      "ops_per_sec_mean": 173512.11055793005,
+      "p50_us": 70.412,
+      "p95_us": 354.582,
+      "p999_us": 8232.638,
+      "p99_us": 1003.7760000000001,
+      "profile": "F1",
+      "readers": 32,
+      "samples": 16000
+    },
+    "F1_4": {
+      "ops_per_sec_ci95_high": 109436.9890052319,
+      "ops_per_sec_ci95_low": 96688.28673695195,
+      "ops_per_sec_mean": 103062.63787109192,
+      "p50_us": 17.403,
+      "p95_us": 33.992999999999995,
+      "p999_us": 66.074,
+      "p99_us": 54.221999999999994,
+      "profile": "F1",
+      "readers": 4,
+      "samples": 2000
+    },
+    "F1_8": {
+      "ops_per_sec_ci95_high": 169895.00257257087,
+      "ops_per_sec_ci95_low": 154191.23586967314,
+      "ops_per_sec_mean": 162043.119221122,
+      "p50_us": 23.504,
+      "p95_us": 33.062000000000005,
+      "p999_us": 83.747,
+      "p99_us": 59.642,
+      "profile": "F1",
+      "readers": 8,
+      "samples": 4000
+    },
+    "F2-affine_1": {
+      "ops_per_sec_ci95_high": 28524.47054426303,
+      "ops_per_sec_ci95_low": 27277.836350110512,
+      "ops_per_sec_mean": 27901.15344718677,
+      "p50_us": 16.781000000000002,
+      "p95_us": 32.271,
+      "p999_us": 75.922,
+      "p99_us": 58.179,
+      "profile": "F2-affine",
+      "readers": 1,
+      "samples": 500
+    },
+    "F2-affine_16": {
+      "ops_per_sec_ci95_high": 189628.9481797656,
+      "ops_per_sec_ci95_low": 152013.4842062067,
+      "ops_per_sec_mean": 170821.21619298615,
+      "p50_us": 40.125,
+      "p95_us": 134.652,
+      "p999_us": 915.712,
+      "p99_us": 320.42900000000003,
+      "profile": "F2-affine",
+      "readers": 16,
+      "samples": 8000
+    },
+    "F2-affine_2": {
+      "ops_per_sec_ci95_high": 57553.77466952307,
+      "ops_per_sec_ci95_low": 56090.7062868634,
+      "ops_per_sec_mean": 56822.240478193235,
+      "p50_us": 16.171000000000003,
+      "p95_us": 24.787,
+      "p999_us": 98.193,
+      "p99_us": 48.010000000000005,
+      "profile": "F2-affine",
+      "readers": 2,
+      "samples": 1000
+    },
+    "F2-affine_32": {
+      "ops_per_sec_ci95_high": 199619.3827142856,
+      "ops_per_sec_ci95_low": 159707.07741907492,
+      "ops_per_sec_mean": 179663.23006668026,
+      "p50_us": 68.047,
+      "p95_us": 496.93800000000005,
+      "p999_us": 1349.141,
+      "p99_us": 810.986,
+      "profile": "F2-affine",
+      "readers": 32,
+      "samples": 16000
+    },
+    "F2-affine_4": {
+      "ops_per_sec_ci95_high": 108438.3264204334,
+      "ops_per_sec_ci95_low": 98457.6452132656,
+      "ops_per_sec_mean": 103447.9858168495,
+      "p50_us": 17.382,
+      "p95_us": 36.979,
+      "p999_us": 70.051,
+      "p99_us": 55.323,
+      "profile": "F2-affine",
+      "readers": 4,
+      "samples": 2000
+    },
+    "F2-affine_8": {
+      "ops_per_sec_ci95_high": 149682.30499624237,
+      "ops_per_sec_ci95_low": 134049.39253335426,
+      "ops_per_sec_mean": 141865.8487647983,
+      "p50_us": 27.151,
+      "p95_us": 57.477,
+      "p999_us": 263.934,
+      "p99_us": 79.238,
+      "profile": "F2-affine",
+      "readers": 8,
+      "samples": 4000
+    },
+    "F2-affine_stats": {
+      "completions_max_per_reap": 8,
+      "dispatch_calls": 31762,
+      "dispatch_us_per_op": 26.274753951262515,
+      "handoffs": 0,
+      "queue_groups": [
+        {
+          "group": 0,
+          "qids": [
+            0,
+            8
+          ],
+          "served": 2455
+        },
+        {
+          "group": 1,
+          "qids": [
+            1,
+            9
+          ],
+          "served": 2460
+        },
+        {
+          "group": 2,
+          "qids": [
+            2,
+            10
+          ],
+          "served": 4588
+        },
+        {
+          "group": 3,
+          "qids": [
+            3,
+            11
+          ],
+          "served": 4416
+        },
+        {
+          "group": 4,
+          "qids": [
+            4,
+            12
+          ],
+          "served": 3300
+        },
+        {
+          "group": 5,
+          "qids": [
+            5,
+            13
+          ],
+          "served": 4462
+        },
+        {
+          "group": 6,
+          "qids": [
+            6,
+            14
+          ],
+          "served": 5129
+        },
+        {
+          "group": 7,
+          "qids": [
+            7,
+            15
+          ],
+          "served": 4952
+        }
+      ],
+      "requests_served": 31762,
+      "ring_completions": 31762,
+      "ring_submits": 31762,
+      "wait_calls": 24179,
+      "wait_ms": 9971.047919
+    },
+    "F2-single_1": {
+      "ops_per_sec_ci95_high": 29379.763864107445,
+      "ops_per_sec_ci95_low": 25306.086213949602,
+      "ops_per_sec_mean": 27342.925039028523,
+      "p50_us": 17.221999999999998,
+      "p95_us": 36.308,
+      "p999_us": 126.527,
+      "p99_us": 56.897,
+      "profile": "F2-single",
+      "readers": 1,
+      "samples": 500
+    },
+    "F2-single_16": {
+      "ops_per_sec_ci95_high": 73700.73662655734,
+      "ops_per_sec_ci95_low": 71295.56355295016,
+      "ops_per_sec_mean": 72498.15008975375,
+      "p50_us": 155.851,
+      "p95_us": 392.894,
+      "p999_us": 591.966,
+      "p99_us": 513.63,
+      "profile": "F2-single",
+      "readers": 16,
+      "samples": 8000
+    },
+    "F2-single_2": {
+      "ops_per_sec_ci95_high": 57370.91319244711,
+      "ops_per_sec_ci95_low": 45841.33195912463,
+      "ops_per_sec_mean": 51606.12257578587,
+      "p50_us": 17.541999999999998,
+      "p95_us": 41.578,
+      "p999_us": 273.922,
+      "p99_us": 67.43599999999999,
+      "profile": "F2-single",
+      "readers": 2,
+      "samples": 1000
+    },
+    "F2-single_32": {
+      "ops_per_sec_ci95_high": 72798.61792496784,
+      "ops_per_sec_ci95_low": 67931.0602026599,
+      "ops_per_sec_mean": 70364.83906381387,
+      "p50_us": 256.75,
+      "p95_us": 1084.617,
+      "p999_us": 2282.256,
+      "p99_us": 1549.686,
+      "profile": "F2-single",
+      "readers": 32,
+      "samples": 16000
+    },
+    "F2-single_4": {
+      "ops_per_sec_ci95_high": 73732.46772404507,
+      "ops_per_sec_ci95_low": 69239.70834907648,
+      "ops_per_sec_mean": 71486.08803656077,
+      "p50_us": 37.009,
+      "p95_us": 47.509,
+      "p999_us": 272.63,
+      "p99_us": 72.395,
+      "profile": "F2-single",
+      "readers": 4,
+      "samples": 2000
+    },
+    "F2-single_8": {
+      "ops_per_sec_ci95_high": 73192.05206634675,
+      "ops_per_sec_ci95_low": 69899.60551807279,
+      "ops_per_sec_mean": 71545.82879220977,
+      "p50_us": 88.02499999999999,
+      "p95_us": 134.412,
+      "p999_us": 192.791,
+      "p99_us": 168.80599999999998,
+      "profile": "F2-single",
+      "readers": 8,
+      "samples": 4000
+    },
+    "F2-single_stats": {
+      "completions_max_per_reap": 13,
+      "dispatch_calls": 31762,
+      "dispatch_us_per_op": 18.64781222844909,
+      "handoffs": 0,
+      "queue_groups": [],
+      "requests_served": 31762,
+      "ring_completions": 31762,
+      "ring_submits": 31762,
+      "wait_calls": 8047,
+      "wait_ms": 1788.364537
+    }
+  },
+  "schema": "orfs.f2-concurrency-affine.v1",
+  "single_entries_per_queue": 1
+}

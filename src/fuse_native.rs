@@ -50,7 +50,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use parking_lot::{Condvar, Mutex};
 
@@ -189,7 +189,7 @@ const MAX_WRITE: u32 = 128 * 1024;
 /// Readahead advertised in the `INIT` reply.
 const MAX_READAHEAD: u32 = 128 * 1024;
 
-const IO_URING_DEPTH: u32 = 64;
+const IO_URING_DEPTH: u32 = 128;
 
 // ---------------------------------------------------------------------------
 // Byte-exact UAPI encoding helpers
@@ -1454,6 +1454,32 @@ pub struct NativeStats {
     /// Worker threads in the bulk lane (`0` for single-loop).
     pub workers_bulk: u64,
 
+    // -- concurrency instrumentation (Phase 47) ----------------------------
+    /// Blocking ring waits issued by the servicing threads (`io_uring_enter`
+    /// with `min_complete >= 1`). One per loop pass that had no buffered
+    /// completion; the syscall count the transport really pays.
+    pub wait_calls: u64,
+    /// Cumulative nanoseconds parked inside those blocking ring waits.
+    pub wait_ns: u64,
+    /// Requests dispatched on a servicing thread (one per served request).
+    pub dispatch_calls: u64,
+    /// Cumulative nanoseconds spent inside the filesystem dispatch
+    /// (`Dispatcher::serve`), excluding reply encoding and ring submission.
+    pub dispatch_ns: u64,
+    /// The largest number of completions reaped in a single `reap()`. This is
+    /// the ring's observed pipeline depth: how many requests were already
+    /// waiting when the servicer next looked at the completion queue.
+    pub completions_max_per_reap: u64,
+    /// Buffer/request ownership transfers between threads: jobs handed to a
+    /// dispatch worker through the pool queue. `0` for the inline topologies
+    /// (single-loop and queue-affine), which keep each entry local to one
+    /// thread.
+    pub handoffs: u64,
+    /// Per-queue-group observations of the opt-in queue-affine topology: which
+    /// queues each ring-owning thread serviced and how many requests it served.
+    /// Empty for every other topology.
+    pub queue_groups: Vec<QueueGroupStat>,
+
     // -- FUSE passthrough (Phase 21) ---------------------------------------
     /// The mount requested kernel passthrough (`--passthrough`).
     pub passthrough_requested: bool,
@@ -1476,6 +1502,17 @@ pub struct NativeStats {
     pub daemon_reads: u64,
     /// The most recent passthrough fallback reason, if any.
     pub passthrough_last_error: Option<String>,
+}
+
+/// One queue-affine servicer's observed share of the traffic.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct QueueGroupStat {
+    /// The servicer thread's index.
+    pub group: usize,
+    /// The system queue ids this ring-owning thread registered and serviced.
+    pub qids: Vec<u16>,
+    /// Requests this group served over the mount's lifetime.
+    pub served: u64,
 }
 
 /// The kernel FUSE-passthrough controller for one native session.
@@ -2362,11 +2399,46 @@ fn register_all_entries(
     plan: QueuePlan,
 ) -> Result<(FuseUringRing, Vec<EntryState>, Vec<RingCompletion>, usize), String> {
     let num_queues = possible_cpu_count();
+    let qids: Vec<u16> = (0..num_queues as u16).collect();
+    let (ring, entries, probe) = register_qids(fd, plan, &qids)?;
+    Ok((ring, entries, probe, num_queues))
+}
+
+/// Register one ring entry per queue in `qids` on a fresh `io_uring` instance.
+///
+/// `qids` is the exact set of queues this ring services. The all-queues caller
+/// passes `0..possible_cpu_count()`; the opt-in queue-affine topology passes a
+/// disjoint subset so each ring-owning thread services only its own queues. The
+/// `user_data` tag is the entry's position within this ring (`i + 1`), which is
+/// what [`SessionLoop::handle_completion`]/[`QueueGroup::handle_completion`]
+/// decode back into an index, so a subset is indexed independently of the
+/// global qid numbering.
+fn register_qids(
+    fd: RawFd,
+    plan: QueuePlan,
+    qids: &[u16],
+) -> Result<(FuseUringRing, Vec<EntryState>, Vec<RingCompletion>), String> {
     let mut ring =
         FuseUringRing::new(fd, IO_URING_DEPTH).map_err(|e| format!("io_uring setup: {e}"))?;
-    let mut entries: Vec<EntryState> = Vec::with_capacity(num_queues);
-    for qid in 0..num_queues {
-        entries.push(EntryState::new(qid as u16, (qid + 1) as u64));
+    // The baseline interface allows several registered entries per queue, which
+    // raises the number of requests the kernel can keep in flight on a queue
+    // (and therefore the pipeline depth available to a servicer). The modern
+    // buffer-pool interface keeps one entry per queue.
+    let per_queue = if matches!(plan, QueuePlan::Baseline) {
+        entries_per_queue()
+    } else {
+        1
+    };
+    // Never build more entries than the submission ring can hold at once (every
+    // entry costs one `REGISTER` SQE at setup).
+    let per_queue = per_queue.min((IO_URING_DEPTH as usize / qids.len().max(1)).max(1));
+    let mut entries: Vec<EntryState> = Vec::with_capacity(qids.len() * per_queue);
+    let mut ud = 1u64;
+    for &qid in qids {
+        for _ in 0..per_queue {
+            entries.push(EntryState::new(qid, ud));
+            ud += 1;
+        }
     }
     // Forward-compat (guarded): only a kernel that offered FUSE_HAS_IO_URING_BUFPOOL
     // reaches this branch. Every command is runtime-checked; a rejection degrades
@@ -2421,11 +2493,35 @@ fn register_all_entries(
             .map(|c| -c.result)
             .unwrap_or(0);
         return Err(format!(
-            "FUSE_IO_URING_CMD_REGISTER was rejected by the kernel ({failures} of {num_queues} \
-             SQEs failed; first errno {sample}); the raw-SQE iovec path (`sqe->len == 2`) did not take"
+            "FUSE_IO_URING_CMD_REGISTER was rejected by the kernel ({failures} of {} \
+             SQEs failed; first errno {sample}); the raw-SQE iovec path (`sqe->len == 2`) did not take",
+            qids.len()
         ));
     }
-    Ok((ring, entries, probe, num_queues))
+    Ok((ring, entries, probe))
+}
+
+/// The number of registered entries per queue for the baseline interface, read
+/// from `ORFS_F2_ENTRIES_PER_QUEUE` (default `1`). More entries per queue raise
+/// the ring's in-flight depth; `1` preserves the measured Phase-15..26
+/// behaviour exactly.
+fn entries_per_queue() -> usize {
+    std::env::var("ORFS_F2_ENTRIES_PER_QUEUE")
+        .ok()
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .map(|n| n.clamp(1, 32))
+        .unwrap_or(1)
+}
+
+/// The number of ring-owning servicer threads for the opt-in **queue-affine**
+/// topology, read from `ORFS_F2_RINGS`. `0`, absent, or unparseable disables it
+/// (the default), leaving the measured `single-loop` / `pool` behaviour intact.
+/// Values above the queue count are clamped to it by the caller.
+fn affine_ring_count() -> usize {
+    std::env::var("ORFS_F2_RINGS")
+        .ok()
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .unwrap_or(0)
 }
 
 // ---------------------------------------------------------------------------
@@ -2729,7 +2825,7 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
             num_queues,
         };
         let capabilities = negotiation.capabilities();
-        self.stats.lock().register_sqes = num_queues as u64;
+        self.stats.lock().register_sqes = entries.len() as u64;
         {
             let mut env = self.environment.lock();
             env.num_queues = num_queues;
@@ -2798,6 +2894,14 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
     }
 
     fn run(mut self) -> Result<(), String> {
+        // Opt-in queue-affine topology: one ring-owning servicer thread per queue
+        // group, above the ring's own queue interface. It is inert unless
+        // `ORFS_F2_RINGS` names >1 rings, so the measured `single-loop` (and the
+        // selectable `pool`) remain the default.
+        let rings = affine_ring_count();
+        if rings > 1 && matches!(self.servicing, F2Servicing::Single) {
+            return self.run_affine(rings);
+        }
         let setup = self.setup();
         let ok = setup.is_ok();
         if let Some(tx) = self.setup_tx.take() {
@@ -2912,11 +3016,26 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
             } else {
                 Duration::from_millis(200)
             };
-            self.ring
+            let t0 = Instant::now();
+            let comps = self
+                .ring
                 .as_mut()
                 .expect("ring initialized")
-                .submit_and_wait_timeout(1, timeout)?
+                .submit_and_wait_timeout(1, timeout)?;
+            {
+                let mut s = self.stats.lock();
+                s.wait_calls += 1;
+                s.wait_ns += t0.elapsed().as_nanos() as u64;
+            }
+            comps
         };
+        let n = comps.len() as u64;
+        {
+            let mut s = self.stats.lock();
+            if n > s.completions_max_per_reap {
+                s.completions_max_per_reap = n;
+            }
+        }
         if comps.is_empty() {
             return Ok(false);
         }
@@ -2992,6 +3111,7 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
                 Lane::Fast => s.fast_routed += 1,
                 Lane::Bulk => s.bulk_routed += 1,
             }
+            s.handoffs += 1;
             Ok(())
         } else {
             self.serve_entry(idx)
@@ -3021,7 +3141,7 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
     /// Single-loop path: dispatch the request on this thread and re-arm the entry
     /// inline, using a reusable reply buffer (no per-request allocation).
     fn serve_entry(&mut self, idx: usize) -> Result<(), String> {
-        let (qid, ud, commit_id, destroy, reply_len) = {
+        let (qid, ud, commit_id, destroy, reply_len, dispatch_ns) = {
             let (qid, ud, commit_id, unique, opcode) = {
                 let e = &self.entries[idx];
                 let hdr = e.header.as_slice();
@@ -3034,6 +3154,7 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
                 )
             };
             let destroy = opcode == FUSE_DESTROY;
+            let t0 = Instant::now();
             let reply = if destroy {
                 Reply::Empty
             } else {
@@ -3051,6 +3172,7 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
                 };
                 self.dispatcher.serve(&req)
             };
+            let dispatch_ns = t0.elapsed().as_nanos() as u64;
             let err = reply.encode_into(
                 &mut self.scratch,
                 self.dispatcher.entry_ttl,
@@ -3058,13 +3180,349 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
             );
             let reply_len = self.scratch.len() as u64;
             write_reply(&mut self.entries[idx], unique, err, &self.scratch);
-            (qid, ud, commit_id, destroy, reply_len)
+            (qid, ud, commit_id, destroy, reply_len, dispatch_ns)
         };
         {
             let mut s = self.stats.lock();
             s.requests_served += 1;
             s.reply_bytes += reply_len;
             s.ring_submits += 1;
+            s.dispatch_calls += 1;
+            s.dispatch_ns += dispatch_ns;
+        }
+        self.ring
+            .as_mut()
+            .ok_or_else(|| "F2 ring not initialized".to_string())?
+            .submit_commit_and_fetch(qid, commit_id, ud)
+            .map_err(|e| format!("queue COMMIT_AND_FETCH for qid {qid}: {e}"))?;
+        if destroy {
+            self.stop.store(true, Ordering::SeqCst);
+        }
+        Ok(())
+    }
+
+    /// Opt-in **queue-affine** topology (see `docs/CONCURRENCY.md`): split the
+    /// CPU queues across `rings` servicer threads, each owning its own
+    /// `io_uring` instance and the registered entries for exactly its queues.
+    ///
+    /// This is the one topology that realises F2's parallel potential on this
+    /// ABI. The kernel delivers a `URING_CMD` completion as task-work to the
+    /// task that submitted it, so a single ring can only ever be reaped by one
+    /// thread; splitting the *queues* across *rings* gives each queue a stable
+    /// owner that keeps its buffers, completion handling and reply commit local
+    /// to one CPU — no `EntryPtr` handoff, no shared ring lock, no cross-core
+    /// buffer ownership transfer. It is inert unless the kernel routes a queue
+    /// to the ring that registered its entry, which the acceptance court
+    /// measures rather than assumes.
+    fn run_affine(mut self, rings: usize) -> Result<(), String> {
+        let num_queues = possible_cpu_count().max(1);
+        let rings = rings.clamp(1, num_queues);
+        let cpus = possible_cpu_count().max(1);
+        let raw = self.fd.as_raw_fd();
+        // Round-robin disjoint queue assignment: group g owns qids g, g+rings, …
+        let mut assignments: Vec<Vec<u16>> = vec![Vec::new(); rings];
+        for q in 0..num_queues {
+            assignments[q % rings].push(q as u16);
+        }
+        let (setup_tx, setup_rx) = std::sync::mpsc::channel::<Result<(), String>>();
+        // Pre-size the live per-group observation record *before* any group can
+        // serve: each group increments its own slot under the same lock it
+        // already takes per request, so the distribution is readable at any time.
+        {
+            let mut s = self.stats.lock();
+            s.queue_groups = (0..rings)
+                .map(|g| QueueGroupStat {
+                    group: g,
+                    qids: assignments[g].clone(),
+                    served: 0,
+                })
+                .collect();
+        }
+        let mut handles = Vec::new();
+        for (g, qids) in assignments.into_iter().enumerate() {
+            if qids.is_empty() {
+                continue;
+            }
+            let group = QueueGroup {
+                fd: raw,
+                qids,
+                ring: None,
+                entries: Vec::new(),
+                pending: Vec::new(),
+                dispatcher: Arc::clone(&self.dispatcher),
+                stats: Arc::clone(&self.stats),
+                stop: Arc::clone(&self.stop),
+                kernel_minor: self.kernel_minor,
+                kernel_offered_bufpool: self.kernel_offered_bufpool,
+                cap_sys_admin: self.cap_sys_admin,
+                affinity: if self.affinity { Some(g % cpus) } else { None },
+                scratch: Vec::with_capacity(8 * 1024),
+                group_idx: g,
+            };
+            let tx = setup_tx.clone();
+            let h = std::thread::Builder::new()
+                .name(format!("orfs-f2-q{g}"))
+                .spawn(move || {
+                    let mut group = group;
+                    match group.setup() {
+                        Ok(()) => {
+                            let _ = tx.send(Ok(()));
+                            if let Err(e) = group.serve_loop() {
+                                eprintln!("orfs: F2 queue-group {g} loop failed: {e}");
+                            }
+                        }
+                        Err(e) => {
+                            let _ = tx.send(Err(e));
+                        }
+                    }
+                })
+                .map_err(|e| format!("spawn F2 queue-group thread: {e}"))?;
+            handles.push(h);
+        }
+        drop(setup_tx);
+
+        // Every group must register its queues: the kernel only starts routing
+        // requests once every queue has an available entry (`is_ring_ready`).
+        let mut first_err: Option<String> = None;
+        for _ in 0..handles.len() {
+            match setup_rx.recv_timeout(Duration::from_secs(15)) {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    if first_err.is_none() {
+                        first_err = Some(e);
+                    }
+                }
+                Err(_) => {
+                    if first_err.is_none() {
+                        first_err = Some("F2 queue-group registration timed out".into());
+                    }
+                }
+            }
+        }
+        if let Some(e) = first_err {
+            self.stop.store(true, Ordering::SeqCst);
+            for h in handles {
+                let _ = h.join();
+            }
+            if let Some(tx) = self.setup_tx.take() {
+                let _ = tx.send(Err(e));
+            }
+            return Ok(());
+        }
+
+        let negotiation = FuseUringNegotiation {
+            kernel_offered: true,
+            kernel_offered_bufpool: self.kernel_offered_bufpool,
+            kernel_abi: Some((7, self.kernel_minor)),
+            accepted: true,
+            engaged: true,
+            reason: None,
+            cap_sys_admin: self.cap_sys_admin,
+            num_queues,
+        };
+        let capabilities = negotiation.capabilities();
+        self.stats.lock().register_sqes = (num_queues * entries_per_queue()) as u64;
+        {
+            let mut env = self.environment.lock();
+            env.num_queues = num_queues;
+            env.capabilities = capabilities;
+            env.servicing = format!("queue-affine(rings={rings})");
+            env.affinity = self.affinity;
+        }
+        self.dispatcher.fs.record_negotiation(negotiation);
+        if let Some(tx) = self.setup_tx.take() {
+            let _ = tx.send(Ok(()));
+        }
+
+        // The classical channel (FORGET/INTERRUPT) is served once, on its own
+        // thread, exactly as in the single-loop topology.
+        if let Some(reader_fd) = self.reader_fd.take() {
+            let stop = Arc::clone(&self.stop);
+            let stats = Arc::clone(&self.stats);
+            let fs = Arc::clone(&self.dispatcher.fs);
+            let _ = std::thread::Builder::new()
+                .name("orfs-f2-classical".to_string())
+                .spawn(move || classical_reader(reader_fd, stop, stats, fs));
+        }
+
+        // Park until unmount/DESTROY asks every group to stop, then join them
+        // (no group still holds an entry) before the `/dev/fuse` fd drops.
+        while !self.stop.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        for h in handles {
+            let _ = h.join();
+        }
+        if let Some(ctrl) = &self.dispatcher.passthrough {
+            ctrl.close_all();
+        }
+        Ok(())
+    }
+}
+
+/// One ring-owning servicer for a disjoint subset of queues: the unit of
+/// execution of the opt-in queue-affine topology.
+///
+/// It mirrors the single-loop servicer of [`SessionLoop`] but owns its own
+/// [`FuseUringRing`] and its own registered [`EntryState`]s, so a request's
+/// buffers, reply commit and completion handling never leave one thread. It is
+/// deliberately *not* pooled: the point of the topology is a stable owner per
+/// queue, not a larger thread pool.
+struct QueueGroup<C: OrfsCore + Send + 'static> {
+    /// The session's `/dev/fuse` descriptor (borrowed as a raw value; the
+    /// session owns the `OwnedFd` for the whole mount).
+    fd: RawFd,
+    /// The queues this group services, registered on its own ring.
+    qids: Vec<u16>,
+    ring: Option<FuseUringRing>,
+    entries: Vec<EntryState>,
+    pending: Vec<RingCompletion>,
+    dispatcher: Arc<Dispatcher<C>>,
+    stats: Arc<Mutex<NativeStats>>,
+    stop: Arc<AtomicBool>,
+    kernel_minor: u32,
+    kernel_offered_bufpool: bool,
+    cap_sys_admin: bool,
+    affinity: Option<usize>,
+    scratch: Vec<u8>,
+    /// This group's index (into `NativeStats::queue_groups`).
+    group_idx: usize,
+}
+
+impl<C: OrfsCore + Send + 'static> QueueGroup<C> {
+    /// Create this group's ring and register one entry per owned queue. Runs on
+    /// the group's own thread (the ring must be created where it is waited on).
+    fn setup(&mut self) -> Result<(), String> {
+        let neg = FuseUringNegotiation {
+            kernel_offered: true,
+            kernel_offered_bufpool: self.kernel_offered_bufpool,
+            kernel_abi: Some((7, self.kernel_minor)),
+            accepted: true,
+            engaged: true,
+            cap_sys_admin: self.cap_sys_admin,
+            ..Default::default()
+        };
+        let plan = crate::fuse_uring::plan_queues(&neg, self.dispatcher.fs.options.zero_copy);
+        let (ring, entries, probe) = register_qids(self.fd, plan, &self.qids)?;
+        self.ring = Some(ring);
+        self.entries = entries;
+        self.pending = probe;
+        Ok(())
+    }
+
+    /// Service this group's queues inline until `stop` is set.
+    fn serve_loop(mut self) -> Result<(), String> {
+        if let Some(cpu) = self.affinity {
+            pin_to_cpu(cpu);
+        }
+        while !self.stop.load(Ordering::SeqCst) {
+            let comps = if !self.pending.is_empty() {
+                std::mem::take(&mut self.pending)
+            } else {
+                let t0 = Instant::now();
+                let comps = match self
+                    .ring
+                    .as_mut()
+                    .expect("ring initialized")
+                    .submit_and_wait_timeout(1, Duration::from_millis(200))
+                {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("orfs: F2 queue-group ring wait failed: {e}");
+                        break;
+                    }
+                };
+                {
+                    let mut s = self.stats.lock();
+                    s.wait_calls += 1;
+                    s.wait_ns += t0.elapsed().as_nanos() as u64;
+                }
+                comps
+            };
+            let n = comps.len() as u64;
+            {
+                let mut s = self.stats.lock();
+                if n > s.completions_max_per_reap {
+                    s.completions_max_per_reap = n;
+                }
+            }
+            for c in comps {
+                if let Err(e) = self.handle_completion(c) {
+                    eprintln!("orfs: F2 queue-group request handling failed: {e}");
+                }
+            }
+        }
+        if let Some(ring) = self.ring.as_mut() {
+            ring.shutdown();
+        }
+        Ok(())
+    }
+
+    fn handle_completion(&mut self, c: RingCompletion) -> Result<(), String> {
+        self.stats.lock().ring_completions += 1;
+        let idx = match (c.user_data as usize).checked_sub(1) {
+            Some(i) if i < self.entries.len() => i,
+            _ => return Ok(()),
+        };
+        if c.result < 0 {
+            self.stats.lock().negative_completions += 1;
+            return Ok(());
+        }
+        self.serve_entry(idx)
+    }
+
+    /// Dispatch the request on this thread and re-arm the entry inline, using a
+    /// reusable reply buffer — byte-for-byte identical to the single-loop path.
+    fn serve_entry(&mut self, idx: usize) -> Result<(), String> {
+        let (qid, ud, commit_id, destroy, reply_len, dispatch_ns) = {
+            let (qid, ud, commit_id, unique, opcode) = {
+                let e = &self.entries[idx];
+                let hdr = e.header.as_slice();
+                (
+                    e.qid,
+                    e.ud,
+                    get_u64(hdr, 264),
+                    get_u64(hdr, 8),
+                    get_u32(hdr, 4),
+                )
+            };
+            let destroy = opcode == FUSE_DESTROY;
+            let t0 = Instant::now();
+            let reply = if destroy {
+                Reply::Empty
+            } else {
+                let e = &self.entries[idx];
+                let hdr = e.header.as_slice();
+                let payload_sz = clamp_payload_sz(get_u32(hdr, 272), e.payload.len());
+                let req = Req {
+                    opcode,
+                    nodeid: get_u64(hdr, 16),
+                    uid: get_u32(hdr, 24),
+                    gid: get_u32(hdr, 28),
+                    pid: get_u32(hdr, 32),
+                    op: &hdr[128..256],
+                    payload: &e.payload.as_slice()[..payload_sz],
+                };
+                self.dispatcher.serve(&req)
+            };
+            let dispatch_ns = t0.elapsed().as_nanos() as u64;
+            let err = reply.encode_into(
+                &mut self.scratch,
+                self.dispatcher.entry_ttl,
+                self.dispatcher.attr_ttl,
+            );
+            let reply_len = self.scratch.len() as u64;
+            write_reply(&mut self.entries[idx], unique, err, &self.scratch);
+            (qid, ud, commit_id, destroy, reply_len, dispatch_ns)
+        };
+        {
+            let mut s = self.stats.lock();
+            s.requests_served += 1;
+            s.reply_bytes += reply_len;
+            s.ring_submits += 1;
+            s.dispatch_calls += 1;
+            s.dispatch_ns += dispatch_ns;
+            s.queue_groups[self.group_idx].served += 1;
         }
         self.ring
             .as_mut()

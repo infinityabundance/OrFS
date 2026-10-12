@@ -322,3 +322,109 @@ mechanism rather than a fixed-cost one.
   `tests/group_commit_e2e.rs::group_commit_overload_falls_back_without_loss`,
   `evidence/performance/group-commit-adaptive.json`, `docs/PERFORMANCE.md` §11.1,
   `scripts/container-group-commit.sh`.
+
+---
+
+## 9. F2 queue-affine concurrency (Phase 47)
+
+### 9.1 The measured bottleneck
+
+The native FUSE-over-`io_uring` session (F2) registers one entry per CPU queue
+(`num_queues = num_possible_cpus()`; 16 on this host) on **one** `io_uring`
+instance and, in the measured-default `single-loop` topology, services every queue
+inline on the one thread that owns the ring. That thread is the entire concurrency
+limit: the court times `Dispatcher::serve` alone (`NativeStats::dispatch_ns`) at
+≈14–19 µs of CPU per 4 KiB read, so one thread saturates near `1/14µs` ≈ 70 k
+ops/s and the profile barely scales (observed 27 k → 70 k ops/s from 1 to 32
+readers). The classical transport runs `fuser`'s session with
+`n_threads = available_parallelism()` (8 here) and scales accordingly.
+
+### 9.2 The queue-affine topology
+
+`ORFS_F2_RINGS=N` (default 0/absent = off) selects an opt-in topology: split the
+CPU queues round-robin across `N` ring-owning servicer threads, each with its own
+`io_uring` instance and the registered entries for exactly its queues. It is the
+only topology that realises F2's parallel potential on this ABI, because the
+kernel delivers a `URING_CMD` completion as task-work to the *submitting* task
+(`io_uring_cmd_complete_in_task`): a single ring can only be reaped by one thread,
+so parallelism has to come from *more rings*, not more waiters on one ring. Each
+queue therefore has a stable owner that keeps the request's header/payload
+buffers, the completion handling and the `COMMIT_AND_FETCH` reply commit local to
+one CPU. There is **no** cross-thread buffer/request ownership transfer: the
+`handoffs` counter is 0 for both inline topologies (the selectable worker `pool`
+transfers ownership twice per request through its job queue and is measurably
+worse on latency; see `docs/FUSE_URING.md` §6.2).
+
+`ORFS_F2_ENTRIES_PER_QUEUE=K` (default 1) additionally registers `K` entries per
+queue on the baseline interface, raising the kernel-side in-flight depth; `K = 1`
+keeps the Phase-15..26 behaviour unchanged. Depth matters: at `K = 1` the affine
+topology reached ≈54% of F0's 32-reader throughput, at `K = 4` it reached ≈73–93%
+(depth was the binding constraint, not the number of rings).
+
+### 9.3 Measured reader scaling (4 KiB direct-I/O reads)
+
+Paired, order-balanced, 5 repetitions per level, one mount per profile alive for
+the whole court (`tests/f2_concurrency.rs`, `ORFS_F2_RINGS=8`,
+`ORFS_F2_ENTRIES_PER_QUEUE=4`); machine-generated in
+`evidence/performance/f2-concurrency-affine.json`. ops/s (mean):
+
+| readers | F0 | F1 | F2 single-loop | F2 queue-affine | affine / F0 |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 27 079 | 27 169 | 27 343 | 27 901 | 103% |
+| 2 | 53 955 | 54 682 | 51 606 | 56 822 | 105% |
+| 4 | 100 813 | 103 063 | 71 486 | 103 448 | 103% |
+| 8 | 160 346 | 162 043 | 71 546 | 141 866 | 88% |
+| 16 | 182 909 | 208 228 | 72 498 | 170 821 | 93% |
+| 32 | 192 696 | 173 512 | 70 365 | 179 663 | 93% |
+
+Per-op latency (µs), pooled samples, p50 / p99:
+
+| readers | F0 p50 | F0 p99 | F2-single p50 | F2-single p99 | F2-affine p50 | F2-affine p99 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 17.6 | 57.7 | 17.2 | 56.9 | 16.8 | 58.2 |
+| 8 | 23.4 | 49.4 | 88.0 | 168.8 | 27.2 | 79.2 |
+| 16 | 34.4 | 177.7 | 155.9 | 513.6 | 40.1 | 320.4 |
+| 32 | 72.3 | 810.9 | 256.8 | 1549.7 | 68.0 | 811.0 |
+
+### 9.4 Observations
+
+* **Queue ownership is real.** The per-group record
+  (`NativeStats::queue_groups`) shows all 8 ring-owning threads active and roughly
+  even (2 455–5 129 requests each, summing to the 31 762 served), i.e. the kernel
+  routes requests across the disjoint queue sets registered on different rings.
+  The affine topology is not one hot ring with idle helpers.
+* **No ownership handoff.** Every affine request is parsed, dispatched, committed
+  and its buffers written by the same thread that holds the ring; `handoffs = 0`.
+  The measured `wait_calls` per request is ≈0.76 (vs ≈0.25 single-loop): with the
+  work spread over 8 threads, each blocking wait more often returns just one
+  completion, which is expected and not a regression (the wait is idle time).
+* **Shared adaptor locks become contended.** The transport-neutral `OrfsFuse`
+  adaptor (handle table, lookup accounting, the metrics mutex, the read planner)
+  is shared by all servicers. Per-op `Dispatcher::serve` time rose from ≈14 µs on
+  one thread to ≈19–26 µs on eight — consistent with lock hand-off and cache-line
+  migration on those shared structures as servicer count rises, and with the fact
+  that it is affine *throughput*, not per-thread dispatch throughput, that
+  improved. The same contention applies to F0's eight `fuser` threads; it is not
+  F2-specific. (Attribution, not a profiler flame graph: no lock-contention
+  sampling was run.)
+* **Residual.** With 8 rings the kernel-side in-flight depth is still bounded by
+  `num_queues × K`; asking for more rings than the 8-CPU container can usefully
+  run hit an `io_uring_setup` `ENOMEM` at 16 rings here, so 8 × 2 queues is the
+  practical ceiling on this host.
+
+### 9.5 Verdict (honest)
+
+Queue-affine servicing recovers most of the classical transport's reader scaling:
+from 27–37% of F0 (single-loop) to 88–103% at 4–32 readers, at p50 parity or
+better for 1/4/32 readers. It does **not** meet the strict bar of "F0-level
+throughput with no p99 regression": at 8 and 16 readers the affine tail is still
+worse than F0 (p99 79 vs 49 µs; 320 vs 178 µs), because each F2 request still costs
+an extra kernel scheduling hop (the task-work completion of the daemon's
+`COMMIT_AND_FETCH` plus the reply's own `COMMIT_AND_FETCH` submission) that F0's
+direct `/dev/fuse` reply write does not pay. The win is real and large; the tail
+gap is real and reported. The host is under external load, so absolute numbers
+vary run to run (F0 32-reader throughput ranged 183 k–349 k across runs) while the
+single-loop < affine ordering was stable.
+
+Provenance: `tests/f2_concurrency.rs`,
+`evidence/performance/f2-concurrency-affine.json`.

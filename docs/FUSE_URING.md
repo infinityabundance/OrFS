@@ -300,6 +300,30 @@ queues, counters), `evidence/correctness/fuse-uring-equivalence.json` (identical
 F0/F1/F2 transcript), `evidence/correctness/fuse-uring-ring.json` (ring-layer
 submission/cancel/shutdown).
 
+### 6.6 Queue-affine servicing (Phase 47)
+
+The Phase-15..26 default (`single-loop`) owns one ring on one thread, so every
+`COMMIT_AND_FETCH` round-trip is serialised through that thread; the pool does not
+help because it still hands every request back to the same ring-owning thread (§6.2).
+On this ABI the only way to parallelise is to give each queue a *stable ring-owning
+owner*: the kernel delivers a `URING_CMD` completion as task-work to the
+**submitting** task (`io_uring_cmd_complete_in_task`), so distinct queues must be
+registered on distinct `io_uring` instances to be reaped in parallel.
+
+`ORFS_F2_RINGS=N` (default 0/absent = off) selects that opt-in topology:
+round-robin the CPU queues across `N` servicer threads, each owning its own ring
+and the registered entries for exactly its queues. The default stays `single-loop`;
+the new path is inert without the environment variable. `ORFS_F2_ENTRIES_PER_QUEUE=K`
+(default 1) registers `K` entries per queue (baseline interface only), raising the
+kernel-side in-flight depth; `K = 1` reproduces the historical behaviour exactly.
+
+Measured (`tests/f2_concurrency.rs`, paired and order-balanced, 8 rings × 2 queues,
+`K = 4`; full table in `docs/CONCURRENCY.md` §9): the affine topology lifts the
+32-reader 4 KiB figure from ≈27–37% of F0 (single-loop) to ≈88–103%, at p50 parity
+or better for 1/4/32 readers, with a residual p95/p99 gap at 8–16 readers. It does
+**not** meet a strict "F0 throughput and no p99 regression" bar everywhere; that
+is recorded as found in `evidence/performance/f2-concurrency-affine.json`.
+
 ---
 
 ## 7. The ABI-7.45 capability boundary and forward compatibility
@@ -324,7 +348,14 @@ The forward-compatible commands are wired behind a runtime capability check:
   `Baseline`, so `ADD_QUEUE`/`ADD_BUFPOOL`/zero-copy are **inert** (never reported
   available, never issued). Should a future kernel offer the extension, the modern
   path is taken, and any rejection degrades to the baseline interface rather than
-  failing the mount.
+  failing the mount. Verified by the in-crate unit test
+  `fuse_uring::tests::negotiation_reports_add_queue_availability_truthfully`, which
+  drives 7.45 (Baseline), 7.46-without-`CAP_SYS_ADMIN` (Modern, `zero_copy=false`),
+  and 7.46-with-`CAP_SYS_ADMIN` (Modern, `zero_copy=true`). On the 7.46 path the
+  baseline `REGISTER` loop keeps one entry per queue (the multi-entry
+  `ORFS_F2_ENTRIES_PER_QUEUE` depth knob applies to the baseline interface only).
+  The 7.46 path is **unvalidated here** — this host has no 7.46 kernel, so no
+  `ADD_QUEUE`/`ADD_BUFPOOL`/zero-copy claim is made.
 * `orfs doctor` reports the exact negotiated set (regardless of JSON or text
   output); on this host it prints the boundary line
   "FUSE ABI 7.45 exposes only the baseline REGISTER + COMMIT_AND_FETCH interface;
@@ -333,7 +364,11 @@ The forward-compatible commands are wired behind a runtime capability check:
 ## 8. Remaining limits (ABI 7.45)
 
 * No `ADD_QUEUE`/`ADD_BUFPOOL` and no buffer-pool `offset`; only the baseline
-  register/commit interface (queues created lazily; one entry per CPU queue).
+  register/commit interface (queues created lazily; `ORFS_F2_ENTRIES_PER_QUEUE`
+  entries per CPU queue, default one).
+* Queue-affine servicing (`ORFS_F2_RINGS`) is opt-in and off by default; the
+  measured default remains `single-loop`. Its residual latency tail versus F0 at
+  8–16 readers is reported, not hidden (§6.6, `docs/CONCURRENCY.md` §9).
 * Zero-copy is not exercised on this kernel; no zero-copy number is claimed.
 * A native F2 mount exposes **no** `fuser` `Notifier`, so `OrfsMount::notifier()`
   is `None` (explicit cache invalidation is unavailable on F2).

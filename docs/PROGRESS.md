@@ -2599,3 +2599,61 @@ re-entrancy, opt-in/off-by-default, and the direct lock for read handlers and th
 
 `docs/PERFORMANCE.md` §11 (retraction) + §11.1 (adaptive rule, bounded admission,
 sweep), `docs/CONCURRENCY.md` §8, `docs/TRANSACTIONS.md` §3.2.
+
+## Phase 47 — F2 queue-affine concurrency (§2)
+
+**Complete, with an honest partial result.** F2 engages on this host but its
+concurrency trailed the classical transport (16 readers: F2 ≈113 k vs F0 ≈507 k
+ops/s). At ABI **7.45** the kernel offers only the baseline `REGISTER` +
+`COMMIT_AND_FETCH` interface (`add_queue`/`add_bufpool`/zero-copy **inert**), so
+this phase targets the doable, validatable part.
+
+### Investigation (measured, not guessed)
+
+* Submission **and** completion run on **one thread/CPU** by default (servicing
+  mode `single-loop`); one thread saturates at **≈70 k ops/s** (dispatch is
+  ≈14–19 µs of CPU per 4 KiB read), so 1→32 readers move 27 k→70 k and past ~4
+  readers only queueing inflates (p50 17→257 µs).
+* The kernel delivers a `URING_CMD` completion as task-work to the *submitting*
+  task, so one ring can only be reaped by one thread — offloading dispatch to
+  workers (the Phase-26 pool) mostly hands it back to the same ring owner.
+  **Parallelism needs more rings, not more waiters.**
+* Ownership/handoff: inline topologies transfer ownership **0×** (the ring owner
+  parses, dispatches, commits and writes the buffers); the worker pool transfers
+  it twice per request. The transport-neutral `OrfsFuse` adaptor (handle table,
+  metrics mutex, read planner) is the shared contention point (dispatch rises
+  ≈14 → ≈19–26 µs from 1 to 8 threads).
+
+### Delivered (`src/fuse_native.rs`)
+
+* **Opt-in queue-affine servicer** (`ORFS_F2_RINGS=N`, default off): round-robins
+  the CPU queues across `N` dedicated `io_uring` instances/servicer threads, each
+  queue with a stable owner that keeps its buffers, completion handling and reply
+  commit local; submission folded into the blocking wait. `ORFS_F2_ENTRIES_PER_QUEUE`
+  (default 1 = the measured Phase-15–26 depth) is the per-queue depth knob.
+* Default path left **byte-identical** (both env vars unset); the one default
+  change is a deeper session ring (`IO_URING_DEPTH` 64→128), measured with no
+  single-loop regression.
+* The ABI≥7.46 modern path remains gated by `plan_queues`/`add_queue_available`
+  (Baseline on 7.45), **unvalidated here** — no 7.46 kernel exists on this host.
+
+### Result (paired, order-balanced; `evidence/performance/f2-concurrency-affine.json`)
+
+ops/s at 4 KiB readers, `ORFS_F2_RINGS=8`, entries/queue 4: F2 affine recovers from
+**27–37 % of F0** (single-loop) to **88–103 % of F0** — 4r 103 448 vs F0 100 813;
+16r 170 821 vs 182 909; 32r 179 663 vs 192 696 — with p50 parity/better at
+1/4/32 readers.
+
+**Honest verdict:** it does **not** meet "F0 throughput *and* no p99 regression":
+at 8–16 readers the tail is still worse (affine 8r p99 79 µs vs F0 49 µs) because
+of the extra kernel scheduling hop F2 pays per request that F0's direct reply
+write avoids. Host under external load; F0's 32-reader figure varied 183 k–349 k
+across runs while the **single-loop < affine ordering was stable**. A 16-ring
+attempt hit `io_uring_setup` `ENOMEM`, so 8×4 is the practical ceiling here.
+
+### Courts
+
+`tests/f2_concurrency.rs` (new; paired 1–32-reader court + byte-exact affine
+equivalence and teardown), wired into `scripts/container-fuse-test.sh`; the F2
+kmount court still shows real engagement. fmt/clippy clean; `cargo test` and
+`--features failpoints` green.

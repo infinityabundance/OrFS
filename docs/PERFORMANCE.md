@@ -274,6 +274,36 @@ pool remains selectable (`--f2-servicing pool`) and is proven byte-equivalent to
 slower under reader concurrency than F0/F1. It is recorded as a real transport (the
 ring carried every request the daemon served), not as a win.
 
+### 4.7 F2 queue-affine servicing (Phase 47)
+
+The Phase-26 structural claim above — that the bottleneck is the per-request
+`COMMIT_AND_FETCH` round-trip rather than dispatch work — is refined by a direct
+measurement: because the completion is delivered as task-work to the *submitting*
+task, the round-trip is serialised on the single ring-owning thread, whose CPU cost
+per 4 KiB read is ≈14–19 µs (`NativeStats::dispatch_ns`, timed around
+`Dispatcher::serve`). One thread therefore caps `single-loop` near ≈70 k ops/s. The
+Phase-47 court (`tests/f2_concurrency.rs`, paired and order-balanced, 4 KiB direct
+reads, 5 reps/level, one mount per profile) adds an opt-in topology that gives each
+CPU queue a stable ring-owning owner (`ORFS_F2_RINGS`, default off; see
+`docs/CONCURRENCY.md` §9):
+
+| readers | F0 ops/s | F2 single-loop ops/s | F2 queue-affine ops/s | affine / F0 |
+|---:|---:|---:|---:|---:|
+| 1 | 27 079 | 27 343 | 27 901 | 103% |
+| 2 | 53 955 | 51 606 | 56 822 | 105% |
+| 4 | 100 813 | 71 486 | 103 448 | 103% |
+| 8 | 160 346 | 71 546 | 141 866 | 88% |
+| 16 | 182 909 | 72 498 | 170 821 | 93% |
+| 32 | 192 696 | 70 365 | 179 663 | 93% |
+
+Queue-affine servicing lifts F2 from ≈27–37% of F0 to ≈88–103%, with p50 parity or
+better at 1/4/32 readers. It does **not** meet a strict "F0 throughput and no p99
+regression" bar at every level: at 8–16 readers the affine p99 is still above F0
+(79 vs 49 µs; 320 vs 178 µs), the extra kernel scheduling hop per F2 request. The
+result is reported as found — a large, reproducible throughput win with a residual
+tail gap, not a clean sweep. Machine-generated data:
+`evidence/performance/f2-concurrency-affine.json`, `docs/CONCURRENCY.md` §9.
+
 ---
 
 ## 5. The EKBLOOM manifestation frontier (§31)

@@ -37,6 +37,8 @@ docker_run_kmount sh -c '
     timeout -k 10 900 cargo test --test snapshot_fuse -- --nocapture --test-threads=1
     echo "--- FUSE-over-io_uring transport equivalence + negotiation/fallback ---"
     timeout -k 10 900 cargo test --test fuse_uring -- --nocapture --test-threads=1
+    echo "--- phase 47: F2 concurrency court (single-loop vs queue-affine vs F0/F1; writes evidence/performance/f2-concurrency-affine.json) ---"
+    timeout -k 10 1200 cargo test --test f2_concurrency -- --nocapture --test-threads=1
     echo "--- phase 32: end-to-end group commit through a real mount (create/write/unlink churn, concurrent writers, O_APPEND ordering, write-heavy measurement) ---"
     timeout -k 10 1200 cargo test --test group_commit_e2e -- --nocapture --test-threads=1
     echo "--- performance court: conventional baseline + F0/F1/E1 through real mounts ---"

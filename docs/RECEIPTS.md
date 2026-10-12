@@ -1,0 +1,228 @@
+# Docs-from-receipts check
+
+This document describes the scheme by which OrFS **generates documentation from,
+and checks documentation against, the generated evidence receipts**, and how to
+run the check that rejects docs whose numbers no longer match the evidence.
+
+The regulator of record is the machine-generated evidence under `evidence/`
+(performance measurements and correctness results) plus the provenance receipts
+under `evidence/receipts/`. Prose in `docs/` *cites* those numbers. Over time the
+prose drifts while the evidence is regenerated (or vice versa). This check makes
+that drift a build failure instead of a silent inaccuracy.
+
+## 1. Scheme
+
+Two independent verifications, both driven by the machine-readable mapping
+[`scripts/docs-receipts.json`](../scripts/docs-receipts.json):
+
+1. **Provenance / currency** (`provenance` block). Every receipt in
+   `evidence/receipts/*.json` that records a source commit — under any of the
+   configured field names `orfs_git_commit`, `source_commit`,
+   `audited_head_commit` — is compared with the repository HEAD:
+
+   | classification | meaning |
+   |---|---|
+   | `current` | the recorded commit *is* HEAD |
+   | `stale` | the recorded commit is an **ancestor** of HEAD (older coverage) — a distinct, clearly-labelled finding |
+   | `unknown` | the recorded commit is not a commit in this repository |
+   | `diverged` | the recorded commit is neither HEAD nor an ancestor of HEAD |
+
+   A `stale`, `unknown`, or `diverged` receipt **fails** the check unless it is
+   explicitly listed in the **allowlist** with a reason. Allowlisted receipts are
+   still printed (as `allowed-historical`), so nothing passes silently.
+
+   > The check never rewrites a receipt. A receipt that records an older commit
+   > is reported, not "refreshed". Refreshing a receipt to claim newer coverage
+   > would fabricate evidence.
+
+2. **Curated doc → evidence citations** (`citations` block). Each citation names
+   a doc file, a regex over that doc's text, one or more capture groups, and for
+   each group the evidence JSON file and the path to the value it must equal.
+   The doc's stated number is compared with the evidence value within a
+   per-citation tolerance.
+
+The check only reads files. It writes nothing to `docs/` or `evidence/`.
+
+## 2. Running it
+
+It is a **host** check: it does **not** use Docker or cargo, and needs only
+`python3` (standard library) and `git`.
+
+```sh
+sh scripts/check-docs-receipts.sh          # human-readable, itemised report
+sh scripts/check-docs-receipts.sh --json   # machine-readable report
+```
+
+Exit codes:
+
+| code | meaning |
+|---|---|
+| `0` | every provenance receipt and every citation matches |
+| `1` | at least one stale/unknown/diverged receipt or at least one citation mismatch/error (the report itemises each) |
+| `2` | `python3` is not on `PATH` |
+
+### Why it is not wired into `container-check.sh`
+
+`scripts/container-check.sh` is the *in-container* `cargo fmt -p orfs --check` +
+`clippy` gate, and the project contract is that compilation/test tooling runs only
+inside the pinned container (see `docs/LIMITATIONS.md`, `README.md`). This check
+is deliberately host-side and Docker-free, so folding it into the container gate
+would misrepresent both. There is no host-side CI aggregator or `Makefile` /
+`.github/` workflow in the repository to attach to, so the invocation above is
+the entry point. A CI job should run it as a plain host step (no container
+required).
+
+## 3. What is covered — and what is not
+
+**Do not read this section as "all doc numbers are checked."** Coverage is a
+curated subset. The check is honest about the boundary; uncovered claims are
+listed explicitly.
+
+### Provenance
+
+Covered: every `evidence/receipts/*.json` that records a commit under the three
+configured field names. Currently that is `source-commit.json`
+(`orfs_git_commit`), `crates-io.json` (`source_commit`) and
+`acceptance-audit.json` (`audited_head_commit`).
+
+Allowlisted as intentionally historical:
+
+| receipt | field | why |
+|---|---|---|
+| `crates-io.json` | `source_commit` | a crates.io publish record names the commit that was *published* (a historical ancestor of any later HEAD) |
+| `acceptance-audit.json` | `audited_head_commit` | an independent audit is a point-in-time record at the commit audited; it must not be rewritten to a newer commit |
+| `source-commit.json` | `orfs_git_commit` | a provenance receipt captured at the moment evidence was generated, regenerated on demand; the commit it names is the ancestor the evidence was produced at, not a claim of current-tree coverage |
+
+`source-commit.json` is allowlisted as a **point-in-time provenance receipt**,
+not a currency claim: it is regenerated on demand and records the commit at which
+the committed evidence was produced (necessarily an ancestor of any later HEAD),
+so it is not expected to name HEAD.
+
+### Citations covered
+
+| citation id | doc · section | value checked (`doc value` → evidence path) |
+|---|---|---|
+| `perf-s5-frontier-history` | `docs/PERFORMANCE.md` §5.2 | frontier table, profile `full`, `` `history` `` mean/min → `ekbloom-frontier.json` `profiles[summary.label=full].measured_paths_4k[path=history].{mean,min}_ns` |
+| `perf-s5-frontier-logical` | `docs/PERFORMANCE.md` §5.2 | frontier table, profile `full`, `` `logical-extent` `` mean/min → `…[path=logical-extent].{mean,min}_ns` |
+| `perf-s5-frontier-maxspeed` | `docs/PERFORMANCE.md` §5.2 | inline: `` `checkpoint` `` / `` `path-bloom` `` mean under `max-speed` → `…[summary.label=max-speed]…` |
+| `perf-s5-baseline` | `docs/PERFORMANCE.md` §5.2 | authoritative baseline P50 4 KiB / 1 byte, and sequential GB/s → `authoritative_baseline.read_4k.p50_ns`, `.read_1b.p50_ns`, `.sequential_mb_per_s` |
+| `perf-s6-commit-path` | `docs/PERFORMANCE.md` §6 | ordered commit rate, P50, P99 → `mechanisms.json` `commit_path.commits_per_s`, `commit_path.latency.{p50,p99}_ns` |
+| `perf-s6-trigram-orfs` | `docs/PERFORMANCE.md` §6 | trigram `plan("orfs")` vs naive scan → `trigram_query.patterns[pattern=orfs].{index_plan,naive_scan}.p50_ns` |
+| `perf-s6-trigram-absent` | `docs/PERFORMANCE.md` §6 | absent-trigram plan vs scan → `trigram_query.patterns[pattern=zzzz-no-such-trigram].{index_plan,naive_scan}.p50_ns` |
+| `io-uring-s9-append` | `docs/IO_URING.md` §9 | sequential-append MB/s ×3 (sync / uring / batched) → `backing-uring.json` `results.sequential_append.{sync,uring,uring_batched}.mb_per_s` |
+| `io-uring-s9-read` | `docs/IO_URING.md` §9 | random-read MB/s ×3 → `results.random_read.{sync,uring,uring_batched}.mb_per_s` |
+| `audit-gateN-advantage` | `docs/ACCEPTANCE-AUDIT.md` §2 gate N | the "2955 vs 4118 ns P50" 1-byte direct pair → `ekbloom-e2e-release.json` `workloads[profile=full|none].read_1b.direct.p50_ns` |
+| `audit-gateN-search-speedup` | `docs/ACCEPTANCE-AUDIT.md` §2 gate N | concealed-trigram speedup → `ekbloom-search-e2e-release.json` `search.indexed_speedup_over_scan` |
+| `concurrency-s6-corelock` | `docs/CONCURRENCY.md` §6 | "core lock held ~200 ms" → `reader-scaling.json` `not_blocked_by_core_lock.locked_read_us_while_core_lock_held` |
+| `concurrency-s6-readers` | `docs/CONCURRENCY.md` §6 | the reader sweep covers `1/2/4/8/16` → set of `reader-scaling.json` `results[].readers` |
+| `manifest-s14-5-size-table` | `docs/MANIFESTATION.md` §14.5 | full-build vs 64-byte-change by object size (32/128/512 KiB) → `incremental-manifestation.json` `cost[object_size=…].{full,incremental}_build_ns` |
+| `manifest-s14-5-changed-bytes` | `docs/MANIFESTATION.md` §14.5 | fixed-256 KiB incremental build vs changed bytes (64 B/1 KiB/8 KiB/32 KiB) → `cost_vs_changed_bytes[changed_bytes=…].incremental_build_ns` |
+
+### `docs/ACCEPTANCE-AUDIT.md` is exempt from live comparison
+
+`docs/ACCEPTANCE-AUDIT.md` is a **point-in-time record** of an independent
+acceptance audit taken at a specific commit. Its prose is deliberately *not*
+re-checked against the current evidence, with one exception: the two stable
+release-evidence citations `audit-gateN-advantage` and
+`audit-gateN-search-speedup` **stay** in the table above because they track the
+published `-release` evidence, which is stable across regenerations.
+
+The former `audit-s5-concurrency` citation is **removed**: it compared a
+historical audit figure with a since-regenerated `reader-scaling.json` (a debug
+run whose absolute throughput and latency vary run-to-run), so no honest live
+comparison is possible. Rather than "correct" the audit's point-in-time numbers
+to a later run — which would fabricate the audit — the citation is dropped and
+the audit document is left untouched.
+
+### Deliberately NOT covered
+
+These are known-gap examples, not an exhaustive list. They are either derived
+(a ratio/range the check does not re-derive), qualitative, or in documents whose
+numbers were not curated in this first pass:
+
+* `docs/PERFORMANCE.md` §5.2 — the "best 4 KiB profile … 301 ns / 511 ns"
+  sentence, and the trailing "$P(M)$ roughly flat (~300–520 ns)" range.
+* `docs/PERFORMANCE.md` §5.4–§5.6 — the Phase-16 end-to-end tables and the
+  library-level isolation figures (e.g. the `26 ns` / `1021 ns` / `501 ns` /
+  `1112 ns` / `5450 ns` claims and the `2.2×` / `10.9×` / `8.6×` ratios), and the
+  `grep -r` / `M / logical` derived figures.
+* `docs/PERFORMANCE.md` §6 — the io_uring "e.g. 3 179 vs 1 346 MB/s" fragment
+  (ambiguous anchor) and the derived `≈217×` trigram ratio.
+* `docs/IO_URING.md` §9 — the derived "batching narrows the gap (2.4× append,
+  1.2× read over single-op uring)" sentence.
+* `docs/ACCEPTANCE-AUDIT.md` §2 gate N — the "~1.3–1.4×" range (a range, not a
+  single number); and `docs/ACCEPTANCE-AUDIT.md` §5 in full — the "636→2750 MB/s
+  over 1→16 readers" and "10.5 µs" view figures, plus the "~380–640 MB/s"
+  global-lock range — all fall under the point-in-time exemption above.
+* `docs/MANIFESTATION.md` §14.5 — the "read latency against generation depth
+  (~3 µs, flat)" sentence.
+* `docs/CONCURRENCY.md` §4 — the `≈60 ns` / `≈40 ns` publish-cost figures and
+  the `p50 ≈ 53 µs / ≈ 60 µs` commit-latency figures (`publish-cost.json`).
+* `docs/SNAPSHOTS.md`, `docs/QUERY.md`, `docs/FUSE_PASSTHROUGH.md` — no numbers
+  from these were curated in this first pass.
+* `docs/PROGRESS.md`, `README.md` — out of scope by construction (this check
+  governs docs against receipts, not the reverse index of phases).
+
+Adding coverage is a one-line mapping edit — see §5.
+
+## 4. Tolerances
+
+Measurement receipts are single runs, so the check uses a tolerance rather than
+exact equality. The default is `rel = 0.05` (5%) with `abs = 0`; a citation may
+override `rel` and/or `abs`. A citation passes when
+`|doc·doc_multiplier − evidence·evidence_multiplier| ≤ abs + rel·|evidence·evidence_multiplier|`.
+Rotation (rounding to the precision quoted in the doc) is expected to fall well
+inside 5%; a genuine drift (docs quoting an older run) does not.
+
+## 5. Adding a new citation
+
+1. Open `scripts/docs-receipts.json` and append an object to `citations`:
+
+   ```json
+   {
+     "id": "short-unique-id",
+     "doc": "docs/SOMEDOC.md",
+     "section": "§N",
+     "claim": "what the doc asserts",
+     "regex": "a regex with (capture) (groups)",
+     "fields": [
+       {"group": 1, "label": "what group 1 is",
+        "evidence": "evidence/performance/some.json",
+        "path": "a.b[3].c",
+        "doc_multiplier": 1, "evidence_multiplier": 1,
+        "rel": 0.05, "abs": 0}
+     ]
+   }
+   ```
+
+   * `regex` is a Python regular expression searched over the whole doc. Make the
+     anchor **unique** (include surrounding words/table pipes) so it cannot match
+     the wrong row; `\s` matches newlines, so prefer `[ \t]` if a capture must not
+     span lines.
+   * `path` grammar: dotted keys (`a.b.c`), array index (`a[3]`), and array
+     element selection by a field (`profiles[summary.label=full]`, dotted
+     selector keys allowed). Use `[key=value]` rather than a raw index so the
+     citation survives reordering.
+   * `doc_multiplier` / `evidence_multiplier` convert units to a common scale
+     (e.g. a doc in ms against evidence in ns uses `doc_multiplier: 1000000`).
+   * Set `kind: "set"` (with a `collect: {"array": "...", "field": "..."}` field)
+     for set membership instead of a numeric comparison.
+
+2. Run `sh scripts/check-docs-receipts.sh` and confirm the new citation is the
+   `[OK]`/`[MISMATCH]` outcome you expect.
+3. If your citation reveals a genuine docs↔evidence discrepancy, **do not edit
+   the doc or the evidence to make it pass** as part of adding the check —
+   report it and let the owner decide whether the doc or the receipt is
+   authoritative. (Editing the quoted number to match the receipt is the
+   remediation once the drift is acknowledged; that is a separate change.)
+
+## 6. Allowlisting an intentionally historical receipt
+
+Add an entry to `provenance.allowlist` in `scripts/docs-receipts.json`:
+
+```json
+{"receipt": "NAME.json", "field": "source_commit", "reason": "why this is historical by design"}
+```
+
+The `reason` is mandatory in spirit: the entry is printed on every run so the
+exception is visible, never silent.

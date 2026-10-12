@@ -122,10 +122,12 @@ per-phase record.
 | 34 | crates.io publishing readiness (blocked on the `ekbloom` dependency) | **complete** |
 | 35 | Consume the published `ekbloom` release; publish readiness | **complete** |
 | 36 | Publish `orfs` v0.1.0 to crates.io | **complete** |
+| 37 | Object-localized read selection + allocation-light authoritative fallback | **complete** |
+| 38 | Docs-from-receipts check; documentation reconciled to evidence | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–36 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–38 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.1.0 is published on crates.io (see `docs/PUBLISHING.md`).
 

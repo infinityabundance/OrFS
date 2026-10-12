@@ -1,0 +1,209 @@
+{
+  "schema": "orfs.docs-receipts.v1",
+  "description": "Machine-readable mapping used by scripts/check-docs-receipts.sh. It (a) allowlists provenance receipts that are intentionally historical and (b) curates the doc->evidence number citations that are checked. See docs/RECEIPTS.md for the exact coverage.",
+  "provenance": {
+    "receipts_dir": "evidence/receipts",
+    "commit_fields": ["orfs_git_commit", "source_commit", "audited_head_commit"],
+    "allowlist": [
+      {
+        "receipt": "crates-io.json",
+        "field": "source_commit",
+        "reason": "A crates.io publish record necessarily names the commit that was *published* (a historical ancestor of any later HEAD). It is a point-in-time publication receipt, not a claim of current-tree coverage."
+      },
+      {
+        "receipt": "acceptance-audit.json",
+        "field": "audited_head_commit",
+        "reason": "An independent acceptance audit is a point-in-time record at the commit that was audited. It is historical by nature and must never be rewritten to a newer commit (doing so would fabricate coverage)."
+      },
+      {
+        "receipt": "source-commit.json",
+        "field": "orfs_git_commit",
+        "reason": "A provenance receipt captured at the moment evidence was generated. It is regenerated on demand and its recorded commit is the ancestor the evidence was produced at, not a claim of current-tree coverage; the commit it names need not be HEAD."
+      }
+    ]
+  },
+  "default_tolerance": {
+    "rel": 0.05,
+    "abs": 0.0
+  },
+  "citations": [
+    {
+      "id": "perf-s5-frontier-history",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§5.2",
+      "claim": "frontier table: profile `full`, `history` path mean/min (ns)",
+      "regex": "\\|\\s*`history`\\s*\\|\\s*([0-9][0-9\\s]*?)\\s*ns\\s*\\|\\s*([0-9][0-9\\s]*?)\\s*ns\\s*\\|",
+      "fields": [
+        {"group": 1, "label": "history mean_ns", "evidence": "evidence/performance/ekbloom-frontier.json", "path": "profiles[summary.label=full].measured_paths_4k[path=history].mean_ns"},
+        {"group": 2, "label": "history min_ns", "evidence": "evidence/performance/ekbloom-frontier.json", "path": "profiles[summary.label=full].measured_paths_4k[path=history].min_ns"}
+      ]
+    },
+    {
+      "id": "perf-s5-frontier-logical",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§5.2",
+      "claim": "frontier table: profile `full`, `logical-extent` (authoritative) mean/min (ns)",
+      "regex": "\\|\\s*`logical-extent`\\s*\\(authoritative\\)\\s*\\|\\s*\\*\\*([0-9][0-9\\s]*?)\\s*ns\\*\\*\\s*\\|\\s*\\*\\*([0-9][0-9\\s]*?)\\s*ns\\*\\*\\s*\\|",
+      "fields": [
+        {"group": 1, "label": "logical-extent mean_ns", "evidence": "evidence/performance/ekbloom-frontier.json", "path": "profiles[summary.label=full].measured_paths_4k[path=logical-extent].mean_ns"},
+        {"group": 2, "label": "logical-extent min_ns", "evidence": "evidence/performance/ekbloom-frontier.json", "path": "profiles[summary.label=full].measured_paths_4k[path=logical-extent].min_ns"}
+      ]
+    },
+    {
+      "id": "perf-s5-frontier-maxspeed",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§5.2",
+      "claim": "frontier inline: profile `max-speed` exposes `checkpoint` and `path-bloom` mean (ns)",
+      "regex": "(`checkpoint`)\\s+([0-9][0-9\\s]*?)\\s*ns[\\s\\S]*?(`path-bloom`)\\s+([0-9][0-9\\s]*?)\\s*ns",
+      "fields": [
+        {"group": 2, "label": "max-speed checkpoint mean_ns", "evidence": "evidence/performance/ekbloom-frontier.json", "path": "profiles[summary.label=max-speed].measured_paths_4k[path=checkpoint].mean_ns"},
+        {"group": 4, "label": "max-speed path-bloom mean_ns", "evidence": "evidence/performance/ekbloom-frontier.json", "path": "profiles[summary.label=max-speed].measured_paths_4k[path=path-bloom].mean_ns"}
+      ]
+    },
+    {
+      "id": "perf-s5-baseline",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§5.2",
+      "claim": "authoritative baseline P50 4 KiB / 1 byte, sequential GB/s",
+      "regex": "P50\\s+([0-9][0-9\\s]*?)\\s*ns\\s*\\(4 KiB\\)\\s*/\\s*([0-9][0-9\\s]*?)\\s*ns\\s*\\(1 byte\\),\\s*~([0-9][0-9\\s]*?)\\s*GB/s sequential",
+      "fields": [
+        {"group": 1, "label": "baseline read_4k p50_ns", "evidence": "evidence/performance/ekbloom-frontier.json", "path": "authoritative_baseline.read_4k.p50_ns"},
+        {"group": 2, "label": "baseline read_1b p50_ns", "evidence": "evidence/performance/ekbloom-frontier.json", "path": "authoritative_baseline.read_1b.p50_ns"},
+        {"group": 3, "label": "baseline sequential MB/s (doc GB/s treated as decimal, x1000)", "doc_multiplier": 1000, "evidence": "evidence/performance/ekbloom-frontier.json", "path": "authoritative_baseline.sequential_mb_per_s"}
+      ]
+    },
+    {
+      "id": "perf-s6-commit-path",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§6",
+      "claim": "mechanisms table: ordered commit path rate + latency",
+      "regex": "\\*\\*([0-9][0-9\\s]*?)\\s*commits/s\\*\\*,\\s*P50\\s*([0-9][0-9\\s]*?)\\s*ns,\\s*P99\\s*([0-9][0-9\\s]*?)\\s*ns",
+      "fields": [
+        {"group": 1, "label": "commit_path commits_per_s", "evidence": "evidence/performance/mechanisms.json", "path": "commit_path.commits_per_s"},
+        {"group": 2, "label": "commit_path latency p50_ns", "evidence": "evidence/performance/mechanisms.json", "path": "commit_path.latency.p50_ns"},
+        {"group": 3, "label": "commit_path latency p99_ns", "evidence": "evidence/performance/mechanisms.json", "path": "commit_path.latency.p99_ns"}
+      ]
+    },
+    {
+      "id": "perf-s6-trigram-orfs",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§6",
+      "claim": "mechanisms table: trigram plan(\"orfs\") vs naive scan (µs)",
+      "regex": "vs naive scan\\s*\\|\\s*\\*\\*([0-9.]+)\\s*µs\\*\\*\\s*vs\\s*([0-9][0-9\\s]*?)\\s*µs",
+      "fields": [
+        {"group": 1, "label": "trigram plan(orfs) p50_ns (doc µs)", "doc_multiplier": 1000, "evidence": "evidence/performance/mechanisms.json", "path": "trigram_query.patterns[pattern=orfs].index_plan.p50_ns"},
+        {"group": 2, "label": "trigram naive scan p50_ns (doc µs)", "doc_multiplier": 1000, "evidence": "evidence/performance/mechanisms.json", "path": "trigram_query.patterns[pattern=orfs].naive_scan.p50_ns"}
+      ]
+    },
+    {
+      "id": "perf-s6-trigram-absent",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§6",
+      "claim": "mechanisms table: plan of an absent trigram vs scan",
+      "regex": "absent trigram\\s*\\|\\s*\\*\\*([0-9.]+)\\s*ns\\*\\*\\s*\\(`impossible`\\)\\s*vs\\s*([0-9][0-9\\s]*?)\\s*µs",
+      "fields": [
+        {"group": 1, "label": "absent trigram plan p50_ns", "evidence": "evidence/performance/mechanisms.json", "path": "trigram_query.patterns[pattern=zzzz-no-such-trigram].index_plan.p50_ns"},
+        {"group": 2, "label": "absent trigram naive scan p50_ns (doc µs)", "doc_multiplier": 1000, "evidence": "evidence/performance/mechanisms.json", "path": "trigram_query.patterns[pattern=zzzz-no-such-trigram].naive_scan.p50_ns"}
+      ]
+    },
+    {
+      "id": "io-uring-s9-append",
+      "doc": "docs/IO_URING.md",
+      "section": "§9",
+      "claim": "measured results table: sequential append MB/s (sync / uring / uring batched)",
+      "regex": "\\|\\s*sequential append\\s*\\|\\s*([0-9]+)\\s*MB/s\\s*\\|\\s*([0-9]+)\\s*MB/s\\s*\\|\\s*([0-9]+)\\s*MB/s\\s*\\|",
+      "fields": [
+        {"group": 1, "label": "append sync MB/s", "evidence": "evidence/performance/backing-uring.json", "path": "results.sequential_append.sync.mb_per_s"},
+        {"group": 2, "label": "append uring MB/s", "evidence": "evidence/performance/backing-uring.json", "path": "results.sequential_append.uring.mb_per_s"},
+        {"group": 3, "label": "append uring batched MB/s", "evidence": "evidence/performance/backing-uring.json", "path": "results.sequential_append.uring_batched.mb_per_s"}
+      ]
+    },
+    {
+      "id": "io-uring-s9-read",
+      "doc": "docs/IO_URING.md",
+      "section": "§9",
+      "claim": "measured results table: random read MB/s (sync / uring / uring batched)",
+      "regex": "\\|\\s*random read\\s*\\|\\s*([0-9]+)\\s*MB/s\\s*\\|\\s*([0-9]+)\\s*MB/s\\s*\\|\\s*([0-9]+)\\s*MB/s\\s*\\|",
+      "fields": [
+        {"group": 1, "label": "read sync MB/s", "evidence": "evidence/performance/backing-uring.json", "path": "results.random_read.sync.mb_per_s"},
+        {"group": 2, "label": "read uring MB/s", "evidence": "evidence/performance/backing-uring.json", "path": "results.random_read.uring.mb_per_s"},
+        {"group": 3, "label": "read uring batched MB/s", "evidence": "evidence/performance/backing-uring.json", "path": "results.random_read.uring_batched.mb_per_s"}
+      ]
+    },
+    {
+      "id": "audit-gateN-advantage",
+      "doc": "docs/ACCEPTANCE-AUDIT.md",
+      "section": "§2 gate N",
+      "claim": "measured advantage: 1-byte direct P50 (`full` vs `none`) and search speedup",
+      "regex": "\\(e\\.g\\. ([0-9]+) vs ([0-9]+) ns P50\\)",
+      "fields": [
+        {"group": 1, "label": "e2e-release full read_1b direct p50_ns", "evidence": "evidence/performance/ekbloom-e2e-release.json", "path": "workloads[profile=full].read_1b.direct.p50_ns"},
+        {"group": 2, "label": "e2e-release none read_1b direct p50_ns", "evidence": "evidence/performance/ekbloom-e2e-release.json", "path": "workloads[profile=none].read_1b.direct.p50_ns"}
+      ]
+    },
+    {
+      "id": "audit-gateN-search-speedup",
+      "doc": "docs/ACCEPTANCE-AUDIT.md",
+      "section": "§2 gate N",
+      "claim": "measured advantage: concealed trigram index speedup over scan",
+      "regex": "concealed trigram index is \\*\\*([0-9.]+)×\\*\\*",
+      "fields": [
+        {"group": 1, "label": "search indexed_speedup_over_scan", "evidence": "evidence/performance/ekbloom-search-e2e-release.json", "path": "search.indexed_speedup_over_scan"}
+      ]
+    },
+    {
+      "id": "concurrency-s6-corelock",
+      "doc": "docs/CONCURRENCY.md",
+      "section": "§6",
+      "claim": "reader not blocked: core lock held ~200 ms while a view read completes",
+      "regex": "holds the core lock for ~([0-9]+) ms",
+      "fields": [
+        {"group": 1, "label": "locked_read_us while core lock held (doc ms)", "doc_multiplier": 1000, "evidence": "evidence/performance/reader-scaling.json", "path": "not_blocked_by_core_lock.locked_read_us_while_core_lock_held"}
+      ]
+    },
+    {
+      "id": "concurrency-s6-readers",
+      "doc": "docs/CONCURRENCY.md",
+      "section": "§6",
+      "claim": "reader-scaling sweep covers 1/2/4/8/16 readers",
+      "kind": "set",
+      "regex": "throughput vs ([0-9/]+) readers",
+      "fields": [
+        {
+          "group": 1,
+          "label": "reader counts present in evidence",
+          "evidence": "evidence/performance/reader-scaling.json",
+          "collect": {"array": "results", "field": "readers"}
+        }
+      ]
+    },
+    {
+      "id": "manifest-s14-5-size-table",
+      "doc": "docs/MANIFESTATION.md",
+      "section": "§14.5",
+      "claim": "incremental economics table: full build vs 64-byte change, by object size",
+      "regex": "\\|\\s*32 KiB\\s*\\|\\s*([0-9.]+)\\s*ms\\s*\\|\\s*([0-9.]+)\\s*µs\\s*\\|[\\s\\S]*?\\|\\s*128 KiB\\s*\\|\\s*([0-9.]+)\\s*ms\\s*\\|\\s*([0-9.]+)\\s*µs\\s*\\|[\\s\\S]*?\\|\\s*512 KiB\\s*\\|\\s*([0-9.]+)\\s*ms\\s*\\|\\s*([0-9.]+)\\s*µs\\s*\\|",
+      "fields": [
+        {"group": 1, "label": "32 KiB full_build_ns (doc ms)", "doc_multiplier": 1000000, "evidence": "evidence/performance/incremental-manifestation.json", "path": "cost[object_size=32768].full_build_ns"},
+        {"group": 2, "label": "32 KiB incremental_build_ns (doc µs)", "doc_multiplier": 1000, "evidence": "evidence/performance/incremental-manifestation.json", "path": "cost[object_size=32768].incremental_build_ns"},
+        {"group": 3, "label": "128 KiB full_build_ns (doc ms)", "doc_multiplier": 1000000, "evidence": "evidence/performance/incremental-manifestation.json", "path": "cost[object_size=131072].full_build_ns"},
+        {"group": 4, "label": "128 KiB incremental_build_ns (doc µs)", "doc_multiplier": 1000, "evidence": "evidence/performance/incremental-manifestation.json", "path": "cost[object_size=131072].incremental_build_ns"},
+        {"group": 5, "label": "512 KiB full_build_ns (doc ms)", "doc_multiplier": 1000000, "evidence": "evidence/performance/incremental-manifestation.json", "path": "cost[object_size=524288].full_build_ns"},
+        {"group": 6, "label": "512 KiB incremental_build_ns (doc µs)", "doc_multiplier": 1000, "evidence": "evidence/performance/incremental-manifestation.json", "path": "cost[object_size=524288].incremental_build_ns"}
+      ]
+    },
+    {
+      "id": "manifest-s14-5-changed-bytes",
+      "doc": "docs/MANIFESTATION.md",
+      "section": "§14.5",
+      "claim": "incremental build at a fixed 256 KiB object grows with changed bytes (64 B / 1 KiB / 8 KiB / 32 KiB)",
+      "regex": "64 B ≈ ([0-9.]+) µs, 1 KiB ≈ ([0-9.]+) µs, 8 KiB ≈ ([0-9.]+) µs, 32 KiB ≈ ([0-9.]+) µs",
+      "fields": [
+        {"group": 1, "label": "changed=64 B incremental_build_ns (doc µs)", "doc_multiplier": 1000, "evidence": "evidence/performance/incremental-manifestation.json", "path": "cost_vs_changed_bytes[changed_bytes=64].incremental_build_ns"},
+        {"group": 2, "label": "changed=1 KiB incremental_build_ns (doc µs)", "doc_multiplier": 1000, "evidence": "evidence/performance/incremental-manifestation.json", "path": "cost_vs_changed_bytes[changed_bytes=1024].incremental_build_ns"},
+        {"group": 3, "label": "changed=8 KiB incremental_build_ns (doc µs)", "doc_multiplier": 1000, "evidence": "evidence/performance/incremental-manifestation.json", "path": "cost_vs_changed_bytes[changed_bytes=8192].incremental_build_ns"},
+        {"group": 4, "label": "changed=32 KiB incremental_build_ns (doc µs)", "doc_multiplier": 1000, "evidence": "evidence/performance/incremental-manifestation.json", "path": "cost_vs_changed_bytes[changed_bytes=32768].incremental_build_ns"}
+      ]
+    }
+  ]
+}

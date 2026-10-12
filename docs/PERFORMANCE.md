@@ -309,7 +309,7 @@ cache.
 
   ≈100× slower. (`max-speed`, 7.0×, also exposes `checkpoint` 6 657 ns and
   `path-bloom` 4 769 ns.) The authoritative baseline over the whole run is P50
-  50 ns (4 KiB) / 30 ns (1 byte), ~48 GB/s sequential.
+  50 ns (4 KiB) / 20 ns (1 byte), ~41 GB/s sequential.
 * The planner **correctly falls back**: for `full`, all 2000 4 KiB reads were
   served by `logical-extent`, never by the slower manifested path (same for
   `max-speed`).
@@ -446,10 +446,10 @@ Evidence: `evidence/performance/mechanisms.json` (generator `benches/mechanisms.
 
 | Mechanism | Result (one run) |
 |---|---|
-| Commit path (ordered) | **365 825 commits/s**, P50 2 415 ns, P99 4 268 ns |
-| Trigram `plan("orfs")` vs naive scan | **7.0 µs** vs 1 423 µs (≈203×) |
-| Trigram `plan` of an absent trigram | **20 ns** (`impossible`) vs 1 415 µs scan |
-| io_uring vs sync append (4 KiB × 20 000) | per-op `write_at_all`: 0.29× sync; **batched** `io_uring` is faster — see `backing-uring.json` (e.g. 2 374 vs 1 032 MB/s in the same run) |
+| Commit path (ordered) | **343 170 commits/s**, P50 2 685 ns, P99 3 917 ns |
+| Trigram `plan("orfs")` vs naive scan | **7.0 µs** vs 1 526 µs (≈217×) |
+| Trigram `plan` of an absent trigram | **20 ns** (`impossible`) vs 1 210 µs scan |
+| io_uring vs sync append (4 KiB × 20 000) | per-op `write_at_all`: 0.32× sync; **batched** `io_uring` beats the per-op path — see `backing-uring.json` (e.g. 3 179 vs 1 346 MB/s in the same run) |
 
 Trigram `plan` is candidate generation only; candidates are still verified.
 Naive scan is a byte-by-byte substring search, the honest baseline for an

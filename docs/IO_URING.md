@@ -245,17 +245,18 @@ records, 20 000 appends, 40 000 random reads):
 
 | Workload | sync | uring (1 op/submit) | uring (batched @ depth) |
 |----------|-----:|--------------------:|------------------------:|
-| sequential append | 8002 MB/s | 1239 MB/s | 4046 MB/s |
-| random read | 15901 MB/s | 1430 MB/s | 4813 MB/s |
+| sequential append | 4181 MB/s | 1346 MB/s | 3179 MB/s |
+| random read | 13095 MB/s | 7184 MB/s | 8315 MB/s |
 
 Interpretation, stated plainly:
 
 * For **cache-hot, 4 KiB, one-op-at-a-time** I/O the synchronous `pread`/`pwrite`
   fast path is the fastest option; per-operation `io_uring` submit+wait costs more
   than one syscall's fast path. This is expected and honestly reported.
-* **Batching recovers most of the gap** (3.3× append, 3.4× read over single-op
-  uring) and is the case where io_uring is designed to win — deeper queues and
-  higher-latency devices, which this sandbox cannot measure.
+* **Batching narrows the gap** (2.4× append, 1.2× read over single-op uring)
+  and is the case where io_uring is designed to win — deeper queues and
+  higher-latency devices, which this sandbox cannot measure; for this cache-hot,
+  4 KiB workload it still does not exceed the synchronous fast path.
 * These are **submission micro-benchmarks**, not device-durability benchmarks:
   no `fsync` is in the timed loop, and the durability profile is irrelevant to
   the number. The benchmark identifies its workload (record size, op counts,

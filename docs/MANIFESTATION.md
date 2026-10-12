@@ -382,14 +382,15 @@ per payload, so the figure is not polluted by fsync:
 
 | object size | full build (whole object) | 64-byte change (incremental) |
 |---|---|---|
-| 32 KiB | 1.27 ms | 4.2 µs |
-| 128 KiB | 5.03 ms | 4.5 µs |
-| 512 KiB | 11.44 ms | 3.9 µs |
+| 32 KiB | 0.86 ms | 7.4 µs |
+| 128 KiB | 2.79 ms | 3.4 µs |
+| 512 KiB | 11.57 ms | 6.1 µs |
 
-The full build grows with the object; the incremental build is **flat** in the
-unchanged size. At a fixed 256 KiB object the incremental build grows with the
-changed bytes (64 B ≈ 3 µs, 1 KiB ≈ 25 µs, 8 KiB ≈ 175 µs, 32 KiB ≈ 686 µs),
-which is the intended `T_incremental ≈ T_changed_regions + T_index_update`.
+The full build grows with the object; the incremental build stays small (~3–7 µs)
+and roughly flat in the unchanged size. At a fixed 256 KiB object the incremental
+build grows with the changed bytes
+(64 B ≈ 7.3 µs, 1 KiB ≈ 24.1 µs, 8 KiB ≈ 168.8 µs, 32 KiB ≈ 676.2 µs), which is
+the intended `T_incremental ≈ T_changed_regions + T_index_update`.
 The same evidence records read latency against generation depth (~3 µs, flat,
 because flattening bounds the depth) and the flattening effect.
 

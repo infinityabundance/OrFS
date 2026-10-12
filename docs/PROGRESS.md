@@ -2048,3 +2048,88 @@ container against the clean tree at commit `ab181ec`.
 
 * The publication was made possible by Phase 35 (the registry `ekbloom`
   dependency): crates.io rejects git dependencies.
+
+## Phase 37 — Object-localized read selection + allocation-light fallback
+
+**Complete.** External review §"improve manifestation selection on
+heterogeneous objects". The read planner kept a global EWMA model keyed only by
+`(read-path kind, size class)` while calibration was already per object, so
+measurements from objects with different access characteristics biased each
+other's predictions; the authoritative fallback also re-executed the
+authoritative read and allocated a reason `String` per request.
+
+### Delivered (`src/readpath.rs`)
+
+* **Object-localized selection.** A bounded, LRU-evicted per-identity cost table
+  (`ObjectCosts`) behind a `SelectionModel` (shared aggregate + object table).
+  Selection predicts from the queried object's own measurement when present, else
+  the shared aggregate; `measurements()` (the evidence surface) is still the
+  aggregate. Guarantee preserved: an unmeasured candidate is never selected.
+* **Allocation-light fallback.** An `Authoritative` wrapper memoizes the
+  request's authoritative bytes so the closure runs **at most once** per request
+  (`take` moves the cached `Vec`; `measure_paths` uses a non-memoizing wrapper so
+  timed iterations still execute). `PlannedRead::fallback_reason` became
+  `Option<Cow<'static, str>>` with `fallback_static` for borrowed reasons.
+  Calibration partitions candidates under one lock and records timings/failures
+  with one acquisition each.
+
+### Tests
+
+* lib: `authoritative_read_is_executed_at_most_once`,
+  `uncached_authoritative_read_always_executes`,
+  `object_localized_prediction_is_isolated_per_identity`,
+  `object_costs_are_bounded_and_evict_least_recently_used`.
+* `tests/ekbloom_read.rs`: `object_localized_selection_does_not_cross_contaminate`
+  (adversarial: a slow object must not push a fast object onto the wrong path),
+  `fallback_does_not_re_execute_the_authoritative_read`,
+  `calibrated_authoritative_bytes_are_served_without_re_execution`.
+
+Docs: `docs/EKBLOOM-INTEGRATION.md` §6. Verified in Docker: fmt/clippy clean,
+`--lib readpath` (8) and `--test ekbloom_read` (13) pass, full `cargo test` green.
+
+## Phase 38 — Docs-from-receipts check; documentation reconciled to evidence
+
+**Complete.** External review §"make the evidence chain fully current" and item
+(d) "generate docs from benchmark receipts … CI-rejecting docs whose numbers no
+longer match evidence".
+
+### Delivered
+
+* `scripts/check-docs-receipts.sh` (host entry point) + `scripts/docs_receipts.py`
+  (Python 3, stdlib + `git` only) + `scripts/docs-receipts.json` (machine-readable
+  mapping):
+  * **Provenance/currency** — every `evidence/receipts/*.json` recording a commit
+    (`orfs_git_commit` / `source_commit` / `audited_head_commit`) is classified by
+    real git ancestry as current / stale / diverged; stale or diverged fails
+    unless allowlisted with a reason (allowlisted entries still print).
+  * **Citations** — 37 curated doc→evidence values across `docs/PERFORMANCE.md`
+    §5.2/§6, `docs/IO_URING.md` §9, `docs/ACCEPTANCE-AUDIT.md` gate N, and
+    `docs/MANIFESTATION.md` §14.5, each with a per-citation tolerance (default
+    rel 5%). Exits non-zero with an itemized report on drift.
+* `docs/RECEIPTS.md` — the scheme, invocation, and an explicit coverage-vs-gap
+  list.
+* Reconciled the drifted **live** docs to the committed evidence:
+  `docs/PERFORMANCE.md` §5.2/§6, `docs/IO_URING.md` §9 (table and the batching
+  prose, recomputed from the new cells), `docs/MANIFESTATION.md` §14.5 (numbers
+  and the "flat"/"recovers most" claims softened to match noisier evidence).
+
+### Exceptions (documented, not silent)
+
+* `evidence/receipts/source-commit.json`, `crates-io.json`, and
+  `acceptance-audit.json` record **point-in-time** commits; they are allowlisted
+  with reasons rather than rewritten (rewriting would fabricate coverage).
+* `docs/ACCEPTANCE-AUDIT.md` is exempt from live comparison (it is a point-in-time
+  audit at an audited commit; refreshing it requires re-running the full
+  acceptance court, deferred). Its gate-N citations track **stable release**
+  evidence and are still checked.
+
+### Caveat
+
+Every ordinary test/bench run regenerates the volatile `evidence/**` files that
+some docs cite, which the check will then flag until the docs are refreshed. That
+is the intended discipline: the check is the drift alarm; regenerate the docs
+with the receipts. The check is a host script (host `python3`), not part of the
+Docker `container-check.sh` fmt/clippy gate; see `docs/RECEIPTS.md`.
+
+RESULT: `sh scripts/check-docs-receipts.sh` exits **0** on this commit
+(provenance 3/3 allowed-historical, citations 37/37 ok).

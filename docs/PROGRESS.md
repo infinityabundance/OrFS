@@ -2377,3 +2377,76 @@ growth-independent.** Evidence: `evidence/performance/manifestation-catalogue.js
 * `fuse_uring`'s court hit its 900 s timeout in the environment's host memory
   pressure (swap exhausted); `ekbloom_frontier_e2e` was run directly and passed,
   and the court does not touch this change.
+
+## Phase 43 — Compiled object read plans; bounded planner lifecycle
+
+**Complete.** Research programme priority 2 ("remove planning machinery from the
+successful read path") plus the acceptance-audit follow-up ("bound the complete
+planner state").
+
+### Delivered (`src/readpath.rs`)
+
+* **Compiled object read plans.** When a generation's body is loaded (identity,
+  version and manifestation set now determined), the planner publishes an
+  immutable `ObjectPlan` inside the cached `LoadedBody`: a request-independent
+  *structure inventory* (each certified, structurally-present structure with its
+  recomputed verdict, built once) plus, per size class, the *ranking* of
+  candidates actually measured for that class (`Arc<Vec<Candidate>>`, replaced
+  only by a calibration pass).
+* **Lean steady-state read.** `read` now: classify the effective length → bounded
+  `plan_is_complete` → walk that class's ranking and execute the first candidate
+  that covers the request → serve. **No candidate vector, no sort, and no model
+  lock** on the hot path. Per-object measurement/failure state is one `AtomicU8`
+  bitmask, not a `HashSet`.
+* **Calibration is the only planning point.** `calibrate_class` snapshots
+  predictions under one shared lock, drops it, then sorts (`rank_measured`) — no
+  lock inside a comparator. `ObjectCosts::predict` is now a pure `&self` lookup
+  (no LRU mutation), insertion-order age-evicted.
+* **Bounded lifecycle.** The unbounded `calibrated`/`failed` global sets are gone;
+  all identity-keyed state is bounded and retired in insertion order: per-object
+  plans and selection models by `cache_capacity`, the overlay verification/failure
+  ledger and resolved-region cache by a new `ReadPlannerConfig::identity_capacity`
+  (default 1024). Retiring an entry only turns a *measured* candidate back into an
+  *unmeasured* one, which already falls back — it can never cause a wrong
+  selection. `ReadPlanner::resident()` reports every resident count/capacity;
+  `record_observation()` is the out-of-band learner seam.
+
+### Guarantees preserved
+
+Compatibility/version/root checks on every read are unchanged; identity remains
+the full `ManifestIdentity`; the ranking holds only measured candidates, so an
+unmeasured candidate is never selected (zero budget → authoritative fallback);
+bytes always equal the authoritative read; every miss/failed candidate falls
+back. Selection ordering reproduces the previous object-local predictions and
+tie-breaks exactly, so all prior read-path tests pass unchanged.
+
+### Result (paired bench `benches/read_path.rs`; release, single host)
+
+Heterogeneous workload (hot+cold objects, fragmentation, 1 B/512 B/4 KiB/64 KiB):
+
+| readers | p50 before → after | p99 | allocs/req | req/s |
+|---|---|---|---|---|
+| 1 | 741 → **260 ns** (2.85×) | 1 833 → 1 402 ns | 11.2 → **8.0** | 973 k → 2.64 M |
+| 16 | 16 731 → **2 645 ns** (6.3×) | 80 520 → 32 060 ns | 11.3 → **8.0** | 756 k → **2.62 M** |
+
+**Lock-free steady state, proven:** `tests/read_path_planner.rs::steady_state_
+certified_read_does_not_plan` shows 500 certified reads leave `selection_sorts`
+and `model_write_locks` unchanged while `hot_reads` advances by exactly 500.
+**Aging court:** `scripts/container-read-planner.sh` drives **1 000 000** distinct
+`ManifestIdentity` values; every resident table stays at capacity and RSS does not
+grow, with exact bytes afterwards.
+
+Evidence: `evidence/performance/read-planner.json`;
+`docs/EKBLOOM-INTEGRATION.md` §6/§6.1; `docs/PERFORMANCE.md` §3.2/§15.
+
+### Honest caveats
+
+* Single-run/host measurements; the `after` concurrent figure moved between runs
+  under host load (p50 1 312 ns then 2 645 ns) — the direction and the lock-free
+  steady state are the point.
+* **No mounted 16–32-reader FUSE comparison** (host under heavy load; the
+  `fuse_uring` court is environment-sensitive). A thread-level 16-reader
+  comparison was used instead; a mounted one remains future work.
+* Tail sensitivity is bounded independently (calibration budget and
+  `MAX_REPLAY_SYMBOLS`); selection keeps an EWMA mean rather than a p99 statistic,
+  documented in the module header.

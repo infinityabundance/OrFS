@@ -134,7 +134,10 @@ measures the manifested paths directly. **Phase 33** corrected the calibration
 timer itself (it had been started after execution, feeding near-zero durations
 into the cost model) and made the selection guarantee explicit: an **unmeasured**
 candidate is never selected — with nothing calibrated, the authoritative path
-serves the read (`docs/LIMITATIONS.md` §13).
+serves the read (`docs/LIMITATIONS.md` §13). **Phase 43** then removed the
+per-request planning machinery from the steady state entirely: the measured plan
+is precompiled per object and a certified read is a bounded lookup + execute (see
+§15 and `docs/EKBLOOM-INTEGRATION.md` §6.1).
 
 ---
 
@@ -909,3 +912,85 @@ fixture rather than `G` real publications, and the publication measurement is a
 protocol's per-publication byte count is a counterfactual computed from its known
 formula, not measured here. `evidence/performance/manifestation-catalogue.json`
 is the machine-generated source of truth.
+
+## 15. Reviewer task (priority 2) — the precompiled read plan: a lean steady state and bounded planner state
+
+**The defect.** The successful certified read re-derived its decision on *every*
+request: `ReadPlanner::read` built a candidate vector (with a `format!` name per
+bloom and checkpoint), partitioned it against two global `HashSet`s, sorted the
+measured candidates under a **write lock on the selection model** with
+`ObjectCosts::predict` doing a linear `VecDeque` position search + remove/reinsert
+(LRU recency) *inside the comparator*, and re-acquired several shared locks — all
+to serve a request whose useful work is a few hundred nanoseconds. The two global
+identity-keyed sets (`calibrated`, `failed`) were also unbounded across
+manifestations and generations.
+
+**The fix.** When a body is loaded (its identity/version/manifestation set are then
+determined) the planner publishes an immutable **`ObjectPlan`** alongside it in the
+cached body: the request-independent structure inventory (built once) and, per size
+class, a published **ranking** of the candidates actually measured for that class.
+A steady-state certified read is now classify → look up the class ranking →
+execute the first candidate that covers the request; the authoritative fallback
+serves any miss. There is no candidate-vector construction, no sort, no `HashSet`
+lookup (per-object failure/measurement state is one atomic byte), and no cost-model
+lock on that path. The sort happens only on a calibration pass, from a snapshot of
+the model taken under a shared lock and dropped before sorting. Learning is off the
+steady state (the model is written only on calibration, or out of band through
+`ReadPlanner::record_observation`).
+
+All identity-keyed state is bounded and retired in insertion order (age eviction):
+per-object plans live in the body cache, per-object selection models are bounded by
+`cache_capacity`, and the region-overlay verification/failure ledger is bounded by
+the new `identity_capacity` (default 1024). Retiring an entry only turns a
+*measured* candidate back into an *unmeasured* one, which already falls back — it
+can never cause a wrong selection.
+
+**Paired benchmark.** The same bench (`benches/read_path.rs`, public API only) was
+run once on the pre-change tree (label `before`) and once on this tree (label
+`after`), back to back, in the pinned container; it appends both to
+`evidence/performance/read-planner.json`. Workload: five objects (two hot, three
+cold; profiles path / max-speed / sparse / full; 4 KiB–256 KiB), 4096 fragmented
+requests over sizes 1 B / 512 B / 4 KiB / 64 KiB, 32 passes (131 072 requests
+single-threaded; 2 097 152 with 16 concurrent readers).
+
+| reader model | label | p50 | p99 | mean | allocations / request | requests/s |
+|---|---|---:|---:|---:|---:|---:|
+| single-threaded | `before` | 741 ns | 1 833 ns | 1 001 ns | 11.20 | 972 681 |
+| single-threaded | `after`  | **260 ns** | **1 402 ns** | **338 ns** | **8.00** | 2 636 690 |
+| 16 concurrent | `before` | 16 731 ns | 80 520 ns | 21 071 ns | 11.27 | 756 284 |
+| 16 concurrent | `after`  | **2 645 ns** | **32 060 ns** | **6 031 ns** | **8.00** | **2 622 414** |
+
+**Findings, stated honestly.**
+
+1. **The single-threaded steady-state read is markedly cheaper**: p50 741 ns →
+   260 ns (2.85×) and mean 1 001 ns → 338 ns (2.96×). The residual `after` cost is
+   the returned byte buffer plus the authoritative slice the manifested paths are
+   compared against, not planning.
+2. **Concurrency scales again**: with 16 readers, p50 falls 16 731 ns → 2 645 ns
+   (6.3×) and aggregate throughput rises 756 284 → 2 622 414 requests/s (3.5×),
+   because the steady state no longer takes the model write lock per request. This
+   is the property the old design lost under contention.
+3. **Fewer allocations**: 11.2 → 8.0 allocations per request (≈3.2 fewer, the
+   candidate vector, its `format!` names and the partition are gone).
+4. **Steady-state planning work is exactly zero.** `tests/read_path_planner.rs`
+   warms a class, snapshots the planner's cumulative counters, then runs 500 more
+   certified reads and asserts `selection_sorts` and `model_write_locks` are
+   unchanged while `hot_reads` advances by exactly 500 — the model write lock and
+   the comparator are gone from the hot path, not merely cheaper.
+5. **Planner state is bounded.** The aging court drives 1 000 000 distinct
+   `ManifestIdentity` values through the planner's identity-keyed bookkeeping and
+   asserts every resident table stays at its capacity (plans ≤ `cache_capacity`,
+   object models ≤ `cache_capacity`, overlay ledger ≤ `identity_capacity`) and RSS
+   does not grow, while a subsequent certified read still returns the exact bytes.
+   `sh scripts/container-read-planner.sh` runs the full sweep.
+
+**Caveats.** Single run, single host, `cargo bench` (bench) profile; absolute
+nanoseconds are host/load sensitive and the `after` concurrent run in particular
+moved between two runs of this binary (p50 1 312 ns then 2 645 ns), so the
+*direction and the lock-free steady state* are the point, not the exact figure. The
+bench measures allocations with a process-wide counting allocator, so it counts the
+returned byte buffer and the authoritative slice; the planning-only overhead is the
+`before − after` excess. A mounted 16–32-reader FUSE comparison was **not** run:
+the host is under heavy load and the `fuse_uring` court is environment-sensitive, so
+this is reported plainly rather than approximated. The 16-reader numbers above are
+**thread-level** contention on the shared planner, not a kernel-mount measurement.

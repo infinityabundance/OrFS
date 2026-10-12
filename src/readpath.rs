@@ -65,20 +65,57 @@
 //!   planner compares it against the authoritative read and rejects it on any
 //!   disagreement.
 //!
-//! # Selection by measurement
+//! # Selection by measurement: a precompiled per-object read plan
 //!
 //! The planner keeps an exponential-moving-average latency model per
 //! (path, size class). Selection is **object-localized**: when the queried object
 //! has its own measurement for a candidate, that measurement predicts the read;
-//! only when it has none does selection fall back to the shared aggregate. A
-//! bounded, least-recently-used table holds the per-object models, so a long-lived
-//! planner over many objects stays cheap, and two objects with different access
-//! characteristics cannot bias each other's choice. The model may inform *which
-//! mechanism* is worth trying, but it never gates a correctness decision for one
-//! object.
+//! only when it has none does selection fall back to the shared aggregate. Two
+//! objects with different access characteristics therefore cannot bias each
+//! other's choice. The model may inform *which* mechanism is worth trying, but it
+//! never gates a correctness decision for one object.
 //!
-//! Per-object state — which candidates have been timed for a given object, and
-//! which have failed for it — is keyed by the **full manifestation identity**
+//! Planning is **precompiled**, not re-derived per request. When a generation's
+//! body is loaded (its identity, version, and manifestation set determined) the
+//! planner publishes an immutable [`ObjectPlan`] alongside it inside the cached
+//! [`LoadedBody`]: the request-independent structure inventory (each structure
+//! with its recomputed certification) computed once, and a per-[`SizeClass`]
+//! **ranking** of the candidates actually measured for that class. A steady-state
+//! certified read is then a bounded lookup + execute:
+//!
+//! ```text
+//! classify the effective length -> look up the published ranking for that class
+//!   -> execute the first candidate it names that covers the request -> bytes
+//! ```
+//!
+//! No candidate vector is built, nothing is sorted, and no cost-model lock is
+//! taken (the ranking is an immutable `Arc` behind a read lock; per-object failure
+//! state is a single atomic byte, not a hash set). On any miss — no ranking yet,
+//! an unavailable or failed candidate, an execution error — the authoritative
+//! extent read serves the request: an **unmeasured** candidate is never selected.
+//!
+//! Learning is **off the steady state**. The first request for a given
+//! `(identity, size class)` runs the bounded **calibration** pass (below); it is
+//! the only point at which the measured model is written and a ranking is
+//! published. Steady-state reads never mutate shared policy; the accumulated
+//! observations of completed reads can be folded in through the explicit
+//! [`ReadPlanner::record_observation`] learner seam (amortised, out of band).
+//!
+//! # Tail sensitivity
+//!
+//! The cost model is an EWMA **mean** per (path, size class), not a tail
+//! statistic. A tail-sensitive estimate (say p99) would change *which* measured
+//! path is preferred but could not change the bytes a read returns: selection is
+//! correctness-neutral (the authoritative extent read is always a candidate, and
+//! an uncertified manifested candidate is verified-on-use), and a measured-but-
+//! slow candidate is simply ranked lower. Recording a quantile would add
+//! per-candidate memory and an update to the model for no correctness gain, so the
+//! mean is kept and the deterministic tie-break (certified first, then the fixed
+//! path priority) resolves equal means. The tail is bounded independently: by the
+//! calibration budget, by [`MAX_REPLAY_SYMBOLS`], and by the fact that a manifested
+//! structure can never return different bytes.
+//!
+//! Per-object state is keyed by the **full manifestation identity**
 //! ([`ManifestIdentity`]: volume uuid, inode, inode version, committed root, and
 //! generation). A rejected candidate for one inode can therefore never suppress
 //! the same candidate for an unrelated inode, and calibration never leaks across
@@ -86,12 +123,28 @@
 //! ever eligible for selection, so an unmeasured (optimistic-prior) path can never
 //! be chosen blindly.
 //!
+//! # Bounded planner state
+//!
+//! Every identity-keyed table the planner owns is explicitly bounded and retired
+//! in insertion order (age eviction), so total planner state cannot grow with the
+//! number of manifestations ever read:
+//!
+//! * a [`ObjectPlan`] lives inside its cached [`LoadedBody`], so it is bounded by
+//!   `ReadPlannerConfig::cache_capacity` (the body cache retires old entries);
+//! * the per-object selection models ([`ObjectCosts`]) and the region-overlay
+//!   verification/failure ledger ([`IdentityLedger`]) are bounded by
+//!   `ReadPlannerConfig::cache_capacity` and `ReadPlannerConfig::identity_capacity`
+//!   respectively, and retire least-*recently-inserted* generations first.
+//!
+//! Retiring an entry can only ever turn a *measured* candidate back into an
+//! *unmeasured* one, which already falls back to the authoritative path; it can
+//! never cause a wrong selection. [`ReadPlanner::resident`] reports the resident
+//! entries so the bound is observable (see `tests/read_path_planner.rs`).
+//!
 //! The authoritative fallback is deliberately lean: a request's authoritative read
 //! is wrapped so it runs **at most once** (a fallback serves bytes a calibration
-//! pass already produced rather than re-executing the read), `'static` fallback
-//! reasons are borrowed rather than allocated, and the calibration and selection
-//! passes acquire each shared lock a bounded number of times rather than once per
-//! candidate.
+//! pass already produced rather than re-executing the read), and `'static` fallback
+//! reasons are borrowed rather than allocated.
 //!
 //! Calibration is **bounded**: the first requests for an identity+class time the
 //! candidates under a hard [`ReadPlannerConfig::calibration_budget_ns`] budget,
@@ -102,6 +155,7 @@
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -169,6 +223,19 @@ impl ReadPathKind {
             ReadPathKind::LogicalExtent => 5,
         }
     }
+
+    /// A one-bit mask for this path, so per-object failure/measurement sets are a
+    /// single atomic byte rather than a hash set on the read path.
+    const fn bit(self) -> u8 {
+        match self {
+            ReadPathKind::LogicalExtent => 1 << 0,
+            ReadPathKind::PathBloom => 1 << 1,
+            ReadPathKind::TransitionBloom => 1 << 2,
+            ReadPathKind::History => 1 << 3,
+            ReadPathKind::Checkpoint => 1 << 4,
+            ReadPathKind::Overlay => 1 << 5,
+        }
+    }
 }
 
 /// The **full identity** of one manifested generation.
@@ -223,6 +290,20 @@ pub enum SizeClass {
 }
 
 impl SizeClass {
+    /// The number of distinct size classes (the width of a per-class index).
+    pub const COUNT: usize = 5;
+
+    /// The dense index of this class in `0..COUNT`.
+    pub const fn index(self) -> usize {
+        match self {
+            SizeClass::Empty => 0,
+            SizeClass::Byte => 1,
+            SizeClass::Small => 2,
+            SizeClass::Medium => 3,
+            SizeClass::Large => 4,
+        }
+    }
+
     /// Stable name used in evidence.
     pub const fn name(self) -> &'static str {
         match self {
@@ -372,6 +453,11 @@ pub struct ReadPlannerConfig {
     /// the current request is served by the authoritative path. This guarantees
     /// the planner can never stall a foreground read to calibrate (Phase 18).
     pub calibration_budget_ns: u64,
+    /// Maximum number of identity-keyed overlay/verification entries retained by
+    /// the planner's [`IdentityLedger`] before the least-recently-inserted are
+    /// retired. Together with `cache_capacity` this bounds all identity-keyed
+    /// planner state.
+    pub identity_capacity: usize,
 }
 
 impl Default for ReadPlannerConfig {
@@ -380,6 +466,7 @@ impl Default for ReadPlannerConfig {
             max_payload_bytes: 512 * 1024 * 1024,
             cache_capacity: 64,
             calibration_budget_ns: 2_000_000,
+            identity_capacity: 1024,
         }
     }
 }
@@ -469,8 +556,11 @@ impl CostModel {
 /// has any, and only falls back to the shared aggregate when it does not. Two
 /// objects with different access characteristics (for example a hot small-file
 /// workload and a cold large-file workload that happen to share a size class)
-/// therefore cannot bias each other's choice. The table is bounded and evicted
-/// least-recently-used, so a long-lived planner over many objects stays cheap.
+/// therefore cannot bias each other's choice. The table is **bounded** and retires
+/// the least-recently-*inserted* object once full (age eviction), so a long-lived
+/// planner over many objects stays cheap. `predict` is a pure lookup that never
+/// mutates the table, so it is safe to call while holding a shared lock (and is
+/// never called from inside a sort comparator).
 struct ObjectCosts {
     map: HashMap<ManifestIdentity, CostModel>,
     order: VecDeque<ManifestIdentity>,
@@ -486,22 +576,10 @@ impl ObjectCosts {
         }
     }
 
-    /// The object's own measured cost for `(kind, class)`, updating its recency;
-    /// `None` when the object has no such measurement (so the caller falls back to
-    /// the shared aggregate).
-    fn predict(
-        &mut self,
-        id: &ManifestIdentity,
-        kind: ReadPathKind,
-        class: SizeClass,
-    ) -> Option<f64> {
-        if !self.map.contains_key(id) {
-            return None;
-        }
-        if let Some(pos) = self.order.iter().position(|x| x == id) {
-            self.order.remove(pos);
-        }
-        self.order.push_back(*id);
+    /// The object's own measured cost for `(kind, class)`; `None` when the object
+    /// has no such measurement (so the caller falls back to the shared aggregate).
+    /// A pure read: it never updates recency, so callers may hold a shared lock.
+    fn predict(&self, id: &ManifestIdentity, kind: ReadPathKind, class: SizeClass) -> Option<f64> {
         self.map.get(id).and_then(|m| m.measured(kind, class))
     }
 
@@ -509,21 +587,25 @@ impl ObjectCosts {
         if self.capacity == 0 {
             return;
         }
-        if let Some(pos) = self.order.iter().position(|x| x == &id) {
-            self.order.remove(pos);
-        } else {
-            // Evict least-recently-used identities until there is room.
+        if !self.map.contains_key(&id) {
+            // Age eviction: retire least-recently-inserted identities until there
+            // is room. Inserting an already-present identity never reorders, so
+            // this stays O(1) amortized (no linear `position` search).
             while self.order.len() >= self.capacity {
                 if let Some(old) = self.order.pop_front() {
                     self.map.remove(&old);
                 }
             }
+            self.order.push_back(id);
             self.map.insert(id, CostModel::default());
         }
-        self.order.push_back(id);
         if let Some(model) = self.map.get_mut(&id) {
             model.record(kind, class, ns);
         }
+    }
+
+    fn len(&self) -> usize {
+        self.map.len()
     }
 
     fn clear(&mut self) {
@@ -554,7 +636,7 @@ impl SelectionModel {
     /// The predicted cost for one object's candidate. Uses the object's own
     /// measurement when it has one, else the shared aggregate (which itself falls
     /// back to the documented prior).
-    fn predict(&mut self, id: &ManifestIdentity, kind: ReadPathKind, class: SizeClass) -> f64 {
+    fn predict(&self, id: &ManifestIdentity, kind: ReadPathKind, class: SizeClass) -> f64 {
         match self.objects.predict(id, kind, class) {
             Some(ns) => ns,
             None => self.aggregate.predict(kind, class),
@@ -594,6 +676,70 @@ struct LoadedBody {
     inode_version: u64,
     root: u64,
     logical_len: u64,
+    /// The precompiled read plan published with this body (Phase 43): the
+    /// request-independent structure inventory plus the per-class selection
+    /// rankings the steady-state read looks up. Bounded by the body cache's
+    /// capacity, since a retired body retires its plan with it.
+    plan: ObjectPlan,
+}
+
+/// The precompiled, per-object read plan.
+///
+/// Built **once** when a body is loaded (its identity, version, and manifestation
+/// set are then determined) and published inside the cached [`LoadedBody`]. The
+/// steady-state read path performs no allocation and no sorting over it: it
+/// classifies the request length, looks up the [`SizeClass`]'s published ranking,
+/// and executes the first candidate that covers the request. All request-dependent
+/// coverage checks ([`step_available`]) are cheap comparisons.
+struct ObjectPlan {
+    /// The certified, structurally-present, request-independent candidates. The
+    /// authoritative extent is implicit and always appended by the planner.
+    inventory: Vec<Candidate>,
+    /// Per-size-class bitmask (see [`ReadPathKind::bit`]) of candidates already
+    /// timed for this identity and class.
+    measured: [AtomicU8; SizeClass::COUNT],
+    /// Bitmask of candidates proven unusable for this identity.
+    failed: AtomicU8,
+    /// The published per-class ranking: the measured candidates, cheapest first.
+    /// `None` until that class has been calibrated. An immutable `Arc`, so the hot
+    /// path clones it under a shared lock and never mutates shared state.
+    ranking: [RwLock<Option<Arc<Vec<Candidate>>>>; SizeClass::COUNT],
+}
+
+impl ObjectPlan {
+    fn new(inventory: Vec<Candidate>) -> ObjectPlan {
+        ObjectPlan {
+            inventory,
+            measured: std::array::from_fn(|_| AtomicU8::new(0)),
+            failed: AtomicU8::new(0),
+            ranking: std::array::from_fn(|_| RwLock::new(None)),
+        }
+    }
+
+    fn is_failed(&self, kind: ReadPathKind) -> bool {
+        self.failed.load(Ordering::Relaxed) & kind.bit() != 0
+    }
+
+    fn mark_failed(&self, kind: ReadPathKind) {
+        self.failed.fetch_or(kind.bit(), Ordering::Relaxed);
+    }
+
+    fn measured_mask(&self, class: SizeClass) -> u8 {
+        self.measured[class.index()].load(Ordering::Relaxed)
+    }
+
+    fn mark_measured(&self, class: SizeClass, kind: ReadPathKind) {
+        self.measured[class.index()].fetch_or(kind.bit(), Ordering::Relaxed);
+    }
+
+    /// The published ranking for `class`, if that class has been calibrated.
+    fn ranked(&self, class: SizeClass) -> Option<Arc<Vec<Candidate>>> {
+        self.ranking[class.index()].read().clone()
+    }
+
+    fn publish_ranking(&self, class: SizeClass, ranking: Arc<Vec<Candidate>>) {
+        *self.ranking[class.index()].write() = Some(ranking);
+    }
 }
 
 struct CacheEntry {
@@ -618,6 +764,10 @@ impl BodyCache {
         } else {
             None
         }
+    }
+
+    fn len(&self) -> usize {
+        self.map.len()
     }
 
     fn insert(&mut self, inode: u64, entry: CacheEntry) {
@@ -673,6 +823,182 @@ impl RegionCache {
                 self.map.remove(&old);
             }
         }
+    }
+}
+
+/// A bounded, insertion-ordered set keyed by [`ManifestIdentity`].
+///
+/// This is the retirement policy for the planner's identity-keyed bookkeeping:
+/// once `capacity` entries are resident, the least-recently-**inserted** are
+/// retired (age eviction), so driving an unbounded number of distinct
+/// manifestations/generations through the planner cannot grow its state without
+/// bound. Retiring an entry only ever turns a *verified* identity back into an
+/// *unverified* one, which re-verifies on next use; it can never cause a wrong
+/// selection.
+#[derive(Default)]
+struct BoundedIdentitySet {
+    set: HashSet<ManifestIdentity>,
+    order: VecDeque<ManifestIdentity>,
+    capacity: usize,
+}
+
+impl BoundedIdentitySet {
+    fn new(capacity: usize) -> BoundedIdentitySet {
+        BoundedIdentitySet {
+            set: HashSet::new(),
+            order: VecDeque::new(),
+            capacity,
+        }
+    }
+
+    fn insert(&mut self, id: ManifestIdentity) {
+        if self.capacity == 0 || self.set.contains(&id) {
+            return;
+        }
+        self.set.insert(id);
+        self.order.push_back(id);
+        while self.order.len() > self.capacity {
+            if let Some(old) = self.order.pop_front() {
+                self.set.remove(&old);
+            }
+        }
+    }
+
+    fn contains(&self, id: &ManifestIdentity) -> bool {
+        self.set.contains(id)
+    }
+
+    fn len(&self) -> usize {
+        self.set.len()
+    }
+
+    fn clear(&mut self) {
+        self.set.clear();
+        self.order.clear();
+    }
+}
+
+/// The bounded, identity-keyed ledger for region-overlay state (Phase 22): which
+/// identities' overlay bytes have been verified against the authoritative read,
+/// and which were proven unusable. Bounded by
+/// [`ReadPlannerConfig::identity_capacity`]; see [`BoundedIdentitySet`].
+#[derive(Default)]
+struct IdentityLedger {
+    overlay_verified: BoundedIdentitySet,
+    overlay_failed: BoundedIdentitySet,
+}
+
+impl IdentityLedger {
+    fn new(capacity: usize) -> IdentityLedger {
+        IdentityLedger {
+            overlay_verified: BoundedIdentitySet::new(capacity),
+            overlay_failed: BoundedIdentitySet::new(capacity),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.overlay_verified.clear();
+        self.overlay_failed.clear();
+    }
+}
+
+/// A bounded, insertion-ordered cache of resolved region tables, one per inode
+/// (Phase 22). Retires least-recently-inserted inodes once full, so a long-lived
+/// planner over many region-backed objects stays bounded.
+#[derive(Default)]
+struct CoverageCache {
+    map: HashMap<u64, CoverageEntry>,
+    order: VecDeque<u64>,
+    capacity: usize,
+}
+
+impl CoverageCache {
+    fn get(
+        &self,
+        inode: u64,
+        generation: u64,
+        digest: &[u8; 32],
+    ) -> Option<Arc<Vec<ManifestRegion>>> {
+        let e = self.map.get(&inode)?;
+        if e.generation == generation && e.digest == *digest {
+            Some(e.table.clone())
+        } else {
+            None
+        }
+    }
+
+    fn insert(&mut self, inode: u64, entry: CoverageEntry) {
+        if self.capacity == 0 {
+            return;
+        }
+        if self.map.contains_key(&inode) {
+            self.order.retain(|&x| x != inode);
+        }
+        self.map.insert(inode, entry);
+        self.order.push_back(inode);
+        while self.order.len() > self.capacity {
+            if let Some(old) = self.order.pop_front() {
+                self.map.remove(&old);
+            }
+        }
+    }
+
+    fn clear(&mut self) {
+        self.map.clear();
+        self.order.clear();
+    }
+}
+
+/// Cumulative counters for the read planner, used by the lean-read court to
+/// prove the steady state performs no planning work. All are monotonic.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ReadPlannerStats {
+    /// Number of per-object read plans built (once per body load).
+    pub plan_builds: u64,
+    /// Number of calibration passes that timed at least one candidate.
+    pub calibrations: u64,
+    /// Number of candidate rankings sorted (calibration only).
+    pub selection_sorts: u64,
+    /// Number of times the selection cost model's write lock was acquired.
+    pub model_write_locks: u64,
+    /// Number of reads served from a published ranking without planning work.
+    pub hot_reads: u64,
+}
+
+#[derive(Default)]
+struct StatsInner {
+    plan_builds: AtomicU64,
+    calibrations: AtomicU64,
+    selection_sorts: AtomicU64,
+    model_write_locks: AtomicU64,
+    hot_reads: AtomicU64,
+}
+
+/// The resident (in-memory) planner state, with the capacity that bounds it. Used
+/// by the aging court (`tests/read_path_planner.rs`) to measure the bound.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PlannerResidency {
+    /// Cached bodies resident (each carries one [`ObjectPlan`]).
+    pub body_plans: usize,
+    /// Per-object selection models resident.
+    pub object_models: usize,
+    /// Verified-overlay identities resident.
+    pub overlay_verified: usize,
+    /// Rejected-overlay identities resident.
+    pub overlay_failed: usize,
+    /// The body-cache capacity.
+    pub body_capacity: usize,
+    /// The per-object-model capacity.
+    pub object_capacity: usize,
+    /// The identity-ledger capacity.
+    pub identity_capacity: usize,
+}
+
+impl PlannerResidency {
+    /// The total number of identity-keyed entries resident across every bounded
+    /// table.
+    pub fn total(&self) -> usize {
+        self.body_plans + self.object_models + self.overlay_verified + self.overlay_failed
     }
 }
 
@@ -842,6 +1168,134 @@ fn candidates(lb: &LoadedBody, q: &ReadQuery, eff_len: u64) -> Vec<Candidate> {
     });
 
     out
+}
+
+/// Enumerate the **request-independent** certified structures present in a loaded
+/// body. This is the object's read-plan inventory, built once per body load. It
+/// deliberately excludes the authoritative extent (which the planner always
+/// appends) and defers every request-dependent coverage decision to
+/// [`step_available`].
+fn build_inventory(
+    body: &EkbloomBody,
+    report: &VerificationReport,
+    path_blooms: &[Option<PathBloom>],
+    global_blooms: &[Option<GlobalBloom>],
+    region_tables: &[Option<RegionTable>],
+) -> Vec<Candidate> {
+    let mut out = Vec::new();
+
+    if let Some(h) = &body.history {
+        if h.logical_len == body.logical_len
+            && h.core_hash == body.core_hash
+            && check_passed(report, "history")
+        {
+            out.push(Candidate {
+                kind: ReadPathKind::History,
+                structure: Structure::History,
+                certified: true,
+            });
+        }
+    }
+
+    for (i, cp) in body.checkpoints.iter().enumerate() {
+        if cp.interval == 0 {
+            continue;
+        }
+        let name = format!("checkpoints[{i}] K={}", cp.interval);
+        if check_passed(report, &name) {
+            out.push(Candidate {
+                kind: ReadPathKind::Checkpoint,
+                structure: Structure::Checkpoint { set_index: i },
+                certified: true,
+            });
+        }
+    }
+
+    for (i, shell) in body.blooms.iter().enumerate() {
+        let name = format!("bloom[{i}]:{}", shell.kind.as_str());
+        if !check_passed(report, &name) {
+            continue;
+        }
+        match shell.kind {
+            BloomKind::Path => {
+                if shell.logical_len != body.logical_len || path_blooms[i].is_none() {
+                    continue;
+                }
+                out.push(Candidate {
+                    kind: ReadPathKind::PathBloom,
+                    structure: Structure::Path { bloom_index: i },
+                    certified: shell.status == Certification::Certified,
+                });
+            }
+            BloomKind::Universal => {
+                if global_blooms[i].is_none() {
+                    continue;
+                }
+                out.push(Candidate {
+                    kind: ReadPathKind::TransitionBloom,
+                    structure: Structure::Global { bloom_index: i },
+                    certified: shell.status == Certification::Certified,
+                });
+            }
+            BloomKind::Regional => {
+                if region_tables[i].is_none() {
+                    continue;
+                }
+                out.push(Candidate {
+                    kind: ReadPathKind::TransitionBloom,
+                    structure: Structure::Regional { bloom_index: i },
+                    certified: shell.status == Certification::Certified,
+                });
+            }
+            BloomKind::Contextual => {}
+        }
+    }
+
+    out
+}
+
+/// Whether `structure` can serve this exact request (a cheap, allocation-free
+/// coverage check). This is the only request-dependent filter on the hot path.
+fn step_available(lb: &LoadedBody, q: &ReadQuery, eff_len: u64, structure: Structure) -> bool {
+    let end = q.offset.saturating_add(eff_len);
+    match structure {
+        Structure::Extent | Structure::History => true,
+        Structure::Checkpoint { set_index } => {
+            let cp = &lb.body.checkpoints[set_index];
+            cp.interval != 0 && cp.restart_point(q.offset).is_some()
+        }
+        Structure::Path { bloom_index } => lb.path_blooms[bloom_index]
+            .as_ref()
+            .is_some_and(|b| b.logical_len >= end),
+        Structure::Global { .. } => has_bounded_state_source(lb, q.offset),
+        Structure::Regional { bloom_index } => {
+            let covers = lb.region_tables[bloom_index].as_ref().is_some_and(|t| {
+                q.offset >= t.logical_start
+                    && q.offset < t.logical_start.saturating_add(t.logical_len)
+            });
+            covers && has_bounded_state_source(lb, q.offset)
+        }
+    }
+}
+
+/// Whether every candidate that could serve this request for `class` has already
+/// been measured (or proven unusable). When this holds and a ranking is published,
+/// the steady-state read is a pure lookup + execute.
+fn plan_is_complete(lb: &LoadedBody, q: &ReadQuery, eff_len: u64, class: SizeClass) -> bool {
+    let plan = &lb.plan;
+    let mask = plan.measured_mask(class) | plan.failed.load(Ordering::Relaxed);
+    if mask & ReadPathKind::LogicalExtent.bit() == 0 {
+        return false;
+    }
+    for s in &plan.inventory {
+        if !step_available(lb, q, eff_len, s.structure) {
+            continue;
+        }
+        if mask & s.kind.bit() == 0 {
+            return false;
+        }
+    }
+    true
 }
 
 // ---------------------------------------------------------------------------
@@ -1096,24 +1550,25 @@ where
 
 /// The read planner: evaluates compatible certified structures and picks a valid
 /// path by measurement, falling back to the authoritative extent read.
+///
+/// All identity-keyed state is bounded (see the module header): per-object plans
+/// live in the body cache, per-object selection models in [`ObjectCosts`], and the
+/// region-overlay ledger in [`IdentityLedger`]. The steady-state read consults the
+/// per-object [`ObjectPlan`] only.
 pub struct ReadPlanner {
     state: Arc<ManifestationState>,
     config: ReadPlannerConfig,
     model: RwLock<SelectionModel>,
     cache: Mutex<BodyCache>,
-    /// (identity, size class, path) triples whose candidate has been timed. Keyed
-    /// by the **full** identity, so no state leaks between objects.
-    calibrated: RwLock<HashSet<(ManifestIdentity, SizeClass, ReadPathKind)>>,
-    /// (identity, path) pairs proven unusable for that exact object.
-    failed: RwLock<HashSet<(ManifestIdentity, ReadPathKind)>>,
+    /// The bounded identity ledger for region-overlay verification/failure state.
+    ledger: RwLock<IdentityLedger>,
     chosen: RwLock<HashMap<ReadPathKind, u64>>,
-    /// Resolved region tables for overlay-backed generations.
-    coverage: Mutex<HashMap<u64, CoverageEntry>>,
-    /// Parsed region payload bodies, shared across generations.
+    /// Resolved region tables for overlay-backed generations (bounded).
+    coverage: Mutex<CoverageCache>,
+    /// Parsed region payload bodies, shared across generations (bounded).
     regions: Mutex<RegionCache>,
-    /// Identities whose overlay bytes have been verified once against the
-    /// authoritative read (so they are trusted thereafter).
-    overlay_verified: RwLock<HashSet<ManifestIdentity>>,
+    /// Cumulative planning-work counters (see [`ReadPlannerStats`]).
+    stats: StatsInner,
 }
 
 impl ReadPlanner {
@@ -1127,18 +1582,22 @@ impl ReadPlanner {
             capacity: config.cache_capacity.max(1).saturating_mul(4),
             ..Default::default()
         };
+        let coverage = CoverageCache {
+            capacity: config.identity_capacity.max(1),
+            ..Default::default()
+        };
         let object_capacity = config.cache_capacity.max(1);
+        let identity_capacity = config.identity_capacity;
         ReadPlanner {
             state,
             config,
             model: RwLock::new(SelectionModel::new(object_capacity)),
             cache: Mutex::new(cache),
-            calibrated: RwLock::new(HashSet::new()),
-            failed: RwLock::new(HashSet::new()),
+            ledger: RwLock::new(IdentityLedger::new(identity_capacity)),
             chosen: RwLock::new(HashMap::new()),
-            coverage: Mutex::new(HashMap::new()),
+            coverage: Mutex::new(coverage),
             regions: Mutex::new(regions),
-            overlay_verified: RwLock::new(HashSet::new()),
+            stats: StatsInner::default(),
         }
     }
 
@@ -1160,16 +1619,71 @@ impl ReadPlanner {
         v
     }
 
-    /// Forget the measured model, calibration set, failure set, and cached
-    /// bodies (used by evidence runs that must observe a cold planner).
+    /// The cumulative planning-work counters. A steady-state certified read must
+    /// leave `selection_sorts` and `model_write_locks` unchanged while advancing
+    /// `hot_reads`.
+    pub fn stats(&self) -> ReadPlannerStats {
+        ReadPlannerStats {
+            plan_builds: self.stats.plan_builds.load(Ordering::Relaxed),
+            calibrations: self.stats.calibrations.load(Ordering::Relaxed),
+            selection_sorts: self.stats.selection_sorts.load(Ordering::Relaxed),
+            model_write_locks: self.stats.model_write_locks.load(Ordering::Relaxed),
+            hot_reads: self.stats.hot_reads.load(Ordering::Relaxed),
+        }
+    }
+
+    /// The resident planner state, with the capacity that bounds it. Every field
+    /// is bounded by construction; the aging court asserts it (Phase 43).
+    pub fn resident(&self) -> PlannerResidency {
+        let ledger = self.ledger.read();
+        PlannerResidency {
+            body_plans: self.cache.lock().len(),
+            object_models: self.model.read().objects.len(),
+            overlay_verified: ledger.overlay_verified.len(),
+            overlay_failed: ledger.overlay_failed.len(),
+            body_capacity: self.config.cache_capacity,
+            object_capacity: self.config.cache_capacity.max(1),
+            identity_capacity: self.config.identity_capacity,
+        }
+    }
+
+    /// Feed one completed read observation for `identity` into the planner's
+    /// bounded per-identity policy state. This is the **learner seam**: the
+    /// steady-state read path never mutates shared policy, so observations of
+    /// completed reads can be folded in through here — from any thread and,
+    /// because it is off the read path, without blocking readers on the foreground
+    /// choice. Every table it touches is bounded, so driving an unbounded number of
+    /// distinct identities through it cannot grow planner state (the aging court in
+    /// `tests/read_path_planner.rs` does exactly that).
+    pub fn record_observation(
+        &self,
+        identity: ManifestIdentity,
+        class: SizeClass,
+        kind: ReadPathKind,
+        ns: f64,
+    ) {
+        {
+            let mut model = self.model.write();
+            self.stats.model_write_locks.fetch_add(1, Ordering::Relaxed);
+            model.record(identity, kind, class, ns);
+        }
+        self.ledger.write().overlay_verified.insert(identity);
+    }
+
+    /// Forget the measured model, published plans (via the body cache), failure
+    /// state, and cumulative counters (used by evidence runs that must observe a
+    /// cold planner).
     pub fn reset(&self) {
         self.model.write().clear();
-        self.calibrated.write().clear();
-        self.failed.write().clear();
+        self.ledger.write().clear();
         self.chosen.write().clear();
         self.coverage.lock().clear();
         self.region_cache_clear();
-        self.overlay_verified.write().clear();
+        self.stats.plan_builds.store(0, Ordering::Relaxed);
+        self.stats.calibrations.store(0, Ordering::Relaxed);
+        self.stats.selection_sorts.store(0, Ordering::Relaxed);
+        self.stats.model_write_locks.store(0, Ordering::Relaxed);
+        self.stats.hot_reads.store(0, Ordering::Relaxed);
         let mut cache = self.cache.lock();
         cache.map.clear();
         cache.order.clear();
@@ -1323,151 +1837,224 @@ impl ReadPlanner {
         }
 
         let identity = ManifestIdentity::of(&manifest);
-        let generation = loaded.generation;
         let class = classify_length(eff_len);
 
-        // Drop candidates already proven unusable for this exact identity, and any
-        // `D`-step transition bloom whose state at this offset cannot be obtained
-        // within the replay bound. Keying by the *full* identity means a candidate
-        // barred for one object never suppresses it for another (Phase 18).
-        let cands: Vec<Candidate> = {
-            let failed = self.failed.read();
-            candidates(&loaded, q, eff_len)
-                .into_iter()
-                .filter(|c| !failed.contains(&(identity, c.kind)))
-                .filter(|c| match c.structure {
-                    Structure::Global { .. } | Structure::Regional { .. } => {
-                        has_bounded_state_source(&loaded, q.offset)
-                    }
-                    _ => true,
-                })
-                .collect()
-        };
-        if cands.is_empty() {
-            return Ok(PlannedRead::fallback_static(
-                auth.take(q.offset, q.length)?,
-                Some("no compatible certified structure"),
-            ));
+        // --- steady state: a bounded lookup + execute --------------------------
+        // Once every candidate that can serve this request has been measured for
+        // the exact identity and size class, the published ranking is the whole
+        // decision: classify the length, walk the ranking, execute the first
+        // candidate that covers the request. No candidate vector is built, nothing
+        // is sorted, and the cost model is not consulted (so no model lock is
+        // taken). The ranking holds only measured candidates, so an unmeasured path
+        // can never be selected.
+        let mut produced: HashMap<ReadPathKind, (Vec<u8>, bool)> = HashMap::new();
+        if plan_is_complete(&loaded, q, eff_len, class) {
+            if let Some(ranked) = loaded.plan.ranked(class) {
+                self.stats.hot_reads.fetch_add(1, Ordering::Relaxed);
+                return self.serve_ranked(
+                    &ranked,
+                    &loaded,
+                    q,
+                    eff_len,
+                    &manifest,
+                    &mut auth,
+                    &mut produced,
+                );
+            }
         }
 
-        // --- bounded calibration (Phase 18) -----------------------------------
-        // Under a single acquisition of the calibration set, split the candidates
-        // into those already timed for this identity+class and those still pending.
-        // The key is the object's own identity, so calibration never leaks between
-        // objects.
-        let (mut measured, mut pending): (Vec<Candidate>, Vec<Candidate>) = {
-            let cal = self.calibrated.read();
-            cands
-                .into_iter()
-                .partition(|c| cal.contains(&(identity, class, c.kind)))
-        };
+        // --- first (or still-incomplete) read for this identity+class ----------
+        // Calibrate the not-yet-timed candidates under the bounded budget, then
+        // serve from the published ranking.
+        self.calibrate_class(
+            identity,
+            &loaded,
+            q,
+            eff_len,
+            class,
+            &mut auth,
+            &mut produced,
+        );
+        if let Some(ranked) = loaded.plan.ranked(class) {
+            return self.serve_ranked(
+                &ranked,
+                &loaded,
+                q,
+                eff_len,
+                &manifest,
+                &mut auth,
+                &mut produced,
+            );
+        }
+        Ok(PlannedRead::fallback_static(
+            auth.take(q.offset, q.length)?,
+            Some("no calibrated candidate for this object yet"),
+        ))
+    }
 
-        // Time each pending candidate, authoritative first (it is always correct
-        // and cheap), so a baseline always exists; the loop stops as soon as the
-        // configured budget is exhausted, so a foreground read is never stalled to
-        // calibrate. Successful bytes are retained so the served candidate is not
-        // executed twice.
-        let mut measured_bytes: HashMap<ReadPathKind, (Vec<u8>, bool)> = HashMap::new();
-        if !pending.is_empty() {
-            let budget = self.config.calibration_budget_ns;
+    /// Calibrate `class` for `identity` under the bounded budget, record the
+    /// timings into the object-local model, and publish the class's ranking.
+    ///
+    /// Only candidates that can serve this request and have not already been
+    /// measured are timed, authoritative first, and the pass stops as soon as the
+    /// budget is exhausted — so a foreground read is never stalled to calibrate
+    /// (Phase 18). Successful bytes are retained in `produced` so the candidate the
+    /// ranking then serves is not executed a second time. This is the **only**
+    /// point on the read path that writes the measured model or sorts a ranking;
+    /// the steady state never reaches it.
+    #[allow(clippy::too_many_arguments)]
+    fn calibrate_class<F>(
+        &self,
+        identity: ManifestIdentity,
+        lb: &LoadedBody,
+        q: &ReadQuery,
+        eff_len: u64,
+        class: SizeClass,
+        auth: &mut Authoritative<'_, F>,
+        produced: &mut HashMap<ReadPathKind, (Vec<u8>, bool)>,
+    ) where
+        F: FnMut(u64, u64) -> Result<Vec<u8>>,
+    {
+        let budget = self.config.calibration_budget_ns;
+        if budget > 0 {
+            let mask = lb.plan.measured_mask(class);
+            let mut pending: Vec<Candidate> = lb
+                .plan
+                .inventory
+                .iter()
+                .copied()
+                .filter(|c| !lb.plan.is_failed(c.kind))
+                .filter(|c| step_available(lb, q, eff_len, c.structure))
+                .filter(|c| mask & c.kind.bit() == 0)
+                .collect();
+            if mask & ReadPathKind::LogicalExtent.bit() == 0 {
+                pending.push(Candidate {
+                    kind: ReadPathKind::LogicalExtent,
+                    structure: Structure::Extent,
+                    certified: true,
+                });
+            }
+            // The authoritative read is timed first, so a correct baseline always
+            // exists even if the budget then stops the pass.
             pending.sort_by_key(|c| u8::from(c.kind != ReadPathKind::LogicalExtent));
             let started = Instant::now();
-            let mut timed: Vec<(Candidate, f64)> = Vec::new();
-            let mut barred: Vec<ReadPathKind> = Vec::new();
+            let mut timed: Vec<(Candidate, f64, Vec<u8>)> = Vec::new();
             for c in &pending {
                 if started.elapsed().as_nanos() as u64 > budget {
                     break;
                 }
                 let t = Instant::now();
-                match self.execute(c, &loaded, q, eff_len, &mut auth) {
-                    Ok(bytes) => {
-                        timed.push((*c, t.elapsed().as_nanos() as f64));
-                        measured_bytes.insert(c.kind, (bytes, c.certified));
-                        measured.push(*c);
-                    }
+                match self.execute(c, lb, q, eff_len, auth) {
+                    Ok(bytes) => timed.push((*c, t.elapsed().as_nanos() as f64, bytes)),
                     Err(_) => {
                         // A structure that cannot serve this object is barred for
                         // this identity; a read never retries it blindly.
-                        barred.push(c.kind);
+                        lb.plan.mark_failed(c.kind);
                     }
                 }
             }
-            // Apply the outcomes with one acquisition of each set rather than a
-            // lock per candidate.
             if !timed.is_empty() {
-                let mut model = self.model.write();
-                for (c, ns) in &timed {
-                    model.record(identity, c.kind, class, *ns);
+                {
+                    // One acquisition of the model lock for the whole pass.
+                    let mut model = self.model.write();
+                    self.stats.model_write_locks.fetch_add(1, Ordering::Relaxed);
+                    for (c, ns, _) in &timed {
+                        model.record(identity, c.kind, class, *ns);
+                    }
                 }
-                drop(model);
-                let mut cal = self.calibrated.write();
-                for (c, _) in &timed {
-                    cal.insert((identity, class, c.kind));
-                }
-            }
-            if !barred.is_empty() {
-                let mut failed = self.failed.write();
-                for kind in &barred {
-                    failed.insert((identity, *kind));
+                self.stats.calibrations.fetch_add(1, Ordering::Relaxed);
+                for (c, _, bytes) in timed {
+                    lb.plan.mark_measured(class, c.kind);
+                    produced.insert(c.kind, (bytes, c.certified));
                 }
             }
         }
 
-        // --- select the cheapest calibrated candidate under the measured model --
-        // Only candidates actually timed for this identity+class are eligible, so
-        // an unmeasured (optimistic-prior) path can never be chosen blindly. When
-        // none has been calibrated (e.g. the budget was exhausted), the
-        // authoritative path is served.
-        if measured.is_empty() {
-            return Ok(PlannedRead::fallback_static(
-                auth.take(q.offset, q.length)?,
-                Some("no calibrated candidate for this object yet"),
-            ));
+        // Publish the ranking from every kind measured for this class. An empty
+        // measured set leaves the ranking unpublished, so the caller falls back to
+        // the authoritative path (an unmeasured candidate is never selected).
+        let mask = lb.plan.measured_mask(class);
+        if mask != 0 {
+            let ranked = self.rank_measured(identity, lb, class, mask);
+            self.stats.selection_sorts.fetch_add(1, Ordering::Relaxed);
+            lb.plan.publish_ranking(class, Arc::new(ranked));
         }
-        {
-            // Selection predicts with the object's own measurements when it has
-            // them, so two objects with different access characteristics cannot
-            // bias each other's choice.
-            let mut model = self.model.write();
-            measured.sort_by(|a, b| {
-                model
-                    .predict(&identity, a.kind, class)
-                    .partial_cmp(&model.predict(&identity, b.kind, class))
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| b.certified.cmp(&a.certified))
-                    .then_with(|| a.kind.priority().cmp(&b.kind.priority()))
+    }
+
+    /// Order every candidate measured for `class` cheapest-first, from a single
+    /// snapshot of the object-local model. The snapshot is taken under a shared
+    /// lock and dropped before sorting, so no lock is held inside the comparator
+    /// and `ObjectCosts::predict` is a pure lookup (Phase 43).
+    fn rank_measured(
+        &self,
+        identity: ManifestIdentity,
+        lb: &LoadedBody,
+        class: SizeClass,
+        mask: u8,
+    ) -> Vec<Candidate> {
+        let mut steps: Vec<Candidate> = lb
+            .plan
+            .inventory
+            .iter()
+            .copied()
+            .filter(|c| mask & c.kind.bit() != 0)
+            .collect();
+        if mask & ReadPathKind::LogicalExtent.bit() != 0 {
+            steps.push(Candidate {
+                kind: ReadPathKind::LogicalExtent,
+                structure: Structure::Extent,
+                certified: true,
             });
         }
+        let costs: Vec<f64> = {
+            let model = self.model.read();
+            steps
+                .iter()
+                .map(|c| model.predict(&identity, c.kind, class))
+                .collect()
+        };
+        let mut order: Vec<usize> = (0..steps.len()).collect();
+        order.sort_by(|&i, &j| {
+            costs[i]
+                .partial_cmp(&costs[j])
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| steps[j].certified.cmp(&steps[i].certified))
+                .then_with(|| steps[i].kind.priority().cmp(&steps[j].kind.priority()))
+        });
+        order.into_iter().map(|i| steps[i]).collect()
+    }
+
+    /// Execute the ranked candidates for a request, cheapest first, skipping any
+    /// the object has barred or that cannot cover the request, and reusing the
+    /// bytes a calibration pass already produced. Any miss falls through to the
+    /// authoritative path, so a manifested structure can never change the bytes.
+    #[allow(clippy::too_many_arguments)]
+    fn serve_ranked<F>(
+        &self,
+        ranked: &[Candidate],
+        lb: &LoadedBody,
+        q: &ReadQuery,
+        eff_len: u64,
+        manifest: &GenerationManifest,
+        auth: &mut Authoritative<'_, F>,
+        produced: &mut HashMap<ReadPathKind, (Vec<u8>, bool)>,
+    ) -> Result<PlannedRead>
+    where
+        F: FnMut(u64, u64) -> Result<Vec<u8>>,
+    {
         let mut last_err: Option<OrfsError> = None;
-        for c in &measured {
-            // Reuse bytes already produced for this exact candidate during
-            // calibration, so the authoritative read is executed once.
-            let produced = match measured_bytes.remove(&c.kind) {
-                // Bytes already produced (and accurately timed) by the calibration
-                // pass: reuse them WITHOUT re-recording. Recording again here would
-                // feed a near-zero "map lookup" duration into the cost model and
-                // corrupt future path selection.
+        for c in ranked {
+            if lb.plan.is_failed(c.kind) || !step_available(lb, q, eff_len, c.structure) {
+                continue;
+            }
+            let result = match produced.remove(&c.kind) {
                 Some((bytes, certified)) => {
                     debug_assert_eq!(certified, c.certified);
                     Ok(bytes)
                 }
-                // Not produced this call: execute AND time the execution. The timer
-                // must wrap `execute`, never follow it — timing after execution
-                // measured almost no work and poisoned the EWMA cost model.
-                None => {
-                    let t = Instant::now();
-                    let r = self.execute(c, &loaded, q, eff_len, &mut auth);
-                    let nanos = t.elapsed().as_nanos();
-                    if r.is_ok() {
-                        self.model
-                            .write()
-                            .record(identity, c.kind, class, nanos as f64);
-                        self.calibrated.write().insert((identity, class, c.kind));
-                    }
-                    r
-                }
+                None => self.execute(c, lb, q, eff_len, auth),
             };
-            match produced {
+            match result {
                 Ok(bytes) => {
                     // Only allocate a reason when it is actually propagated: a
                     // manifested candidate carries none, and the authoritative
@@ -1480,14 +2067,14 @@ impl ReadPlanner {
                     return Ok(self.serve(
                         bytes,
                         c.kind,
-                        generation,
-                        &manifest,
+                        lb.generation,
+                        manifest,
                         c.certified,
                         reason,
                     ));
                 }
                 Err(e) => {
-                    self.failed.write().insert((identity, c.kind));
+                    lb.plan.mark_failed(c.kind);
                     last_err = Some(e);
                 }
             }
@@ -1632,11 +2219,7 @@ impl ReadPlanner {
         F: FnMut(u64, u64) -> Result<Vec<u8>>,
     {
         let identity = ManifestIdentity::of(manifest);
-        if self
-            .failed
-            .read()
-            .contains(&(identity, ReadPathKind::Overlay))
-        {
+        if self.ledger.read().overlay_failed.contains(&identity) {
             return Ok(PlannedRead::fallback_static(
                 auth.take(q.offset, q.length)?,
                 Some("incremental overlay previously rejected for this version"),
@@ -1657,19 +2240,17 @@ impl ReadPlanner {
                 Some("incremental overlay returned the wrong length"),
             ));
         }
-        let already = self.overlay_verified.read().contains(&identity);
+        let already = self.ledger.read().overlay_verified.contains(&identity);
         if !already {
             let authoritative = auth.take(q.offset, q.length)?;
             if authoritative != bytes {
-                self.failed
-                    .write()
-                    .insert((identity, ReadPathKind::Overlay));
+                self.ledger.write().overlay_failed.insert(identity);
                 return Ok(PlannedRead::fallback_static(
                     authoritative,
                     Some("incremental overlay disagreed with the authoritative read"),
                 ));
             }
-            self.overlay_verified.write().insert(identity);
+            self.ledger.write().overlay_verified.insert(identity);
         }
         *self
             .chosen
@@ -1737,10 +2318,12 @@ impl ReadPlanner {
 
     /// The (cached) complete region table for a region-backed generation.
     fn coverage_for(&self, manifest: &GenerationManifest) -> Result<Arc<Vec<ManifestRegion>>> {
-        if let Some(e) = self.coverage.lock().get(&manifest.inode) {
-            if e.generation == manifest.generation && e.digest == manifest.manifest_blake3 {
-                return Ok(e.table.clone());
-            }
+        if let Some(table) = self.coverage.lock().get(
+            manifest.inode,
+            manifest.generation,
+            &manifest.manifest_blake3,
+        ) {
+            return Ok(table);
         }
         let table = Arc::new(resolve_coverage(self.state.store(), manifest)?);
         self.coverage.lock().insert(
@@ -1879,7 +2462,7 @@ impl ReadPlanner {
             ));
         }
         // Parse each manifested structure exactly once.
-        let path_blooms = body
+        let path_blooms: Vec<Option<PathBloom>> = body
             .blooms
             .iter()
             .map(|s| {
@@ -1890,7 +2473,7 @@ impl ReadPlanner {
                 }
             })
             .collect();
-        let global_blooms = body
+        let global_blooms: Vec<Option<GlobalBloom>> = body
             .blooms
             .iter()
             .map(|s| {
@@ -1901,7 +2484,7 @@ impl ReadPlanner {
                 }
             })
             .collect();
-        let region_tables = body
+        let region_tables: Vec<Option<RegionTable>> = body
             .blooms
             .iter()
             .map(|s| {
@@ -1912,6 +2495,15 @@ impl ReadPlanner {
                 }
             })
             .collect();
+        // Publish the precompiled, request-independent read plan with the body.
+        let plan = ObjectPlan::new(build_inventory(
+            &body,
+            &report,
+            &path_blooms,
+            &global_blooms,
+            &region_tables,
+        ));
+        self.stats.plan_builds.fetch_add(1, Ordering::Relaxed);
         Ok(LoadedBody {
             body,
             report,
@@ -1923,6 +2515,7 @@ impl ReadPlanner {
             inode_version: manifest.inode_version,
             root: manifest.root,
             logical_len: manifest.logical_len(),
+            plan,
         })
     }
 }
@@ -2041,35 +2634,60 @@ mod tests {
         );
     }
 
-    /// Phase 34 — the per-object table is bounded and evicts least-recently-used
-    /// identities, so a planner over many objects cannot grow without bound.
+    /// The per-object table is bounded and retires the least-recently-*inserted*
+    /// identity once full (age eviction), so a planner over many objects cannot
+    /// grow without bound. `predict` is a pure lookup that never reorders.
     #[test]
-    fn object_costs_are_bounded_and_evict_least_recently_used() {
+    fn object_costs_are_bounded_and_retire_in_insertion_order() {
         let mut model = SelectionModel::new(2);
         let a = identity(1, 1, 1, 1, 1);
         let b = identity(1, 2, 1, 1, 1);
         let c = identity(1, 3, 1, 1, 1);
         model.record(a, ReadPathKind::History, SizeClass::Small, 1.0);
         model.record(b, ReadPathKind::History, SizeClass::Small, 2.0);
-        // Touch `a` so `b` becomes the least-recently-used entry.
-        assert_eq!(
-            model.predict(&a, ReadPathKind::History, SizeClass::Small),
-            1.0
-        );
+        assert_eq!(model.objects.len(), 2);
+        // A third distinct identity retires the oldest (`a`); the table stays at
+        // its capacity now and forever.
         model.record(c, ReadPathKind::History, SizeClass::Small, 3.0);
-        // `b` was evicted: predicting it now uses the shared aggregate, not its
-        // own 2.0 ns measurement.
+        assert_eq!(model.objects.len(), 2);
         assert_eq!(
             model.predict(&c, ReadPathKind::History, SizeClass::Small),
             3.0
         );
-        let aggregate = 0.3 * 3.0 + 0.7 * (0.3 * 2.0 + 0.7 * 1.0);
-        let evicted = model.predict(&b, ReadPathKind::History, SizeClass::Small);
-        assert!(
-            (evicted - aggregate).abs() < 1e-9,
-            "the evicted object must fall back to the aggregate: {evicted} vs {aggregate}"
+        assert_eq!(
+            model.predict(&b, ReadPathKind::History, SizeClass::Small),
+            2.0
         );
-        assert_ne!(evicted, 2.0, "the evicted object kept stale private state");
+        // `a` was retired: predicting it now uses the shared aggregate, not its
+        // own 1.0 ns measurement.
+        let aggregate = 0.3 * 3.0 + 0.7 * (0.3 * 2.0 + 0.7 * 1.0);
+        let retired = model.predict(&a, ReadPathKind::History, SizeClass::Small);
+        assert!(
+            (retired - aggregate).abs() < 1e-9,
+            "the retired object must fall back to the aggregate: {retired} vs {aggregate}"
+        );
+        assert_ne!(retired, 1.0, "the retired object kept stale private state");
+    }
+
+    /// The bounded identity ledger retires least-recently-inserted identities once
+    /// full, so driving many distinct identities through it stays bounded, and a
+    /// retirement only turns a *verified* identity back into an *unverified* one.
+    #[test]
+    fn bounded_identity_set_retires_in_insertion_order() {
+        let a = identity(1, 1, 1, 1, 1);
+        let b = identity(1, 2, 1, 1, 1);
+        let c = identity(1, 3, 1, 1, 1);
+        let mut set = BoundedIdentitySet::new(2);
+        set.insert(a);
+        set.insert(b);
+        set.insert(c);
+        assert_eq!(set.len(), 2, "the ledger must stay at its capacity");
+        assert!(!set.contains(&a), "the oldest identity must be retired");
+        assert!(set.contains(&b) && set.contains(&c));
+        // Re-inserting a resident identity is a no-op (no reordering, O(1)).
+        set.insert(b);
+        assert_eq!(set.len(), 2);
+        assert!(set.contains(&b));
     }
 
     fn identity(
@@ -2088,15 +2706,14 @@ mod tests {
         }
     }
 
-    /// Phase 18 — the read-planner isolation defect. Calibration and failure
-    /// state must be keyed by the **full** manifestation identity, never by a
-    /// generation number alone: a rejected/failed candidate for one object must
-    /// not suppress the same candidate for an unrelated object, and calibration
-    /// must not leak across objects. This test uses two identities that share a
-    /// generation number and differ only in inode/root/version — exactly the
-    /// collision an object-keyed-by-generation design would conflate.
+    /// Phase 18 — planner bookkeeping must be keyed by the **full** manifestation
+    /// identity, never by a generation number alone: a rejected/failed candidate
+    /// for one object must not suppress the same candidate for an unrelated object,
+    /// and calibration must not leak across objects. This test uses two identities
+    /// that share a generation number and differ only in inode/root/version —
+    /// exactly the collision an object-keyed-by-generation design would conflate.
     #[test]
-    fn calibration_and_failure_state_are_keyed_by_full_identity() {
+    fn identity_keyed_bookkeeping_is_isolated_per_full_identity() {
         let a = identity(1, 100, 3, 500, 7);
         let b = identity(1, 200, 3, 500, 7); // same generation, different inode
         let c = identity(1, 100, 4, 500, 7); // same generation, different version
@@ -2108,24 +2725,15 @@ mod tests {
         assert_ne!(a, d);
         assert_ne!(a, e);
 
-        let mut failed: HashSet<(ManifestIdentity, ReadPathKind)> = HashSet::new();
-        failed.insert((a, ReadPathKind::PathBloom));
-        assert!(failed.contains(&(a, ReadPathKind::PathBloom)));
+        let mut set = BoundedIdentitySet::new(8);
+        set.insert(a);
+        assert!(set.contains(&a));
         for other in [b, c, d, e] {
             assert!(
-                !failed.contains(&(other, ReadPathKind::PathBloom)),
-                "a failure for one object leaked onto {other:?}"
+                !set.contains(&other),
+                "an entry for one object leaked onto {other:?}"
             );
         }
-
-        let mut calibrated: HashSet<(ManifestIdentity, SizeClass, ReadPathKind)> = HashSet::new();
-        calibrated.insert((a, SizeClass::Small, ReadPathKind::History));
-        assert!(calibrated.contains(&(a, SizeClass::Small, ReadPathKind::History)));
-        for other in [b, c, d, e] {
-            assert!(!calibrated.contains(&(other, SizeClass::Small, ReadPathKind::History)));
-        }
-        // A different size class on the same object is also distinct.
-        assert!(!calibrated.contains(&(a, SizeClass::Large, ReadPathKind::History)));
     }
 
     /// Phase 18 — the identity really is derived from the manifest's own fields,

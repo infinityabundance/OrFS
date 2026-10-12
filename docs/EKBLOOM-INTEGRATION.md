@@ -148,27 +148,56 @@ Selection is **mechanical and measured**, never "pick the largest structure":
 * Calibration and failure state are keyed by the **full** manifestation identity
   (volume, inode, inode version, root, generation), never by generation alone, so
   calibration and failure flags cannot leak between objects.
-* On the **first** request for a given `(identity, size class)` it **calibrates**:
-  each applicable candidate is executed once and *timed* (the timer wraps the
-  execution), and the fastest is used. Only candidates actually timed are ever
-  selected: until a candidate has been measured for the exact object, a read is
-  served by the authoritative path — an unmeasured candidate is never chosen
-  blindly. Calibration runs under a budget checked before each candidate, so it
-  bounds the number of candidates attempted but is not a wall-clock cap on one
-  slow candidate (see `docs/LIMITATIONS.md` §13).
-* On subsequent requests it picks the cheapest *measured* applicable candidate
-  under the object-local model (ties prefer certified paths, then a fixed
-  priority order).
-* A candidate that fails for a generation is barred for that generation, so a
-  read never retries a structure that cannot serve the object.
+* On the **first** request for a given `(identity, size class)` it **calibrates**: every
+  applicable candidate is executed once and *timed* (the timer wraps the
+  execution), the timings are recorded into the object-local model, and the
+  measured candidates are sorted into a **per-class ranking**. Only candidates
+  actually timed ever enter the ranking: until a candidate has been measured for
+  the exact object, a read is served by the authoritative path — an unmeasured
+  candidate is never chosen blindly. Calibration runs under a budget checked before
+  each candidate, so it bounds the number of candidates attempted but is not a
+  wall-clock cap on one slow candidate (see `docs/LIMITATIONS.md` §13). If the
+  budget stops the pass partway, the next read of that class calibrates the rest
+  and republishes the ranking.
+* The ranking is published in the **precompiled read plan** attached to the object's
+  cached body (see §6.1). A steady-state certified read is then a bounded lookup +
+  execute: classify the length, look up the class ranking, execute the first
+  candidate it names that covers the request. No candidate vector is built,
+  nothing is sorted, and no cost-model lock is taken on that path.
+* A candidate that fails for a generation is barred for that generation (a single
+  per-object atomic bitmask), so a read never retries a structure that cannot
+  serve the object.
 * A structure cannot slow a read call: if the authoritative extent read measures
   faster (as it does for large reads in an unoptimized build), it is chosen.
 * The authoritative fallback is **allocation-light**: one request's authoritative
   read is wrapped so it executes **at most once** — when calibration has already
   produced the authoritative bytes, the fallback serves those rather than
-  re-reading — `'static` fallback reasons are borrowed rather than allocated, and
-  the calibration and selection passes acquire each shared lock a bounded number
-  of times rather than once per candidate.
+  re-reading — and `'static` fallback reasons are borrowed rather than allocated.
+
+### 6.1 The precompiled read plan and bounded planner state (Phase 43)
+
+When a generation's body is loaded — its identity, version, and manifestation set
+are then determined — the planner publishes an immutable `ObjectPlan` alongside it
+inside the cached `LoadedBody`: the **request-independent structure inventory**
+(each certified structure with its recomputed verdict, computed once) and, per size
+class, the **published ranking** of the candidates measured for that class. The
+steady-state read consults only that plan, so a request whose useful work is a few
+hundred nanoseconds pays no candidate-construction, `HashSet`, sort, or model-lock
+cost. Per-object failure/measurement state is a single atomic byte, not a hash set.
+
+Learning is off the steady state: the cost model is written and a ranking sorted
+**only** on a calibration pass, and completed-read observations can be folded in
+through the explicit `ReadPlanner::record_observation` learner seam (out of band).
+
+Every identity-keyed table is explicitly **bounded and retired in insertion order**
+(age eviction): per-object plans live in the body cache (bounded by
+`cache_capacity`); the per-object selection models are bounded by `cache_capacity`;
+and the region-overlay verification/failure ledger and the resolved-region-table
+cache are bounded by `identity_capacity`. Retiring an entry can only turn a
+*measured* candidate back into an *unmeasured* one, which already falls back to the
+authoritative path — it can never cause a wrong selection. `ReadPlanner::resident`
+reports the resident entries so the bound is observable
+(`tests/read_path_planner.rs`).
 
 Measured per-path latencies and the resulting selection are recorded in
 `evidence/performance/ekbloom-read-paths.json`.

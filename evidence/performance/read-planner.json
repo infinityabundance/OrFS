@@ -1,0 +1,103 @@
+{
+  "generated_by": "benches/read_path.rs",
+  "note": "Paired read-planner benchmark: the same bench binary run once on the pre-Phase-43 tree (label 'before') and once on the Phase-43 tree (label 'after'), appended by label. Absolute nanoseconds are single-run, single-host and load-sensitive; the comparison between labels, measured back to back, is the point.",
+  "runs": {
+    "after": {
+      "concurrent": {
+        "allocations_per_request": 8.00009536743164,
+        "label": "after",
+        "mean_ns": 6030.987342834473,
+        "p50_ns": 2645,
+        "p99_ns": 32060,
+        "requests": 2097152,
+        "requests_per_second": 2622413.6825322215,
+        "threads": 16,
+        "wall_seconds": 0.799702966
+      },
+      "note": "allocations_per_request counts every allocation on the process allocator, including the returned byte buffer and the authoritative slice; the planning-only overhead is the excess over the after run.",
+      "repeats_per_thread": 32,
+      "single_threaded": {
+        "allocations_per_request": 8.000007629394531,
+        "label": "after",
+        "mean_ns": 338.13331604003906,
+        "p50_ns": 260,
+        "p99_ns": 1402,
+        "requests": 131072,
+        "requests_per_second": 2636689.610766622,
+        "threads": 1,
+        "wall_seconds": 0.049710819
+      }
+    },
+    "before": {
+      "concurrent": {
+        "allocations_per_request": 11.265339374542236,
+        "label": "before",
+        "mean_ns": 21071.017993450165,
+        "p50_ns": 16731,
+        "p99_ns": 80520,
+        "requests": 2097152,
+        "requests_per_second": 756284.3812023391,
+        "threads": 16,
+        "wall_seconds": 2.772967487
+      },
+      "note": "allocations_per_request counts every allocation on the process allocator, including the returned byte buffer and the authoritative slice; the planning-only overhead is the excess over the after run.",
+      "repeats_per_thread": 32,
+      "single_threaded": {
+        "allocations_per_request": 11.198753356933594,
+        "label": "before",
+        "mean_ns": 1001.1955795288086,
+        "p50_ns": 741,
+        "p99_ns": 1833,
+        "requests": 131072,
+        "requests_per_second": 972680.8636921037,
+        "threads": 1,
+        "wall_seconds": 0.134753345
+      }
+    }
+  },
+  "schema": "orfs.readpath-planner.v1",
+  "workload": {
+    "cold_objects": [
+      3,
+      4,
+      5
+    ],
+    "hot_objects": [
+      1,
+      2
+    ],
+    "objects": [
+      {
+        "bytes": 4096,
+        "inode": 1,
+        "profile": "path"
+      },
+      {
+        "bytes": 8192,
+        "inode": 2,
+        "profile": "max-speed"
+      },
+      {
+        "bytes": 65536,
+        "inode": 3,
+        "profile": "sparse"
+      },
+      {
+        "bytes": 262144,
+        "inode": 4,
+        "profile": "full"
+      },
+      {
+        "bytes": 131072,
+        "inode": 5,
+        "profile": "path"
+      }
+    ],
+    "request_sizes_bytes": [
+      1,
+      512,
+      4096,
+      65536
+    ]
+  }
+}

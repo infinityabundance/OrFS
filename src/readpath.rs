@@ -1190,7 +1190,15 @@ impl ReadPlanner {
                 .collect()
         };
         let mut order: Vec<Candidate> = if measured.is_empty() {
-            cands.clone()
+            // No candidate for this object has been calibrated within the budget:
+            // serve the authoritative path. Uncalibrated candidates are never
+            // tried blindly — the documented selection guarantee is that only a
+            // previously *measured* candidate may be selected. They are calibrated
+            // by the bounded pass above on this or a later read.
+            return Ok(PlannedRead::fallback(
+                auth(q.offset, q.length)?,
+                Some("no calibrated candidate for this object yet".into()),
+            ));
         } else {
             measured
         };
@@ -1210,17 +1218,30 @@ impl ReadPlanner {
             // Reuse bytes already produced for this exact candidate during
             // calibration, so the authoritative fallback is executed once.
             let produced = match measured_bytes.remove(&c.kind) {
+                // Bytes already produced (and accurately timed) by the calibration
+                // pass: reuse them WITHOUT re-recording. Recording again here would
+                // feed a near-zero "map lookup" duration into the cost model and
+                // corrupt future path selection.
                 Some((bytes, certified)) => {
                     debug_assert_eq!(certified, c.certified);
                     Ok(bytes)
                 }
-                None => self.execute(c, &loaded, q, eff_len, &mut auth),
+                // Not produced this call: execute AND time the execution. The timer
+                // must wrap `execute`, never follow it — timing after execution
+                // measured almost no work and poisoned the EWMA cost model.
+                None => {
+                    let t = Instant::now();
+                    let r = self.execute(c, &loaded, q, eff_len, &mut auth);
+                    let nanos = t.elapsed().as_nanos();
+                    if r.is_ok() {
+                        self.model.write().record(c.kind, class, nanos as f64);
+                        self.calibrated.write().insert((identity, class, c.kind));
+                    }
+                    r
+                }
             };
-            let started = Instant::now();
             match produced {
                 Ok(bytes) => {
-                    let nanos = started.elapsed().as_nanos();
-                    self.model.write().record(c.kind, class, nanos as f64);
                     let reason = if c.kind == ReadPathKind::LogicalExtent {
                         last_err.clone()
                     } else {

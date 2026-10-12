@@ -130,9 +130,17 @@ Selection is **mechanical and measured**, never "pick the largest structure":
 
 * The planner keeps an EWMA latency model per `(path, size class)`; size classes
   are `empty`, `byte` (1), `small` (≤4 KiB), `medium` (≤64 KiB), `large` (>64 KiB).
-* On the **first** request for a given `(generation, size class)` it
-  **calibrates**: every applicable candidate is executed once and timed, and the
-  fastest is used. This grounds the model in real measurements for every path.
+  The model is keyed by the **full** manifestation identity
+  (volume, inode, inode version, root, generation), never by generation alone, so
+  measurements and failure flags cannot leak between objects.
+* On the **first** request for a given `(identity, size class)` it **calibrates**:
+  each applicable candidate is executed once and *timed* (the timer wraps the
+  execution), and the fastest is used. Only candidates actually timed are ever
+  selected: until a candidate has been measured for the exact object, a read is
+  served by the authoritative path — an unmeasured candidate is never chosen
+  blindly. Calibration runs under a budget checked before each candidate, so it
+  bounds the number of candidates attempted but is not a wall-clock cap on one
+  slow candidate (see `docs/LIMITATIONS.md` §13).
 * On subsequent requests it picks the cheapest applicable candidate under the
   measured model (ties prefer certified paths, then a fixed priority order).
 * A candidate that fails for a generation is barred for that generation, so a

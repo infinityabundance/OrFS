@@ -58,7 +58,7 @@ use crate::buffers::AlignedBuffer;
 use crate::error::OrfsError;
 use crate::fuse::{F2Servicing, MountOptions, OrfsFuse, StatfsMode, Transport};
 use crate::fuse_uring::{FuseUringNegotiation, FuseUringRing, QueuePlan, RingCompletion};
-use crate::inode::{has_permission, InodeStat, InodeType, Timespec};
+use crate::inode::{has_permission_grouped, InodeStat, InodeType, Timespec};
 use crate::namespace::{CoreRead, OrfsCore, RenameMode, SetAttr};
 
 // ---------------------------------------------------------------------------
@@ -257,7 +257,7 @@ fn attr_from_stat(st: &InodeStat) -> Attr {
         mtimensec: st.mtime.nanos.min(999_999_999),
         ctimensec: st.ctime.nanos.min(999_999_999),
         mode: kind_bits(st.kind) | (st.mode & 0o7777),
-        nlink: st.nlink.max(1),
+        nlink: st.nlink,
         uid: st.uid,
         gid: st.gid,
         rdev: 0,
@@ -551,19 +551,18 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         }
     }
 
-    fn check_dir_write(
-        &self,
-        core: &C,
-        uid: u32,
-        gid: u32,
-        parent: u64,
-        mask: u32,
-    ) -> Result<(), i32> {
+    fn check_dir_write(&self, core: &C, req: &Req<'_>, parent: u64, mask: u32) -> Result<(), i32> {
         let st = core.getattr(parent, core.root()).map_err(|e| errno(&e))?;
         if st.kind != InodeType::Directory {
             return Err(libc::ENOTDIR);
         }
-        if !has_permission(uid, gid, &st, mask) {
+        if !has_permission_grouped(
+            req.uid,
+            req.gid,
+            &crate::fuse::caller_groups(req.pid),
+            &st,
+            mask,
+        ) {
             return Err(libc::EACCES);
         }
         Ok(())
@@ -617,7 +616,13 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         if directory.kind != InodeType::Directory {
             return Reply::Err(libc::ENOTDIR);
         }
-        if !has_permission(req.uid, req.gid, &directory, 0o1) {
+        if !has_permission_grouped(
+            req.uid,
+            req.gid,
+            &crate::fuse::caller_groups(req.pid),
+            &directory,
+            0o1,
+        ) {
             return Reply::Err(libc::EACCES);
         }
         let resolved = if name == b"." {
@@ -681,7 +686,15 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         let touch_like =
             !meta_change && valid & FATTR_ATIME_NOW != 0 && valid & FATTR_MTIME_NOW != 0;
         if touch_like {
-            if !owner_or_root && !has_permission(req.uid, req.gid, &st, 0o2) {
+            if !owner_or_root
+                && !has_permission_grouped(
+                    req.uid,
+                    req.gid,
+                    &crate::fuse::caller_groups(req.pid),
+                    &st,
+                    0o2,
+                )
+            {
                 return Reply::Err(libc::EACCES);
             }
         } else if (meta_change || time_change) && !owner_or_root {
@@ -704,7 +717,16 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
                 .inner
                 .handle(fh)
                 .is_some_and(|h| !h.is_dir && (h.flags & libc::O_ACCMODE) != libc::O_RDONLY);
-        if valid & FATTR_SIZE != 0 && !writable_fh && !has_permission(req.uid, req.gid, &st, 0o2) {
+        if valid & FATTR_SIZE != 0
+            && !writable_fh
+            && !has_permission_grouped(
+                req.uid,
+                req.gid,
+                &crate::fuse::caller_groups(req.pid),
+                &st,
+                0o2,
+            )
+        {
             return Reply::Err(libc::EACCES);
         }
         let mut effective_mode = (valid & FATTR_MODE != 0).then_some(mode & 0o7777);
@@ -765,7 +787,7 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
             None => return Reply::Err(libc::EINVAL),
         };
         let mut core = self.fs.inner.core.lock();
-        if let Err(e) = self.check_dir_write(&*core, req.uid, req.gid, req.nodeid, 0o3) {
+        if let Err(e) = self.check_dir_write(&*core, req, req.nodeid, 0o3) {
             return Reply::Err(e);
         }
         let ino = match core.symlink(req.nodeid, name, target, req.uid, req.gid) {
@@ -793,7 +815,7 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         }
         let name = trim_name(req.payload);
         let mut core = self.fs.inner.core.lock();
-        if let Err(e) = self.check_dir_write(&*core, req.uid, req.gid, req.nodeid, 0o3) {
+        if let Err(e) = self.check_dir_write(&*core, req, req.nodeid, 0o3) {
             return Reply::Err(e);
         }
         let ino = match core.create(req.nodeid, name, mode & 0o7777, req.uid, req.gid) {
@@ -817,7 +839,7 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         let mode = get_u32(req.op, 0);
         let name = trim_name(req.payload);
         let mut core = self.fs.inner.core.lock();
-        if let Err(e) = self.check_dir_write(&*core, req.uid, req.gid, req.nodeid, 0o3) {
+        if let Err(e) = self.check_dir_write(&*core, req, req.nodeid, 0o3) {
             return Reply::Err(e);
         }
         let ino = match core.mkdir(req.nodeid, name, mode & 0o7777, req.uid, req.gid) {
@@ -840,7 +862,7 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         }
         let name = trim_name(req.payload);
         let mut core = self.fs.inner.core.lock();
-        if let Err(e) = self.check_dir_write(&*core, req.uid, req.gid, req.nodeid, 0o3) {
+        if let Err(e) = self.check_dir_write(&*core, req, req.nodeid, 0o3) {
             return Reply::Err(e);
         }
         match core.unlink(req.nodeid, name) {
@@ -859,7 +881,7 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         }
         let name = trim_name(req.payload);
         let mut core = self.fs.inner.core.lock();
-        if let Err(e) = self.check_dir_write(&*core, req.uid, req.gid, req.nodeid, 0o3) {
+        if let Err(e) = self.check_dir_write(&*core, req, req.nodeid, 0o3) {
             return Reply::Err(e);
         }
         match core.rmdir(req.nodeid, name) {
@@ -902,10 +924,10 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
             None => return Reply::Err(libc::EINVAL),
         };
         let mut core = self.fs.inner.core.lock();
-        if let Err(e) = self.check_dir_write(&*core, req.uid, req.gid, req.nodeid, 0o3) {
+        if let Err(e) = self.check_dir_write(&*core, req, req.nodeid, 0o3) {
             return Reply::Err(e);
         }
-        if let Err(e) = self.check_dir_write(&*core, req.uid, req.gid, newdir, 0o3) {
+        if let Err(e) = self.check_dir_write(&*core, req, newdir, 0o3) {
             return Reply::Err(e);
         }
         match core.rename(req.nodeid, oldname, newdir, newname, mode) {
@@ -925,7 +947,7 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         let oldino = get_u64(req.op, 0);
         let newname = trim_name(req.payload);
         let mut core = self.fs.inner.core.lock();
-        if let Err(e) = self.check_dir_write(&*core, req.uid, req.gid, req.nodeid, 0o3) {
+        if let Err(e) = self.check_dir_write(&*core, req, req.nodeid, 0o3) {
             return Reply::Err(e);
         }
         if let Err(e) = core.link(oldino, req.nodeid, newname) {
@@ -957,7 +979,13 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
             libc::O_RDWR => 0o6,
             _ => 0o4,
         };
-        if !has_permission(req.uid, req.gid, &st, mask) {
+        if !has_permission_grouped(
+            req.uid,
+            req.gid,
+            &crate::fuse::caller_groups(req.pid),
+            &st,
+            mask,
+        ) {
             return Reply::Err(libc::EACCES);
         }
         if self.read_only && mask & 0o2 != 0 {
@@ -1037,7 +1065,13 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
             Ok(st) => st,
             Err(e) => return Reply::Err(errno(&e)),
         };
-        if !has_permission(req.uid, req.gid, &st, 0o4) {
+        if !has_permission_grouped(
+            req.uid,
+            req.gid,
+            &crate::fuse::caller_groups(req.pid),
+            &st,
+            0o4,
+        ) {
             return Reply::Err(libc::EACCES);
         }
         match view.read_at(req.nodeid, root, offset, size) {
@@ -1075,7 +1109,13 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
             Ok(st) => st,
             Err(e) => return Reply::Err(errno(&e)),
         };
-        if !has_permission(req.uid, req.gid, &st, 0o2) {
+        if !has_permission_grouped(
+            req.uid,
+            req.gid,
+            &crate::fuse::caller_groups(req.pid),
+            &st,
+            0o2,
+        ) {
             return Reply::Err(libc::EACCES);
         }
         let effective = if handle.flags & libc::O_APPEND != 0 {
@@ -1139,7 +1179,13 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         if st.kind != InodeType::Directory {
             return Reply::Err(libc::ENOTDIR);
         }
-        if !has_permission(req.uid, req.gid, &st, 0o5) {
+        if !has_permission_grouped(
+            req.uid,
+            req.gid,
+            &crate::fuse::caller_groups(req.pid),
+            &st,
+            0o5,
+        ) {
             return Reply::Err(libc::EACCES);
         }
         let listing = match self.fs.inner.build_dir_listing(view.as_ref(), req.nodeid) {
@@ -1211,7 +1257,13 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
             Ok(st) => st,
             Err(e) => return Reply::Err(errno(&e)),
         };
-        if has_permission(req.uid, req.gid, &st, bits) {
+        if has_permission_grouped(
+            req.uid,
+            req.gid,
+            &crate::fuse::caller_groups(req.pid),
+            &st,
+            bits,
+        ) {
             Reply::Empty
         } else {
             Reply::Err(libc::EACCES)
@@ -1253,7 +1305,7 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         let mode = get_u32(req.op, 4);
         let name = trim_name(req.payload);
         let mut core = self.fs.inner.core.lock();
-        if let Err(e) = self.check_dir_write(&*core, req.uid, req.gid, req.nodeid, 0o3) {
+        if let Err(e) = self.check_dir_write(&*core, req, req.nodeid, 0o3) {
             return Reply::Err(e);
         }
         let ino = match core.create(req.nodeid, name, mode & 0o7777, req.uid, req.gid) {
@@ -3133,6 +3185,39 @@ mod tests {
         assert_eq!(FUSE_PASSTHROUGH, 1u64 << 37);
         assert_eq!(FUSE_PASSTHROUGH_FLAGS2, 1 << 5);
         assert_eq!(FOPEN_PASSTHROUGH, 1 << 7);
+    }
+
+    /// Cross-transport regression (Phase 33): `stat` must report the true link
+    /// count through **both** adapters, including `nlink == 0` for an inode that
+    /// has been unlinked but is still open (POSIX). The native adapter previously
+    /// clamped with `.max(1)` and so reported `1` where the classical adapter
+    /// correctly reported `0`.
+    #[test]
+    fn both_transports_report_the_true_link_count() {
+        for nlink in [0u32, 1, 2, 4096] {
+            let st = InodeStat {
+                id: 7,
+                kind: InodeType::File,
+                mode: 0o644,
+                uid: 0,
+                gid: 0,
+                nlink,
+                size: 0,
+                atime: Timespec::ZERO,
+                mtime: Timespec::ZERO,
+                ctime: Timespec::ZERO,
+                version: 1,
+                blocks: 0,
+            };
+            let native = attr_from_stat(&st).nlink;
+            let classical = crate::fuse::file_attr(&st).nlink;
+            assert_eq!(native, nlink, "native adapter must pass nlink through");
+            assert_eq!(
+                classical, nlink,
+                "classical adapter must pass nlink through"
+            );
+            assert_eq!(native, classical, "the adapters must agree");
+        }
     }
 
     #[test]

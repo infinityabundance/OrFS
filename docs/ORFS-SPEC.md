@@ -117,10 +117,12 @@ per-phase record.
 | 29 | Independent acceptance audit (gates A–N) | **complete** |
 | 30 | Consistency repair (docs, scripts, receipts) | **complete** |
 | 31 | Faster commits: ordered group commit + conflict-aware parallel preparation | **complete** |
+| 32 | End-to-end group-commit coordinator (opt-in); correctness court; honest measurement | **complete** |
+| 33 | Review-finding consolidation: read-path timing, native `nlink`, supplementary groups, calibration guarantee, passthrough integrity | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–31 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–33 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 - The `orfs` crate builds, its **344** tests (default) pass, and
   `cargo test --features failpoints` adds the crash-injection court (352 tests in

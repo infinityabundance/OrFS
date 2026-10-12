@@ -19,6 +19,7 @@
 //! `evidence/performance/ekbloom-read-paths.json`.
 
 use std::path::Path;
+use std::time::Duration;
 
 use orfs::commit::DurabilityMode;
 use orfs::manifestation::{
@@ -197,6 +198,130 @@ fn compatible_certified_path_serves_an_exact_read() {
         .iter()
         .any(|v| v.path == ReadPathKind::LogicalExtent && v.equivalent));
     let _ = m.generation;
+}
+
+/// Regression (Phase 33, external review finding 1): the planner used to start
+/// its timer *after* executing the candidate, so when the selection loop served a
+/// candidate whose bytes had already been produced during calibration it recorded
+/// a near-zero "map lookup" duration into the EWMA and corrupted path selection.
+/// Here the authoritative closure is made deliberately slow and the calibration
+/// budget is set so only that one candidate is timed: the reused candidate must
+/// be recorded exactly once (at calibration), with a cost that reflects the real
+/// execution — never a second, near-zero sample.
+#[test]
+fn recorded_cost_reflects_real_execution_time_not_zero() {
+    const SLEEP: Duration = Duration::from_millis(2);
+    let td = TempDir::new().unwrap();
+    let source = pattern(4096);
+    let store = GenerationStore::new(td.path());
+    publish_generation(
+        &store,
+        11,
+        1,
+        42,
+        &source,
+        ManifestationProfile::Path { depth: 4 },
+        "0.3.0",
+    );
+    // A budget smaller than the sleep guarantees the calibration pass times only
+    // the authoritative candidate (it is ordered first) and then stops, so the
+    // selection loop must serve it by reusing the calibration bytes.
+    let state =
+        ManifestationState::recover(GenerationStore::new(td.path()), UUID).expect("recover state");
+    let planner = ReadPlanner::new(
+        state,
+        ReadPlannerConfig {
+            calibration_budget_ns: 1_000_000,
+            ..Default::default()
+        },
+    );
+    let q = ReadQuery {
+        inode: 11,
+        inode_version: 1,
+        root: 42,
+        logical_len: source.len() as u64,
+        offset: 0,
+        length: 64,
+    };
+    let planned = planner
+        .read(&q, |off, len| {
+            std::thread::sleep(SLEEP);
+            Ok(auth_slice(&source, off, len))
+        })
+        .unwrap();
+    // Bytes are correct regardless of the path that served them.
+    assert_eq!(planned.bytes, auth_slice(&source, 0, 64));
+    let measurements = planner.measurements();
+    let extent = measurements
+        .iter()
+        .find(|m| m.path == ReadPathKind::LogicalExtent)
+        .expect("the authoritative candidate must have been timed");
+    assert_eq!(
+        extent.samples, 1,
+        "the reused candidate must be recorded once (at calibration), not re-recorded \
+         with a near-zero duration when its bytes are served"
+    );
+    assert!(
+        extent.ewma_ns >= SLEEP.as_nanos() as f64,
+        "recorded EWMA {} ns is far below the real {} ns execution",
+        extent.ewma_ns,
+        SLEEP.as_nanos()
+    );
+}
+
+/// Regression (Phase 33, external review finding 4): with the calibration budget
+/// exhausted, an *unmeasured* candidate must never be tried blindly. The first
+/// read over a certified manifestation must use the authoritative path, record no
+/// measurement, and explain why — the documented selection guarantee is that only
+/// a previously measured candidate may be chosen.
+#[test]
+fn zero_calibration_budget_serves_authority_before_any_measurement() {
+    let td = TempDir::new().unwrap();
+    let source = pattern(1024);
+    let store = GenerationStore::new(td.path());
+    publish_generation(
+        &store,
+        5,
+        2,
+        7,
+        &source,
+        ManifestationProfile::Path { depth: 4 },
+        "0.3.0",
+    );
+    let state =
+        ManifestationState::recover(GenerationStore::new(td.path()), UUID).expect("recover state");
+    let planner = ReadPlanner::new(
+        state,
+        ReadPlannerConfig {
+            calibration_budget_ns: 0,
+            ..Default::default()
+        },
+    );
+    let q = ReadQuery {
+        inode: 5,
+        inode_version: 2,
+        root: 7,
+        logical_len: source.len() as u64,
+        offset: 0,
+        length: 32,
+    };
+    let planned = planner
+        .read(&q, |off, len| Ok(auth_slice(&source, off, len)))
+        .unwrap();
+    assert_eq!(
+        planned.path,
+        ReadPathKind::LogicalExtent,
+        "an unmeasured candidate must not be selected"
+    );
+    assert_eq!(planned.bytes, auth_slice(&source, 0, 32));
+    assert!(
+        planned.fallback_reason.is_some(),
+        "the authoritative fallback must explain itself"
+    );
+    assert!(
+        planner.measurements().is_empty(),
+        "no candidate may be timed under a zero calibration budget"
+    );
 }
 
 #[test]

@@ -1766,6 +1766,35 @@ courts unchanged. `valgrind` court: 4/4 targets clean.
 reconciled to 53), §4.1 (native-FUSE fuzzing + sanitizer status), §6 finding 13,
 §7 evidence table; this file.
 
+## Phase 29 — Independent acceptance audit (gates A–N)
+
+**Complete.** An independent pass re-ran and recorded every acceptance gate at
+phase-29 HEAD, with the concrete command, environment, and result captured rather
+than restated. The audit findings and their gate-by-gate verdicts live in
+`docs/ACCEPTANCE-AUDIT.md` with a machine-readable receipt at
+`evidence/receipts/acceptance-audit.json`. No source change was required by the
+audit itself; it establishes that the documented gates were reproducible from a
+clean checkout at that revision.
+
+### Evidence
+
+`docs/ACCEPTANCE-AUDIT.md`, `evidence/receipts/acceptance-audit.json`.
+
+## Phase 30 — Consistency repair (docs, scripts, receipts)
+
+**Complete.** A consistency pass reconciled documentation, scripts, and receipts
+with the source: `docs/ORFS-SPEC.md`, `docs/PERFORMANCE.md`, `docs/IO_URING.md`,
+`docs/FUSE_URING.md`, `docs/FUSE-SEMANTICS.md`, `docs/CONCURRENCY.md`,
+`docs/LIMITATIONS.md`, `docs/LOG-INVARIANTS.md`, `docs/NAMESPACE.md`, and the
+README phase table were corrected; `scripts/lib.sh` and
+`scripts/container-endurance.sh` were tightened; the container/ekbloom/environment
+receipts were refreshed. This phase added no new mechanism — it removed drift
+between what the documents claimed and what the tree did.
+
+### Evidence
+
+Refreshed `evidence/receipts/*.json`, `evidence/performance/endurance-postcourt.json`.
+
 ## Phase 31 — Faster commits: ordered group commit + conflict-aware parallel preparation
 
 **Complete.** External review §6 P1. The authoritative durability path is
@@ -1838,3 +1867,83 @@ The FUSE adaptors still serialise mutating requests through `Mutex<Core>`; the
 group-commit / parallel-preparation mechanism is landed and tested but is realised
 by callers that submit a batch, and wiring the transports to accumulate concurrent
 mutating requests behind one coordinator is future work.
+
+## Phase 32 — End-to-end group-commit coordinator (opt-in), correctness court, honest measurement
+
+**Complete.** External review §6 P1 follow-up. A per-mount **group-commit
+coordinator** (`src/group_commit.rs`) lets concurrently-submitted mutating
+requests (create/mkdir/symlink/mknod/unlink/rmdir) be drained into a batch,
+executed **sequentially** (so authoritative order and per-transaction atomicity
+are unchanged), and — for a `sync` mount — covered by **one** shared `fsync`
+issued before any caller is acknowledged. The `sync` acknowledgment contract is
+preserved exactly; the barrier is amortised. It is **opt-in**: `orfs mount
+--group-commit [--group-commit-batch N]`.
+
+### Honest result
+
+**No end-to-end win is claimed.** On a concurrent create/write/read/unlink
+workload the paired difference varied in both directions across repeated runs
+(e.g. 74 vs 94 ops/s, then 91 vs 73 ops/s) because the per-mutation cost is not
+dominated by a single barrier and the host was under contention. The coordinator
+is therefore **off by default**: a correct, tested building block whose
+engine-level benefit (Phase 31, up to 8.1× amortised commit latency) needs a
+deeper prepared backlog than this mount workload produces.
+
+### Tests
+
+`tests/group_commit_e2e.rs` mounts a real volume and runs 8 threads × 500 rounds
+of concurrent create→write→read-back→unlink, asserting every write reads back
+byte-exact and every unlink succeeds. `src/group_commit.rs` unit tests cover batch
+formation and the shared barrier.
+
+### Evidence & docs
+
+`evidence/performance/group-commit-e2e.json`; `docs/PERFORMANCE.md` §11.
+
+## Phase 33 — Review-finding consolidation: timing, `nlink`, supplementary groups, calibration, integrity
+
+**Complete.** External review follow-up. Five reproducible defects were fixed at
+their root and each given a regression test; behavior-changing fixes are
+documented and their honest costs recorded.
+
+### Fixes
+
+1. **Read-path timing (`src/readpath.rs`).** The selection loop timed candidates
+   *after* execution, feeding near-zero durations into the EWMA cost model. The
+   timer now wraps `execute`; bytes already produced (and accurately timed)
+   during calibration are reused **without** re-recording, so a candidate is
+   measured once per calibration, at its real cost. Regression:
+   `tests/ekbloom_read.rs::recorded_cost_reflects_real_execution_time_not_zero`.
+2. **Native `nlink` (`src/fuse_native.rs`).** `attr_from_stat` clamped with
+   `.max(1)`, reporting `1` for an unlinked-but-open file instead of `0`. Removed;
+   both adapters now pass the true link count through. Regression:
+   `fuse_native::tests::both_transports_report_the_true_link_count` (cross-transport).
+3. **Supplementary groups (both transports + query API).** POSIX access is now
+   classified with the kernel's `in_group_p` rule everywhere, not just for
+   `chgrp`: a caller matches the group class on its effective group **or any
+   supplementary group**. Both transports read the caller's groups from
+   `/proc/<pid>/status` (`crate::fuse::caller_groups`, shared); `inode::perm_class_groups`
+   / `has_permission_grouped` are the single rule; the typed query API carries
+   groups on `Credential`. Regression:
+   `tests/query.rs::permission_enforcement_matches_the_read_rule` (a file readable
+   only by a supplementary group is granted, and denied without it).
+4. **Calibration guarantee (`src/readpath.rs`).** With no candidate calibrated
+   within the budget, the planner now serves the authoritative path instead of
+   trying unmeasured candidates blindly — the documented guarantee is that only a
+   previously measured candidate may be selected. Regression:
+   `tests/ekbloom_read.rs::zero_calibration_budget_serves_authority_before_any_measurement`.
+5. **Passthrough integrity (`src/passthrough.rs`).** A concealed backing image is
+   reused only when its digest matches the **authoritative** source as well as its
+   manifest, so tampering the image *and* its manifest is refused. Regression:
+   `passthrough::tests::tampered_image_and_manifest_are_refused`.
+
+### Docs
+
+`docs/FUSE-SEMANTICS.md` §6/§6.1 (supplementary groups in every decision),
+`docs/QUERY.md` §7 (`Credential` groups), `docs/SECURITY.md` §1/§3.7/§3.14
+(derived-structure integrity), `docs/FUSE_PASSTHROUGH.md` §2 (the authoritative
+anchor), `docs/EKBLOOM-INTEGRATION.md` §6 (identity-keyed model; unmeasured
+candidates never selected), `docs/LIMITATIONS.md` §13 (honest costs: `/proc`
+dependency, the per-version anchor read, and the calibration budget's real
+meaning), the README phase table, and this entry. Phases 29 and 30 were also
+restored to this file to remove the documentation gap between 28 and 31.

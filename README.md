@@ -67,6 +67,8 @@ enable it (see `docs/FUSE_URING.md`).
 | 29 | Independent acceptance audit (gates A–N) | complete |
 | 30 | Consistency repair (docs, scripts, receipts) | complete |
 | 31 | Faster commits: ordered group commit + conflict-aware parallel preparation | complete |
+| 32 | End-to-end group-commit coordinator (opt-in); correctness court; honest measurement | complete |
+| 33 | Review-finding consolidation: read-path timing, native `nlink`, supplementary groups, calibration guarantee, passthrough integrity | complete |
 
 Honest non-claims: the image pixel-surface pyramid is **not materialised** (only
 its geometry is implemented), and no performance superiority of F2 or of the

@@ -426,21 +426,39 @@ impl Inode {
 
 /// POSIX permission classification: owner, group, or other.
 pub fn perm_class(uid: u32, gid: u32, st: &InodeStat) -> u32 {
+    perm_class_groups(uid, gid, &[], st)
+}
+
+/// POSIX permission classification including **supplementary** group membership.
+///
+/// A caller matches the group class when its effective group **or any
+/// supplementary group** equals the inode's group (Linux `in_group_p`). The FUSE
+/// layers obtain the caller's supplementary groups from the request's pid
+/// (`/proc/<pid>/status` `Groups:`) and pass them here; when membership cannot be
+/// established the caller is classified by the effective ids alone.
+pub fn perm_class_groups(uid: u32, gid: u32, groups: &[u32], st: &InodeStat) -> u32 {
     if uid == st.uid {
         6
-    } else if gid == st.gid {
+    } else if gid == st.gid || groups.contains(&st.gid) {
         3
     } else {
         0
     }
 }
 
-/// Check `mask` (bit 2 = read, bit 1 = write, bit 0 = execute) against `st`.
-///
-/// This is the single authoritative POSIX access rule for the whole crate: both
-/// the FUSE transport (`src/fuse.rs`) and the query API (`src/query.rs`) call it,
-/// so a mounted read and a search can never disagree about who may read a file.
+/// The group-less form of [`has_permission_grouped`].
 pub fn has_permission(uid: u32, gid: u32, st: &InodeStat, mask: u32) -> bool {
+    has_permission_grouped(uid, gid, &[], st, mask)
+}
+
+/// As [`has_permission`], but including the caller's supplementary groups.
+pub fn has_permission_grouped(
+    uid: u32,
+    gid: u32,
+    groups: &[u32],
+    st: &InodeStat,
+    mask: u32,
+) -> bool {
     let perm = st.mode & 0o777;
     if uid == 0 {
         // Root bypasses read/write; execute needs at least one x bit set on a
@@ -450,7 +468,7 @@ pub fn has_permission(uid: u32, gid: u32, st: &InodeStat, mask: u32) -> bool {
         }
         return true;
     }
-    let shift = perm_class(uid, gid, st);
+    let shift = perm_class_groups(uid, gid, groups, st);
     let class = (perm >> shift) & 0o7;
     (class & mask) == mask
 }

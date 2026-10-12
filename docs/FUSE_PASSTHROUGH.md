@@ -116,7 +116,16 @@ namespace, but fully accounted):
   `rename`; the manifest is written the same way;
 * on a miss the image is rebuilt; on a hit the manifest must match the identity
   exactly, the length must match, and the recomputed BLAKE3 must equal the
-  recorded digest, otherwise it is treated as a miss and rebuilt.
+  recorded digest; **and** that digest must also equal the digest the
+  *authoritative source* produces now (`authoritative_digest`), otherwise it is
+  treated as a miss and rebuilt. The authoritative anchor is what makes the
+  derived image untrusted on its own: tampering the image **and** rewriting its
+  manifest digest to match the tampered bytes is still refused, because a
+  self-consistent derived structure is not evidence that derived bytes are
+  correct (regression: `passthrough::tests::tampered_image_and_manifest_are_refused`).
+  The anchor costs one authoritative read of the file at materialization time;
+  the result is cached per open in `Snapshot::passthrough_cache`, so it is paid
+  once per mounted version, not per read (see `docs/LIMITATIONS.md`).
 
 **Accounting** (`src/stats.rs`): the total bytes under `.or_passthrough/` appear
 as **`M_passthrough`** and are included in `M_total`, so the concealed structure

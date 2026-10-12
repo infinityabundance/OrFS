@@ -31,7 +31,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::error::{OrfsError, Result};
 use crate::index::Index;
-use crate::inode::has_permission;
+use crate::inode::{has_permission_grouped, InodeStat};
 use crate::namespace::Namespace;
 use crate::trigram::{sketch_possible, CandidatePlan, TrigramIndex, MIN_PATTERN};
 
@@ -39,17 +39,41 @@ use crate::trigram::{sketch_possible, CandidatePlan, TrigramIndex, MIN_PATTERN};
 pub const QUERY_SCHEMA: &str = "orfs.query.v1";
 
 /// The identity under which a query runs (used for permission enforcement).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+///
+/// The typed query API is not a POSIX request: it carries no caller pid, so the
+/// caller supplies its supplementary groups explicitly (empty by default, in
+/// which case the caller is classified by effective ids alone). The FUSE
+/// transports, by contrast, read a request's supplementary groups from
+/// `/proc/<pid>/status`. Both share the single [`has_permission_grouped`] rule.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Credential {
     pub uid: u32,
     pub gid: u32,
+    /// Supplementary groups the caller belongs to (Linux `in_group_p`).
+    #[serde(skip)]
+    pub groups: Vec<u32>,
 }
 
 impl Credential {
     /// The root identity (bypasses read/write permission checks).
-    pub const fn root() -> Credential {
-        Credential { uid: 0, gid: 0 }
+    pub fn root() -> Credential {
+        Credential {
+            uid: 0,
+            gid: 0,
+            groups: Vec::new(),
+        }
     }
+
+    /// Attach the caller's supplementary groups (chainable).
+    pub fn with_groups(mut self, groups: Vec<u32>) -> Credential {
+        self.groups = groups;
+        self
+    }
+}
+
+/// Whether `cred` may read `st` (the single read rule for the query API).
+fn may_read(cred: &Credential, st: &InodeStat) -> bool {
+    has_permission_grouped(cred.uid, cred.gid, &cred.groups, st, 0o4)
 }
 
 impl Default for Credential {
@@ -227,7 +251,7 @@ impl<'a> QueryEngine<'a> {
                 continue;
             }
             let st = ino.stat();
-            if !has_permission(req.credential.uid, req.credential.gid, &st, 0o4) {
+            if !may_read(&req.credential, &st) {
                 stats.files_skipped_unreadable += 1;
                 continue;
             }
@@ -444,7 +468,7 @@ impl<'a> QueryEngine<'a> {
             return Err(OrfsError::NotFound);
         };
         let st = target.stat();
-        if !has_permission(req.credential.uid, req.credential.gid, &st, 0o4) {
+        if !may_read(&req.credential, &st) {
             // An explicitly requested object the caller may not read is an error;
             // within a recursion such files are skipped (counted separately).
             return Err(OrfsError::PermissionDenied);

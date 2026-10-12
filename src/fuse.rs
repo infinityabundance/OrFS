@@ -45,7 +45,7 @@ use parking_lot::Mutex;
 use crate::commit::DurabilityMode;
 use crate::error::{OrfsError, Result};
 use crate::fuse_uring::{self, FuseUringNegotiation, FuseUringReport, TransportProfile};
-use crate::inode::{has_permission, InodeStat, InodeType, Timespec};
+use crate::inode::{has_permission_grouped, InodeStat, InodeType, Timespec};
 use crate::log::OpenMode;
 use crate::manifestation::ManifestationProfile;
 use crate::namespace::{CoreRead, Namespace, OrfsCore, ReadCell, RenameMode, SetAttr};
@@ -800,7 +800,7 @@ fn time_or_now(t: TimeOrNow) -> Timespec {
     }
 }
 
-fn file_attr(st: &InodeStat) -> FileAttr {
+pub(crate) fn file_attr(st: &InodeStat) -> FileAttr {
     FileAttr {
         ino: INodeNo(st.id),
         size: st.size,
@@ -878,7 +878,13 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         if directory.kind != InodeType::Directory {
             return reply.error(Errno::ENOTDIR);
         }
-        if !has_permission(req.uid(), req.gid(), &directory, 0o1) {
+        if !has_permission_grouped(
+            req.uid(),
+            req.gid(),
+            &caller_groups(req.pid()),
+            &directory,
+            0o1,
+        ) {
             return reply.error(Errno::EACCES);
         }
         let resolved = if name == b"." {
@@ -968,7 +974,15 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             && matches!(atime, Some(TimeOrNow::Now))
             && matches!(mtime, Some(TimeOrNow::Now));
         if touch_like {
-            if !owner_or_root && !has_permission(req.uid(), req.gid(), &st, 0o2) {
+            if !owner_or_root
+                && !has_permission_grouped(
+                    req.uid(),
+                    req.gid(),
+                    &caller_groups(req.pid()),
+                    &st,
+                    0o2,
+                )
+            {
                 return reply.error(Errno::EACCES);
             }
         } else if (meta_change || time_change) && !owner_or_root {
@@ -991,7 +1005,10 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
                 return reply.error(Errno::EPERM);
             }
         }
-        if size.is_some() && !writable_fh && !has_permission(req.uid(), req.gid(), &st, 0o2) {
+        if size.is_some()
+            && !writable_fh
+            && !has_permission_grouped(req.uid(), req.gid(), &caller_groups(req.pid()), &st, 0o2)
+        {
             return reply.error(Errno::EACCES);
         }
         // Linux clears S_ISUID/S_ISGID when a caller without CAP_FSETID truncates
@@ -1060,11 +1077,12 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         let is_dir = kind == InodeType::Directory;
         let uid = req.uid();
         let gid = req.gid();
+        let groups = caller_groups(req.pid());
         let parent_ino = parent.0;
         let name_bytes = name.as_bytes().to_vec();
         let perm = mode & 0o7777;
         let res = self.inner.mutate(move |core| {
-            check_create_uid(&*core, uid, gid, parent_ino, 0o2 | 0o1)?;
+            check_create_uid(&*core, uid, gid, &groups, parent_ino, 0o2 | 0o1)?;
             let ino = match kind {
                 InodeType::File => core.create(parent_ino, &name_bytes, perm, uid, gid)?,
                 InodeType::Directory => core.mkdir(parent_ino, &name_bytes, perm, uid, gid)?,
@@ -1109,11 +1127,12 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         }
         let uid = req.uid();
         let gid = req.gid();
+        let groups = caller_groups(req.pid());
         let parent_ino = parent.0;
         let name_bytes = name.as_bytes().to_vec();
         let perm = mode & 0o7777;
         let res = self.inner.mutate(move |core| {
-            check_create_uid(&*core, uid, gid, parent_ino, 0o2 | 0o1)?;
+            check_create_uid(&*core, uid, gid, &groups, parent_ino, 0o2 | 0o1)?;
             let ino = core.mkdir(parent_ino, &name_bytes, perm, uid, gid)?;
             Ok(ino as i64)
         });
@@ -1143,11 +1162,12 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         }
         let uid = req.uid();
         let gid = req.gid();
+        let groups = caller_groups(req.pid());
         let parent_ino = parent.0;
         let name_bytes = name.as_bytes().to_vec();
         let res = self.inner.mutate(move |core| {
             let root = core.root();
-            check_dir_write_uid(&*core, uid, gid, parent_ino, 0o2 | 0o1)?;
+            check_dir_write_uid(&*core, uid, gid, &groups, parent_ino, 0o2 | 0o1)?;
             // Sticky-bit handling: in a sticky directory only the owner of the
             // entry (or a privileged caller) may remove it.
             if let Ok(dir) = core.getattr(parent_ino, root) {
@@ -1179,11 +1199,12 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         }
         let uid = req.uid();
         let gid = req.gid();
+        let groups = caller_groups(req.pid());
         let parent_ino = parent.0;
         let name_bytes = name.as_bytes().to_vec();
         let res = self.inner.mutate(move |core| {
             let root = core.root();
-            check_dir_write_uid(&*core, uid, gid, parent_ino, 0o2 | 0o1)?;
+            check_dir_write_uid(&*core, uid, gid, &groups, parent_ino, 0o2 | 0o1)?;
             // Sticky-bit handling (same rule as `unlink`): in a sticky directory only
             // the owner of the entry to be removed — or the owner of the sticky
             // directory, or root — may remove it. POSIX applies this to `rmdir` too.
@@ -1223,11 +1244,12 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         }
         let uid = req.uid();
         let gid = req.gid();
+        let groups = caller_groups(req.pid());
         let parent_ino = parent.0;
         let link_bytes = link_name.as_bytes().to_vec();
         let target_bytes = target.as_os_str().as_bytes().to_vec();
         let res = self.inner.mutate(move |core| {
-            check_create_uid(&*core, uid, gid, parent_ino, 0o2 | 0o1)?;
+            check_create_uid(&*core, uid, gid, &groups, parent_ino, 0o2 | 0o1)?;
             let ino = core.symlink(parent_ino, &link_bytes, &target_bytes, uid, gid)?;
             Ok(ino as i64)
         });
@@ -1345,7 +1367,7 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         }
         let access = flags.acc_mode();
         let mask = acc_mask(access);
-        if !has_permission(req.uid(), req.gid(), &st, mask) {
+        if !has_permission_grouped(req.uid(), req.gid(), &caller_groups(req.pid()), &st, mask) {
             return reply.error(Errno::EACCES);
         }
         if self.options.read_only && mask & 0o2 != 0 {
@@ -1394,7 +1416,7 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
-        if !has_permission(req.uid(), req.gid(), &st, 0o4) {
+        if !has_permission_grouped(req.uid(), req.gid(), &caller_groups(req.pid()), &st, 0o4) {
             return reply.error(Errno::EACCES);
         }
         let _ = handle;
@@ -1436,7 +1458,7 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
-        if !has_permission(req.uid(), req.gid(), &st, 0o2) {
+        if !has_permission_grouped(req.uid(), req.gid(), &caller_groups(req.pid()), &st, 0o2) {
             return reply.error(Errno::EACCES);
         }
         // O_APPEND: honour the authoritative end-of-file rather than the
@@ -1535,7 +1557,13 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         if st.kind != InodeType::Directory {
             return reply.error(Errno::ENOTDIR);
         }
-        if !has_permission(req.uid(), req.gid(), &st, 0o4 | 0o1) {
+        if !has_permission_grouped(
+            req.uid(),
+            req.gid(),
+            &caller_groups(req.pid()),
+            &st,
+            0o4 | 0o1,
+        ) {
             return reply.error(Errno::EACCES);
         }
         let listing = match self.inner.build_dir_listing(view.as_ref(), ino.0) {
@@ -1716,7 +1744,7 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
-        if !has_permission(req.uid(), req.gid(), &st, 0o2) {
+        if !has_permission_grouped(req.uid(), req.gid(), &caller_groups(req.pid()), &st, 0o2) {
             return reply.error(Errno::EACCES);
         }
         let present = core.getxattr(ino.0, name.as_bytes(), root).is_ok();
@@ -1740,7 +1768,7 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
-        if !has_permission(req.uid(), req.gid(), &st, 0o4) {
+        if !has_permission_grouped(req.uid(), req.gid(), &caller_groups(req.pid()), &st, 0o4) {
             return reply.error(Errno::EACCES);
         }
         match view.getxattr(ino.0, name.as_bytes(), root) {
@@ -1764,7 +1792,7 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
-        if !has_permission(req.uid(), req.gid(), &st, 0o4) {
+        if !has_permission_grouped(req.uid(), req.gid(), &caller_groups(req.pid()), &st, 0o4) {
             return reply.error(Errno::EACCES);
         }
         match view.listxattr(ino.0, root) {
@@ -1796,7 +1824,7 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
-        if !has_permission(req.uid(), req.gid(), &st, 0o2) {
+        if !has_permission_grouped(req.uid(), req.gid(), &caller_groups(req.pid()), &st, 0o2) {
             return reply.error(Errno::EACCES);
         }
         match core.removexattr(ino.0, name.as_bytes()) {
@@ -1816,7 +1844,13 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         if bits == 0 {
             return reply.ok();
         }
-        if has_permission(req.uid(), req.gid(), &st, bits & 0o7) {
+        if has_permission_grouped(
+            req.uid(),
+            req.gid(),
+            &caller_groups(req.pid()),
+            &st,
+            bits & 0o7,
+        ) {
             reply.ok();
         } else {
             reply.error(Errno::EACCES);
@@ -1838,11 +1872,12 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         }
         let uid = req.uid();
         let gid = req.gid();
+        let groups = caller_groups(req.pid());
         let parent_ino = parent.0;
         let name_bytes = name.as_bytes().to_vec();
         let perm = mode & 0o7777;
         let res = self.inner.mutate(move |core| {
-            check_create_uid(&*core, uid, gid, parent_ino, 0o2 | 0o1)?;
+            check_create_uid(&*core, uid, gid, &groups, parent_ino, 0o2 | 0o1)?;
             let ino = core.create(parent_ino, &name_bytes, perm, uid, gid)?;
             Ok(ino as i64)
         });
@@ -2081,9 +2116,16 @@ fn acc_mask(mode: fuser::OpenAccMode) -> u32 {
 /// entry is stable. A missing or unreadable entry yields `false` (deny), which
 /// is conservative: it can refuse a permitted `chgrp` but never fabricate one.
 pub(crate) fn caller_in_group(pid: u32, egid: u32, target_gid: u32) -> bool {
-    if egid == target_gid {
-        return true;
-    }
+    egid == target_gid || caller_groups(pid).contains(&target_gid)
+}
+
+/// The requesting process's supplementary groups (`/proc/<pid>/status` `Groups:`).
+///
+/// Used to classify POSIX access with full group membership (`in_group_p`), so a
+/// caller whose only access is via a supplementary group is granted the group
+/// class. A missing/unreadable entry yields an empty set: the caller is then
+/// classified by its effective ids alone.
+pub(crate) fn caller_groups(pid: u32) -> Vec<u32> {
     std::fs::read_to_string(format!("/proc/{pid}/status"))
         .ok()
         .and_then(|status| {
@@ -2092,27 +2134,31 @@ pub(crate) fn caller_in_group(pid: u32, egid: u32, target_gid: u32) -> bool {
                 .find_map(|line| line.strip_prefix("Groups:"))
                 .map(str::to_owned)
         })
-        .is_some_and(|groups| {
+        .map(|groups| {
             groups
                 .split_whitespace()
-                .any(|g| g.parse::<u32>() == Ok(target_gid))
+                .filter_map(|g| g.parse::<u32>().ok())
+                .collect()
         })
+        .unwrap_or_default()
 }
 
 fn check_create_uid<C: OrfsCore>(
     core: &C,
     uid: u32,
     gid: u32,
+    groups: &[u32],
     parent: u64,
     mask: u32,
 ) -> Result<()> {
-    check_dir_write_uid(core, uid, gid, parent, mask)
+    check_dir_write_uid(core, uid, gid, groups, parent, mask)
 }
 
 fn check_dir_write_uid<C: OrfsCore>(
     core: &C,
     uid: u32,
     gid: u32,
+    groups: &[u32],
     parent: u64,
     mask: u32,
 ) -> Result<()> {
@@ -2120,7 +2166,7 @@ fn check_dir_write_uid<C: OrfsCore>(
     if st.kind != InodeType::Directory {
         return Err(OrfsError::NotADirectory);
     }
-    if !has_permission(uid, gid, &st, mask) {
+    if !has_permission_grouped(uid, gid, groups, &st, mask) {
         return Err(OrfsError::PermissionDenied);
     }
     Ok(())
@@ -2131,7 +2177,7 @@ fn check_dir_write<C: OrfsCore>(core: &C, req: &Request, parent: u64, mask: u32)
     if st.kind != InodeType::Directory {
         return Err(OrfsError::NotADirectory);
     }
-    if !has_permission(req.uid(), req.gid(), &st, mask) {
+    if !has_permission_grouped(req.uid(), req.gid(), &caller_groups(req.pid()), &st, mask) {
         return Err(OrfsError::PermissionDenied);
     }
     Ok(())
@@ -2733,6 +2779,7 @@ pub fn unmount(mountpoint: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::inode::has_permission;
 
     fn options() -> MountOptions {
         MountOptions::default()
@@ -2825,6 +2872,29 @@ mod tests {
         assert!(!has_permission(2000, 100, &st, 0o2)); // group no write
         assert!(!has_permission(2000, 200, &st, 0o4)); // other none
         assert!(has_permission(0, 0, &st, 0o2)); // root write bypass
+                                                 // Supplementary-group membership grants the group class (Linux in_group_p).
+        assert!(crate::inode::has_permission_grouped(
+            2000,
+            2000,
+            &[100],
+            &st,
+            0o4
+        ));
+        assert!(!crate::inode::has_permission_grouped(
+            2000,
+            2000,
+            &[100],
+            &st,
+            0o2
+        ));
+        assert!(!crate::inode::has_permission_grouped(
+            2000,
+            2000,
+            &[999],
+            &st,
+            0o4
+        ));
+        assert!(crate::inode::perm_class_groups(2000, 2000, &[100], &st) == 3);
     }
 
     #[test]

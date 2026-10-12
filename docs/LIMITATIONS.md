@@ -272,3 +272,33 @@ cannot silently grow; that allowlist now contains only the shared artefact.
 
 None of these changes alters a byte of committed history (each implicit timestamp
 is an appended record) and none returns a wrong success.
+
+## 13. Phase 33 hardening: honest costs and remaining bounds
+
+The consolidation phase fixed five review findings and made derived-structure
+integrity explicit. The honest costs and residual bounds are:
+
+* **Supplementary groups come from `/proc`.** Both transports read the caller's
+  supplementary groups from `/proc/<pid>/status` `Groups:` to apply the Linux
+  `in_group_p` rule to *every* permission decision (not just `chgrp`). If `/proc`
+  is not mounted, or the caller's pid is not visible to the daemon (e.g. a
+  different pid namespace), membership cannot be established: the caller is
+  classified by its effective ids alone. This can **over-deny** but never
+  over-grant. The typed query API (`src/query.rs`) is not a POSIX request and
+  carries no pid, so it takes its supplementary groups from `Credential`
+  (`groups: Vec<u32>`, empty by default) — a caller that wants grouped access
+  must supply them.
+* **The FUSE-passthrough integrity anchor re-reads authority once per version.**
+  Reuse now requires the image digest to match *authoritative* history, so a
+  tampered image + manifest is refused. Establishing that anchor costs one
+  authoritative read of the whole file the first time a version is materialized
+  in a mount; the result is cached (`Snapshot::passthrough_cache`), so it is paid
+  once per mounted version, not per read. It is a deliberate correctness cost,
+  not a per-read cost.
+* **The read-planner calibration budget bounds candidates, not wall-clock.**
+  The budget is checked **before** each candidate, so it bounds how many
+  candidates a single foreground read will attempt to time, but a single slow
+  candidate can still exceed the budget. The guarantee the planner actually
+  makes is stronger and simpler: **an unmeasured candidate is never selected** —
+  with no calibrated candidate, or with a zero budget, the read is served by the
+  authoritative path.

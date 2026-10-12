@@ -28,7 +28,7 @@ use std::time::Instant;
 use orfs::commit::DurabilityMode;
 use orfs::index::ROOT_INODE;
 use orfs::log::OpenMode;
-use orfs::namespace::Namespace;
+use orfs::namespace::{Namespace, SetAttr};
 use orfs::query::{Credential, MatchFlow, QueryMatch, QueryRequest, QueryResult, QUERY_SCHEMA};
 use orfs::suffix::SuffixAutomaton;
 use orfs::trigram::TrigramConfig;
@@ -405,12 +405,13 @@ fn permission_enforcement_matches_the_read_rule() {
     let cred = Credential {
         uid: 1000,
         gid: 1000,
+        groups: Vec::new(),
     };
 
     // Directly querying a file the credential may not read is an error.
     let req = QueryRequest::new(secret, ns.root(), b"secret".to_vec())
         .without_recursion()
-        .with_credential(cred);
+        .with_credential(cred.clone());
     assert!(ns.query(req).is_err());
 
     // A recursive search skips the unreadable file but finds the readable one.
@@ -418,6 +419,45 @@ fn permission_enforcement_matches_the_read_rule() {
     let result = ns.query(req).unwrap();
     assert!(result.stats.files_skipped_unreadable >= 1);
     assert!(result.matches.iter().all(|m| m.inode == public));
+
+    // Supplementary-group membership grants the group class (Linux `in_group_p`):
+    // a file readable *only* by group 2000 is readable by a caller whose
+    // effective gid differs but who carries 2000 as a supplementary group — and
+    // is denied without it. This is the typed-API counterpart of the transports' use
+    // of `/proc/<pid>/status`.
+    let group_only = mkdir_file(&mut ns, root, b"grp", b"secret group data", 0o040);
+    ns.setattr(
+        group_only,
+        &SetAttr {
+            gid: Some(2000),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let grouped = Credential {
+        uid: 1000,
+        gid: 1000,
+        groups: vec![2000],
+    };
+    let req = QueryRequest::new(group_only, ns.root(), b"group".to_vec())
+        .without_recursion()
+        .with_credential(grouped);
+    assert!(
+        ns.query(req).is_ok(),
+        "a supplementary group must grant the group read class"
+    );
+    let ungrouped = Credential {
+        uid: 1000,
+        gid: 1000,
+        groups: Vec::new(),
+    };
+    let req = QueryRequest::new(group_only, ns.root(), b"group".to_vec())
+        .without_recursion()
+        .with_credential(ungrouped);
+    assert!(
+        ns.query(req).is_err(),
+        "without the supplementary group the read must be denied"
+    );
 
     // Root bypasses the check and sees both.
     let req = QueryRequest::new(ROOT_INODE, ns.root(), b"secret".to_vec());

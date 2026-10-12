@@ -124,13 +124,17 @@ transport.
 When manifestation is enabled, `Namespace::read_at` is served by the certified
 `ReadPlanner`, which keeps a **measured** cost model and only chooses a manifested
 path it has measured to be no slower than the authoritative extent read.
-**Phase 18** bounds the cold path: calibration runs under a hard time budget,
-times the authoritative read first, selects only candidates it has actually
-measured for the exact object identity, and never loads a manifested profile that
-EKBLOOM documents as non-accelerating. A cold planner can therefore no longer
-stall a foreground read, and the `E1`/`E2` figures below no longer exhibit the
-pre-Phase-18 read-selection blow-up. The frontier (section 5) measures the
-manifested paths directly.
+**Phase 18** bounds the cold path: calibration runs under a time budget checked
+before each candidate, times the authoritative read first, selects only candidates
+it has actually measured for the exact object identity, and never loads a
+manifested profile that EKBLOOM documents as non-accelerating. A cold planner can
+therefore no longer stall a foreground read, and the `E1`/`E2` figures below no
+longer exhibit the pre-Phase-18 read-selection blow-up. The frontier (section 5)
+measures the manifested paths directly. **Phase 33** corrected the calibration
+timer itself (it had been started after execution, feeding near-zero durations
+into the cost model) and made the selection guarantee explicit: an **unmeasured**
+candidate is never selected — with nothing calibrated, the authoritative path
+serves the read (`docs/LIMITATIONS.md` §13).
 
 ---
 

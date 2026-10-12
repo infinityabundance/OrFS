@@ -139,9 +139,16 @@ pub struct QueryRequest {
     pub pattern: Vec<u8>,
     pub limit: Option<u64>,
     pub recursive: bool,
-    pub credential: Credential, // uid/gid for permission enforcement
+    pub credential: Credential, // uid/gid + supplementary groups for permission enforcement
 }
 ```
+
+`Credential` carries `uid`, `gid`, and a `groups: Vec<u32>` of supplementary
+groups (`#[serde(skip)]`, so the serialized shape is unchanged). A caller whose
+only access is via a supplementary group is granted the group class, exactly as
+Linux `in_group_p` does; the default (root) credential and `Credential::root()`
+carry no groups. Use `Credential { uid, gid, groups }` or
+`Credential::root().with_groups(...)` to supply them.
 
 * **Streaming** — `Namespace::query_stream(req, &cancel, on_match)` invokes a
   callback per match and accepts an `AtomicBool` cancellation flag; the callback
@@ -152,9 +159,10 @@ pub struct QueryRequest {
   truncation.
 * **Cancellation** — polling between files and within scans; `stats.canceled`.
 * **Permissions** — the query calls the *same* POSIX rule as mounted reads
-  (`crate::inode::has_permission`, shared with `src/fuse.rs`). A directly
-  requested unreadable object is `PermissionDenied`; within a recursion,
-  unreadable files are skipped and counted.
+  (`crate::inode::has_permission_grouped`, shared with `src/fuse.rs`): the group
+  class matches on the effective group **or any supplied supplementary group**.
+  A directly requested unreadable object is `PermissionDenied`; within a
+  recursion, unreadable files are skipped and counted.
 * **Consistency** — the request pins one committed `root`; the inode version is
   read from that pinned view and held for the whole run.
 

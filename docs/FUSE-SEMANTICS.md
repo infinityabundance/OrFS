@@ -192,21 +192,39 @@ the directory), and every namespace mutation (write+execute on the parent,
 sticky-bit rules for `unlink`). Root bypasses read/write and needs at least one
 execute bit to execute a regular file.
 
+Every one of these decisions uses the kernel's `in_group_p` rule: a caller
+matches the **group** class when its effective group **or any supplementary
+group** equals the inode's group. A FUSE request carries only the caller's
+fsuid/fsgid, never its supplementary groups, so the daemon reads them from
+`/proc/<pid>/status` `Groups:` (§6.1) in both transports (`src/fuse.rs` and
+`src/fuse_native.rs` share `crate::fuse::caller_groups`). A missing or
+unreadable entry classifies the caller by its effective ids alone — it never
+fabricates group membership. The typed query API (`src/query.rs`) shares the
+same rule through `crate::inode::has_permission_grouped`, with groups supplied
+explicitly on its [`Credential`](QUERY.md) (empty by default).
+
 `--default-permissions` additionally asks the kernel to check, but it is **off**
 by default: delegating to the kernel makes the daemon's behaviour depend on the
 mount ACL and the kernel's `allow_other` policy, whereas OrFS wants identical
 semantics across transports. It is exposed for compatibility testing.
 
+### 6.1 Reading the caller's supplementary groups
+
+Supplementary groups are read once from `/proc/<pid>/status` `Groups:` for each
+permission decision (`crate::fuse::caller_groups`). The FUSE request's `pid` is
+the caller's thread-group id and the requesting thread is blocked in the FUSE
+call while the daemon services it, so the entry is stable for the duration of
+the check. This is the same source Linux's own `chgrp_ok` and `in_group_p`
+consult. Both transports use it identically, so a mounted read and a mount's
+mutation permission decision cannot disagree.
+
 **Ownership changes (`setattr` `uid`/`gid`)** (verified by the mounted court).
 `chmod` and `utimes` require ownership or root, and only root may set a file's
 `uid` to a different user. A non-root *owner* may move a file into a group it
 belongs to — its effective group or a supplementary group — which is the Linux
-`chgrp(2)` rule. A FUSE `SETATTR` request carries only the caller's fsuid/fsgid,
-never its supplementary groups, so the daemon reads them from the kernel's own
-`/proc/<pid>/status` `Groups:` line (the requesting thread is blocked in the FUSE
-call, so its entry is stable). A group the daemon cannot confirm membership in is
-refused with `EPERM`, never accepted by guesswork. The owner may restate its
-current `uid`/`gid`, which is a permitted no-op.
+`chgrp(2)` rule. A group the daemon cannot confirm membership in is refused with
+`EPERM`, never accepted by guesswork. The owner may restate its current
+`uid`/`gid`, which is a permitted no-op.
 
 Note: the OrFS genesis root is owned by `uid 0`. A volume mounted by a
 non-privileged user should have its root `chown`ed to that user (the integration

@@ -20,7 +20,8 @@ potentially hostile**. The adversaries considered are:
 |---|---|---|
 | **Hostile backing data** | Arbitrary bytes in `or_log/*.seg`, a forged but correctly-framed record, a tampered or truncated committed segment, an unsupported format version. | `src/record.rs`, `src/segment.rs`, `src/log.rs`, every payload decoder |
 | **Hostile FUSE client** | Arbitrary request fields: opcodes, nodeids, names, offsets, sizes, xattr names, access masks, handles. | `src/fuse.rs`, `src/fuse_uring.rs`, `src/namespace.rs`, `src/index.rs` |
-| **Unprivileged local user** | Mounts the filesystem (possibly with `default_permissions`) and issues ordinary POSIX operations. | `src/fuse.rs` permission helpers, `src/inode.rs::has_permission` |
+| **Unprivileged local user** | Mounts the filesystem (possibly with `default_permissions`) and issues ordinary POSIX operations. | `src/fuse.rs` permission helpers, `src/inode.rs::has_permission_grouped` |
+| **Tampered derived structure** | A process able to read/write the backing directory forges a concealed structure (e.g. a FUSE-passthrough backing image) and rewrites its manifest to match. | §3.14, `src/passthrough.rs`, the read planner's certification/identity checks |
 | **Hostile backing directory contents** | A hostile or curious process that can read the backing directory, or plant files/symlinks in it. | §5 namespace↔backend separation, `src/manifestation.rs::dir_bytes` |
 | **Process crash / torn writes** | The process is killed mid-write; the page cache survives but no destructor runs. | `tests/crash_recovery.rs`, `tests/recovery_adversarial.rs`, `docs/RECOVERY.md` |
 
@@ -135,10 +136,17 @@ directory can never be the parent of a new mutation.
 
 ### 3.7 Permission enforcement
 
-* `inode::has_permission` implements the class-based POSIX rule (owner / group /
-  other, with the superuser bypass).
+* `inode::has_permission_grouped` implements the class-based POSIX rule (owner /
+  group / other, with the superuser bypass). The group class matches on the
+  effective group **or any supplementary group** (Linux `in_group_p`); the FUSE
+  transports supply the caller's supplementary groups from
+  `/proc/<pid>/status`, and the typed query API carries them on its
+  `Credential`. `inode::has_permission` is the group-less form, retained for
+  callers with only effective ids.
 * **Every** mutating FUSE handler checks permission before acting
   (`check_create`, `check_dir_write`, per-inode `0o2` for writes and xattrs).
+  Both transports route these through the supplementary-group-aware rule
+  (`src/fuse.rs` and `src/fuse_native.rs` share `crate::fuse::caller_groups`).
 * **Reading an xattr now requires read permission** (`0o4`) on the inode,
   symmetric with reading contents; no attribute namespace bypasses the check.
 * The sticky bit is honoured on `unlink`/`rmdir` (owner-of-entry / owner-of-dir /
@@ -262,6 +270,28 @@ and nowhere else, for several values
 (`fuse_uring::tests::raw_sqe_len_field_is_written_at_the_documented_offset`); the
 80-byte command area is asserted to encode/decode at the documented offsets over
 arbitrary bytes (`cmd_area_decode_is_total_over_arbitrary_bytes`).
+
+### 3.14 Derived-structure integrity (Phase 33)
+
+A concealed structure is *derived*, so it is never trusted on its own word.
+Every derived structure is either (a) verified against the authoritative bytes
+before use, or (b) refused and rebuilt/fallen-back from. Two concrete cases:
+
+* **FUSE-passthrough backing images.** An image is reused only when its identity
+  matches, its length matches, its recomputed BLAKE3 matches the recorded digest,
+  **and** that digest matches the digest the authoritative source produces now
+  (`passthrough::authoritative_digest`). An attacker who tampers the image *and*
+  rewrites the manifest to match is therefore still refused, because the derived
+  pair is self-consistent but disagrees with authority. Regression:
+  `passthrough::tests::tampered_image_and_manifest_are_refused`.
+* **Manifested read structures.** The read planner re-checks the loaded body's
+  identity against the request and only selects a *certified* candidate that has
+  been measured for that exact object (§`docs/MANIFESTATION.md`); a
+  missing/corrupt structure is a fallback to the authoritative read, never a
+  different answer.
+
+The general rule: **authority establishes truth; a concealed structure only
+accelerates observation of it.**
 
 ---
 

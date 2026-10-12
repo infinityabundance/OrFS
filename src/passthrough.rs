@@ -155,7 +155,7 @@ pub fn materialize<F>(
 where
     F: FnMut(u64, u32) -> Result<Vec<u8>>,
 {
-    if let Some(image) = try_reuse(volume_dir, id, size)? {
+    if let Some(image) = try_reuse(volume_dir, id, size, &mut read)? {
         return Ok(image);
     }
 
@@ -208,10 +208,46 @@ where
     })
 }
 
+/// Hash the authoritative bytes of a `size`-byte object via the caller's reader.
+///
+/// This is the *anchor* for reuse: a concealed passthrough image is reused only
+/// when its content matches authoritative history, not merely its own manifest —
+/// so tampering with the derived image *and* its manifest together is refused.
+fn authoritative_digest<F>(read: &mut F, size: u64) -> Result<[u8; 32]>
+where
+    F: FnMut(u64, u32) -> Result<Vec<u8>>,
+{
+    let mut hasher = blake3::Hasher::new();
+    let mut offset = 0u64;
+    while offset < size {
+        let want = (size - offset).min(READ_CHUNK as u64) as u32;
+        let bytes = read(offset, want)?;
+        if bytes.is_empty() {
+            return Err(OrfsError::Corrupt(format!(
+                "authoritative read ended at offset {offset} of {size} while \
+                 anchoring a passthrough backing image"
+            )));
+        }
+        hasher.update(&bytes);
+        offset += bytes.len() as u64;
+    }
+    Ok(*hasher.finalize().as_bytes())
+}
+
 /// Attempt to reuse an existing image: the manifest must match the identity
-/// exactly, the image length must match, and its BLAKE3 must equal the recorded
-/// digest. Any mismatch is a miss (the caller rebuilds).
-fn try_reuse(volume_dir: &Path, id: &BackingIdentity, size: u64) -> Result<Option<BackingImage>> {
+/// exactly, the image length must match, its BLAKE3 must equal the recorded
+/// digest, and — the authoritative anchor — it must also equal the digest the
+/// authoritative source produces now. Any mismatch is a miss (the caller
+/// rebuilds from authority).
+fn try_reuse<F>(
+    volume_dir: &Path,
+    id: &BackingIdentity,
+    size: u64,
+    read: &mut F,
+) -> Result<Option<BackingImage>>
+where
+    F: FnMut(u64, u32) -> Result<Vec<u8>>,
+{
     let manifest_bytes = match std::fs::read(manifest_path(volume_dir, id)) {
         Ok(b) => b,
         Err(_) => return Ok(None),
@@ -238,6 +274,12 @@ fn try_reuse(volume_dir: &Path, id: &BackingIdentity, size: u64) -> Result<Optio
     }
     let digest = hash_file(&path)?;
     if hex(&digest) != m.digest {
+        return Ok(None);
+    }
+    // Anchor to authoritative history: the image must ALSO match what the
+    // authoritative source produces now, so a tampered image whose manifest was
+    // updated to match is refused (docs/SECURITY.md — passthrough integrity).
+    if authoritative_digest(read, size)? != digest {
         return Ok(None);
     }
     Ok(Some(BackingImage {
@@ -376,6 +418,50 @@ mod tests {
         })
         .unwrap();
         assert!(!rebuilt.reused);
+        assert_eq!(std::fs::read(&rebuilt.path).unwrap(), content);
+    }
+
+    /// Regression (Phase 33, external review finding 5): a manifested backing
+    /// image is reused only when it matches **authoritative** history. Tampering
+    /// the image *and* rewriting its manifest digest to match the tampered bytes
+    /// must still be refused — the image is rebuilt from authority. A
+    /// self-consistent derived structure is not evidence that the derived bytes
+    /// are correct.
+    #[test]
+    fn tampered_image_and_manifest_are_refused() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let content = (0..8192u32).map(|i| (i % 197) as u8).collect::<Vec<_>>();
+        let size = content.len() as u64;
+        let me = id(3, 9, 1);
+        let src = content.clone();
+        let img = materialize(dir.path(), &me, size, |off, len| {
+            let s = off as usize;
+            let e = (s + len as usize).min(src.len());
+            Ok(src[s..e].to_vec())
+        })
+        .unwrap();
+
+        // Tamper the image and update its manifest digest to the tampered bytes,
+        // so image and manifest agree with each other but differ from authority.
+        let tampered = vec![0xABu8; content.len()];
+        std::fs::write(&img.path, &tampered).unwrap();
+        let mpath = manifest_path(dir.path(), &me);
+        let mut m: Manifest = serde_json::from_slice(&std::fs::read(&mpath).unwrap()).unwrap();
+        m.digest = hex(blake3::hash(&tampered).as_bytes());
+        std::fs::write(&mpath, serde_json::to_vec(&m).unwrap()).unwrap();
+
+        let src2 = content.clone();
+        let rebuilt = materialize(dir.path(), &me, size, |off, len| {
+            let s = off as usize;
+            let e = (s + len as usize).min(src2.len());
+            Ok(src2[s..e].to_vec())
+        })
+        .unwrap();
+        assert!(
+            !rebuilt.reused,
+            "a self-consistent tampered image must not be reused"
+        );
+        assert_eq!(rebuilt.digest, *blake3::hash(&content).as_bytes());
         assert_eq!(std::fs::read(&rebuilt.path).unwrap(), content);
     }
 

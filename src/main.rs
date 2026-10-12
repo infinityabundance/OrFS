@@ -1014,6 +1014,7 @@ fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
         f2_affinity: args.f2_affinity,
         group_commit: args.group_commit,
         group_commit_batch: args.group_commit_batch,
+        group_commit_linger: orfs::group_commit::GroupCommitLinger::Adaptive,
     };
 
     eprintln!(

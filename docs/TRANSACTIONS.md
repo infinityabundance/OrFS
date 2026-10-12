@@ -223,6 +223,24 @@ has completed) is preserved literally, now for ordinary `write` workloads too. A
 inside the job against the authoritative inode, so grouping never reorders
 concurrent appends.
 
+**Adaptive coalescing and bounded admission (this phase).** How long the
+coordinator lingers for a cohort, and how it behaves when submissions outrun the
+batch, are policy — not contract. The linger is now deadline-aware
+(`GroupCommitLinger::Adaptive`): bounded by the barrier it would amortise and by
+the latency objective, taken only when coalescing is worthwhile, and never
+applied to a mount with no shared barrier or to a strictly sequential writer
+(`docs/CONCURRENCY.md` §8.6). Admission is bounded (capacity `batch × 2`); a
+submission that finds the queue full is served on the **direct path** with its
+normal durability. Under `sync` that path issues its own per-request `fsync`
+before the caller is acked, so I7 holds for an over-capacity caller exactly as
+for a single commit: a caller is still acked only once a durable operation
+covering its own bytes has completed, the request is never dropped, and it is
+never falsely acknowledged as durable
+(`tests/group_commit_e2e.rs::group_commit_overload_falls_back_without_loss`,
+`evidence/performance/group-commit-adaptive.json`). Neither change alters *when*
+a member becomes durable relative to its own acknowledgment, so the contract
+above is untouched.
+
 ---
 
 ## 4. Fault injection (the fault-injection court)

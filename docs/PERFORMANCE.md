@@ -768,24 +768,75 @@ and the process-crash variant). Evidence:
 `evidence/performance/group-commit-e2e.json`,
 `evidence/performance/group-commit-e2e-writes.json`.
 
-**Honest result — no win claimed here.** The effect is **not statistically
-defensible**. The pure write workload (8 threads × 400 × 4 KiB, `sync`) measured
-grouped/baseline ratios anywhere from **0.97× to 4.31× across runs**: the
-committed evidence `group-commit-e2e-writes.json` records a run at **4.31×**
-(grouped 271 ops/s vs baseline 63 ops/s), while earlier runs on a less loaded
-host measured ~1.0–1.1× (baseline ~250 ops/s). The ratio is dominated by the two
-arms' very different sensitivity to host load: the ungrouped arm pays a
-**per-request `fsync`** whose cost balloons under contention, so the grouped arm
-looks better exactly when the host is busiest. Because a single paired run can
-show anything from parity to ~4×, no reproducible advantage is claimed. Likewise
-the create/unlink churn (`group-commit-e2e.json`) measured 83–91 vs 86–91 ops/s
-— parity. This is consistent with the classical `fuser` session delivering
-requests with little overlap on this host, so the coordinator's batch is often
-effectively a group of one, and a group of one is the single-commit path
-byte-for-byte. The coordinator is therefore **off by default**: a correct, tested
-building block whose benefit needs a workload/transport that supplies a deeper
-concurrent-writer backlog and a barrier-dominated per-op cost (the native F2 pool
-is the intended source).
+**Honest result — corrected in this phase.** The Phase-32 measurement above
+compared "grouping on" with "grouping off", but a wiring defect meant that
+*both* arms ran with the coordinator **not installed at all**: it was attached to
+`Inner` with `Arc::get_mut(&mut inner)`, which returns `None` as soon as the
+worker's `Weak<Inner>` exists, so `coordinator` stayed unset and every mutation
+took the direct per-request `fsync` path. The classical `fuser` session does in
+fact supply enough overlap: with the coordinator installed (a `OnceLock` set
+through `&self`), grouping is a large, consistent win (§11.1). The Phase-32 "no
+win" finding is therefore retracted — the parity it reported was the direct path
+measured against itself.
+
+### 11.1 Adaptive coalescing and bounded admission (this phase)
+
+**Design.** The fixed 300 µs linger is replaced by a deadline-aware rule
+(`src/group_commit.rs::coalesce_wait`, `GroupCommitLinger::Adaptive`, the
+default). The coordinator waits `t_wait = min(t_batch_opportunity, objective)`
+with `t_batch_opportunity = min(barrier_cost, objective)`, and only when
+coalescing is worthwhile:
+
+* **contention is evident** — the batch already holds more than one member, a
+  ready backlog exists, or the oldest member has waited past the objective; or
+* **an arrival is expected inside the window** (`rate × window ≥ 1`).
+
+It never waits for an `ordered`/`batched` mount (no shared barrier to amortise),
+never delays a strictly sequential writer, and caps the *linger it adds* at the
+objective (`LATENCY_BUDGET`, 250 µs). While the predictor is still uncertain (no
+arrival-rate estimate, or no barrier measured) it falls back conservatively to
+the historical fixed linger, capped by the objective. The objective bounds the
+added linger, **not** the request's load-induced total wait: subtracting the
+latter would suppress coalescing exactly when it pays most.
+
+Admission is **bounded** (a `sync_channel` of capacity `batch × 2`). A submission
+that finds the queue full is handed back *unchanged* and served on the direct
+path under the same core lock with its normal durability (a per-request `fsync`
+under `sync`), so an over-capacity caller is still served with I7 intact — never
+dropped, never a false success
+(`tests/group_commit_e2e.rs::group_commit_overload_falls_back_without_loss`).
+
+**Court.** `tests/group_commit_adaptive.rs`, opt-in via
+`scripts/container-group-commit.sh`; evidence
+`evidence/performance/group-commit-adaptive.json`. Mixed
+create/write → rename → fsync → unlink through a real mount at `sync`, 1–32
+threads; every write is read back byte-exact, so all arms do identical work.
+
+Representative points (single run, this host under heavy external load):
+
+| threads | none ops/s | fixed linger | adaptive | adaptive / none | adaptive / fixed |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 226.3 | 231.4 | 251.7 | 1.11× | 1.09× |
+| 8 | 258.7 | 1 233.8 | 1 217.4 | 4.71× | 0.99× |
+| 16 | 249.8 | 1 289.9 | 1 201.7 | 4.81× | 0.93× |
+| 32 | 249.0 | 1 261.7 | 1 060.0 | 4.26× | 0.84× |
+
+**Reading, stated plainly.**
+
+* **Grouping is a large, defensible win.** At ≥8 concurrent writers it roughly
+  **5×**es sustained throughput: concurrently-arrived mutations share one barrier
+  instead of each paying 3–4 ms of `fsync`. This is the win Phase 32 said was not
+  there; it was hidden by the wiring defect corrected above.
+* **Adaptive tracks the fixed linger, and is better for the sequential writer.**
+  Under saturation adaptive's batches are slightly smaller (mean ≈5.6 vs ≈6.2),
+  so it lands within ~20 % of fixed; at 1 thread it lingers ≈0 and *beats* the
+  blind 300 µs. It is not a throughput win *over fixed*; its value is delivering
+  the grouping win at a **bounded** added latency and never taxing a strictly
+  sequential writer. The coordinator stays **opt-in** (`--group-commit`).
+* **Caveats.** Single host under heavy external load, one run per point; the 2-
+  and 4-thread rows of the committed evidence were hit by host stalls and moved
+  materially between runs, and absolute tail latencies are load-sensitive.
+  Reproduce with the container script; treat sub-20 % differences as noise.
 
 ## 13. Reviewer item 4 — history-scaling court (foreground work vs growing history and manifestations)
 

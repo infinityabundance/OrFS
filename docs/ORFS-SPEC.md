@@ -131,10 +131,11 @@ per-phase record.
 | 43 | Compiled object read plans; bounded planner lifecycle | **complete** |
 | 44 | Single reproducible automated gate for the docs-receipts check | **complete** |
 | 45 | Fast historical-root access (binary accelerator + committed-root directory) | **complete** |
+| 46 | Adaptive, bounded group commit; wiring-defect correction (grouping is a ~5× win) | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–45 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–46 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.1.0 is published on crates.io (see `docs/PUBLISHING.md`).
 

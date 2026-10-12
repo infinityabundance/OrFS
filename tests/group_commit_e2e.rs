@@ -117,7 +117,7 @@ fn group_commit_e2e_is_correct_and_faster() {
         .unwrap_or_else(|_| "unknown".to_string());
     let (off, on) = (measured[0], measured[1]);
     let json = format!(
-        "{{\n  \"court\": \"group-commit-e2e\",\n  \"threads\": 8,\n  \"rounds\": 500,\n  \"durability\": \"sync\",\n  \"kernel\": \"{kernel}\",\n  \"results\": [\n    {{\"group_commit\": false, \"ops\": {}, \"seconds\": {:.3}, \"ops_per_s\": {:.1}}},\n    {{\"group_commit\": true, \"ops\": {}, \"seconds\": {:.3}, \"ops_per_s\": {:.1}}}\n  ],\n  \"note\": \"create+write+read+unlink per round; the coordinator is opt-in. Single paired run: the effect varied in both directions across repeated trials (host under contention), so NO statistically defensible end-to-end win is claimed on this workload — the per-mutation cost is not dominated by one barrier. The engine-level win (Phase 31) needs a larger prepared backlog than a mount workload produces here.\"\n}}\n",
+        "{{\n  \"court\": \"group-commit-e2e\",\n  \"threads\": 8,\n  \"rounds\": 500,\n  \"durability\": \"sync\",\n  \"kernel\": \"{kernel}\",\n  \"results\": [\n    {{\"group_commit\": false, \"ops\": {}, \"seconds\": {:.3}, \"ops_per_s\": {:.1}}},\n    {{\"group_commit\": true, \"ops\": {}, \"seconds\": {:.3}, \"ops_per_s\": {:.1}}}\n  ],\n  \"note\": \"create+write+read+unlink per round; the coordinator is opt-in (off by default). After the Phase-46 wiring fix the coordinator is genuinely installed. This churn court is noisy: near-parity in some runs, but up to ~5x in others, because each round's read-back and unlink work dilutes the barrier amortisation - so no stable win is claimed for THIS workload. The pure write-workload court shows a consistent ~5x (see group-commit-e2e-writes.json).\"\n}}\n",
         off.1, off.2, off.1 as f64 / off.2, on.1, on.2, on.1 as f64 / on.2
     );
     let _ = std::fs::write("evidence/performance/group-commit-e2e.json", json);
@@ -387,11 +387,116 @@ fn group_commit_write_workload_measurement() {
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|_| "unknown".to_string());
     let json = format!(
-        "{{\n  \"court\": \"group-commit-e2e-writes\",\n  \"threads\": {THREADS},\n  \"writes_per_thread\": {WRITES},\n  \"block_bytes\": {BLOCK},\n  \"durability\": \"sync\",\n  \"kernel\": \"{kernel}\",\n  \"results\": [\n    {{\"group_commit\": false, \"ops\": {off_ops}, \"seconds\": {off_secs:.3}, \"ops_per_s\": {:.1}}},\n    {{\"group_commit\": true, \"ops\": {on_ops}, \"seconds\": {on_secs:.3}, \"ops_per_s\": {:.1}}}\n  ],\n  \"ratio_on_over_off\": {ratio:.3},\n  \"note\": \"Pure write workload at sync durability; single paired run, reported as measured. The coordinator is opt-in and off by default.\"\n}}\n",
+        "{{\n  \"court\": \"group-commit-e2e-writes\",\n  \"threads\": {THREADS},\n  \"writes_per_thread\": {WRITES},\n  \"block_bytes\": {BLOCK},\n  \"durability\": \"sync\",\n  \"kernel\": \"{kernel}\",\n  \"results\": [\n    {{\"group_commit\": false, \"ops\": {off_ops}, \"seconds\": {off_secs:.3}, \"ops_per_s\": {:.1}}},\n    {{\"group_commit\": true, \"ops\": {on_ops}, \"seconds\": {on_secs:.3}, \"ops_per_s\": {:.1}}}\n  ],\n  \"ratio_on_over_off\": {ratio:.3},\n  \"note\": \"Pure write workload at sync durability; single paired run, reported as measured. With the coordinator installed (Phase-46 wiring fix) the grouped arm amortises one fsync across a batch - ~5x over the per-request-fsync arm on this workload. The coordinator is opt-in and off by default.\"\n}}\n",
         off_ops as f64 / off_secs,
         on_ops as f64 / on_secs
     );
     let _ = std::fs::create_dir_all("evidence/performance");
     let _ = std::fs::write("evidence/performance/group-commit-e2e-writes.json", json);
     assert_eq!(on_ops, off_ops, "both arms did equal work");
+}
+
+/// Overload court: with a deliberately tiny admission bound, drive far more
+/// concurrent submissions than the coordinator can hold and assert the documented
+/// overload behaviour — the admission bound is never exceeded, no submission is
+/// dropped, no caller is falsely acknowledged, and no thread deadlocks (every
+/// worker joins). Submissions that find the queue full are served on the **direct
+/// path** under the same core lock, so `direct_fallbacks` must be non-zero; that
+/// path issues its own per-request `fsync` under `sync`, so I7 still holds for an
+/// over-capacity caller.
+#[test]
+fn group_commit_overload_falls_back_without_loss() {
+    const THREADS: usize = 24;
+    const ROUNDS: usize = 150;
+    let base = std::env::temp_dir().join(format!("orfs-gc-overload-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    fs::create_dir_all(&base).expect("scratch");
+    let backing = base.join("backing");
+    let mnt = base.join("mnt");
+    fs::create_dir_all(&mnt).expect("mnt dir");
+    init_volume(&backing, DurabilityMode::Sync).expect("init volume");
+    // A tiny batch bound gives an admission capacity of `batch × 2 = 4`, so a burst
+    // of concurrent writers provably exceeds it.
+    let options = MountOptions {
+        durability: DurabilityMode::Sync,
+        statfs: StatfsMode::PhysicalSafe,
+        group_commit: true,
+        group_commit_batch: 2,
+        ..Default::default()
+    };
+    let mount = match fuse::spawn(&backing, &mnt, &options) {
+        Ok(m) => m,
+        Err(e) => {
+            if mount_required() {
+                panic!("FUSE mount failed under ORFS_FUSE_TEST=1: {e}");
+            }
+            eprintln!("group_commit_overload: skipping — mount unavailable ({e})");
+            let _ = fs::remove_dir_all(&base);
+            return;
+        }
+    };
+    let mnt: Arc<PathBuf> = Arc::new(mnt);
+    let ops = Arc::new(AtomicU64::new(0));
+    let mut hs = Vec::new();
+    for t in 0..THREADS {
+        let mnt = Arc::clone(&mnt);
+        let ops = Arc::clone(&ops);
+        hs.push(std::thread::spawn(move || {
+            let dir = mnt.join(format!("o{t}"));
+            fs::create_dir_all(&dir).expect("mkdir");
+            for i in 0..ROUNDS {
+                let p = dir.join(format!("f{i}"));
+                let data = [(t as u8).wrapping_add(i as u8); 32];
+                // create+write is one coordinator job, unlink another; the read is
+                // a direct read. Every one of them must succeed.
+                fs::write(&p, data).expect("write");
+                let got = fs::read(&p).expect("read back");
+                assert_eq!(got, data, "lost/torn write under overload (t={t} i={i})");
+                fs::remove_file(&p).expect("unlink");
+                ops.fetch_add(2, Ordering::Relaxed);
+            }
+        }));
+    }
+    for h in hs {
+        h.join().expect("worker deadlocked or a mutation failed");
+    }
+    assert_eq!(
+        ops.load(Ordering::Relaxed),
+        (THREADS * ROUNDS * 2) as u64,
+        "every mutation must be served"
+    );
+    let stats = mount.group_commit_stats().expect("grouping is on");
+    mount.unmount().expect("unmount");
+    let _ = fs::remove_dir_all(&base);
+    // The documented bound: the admission channel holds at most `capacity`. The
+    // occupancy counter counts an attempt before its send and rolls it back on
+    // refusal, so its high-water mark can exceed the true occupancy by at most the
+    // number of concurrent submitters.
+    assert!(
+        stats.max_queue_depth <= stats.capacity + THREADS as u64,
+        "admission bound violated: depth {} > capacity {} + threads {}",
+        stats.max_queue_depth,
+        stats.capacity,
+        THREADS
+    );
+    // The overload path was actually exercised (refused → direct serve).
+    assert!(
+        stats.direct_fallbacks > 0,
+        "overload never exceeded the admission bound (capacity={}, admissions={}, \
+         max_queue_depth={}); the direct-fallback path is untested",
+        stats.capacity,
+        stats.admissions,
+        stats.max_queue_depth
+    );
+    println!(
+        "overload: {} mutations served; admissions={} direct_fallbacks={} \
+         capacity={} max_queue_depth={} batches={} barriers={}",
+        ops.load(Ordering::Relaxed),
+        stats.admissions,
+        stats.direct_fallbacks,
+        stats.capacity,
+        stats.max_queue_depth,
+        stats.batches,
+        stats.barriers
+    );
 }

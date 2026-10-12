@@ -30,7 +30,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use fuser::{
@@ -200,6 +200,11 @@ pub struct MountOptions {
     pub group_commit: bool,
     /// Maximum number of concurrently-arrived mutations coalesced into one batch.
     pub group_commit_batch: usize,
+    /// How the coordinator decides how long to linger for a cohort before taking
+    /// the durability barrier. `Adaptive` (the default) uses the deadline-aware
+    /// rule in `crate::group_commit::coalesce_wait`; `Fixed` retains the
+    /// historical blind 300 µs wait (used only as the court's fixed arm).
+    pub group_commit_linger: crate::group_commit::GroupCommitLinger,
     /// Mount read-only.
     pub read_only: bool,
     /// Requested FUSE transport (`fuse` = F0/F1, `fuse-uring` = attempt F2).
@@ -258,6 +263,7 @@ impl Default for MountOptions {
             durability: DurabilityMode::Ordered,
             group_commit: false,
             group_commit_batch: 64,
+            group_commit_linger: crate::group_commit::GroupCommitLinger::Adaptive,
             read_only: false,
             transport: Transport::Fuse,
             backing_io: BackingIo::Sync,
@@ -424,7 +430,10 @@ pub(crate) struct Inner<C: OrfsCore + Send + 'static> {
     /// End-to-end group-commit coordinator (Phase 32). When present, mutating
     /// requests are submitted here instead of taking the core lock directly, so
     /// concurrently-arrived mutations share one durability barrier under `sync`.
-    coordinator: Option<Arc<crate::group_commit::BatchCoordinator<C>>>,
+    /// A [`OnceLock`] because the coordinator's worker holds a `Weak<Inner>`, so
+    /// it must be installed through `&self` (an `Arc::get_mut` would fail once
+    /// that `Weak` exists).
+    coordinator: OnceLock<Arc<crate::group_commit::BatchCoordinator<C>>>,
 }
 
 impl<C: OrfsCore + Send + 'static> Inner<C> {
@@ -437,17 +446,40 @@ impl<C: OrfsCore + Send + 'static> Inner<C> {
     /// is submitted to it (so it can share a batch's durability barrier);
     /// otherwise it runs directly under the core lock. Either way the mutation
     /// executes against the single authoritative core with its order preserved.
+    ///
+    /// Admission is **bounded**: if the coordinator's queue is full (overload)
+    /// the job is handed straight back and runs here on the direct path, under
+    /// the same core lock and with its normal durability — so an over-capacity
+    /// caller is still served, with a per-request `fsync` under `sync` (I7), and
+    /// never dropped and never falsely acknowledged.
     pub(crate) fn mutate<F>(&self, f: F) -> Result<i64>
     where
         F: FnOnce(&mut C) -> Result<i64> + Send + 'static,
     {
-        match &self.coordinator {
-            Some(coord) => coord.submit(Box::new(f)),
+        match self.coordinator.get() {
+            Some(coord) => match coord.try_admit(Box::new(f)) {
+                Ok(reply) => reply.recv().map_err(|_| {
+                    OrfsError::Io(std::io::Error::new(
+                        std::io::ErrorKind::BrokenPipe,
+                        "group-commit reply dropped",
+                    ))
+                })?,
+                Err(job) => {
+                    // Not admitted: serve on the direct path (bounded admission).
+                    let mut core = self.core.lock();
+                    job(&mut core)
+                }
+            },
             None => {
                 let mut core = self.core.lock();
                 f(&mut core)
             }
         }
+    }
+
+    /// The group-commit instrumentation cell, when the coordinator is active.
+    pub(crate) fn group_commit_counters(&self) -> Option<Arc<crate::group_commit::GcCounters>> {
+        self.coordinator.get().map(|c| c.counters())
     }
 
     /// A shared handle to the operation counters, so a mount can report the
@@ -583,7 +615,7 @@ impl<C: OrfsCore + Send + 'static> OrfsFuse<C> {
         // The core owns the publication cell; the adaptor shares it so it never
         // has to take the core lock just to obtain the current read view.
         let read = core.read_view_cell();
-        let mut inner = Arc::new(Inner {
+        let inner = Arc::new(Inner {
             core: Mutex::new(core),
             read,
             handles: Mutex::new(HandleTable::default()),
@@ -591,18 +623,20 @@ impl<C: OrfsCore + Send + 'static> OrfsFuse<C> {
             metrics: Arc::new(Mutex::new(Metrics::default())),
             backing,
             root_inode: ROOT_INODE,
-            coordinator: None,
+            coordinator: OnceLock::new(),
         });
         // Start the end-to-end group-commit coordinator (Phase 32) when opted in.
         // `BatchCoordinator::start` only takes a *weak* handle to `inner`, so the
-        // strong count stays 1 here and `get_mut` succeeds; if it ever did not, we
-        // simply fall back to the direct (per-request) path.
+        // strong count stays 1; but that weak handle means `Arc::get_mut` would
+        // fail, so the coordinator is installed through the `OnceLock` (which
+        // needs only `&self`).
         if options.group_commit {
-            let coord =
-                crate::group_commit::BatchCoordinator::start(&inner, options.group_commit_batch);
-            if let Some(slot) = Arc::get_mut(&mut inner) {
-                slot.coordinator = Some(coord);
-            }
+            let coord = crate::group_commit::BatchCoordinator::start(
+                &inner,
+                options.group_commit_batch,
+                options.group_commit_linger,
+            );
+            let _ = inner.coordinator.set(coord);
         }
         let notifier: NotifierCell = Arc::new(Mutex::new(None));
         // Cache invalidation runs on its own thread. Sending a FUSE notify from
@@ -666,6 +700,18 @@ impl<C: OrfsCore + Send + 'static> OrfsFuse<C> {
     /// daemon-request count for every transport (F0/F1/F2).
     pub(crate) fn metrics_cell(&self) -> Arc<Mutex<Metrics>> {
         self.inner.metrics_cell()
+    }
+
+    /// The group-commit coordinator's instrumentation, when the coordinator is
+    /// active (`--group-commit`). `None` when grouping is off.
+    pub fn group_commit_stats(&self) -> Option<crate::group_commit::GroupCommitStats> {
+        self.inner.group_commit_counters().map(|c| c.snapshot())
+    }
+
+    /// The shared group-commit instrumentation cell, so the mount can expose it
+    /// off the session (the same pattern as the daemon-operation counters).
+    pub(crate) fn group_commit_counters(&self) -> Option<Arc<crate::group_commit::GcCounters>> {
+        self.inner.group_commit_counters()
     }
 
     /// The number of outstanding kernel lookup references for `ino`.
@@ -2285,6 +2331,9 @@ pub struct OrfsMount {
     /// number of requests that actually reached the daemon can be compared with
     /// the application-level syscall count.
     daemon_metrics: Arc<Mutex<Metrics>>,
+    /// The group-commit coordinator's instrumentation cell, present only when the
+    /// mount enabled grouping (`--group-commit`).
+    group_commit: Option<Arc<crate::group_commit::GcCounters>>,
 }
 
 impl OrfsMount {
@@ -2347,6 +2396,13 @@ impl OrfsMount {
     /// compared in the performance court.
     pub fn daemon_metrics(&self) -> Metrics {
         self.daemon_metrics.lock().clone()
+    }
+
+    /// A snapshot of the group-commit coordinator's instrumentation (queue depth,
+    /// barrier count, batch-size distribution, linger waited, admissions vs
+    /// direct-serve fallbacks), or `None` when grouping is off.
+    pub fn group_commit_stats(&self) -> Option<crate::group_commit::GroupCommitStats> {
+        self.group_commit.as_ref().map(|c| c.snapshot())
     }
 
     /// The live FUSE-over-`io_uring` negotiation result.
@@ -2501,6 +2557,7 @@ pub fn spawn(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<O
                     Ok(native) => {
                         let negotiation = native.negotiation_cell();
                         let daemon_metrics = native.metrics_cell();
+                        let group_commit = native.group_commit_cell();
                         return Ok(OrfsMount {
                             session: MountSession::Native(native),
                             notifier: Arc::new(Mutex::new(None)),
@@ -2509,6 +2566,7 @@ pub fn spawn(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<O
                             durability: opts.durability,
                             negotiation,
                             daemon_metrics,
+                            group_commit,
                         });
                     }
                     Err(e) => eprintln!(
@@ -2532,6 +2590,7 @@ pub fn spawn(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<O
     let fs = OrfsFuse::new(core, backing.to_path_buf(), *opts);
     let negotiation = fs.negotiation_cell();
     let daemon_metrics = fs.metrics_cell();
+    let group_commit = fs.group_commit_counters();
     let config = build_config(opts);
     let (session, notifier) = attach(fs, mountpoint, &config)?;
     let session = session.spawn()?;
@@ -2543,6 +2602,7 @@ pub fn spawn(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<O
         durability: opts.durability,
         negotiation,
         daemon_metrics,
+        group_commit,
     })
 }
 
@@ -2700,6 +2760,7 @@ pub fn spawn_snapshot_native(
     })?;
     let negotiation = native.negotiation_cell();
     let daemon_metrics = native.metrics_cell();
+    let group_commit = native.group_commit_cell();
     Ok(OrfsMount {
         session: MountSession::Native(native),
         notifier: Arc::new(Mutex::new(None)),
@@ -2708,6 +2769,7 @@ pub fn spawn_snapshot_native(
         durability: opts.durability,
         negotiation,
         daemon_metrics,
+        group_commit,
     })
 }
 
@@ -2725,6 +2787,7 @@ pub fn spawn_snapshot(
     let snap = Snapshot::open_dir(backing, root)?;
     let fs = OrfsFuse::new(snap, backing.to_path_buf(), opts);
     let daemon_metrics = fs.metrics_cell();
+    let group_commit = fs.group_commit_counters();
     let config = build_config(&opts);
     let (session, notifier) = attach(fs, mountpoint, &config)?;
     let session = session.spawn()?;
@@ -2736,6 +2799,7 @@ pub fn spawn_snapshot(
         durability: opts.durability,
         negotiation: Arc::new(Mutex::new(FuseUringNegotiation::not_requested())),
         daemon_metrics,
+        group_commit,
     })
 }
 

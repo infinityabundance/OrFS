@@ -5,18 +5,8 @@
   "durability": "sync",
   "kernel": "7.2.9-2-cachyos",
   "results": [
-    {
-      "group_commit": false,
-      "ops": 4000,
-      "seconds": 53.939,
-      "ops_per_s": 74.2
-    },
-    {
-      "group_commit": true,
-      "ops": 4000,
-      "seconds": 42.749,
-      "ops_per_s": 93.6
-    }
+    {"group_commit": false, "ops": 4000, "seconds": 45.824, "ops_per_s": 87.3},
+    {"group_commit": true, "ops": 4000, "seconds": 8.270, "ops_per_s": 483.7}
   ],
-  "note": "create+write+read+unlink per round; the coordinator is opt-in. Single paired run: the effect varied in both directions across repeated trials (host under contention), so NO statistically defensible end-to-end win is claimed on this workload \u2014 the per-mutation cost is not dominated by one barrier. The engine-level win (Phase 31) needs a larger prepared backlog than a mount workload produces here."
+  "note": "create+write+read+unlink per round; the coordinator is opt-in (off by default). After the Phase-46 wiring fix the coordinator is genuinely installed. This churn court is noisy: near-parity in some runs, but up to ~5x in others, because each round's read-back and unlink work dilutes the barrier amortisation - so no stable win is claimed for THIS workload. The pure write-workload court shows a consistent ~5x (see group-commit-e2e-writes.json)."
 }

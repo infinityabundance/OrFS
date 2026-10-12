@@ -2157,6 +2157,8 @@ pub struct NativeMount {
     stats: Arc<Mutex<NativeStats>>,
     environment: Arc<Mutex<NativeEnvironment>>,
     metrics: Arc<Mutex<crate::fuse::Metrics>>,
+    /// The group-commit instrumentation cell, when the mount enabled grouping.
+    group_commit: Option<Arc<crate::group_commit::GcCounters>>,
 }
 
 impl NativeMount {
@@ -2169,6 +2171,11 @@ impl NativeMount {
     /// uses), so the mount can report daemon-reaching requests uniformly.
     pub fn metrics_cell(&self) -> Arc<Mutex<crate::fuse::Metrics>> {
         Arc::clone(&self.metrics)
+    }
+
+    /// The group-commit instrumentation cell, when the mount enabled grouping.
+    pub(crate) fn group_commit_cell(&self) -> Option<Arc<crate::group_commit::GcCounters>> {
+        self.group_commit.clone()
     }
 
     /// The shared negotiation cell, so the mount can report live updates.
@@ -2228,6 +2235,7 @@ impl Prepared {
         let fs = Arc::new(OrfsFuse::new(core, backing, options));
         let negotiation = fs.negotiation_cell();
         let metrics = fs.metrics_cell();
+        let group_commit = fs.group_commit_counters();
         let stats = Arc::clone(&self.stats);
         // The passthrough controller holds its own `/dev/fuse` duplicate so the
         // ioctls do not race with the session's reads on the original fd.
@@ -2296,6 +2304,7 @@ impl Prepared {
                 stats,
                 environment,
                 metrics,
+                group_commit,
             }),
             Ok(Err(e)) => {
                 stop.store(true, Ordering::SeqCst);

@@ -270,10 +270,10 @@ order. Nothing is published out of order — proven by
   the I7 contract holds while the barrier is amortised; `ordered`/`batched`
   mounts add no barrier. Because the jobs run while the worker already holds the
   core lock, a job must never re-enter the coordinator (no such path exists).
-  Whether this is observable as a speedup depends on the transport actually
-  delivering overlapping requests; on the classical `fuser` session the backlog
-  is shallow, so the win is not realised there (reported honestly in
-  `docs/PERFORMANCE.md` §11).
+  Admission is bounded (§8.6): a submission that finds the bounded queue full
+  runs on the direct path instead. With the coordinator actually installed,
+  grouping is a large, consistent end-to-end win at ≥8 concurrent writers
+  (`docs/PERFORMANCE.md` §11.1).
 
 ### 8.5 Invariants and proof obligations
 
@@ -284,3 +284,41 @@ order. Nothing is published out of order — proven by
 | Parallel preparation cannot publish out of order | roots strictly advance and every root is a boundary (`parallel_preparation_cannot_publish_out_of_order`) |
 | Grouping does not change the log | byte- and digest-identical to serial (`group_commit_is_byte_identical_to_serial_commit`) |
 | Concurrent group committers stay consistent and recover exactly | `concurrent_group_committers_land_in_order_and_recover_exactly` |
+| A refused (over-capacity) submission is never dropped or falsely acked | `group_commit.rs::a_refused_job_is_handed_back_intact_for_the_direct_path` (job returned unchanged; direct path holds the core lock and keeps I7) |
+| Admission is bounded by the batch bound | `group_commit.rs::admission_is_refused_once_the_queue_is_full` |
+| The adaptive wait never exceeds the latency objective | `group_commit.rs::coalesce_never_exceeds_the_budget`, `coalesce_window_is_capped_by_the_objective` |
+| A strictly sequential writer is never delayed | `group_commit.rs::coalesce_does_not_delay_a_sequential_writer` |
+
+### 8.6 Adaptive coalescing and bounded admission (this phase)
+
+Two refinements turn the transport coordinator into an *adaptive latency*
+mechanism rather than a fixed-cost one.
+
+* **Deadline-aware coalescing.** The historical blind 300 µs linger is replaced
+  by `coalesce_wait` (`GroupCommitLinger::Adaptive`, the default): wait
+  `min(barrier_cost, objective)` — the opportunity bounded by the barrier it
+  would amortise and by the latency objective — and only when contention is
+  evident (the batch already has more than one member, a backlog exists, or the
+  oldest member has waited past the objective) or an arrival is expected inside
+  the window (`rate × window ≥ 1`). It never waits for a mount with no shared
+  barrier and never delays a strictly sequential writer. The objective bounds the
+  linger the coordinator *adds*, not the request's load-induced total wait —
+  bounding the total would suppress coalescing exactly when it pays most. The
+  predictor is a pure function of `CoalesceInputs` and is unit-tested; a
+  conservative fallback to the historical fixed linger applies until it has both
+  an arrival-rate estimate and a measured barrier.
+* **Bounded admission.** The submission channel is a bounded `sync_channel`
+  (capacity `batch × 2`). `try_admit` never blocks: a submission that finds the
+  queue full is returned *unchanged* and run on the direct path by the caller,
+  under the same core lock and with its normal durability (a per-request `fsync`
+  under `sync`). The overload contract is therefore: bounded queueing delay, no
+  dropped or falsely-acknowledged request, and a predictable latency-vs-
+  throughput envelope instead of unbounded batching. It is the only second
+  serialisation point, and it takes the *same* core lock, so authoritative order
+  remains a single total order; a fallback interleaves with the worker's batches
+  in lock-acquisition order rather than strictly in submission order (a caller
+  that cares about order blocks on each reply). Reference work and evidence:
+  `tests/group_commit_adaptive.rs`,
+  `tests/group_commit_e2e.rs::group_commit_overload_falls_back_without_loss`,
+  `evidence/performance/group-commit-adaptive.json`, `docs/PERFORMANCE.md` §11.1,
+  `scripts/container-group-commit.sh`.

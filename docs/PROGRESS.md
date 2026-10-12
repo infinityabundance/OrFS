@@ -1870,6 +1870,13 @@ mutating requests behind one coordinator is future work.
 
 ## Phase 32 — End-to-end group-commit coordinator (opt-in), correctness court, honest measurement
 
+> **Correction (Phase 46):** the "no win" conclusion below was an artifact of a
+> coordinator **wiring defect** — it was attached with `Arc::get_mut` after the
+> worker had taken a `Weak`, so it was never installed and both arms ran the same
+> direct path. With the coordinator actually installed, grouping is a large win
+> (**≈5×** on write-heavy synchronised workloads). See the Phase 46 entry and
+> `docs/PERFORMANCE.md` §11.
+
 **Complete.** External review §6 P1 follow-up. A per-mount **group-commit
 coordinator** (`src/group_commit.rs`) lets concurrently-submitted mutating
 requests (create/mkdir/symlink/mknod/unlink/rmdir) be drained into a batch,
@@ -2135,6 +2142,11 @@ RESULT: `sh scripts/check-docs-receipts.sh` exits **0** on this commit
 (provenance 3/3 allowed-historical, citations 37/37 ok).
 
 ## Phase 39 — Group commit extended to ordinary write workloads (both transports)
+
+> **Correction (Phase 46):** the "no defensible win" reading below was caused by
+> the same wiring defect as Phase 32 (the coordinator was never installed). With
+> it installed, the write workload measures **≈5×**. See the Phase 46 entry and
+> `docs/PERFORMANCE.md` §11.
 
 **Complete.** External review §"finish the group-commit performance path": the
 Phase 32 coordinator coalesced only a handful of namespace mutations on the
@@ -2517,3 +2529,73 @@ directory but never write it (`docs/SNAPSHOTS.md` §6.2).
   2 048).
 * The `fuse_uring` mount court was not run (environmental); the non-mount
   snapshot/historical/recovery courts were used.
+
+## Phase 46 — Adaptive, bounded group commit; **wiring-defect correction**
+
+**Complete.** Research-programme §8, and a correction of a long-standing defect
+found while doing it.
+
+### The defect (root cause of the Phase 32/39 "no win")
+
+The Phase 32 coordinator was attached to `Inner` with
+`Arc::get_mut(&mut inner)` **after** `BatchCoordinator::start` had taken
+`Arc::downgrade(inner)`. `Arc::get_mut` returns `None` as soon as **any** `Weak`
+exists — and the worker's `Weak<Inner>` always does — so `coordinator` stayed
+`None` and **every mutation took the direct per-request `fsync` path**. Grouping
+"on" and grouping "off" were the same code path, which is exactly why Phase 32 and
+Phase 39 measured parity. Fixed with a `std::sync::OnceLock` set through `&self`.
+
+**Verified (mounted, two independent courts):** with the coordinator actually
+installed, the pure **write workload** goes **262 → 1 365 ops/s (≈5.2×)** and the
+concurrent **create+unlink churn** court ranges from near-parity to **≈5.5×**
+(87 → 484) across runs; the opt-in concurrency sweep shows grouping-vs-none
+**≈2.6–5.3×** at ≥4 writers. The Phase-32/39 "no defensible win" findings are
+**retracted** (`docs/PERFORMANCE.md` §11).
+
+### Delivered
+
+* `src/group_commit.rs`: deadline-aware **adaptive coalescing**
+  (`t_wait = min(t_batch_opportunity, objective)`, objective `LATENCY_BUDGET`
+  250 µs) that lingers only when coalescing is worthwhile (batch already >1, a
+  ready backlog, the oldest member past the objective, or an expected arrival),
+  with a conservative fixed-linger fallback while the predictor is cold; and
+  **bounded admission** (`sync_channel`, capacity `batch × 2`). An over-capacity
+  submission is handed back unchanged and served on the direct path under the
+  same core lock with normal durability — never dropped, never a false success.
+* `src/fuse.rs` / `src/fuse_native.rs`: `OnceLock` coordinator wiring (the fix),
+  linger plumbing, `group_commit_stats()`.
+* `src/main.rs`: default linger = `Adaptive`.
+
+### Guarantees preserved
+
+I7 (a `sync` batch lowers to `ordered`, one shared `fsync`, ack only after it, and
+`EIO` — never success — on barrier failure), submission ordering, no job
+re-entrancy, opt-in/off-by-default, and the direct lock for read handlers and the
+`fsync`/`flush`/`fsyncdir` barriers.
+
+### Courts
+
+* `tests/group_commit_e2e.rs`: mounted create/unlink, concurrent-writer and
+  `O_APPEND`-ordering courts, plus an **overload** court
+  (`group_commit_overload_falls_back_without_loss`: capacity 4, all 7 200
+  mutations served, `direct_fallbacks > 0`).
+* `tests/group_commit_adaptive.rs` + `scripts/container-group-commit.sh`: the
+  1–32-thread none/fixed/adaptive concurrency sweep; evidence
+  `evidence/performance/group-commit-adaptive.json`.
+* Crash courts (failpoints) unchanged and green.
+
+### Honest reading
+
+* **Grouping is a large, defensible win** (~5× on write-heavy synchronised
+  workloads); it was hidden by the wiring defect.
+* **Adaptive does not beat the fixed linger on throughput under saturation**
+  (slightly behind, within ~20 %); its value is delivering the grouping win at a
+  **bounded** added latency (≤250 µs) and never delaying a strictly sequential
+  writer. The coordinator stays opt-in.
+* Single-run/host measurements under contention; the churn court is noisy
+  (near-parity to ~5.5× across runs). Evidence notes state this.
+
+### Docs
+
+`docs/PERFORMANCE.md` §11 (retraction) + §11.1 (adaptive rule, bounded admission,
+sweep), `docs/CONCURRENCY.md` §8, `docs/TRANSACTIONS.md` §3.2.

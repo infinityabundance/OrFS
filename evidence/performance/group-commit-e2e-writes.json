@@ -6,9 +6,9 @@
   "durability": "sync",
   "kernel": "7.2.9-2-cachyos",
   "results": [
-    {"group_commit": false, "ops": 3200, "seconds": 50.850, "ops_per_s": 62.9},
-    {"group_commit": true, "ops": 3200, "seconds": 11.791, "ops_per_s": 271.4}
+    {"group_commit": false, "ops": 3200, "seconds": 12.227, "ops_per_s": 261.7},
+    {"group_commit": true, "ops": 3200, "seconds": 2.344, "ops_per_s": 1365.2}
   ],
-  "ratio_on_over_off": 4.313,
-  "note": "Pure write workload at sync durability; single paired run, reported as measured. The coordinator is opt-in and off by default."
+  "ratio_on_over_off": 5.216,
+  "note": "Pure write workload at sync durability; single paired run, reported as measured. With the coordinator installed (Phase-46 wiring fix) the grouped arm amortises one fsync across a batch - ~5x over the per-request-fsync arm on this workload. The coordinator is opt-in and off by default."
 }

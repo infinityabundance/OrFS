@@ -39,6 +39,7 @@ pub mod fuse;
 pub mod fuse_native;
 pub mod fuse_uring;
 pub mod group;
+pub mod group_commit;
 pub mod historical;
 pub mod image;
 pub mod index;

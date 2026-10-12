@@ -126,6 +126,13 @@ enum Command {
         /// Pin the F2 session/worker threads to a dedicated CPU set.
         #[arg(long)]
         f2_affinity: bool,
+        /// Coalesce concurrently-arrived mutations behind one durability barrier
+        /// (end-to-end group commit, Phase 32). Most useful with `--durability sync`.
+        #[arg(long)]
+        group_commit: bool,
+        /// Maximum mutations coalesced into one group-commit batch.
+        #[arg(long, default_value_t = 64)]
+        group_commit_batch: usize,
     },
 
     /// Unmount a mounted OrFS volume.
@@ -347,6 +354,8 @@ fn run(cli: &Cli) -> Result<()> {
             reserve,
             f2_servicing,
             f2_affinity,
+            group_commit,
+            group_commit_batch,
         } => mount_cmd(MountArgs {
             backing,
             mountpoint,
@@ -370,6 +379,8 @@ fn run(cli: &Cli) -> Result<()> {
             reserve: *reserve,
             f2_servicing,
             f2_affinity: *f2_affinity,
+            group_commit: *group_commit,
+            group_commit_batch: *group_commit_batch,
         }),
         Command::Unmount { mountpoint } => unmount_cmd(mountpoint, cli.json),
         Command::Inspect { backing } => inspect(backing, cli.json),
@@ -908,6 +919,8 @@ struct MountArgs<'a> {
     reserve: u64,
     f2_servicing: &'a str,
     f2_affinity: bool,
+    group_commit: bool,
+    group_commit_batch: usize,
 }
 
 fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
@@ -999,6 +1012,8 @@ fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
         capacity_reserve_bytes: args.reserve,
         f2_servicing,
         f2_affinity: args.f2_affinity,
+        group_commit: args.group_commit,
+        group_commit_batch: args.group_commit_batch,
     };
 
     eprintln!(

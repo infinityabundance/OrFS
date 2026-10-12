@@ -666,3 +666,36 @@ portable benchmark; reproduce with the container scripts.
    is kernel-page-cache dominated and shows no profile difference. The cold
    variant can include a first-access payload reload, so its single-run figures
    are noisy.
+
+## 11. Phase 32 — end-to-end group commit through the transports
+
+The engine-level ordered group commit (Phase 31, §10) amortises one durability
+barrier over many transactions, but the FUSE adapters historically serialised
+every mutation through `Mutex<Core>` and issued a per-request `fsync`, so the win
+was invisible through a mount.
+
+Phase 32 adds a per-mount **group-commit coordinator** (`src/group_commit.rs`),
+**opt-in** via `orfs mount --group-commit [--group-commit-batch N]`. Concurrently
+submitted mutating requests (create/mkdir/symlink/mknod/unlink/rmdir) are drained
+into a batch, executed **sequentially** (so authoritative order, per-transaction
+atomicity and the existing record-offset prediction are untouched), and — for a
+`sync` mount — run with durability temporarily lowered to `ordered` and covered
+by **one** shared `fsync` issued before any caller is acknowledged. The `sync`
+acknowledgment contract (I7) is therefore preserved exactly; the expensive
+barrier is amortised. `ordered`/`batched` mounts add no barrier (no semantic
+change).
+
+**Correctness** is proven end-to-end: `tests/group_commit_e2e.rs` mounts a real
+volume and runs 8 threads × 500 rounds of concurrent
+create→write→read-back→unlink, asserting every write reads back byte-exact and
+every unlink succeeds (no lost update, no tear, no error). Evidence:
+`evidence/performance/group-commit-e2e.json`.
+
+**Honest result — no win claimed here.** On this workload the measured difference
+was **not statistically defensible**: across repeated paired runs the effect
+varied in both directions (e.g. 74 vs 94 ops/s, then 91 vs 73 ops/s) because the
+host was under contention and the per-mutation cost is not dominated by a single
+barrier. The engine-level win needs a larger *prepared backlog* than a
+create/write/unlink mount workload produces. The coordinator is therefore **off
+by default**; it is a correct, tested building block that will matter once a
+transport supplies a deeper concurrent-writer backlog.

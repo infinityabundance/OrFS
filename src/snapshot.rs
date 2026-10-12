@@ -495,6 +495,13 @@ impl OrfsCore for Snapshot {
         Ok(())
     }
 
+    fn durability(&self) -> crate::commit::DurabilityMode {
+        // A snapshot is read-only; durability never applies to it.
+        crate::commit::DurabilityMode::Ordered
+    }
+
+    fn set_durability(&mut self, _mode: crate::commit::DurabilityMode) {}
+
     fn create(
         &mut self,
         _parent: u64,

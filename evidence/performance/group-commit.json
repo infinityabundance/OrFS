@@ -22,26 +22,26 @@
   "rows": [
     {
       "baseline": {
-        "mean_latency_us": 3613.2224374999996,
-        "ops_per_sec_ci95_high": 320.2752981913342,
-        "ops_per_sec_ci95_low": 237.28018190627765,
-        "ops_per_sec_mean": 278.7777400488059
+        "mean_latency_us": 4553.6474375,
+        "ops_per_sec_ci95_high": 296.8335166827509,
+        "ops_per_sec_ci95_low": 156.3422438705929,
+        "ops_per_sec_mean": 226.58788027667188
       },
       "grouped": {
         "batch": 8,
-        "mean_latency_us": 882.7741875,
-        "ops_per_sec_ci95_high": 1155.8354746149328,
-        "ops_per_sec_ci95_low": 1110.0214178449608,
-        "ops_per_sec_mean": 1132.9284462299468
+        "mean_latency_us": 1048.0453125,
+        "ops_per_sec_ci95_high": 1165.312387180248,
+        "ops_per_sec_ci95_low": 769.8412601567006,
+        "ops_per_sec_mean": 967.5768236684743
       },
       "paired_ops_per_sec": {
-        "ci95_high": 889.7936134667177,
-        "ci95_low": 818.5077988955638,
-        "mean_diff": 854.1507061811408,
+        "ci95_high": 944.8793392076792,
+        "ci95_low": 537.0985475759252,
+        "mean_diff": 740.9889433918022,
         "metric": "grouped_minus_baseline",
         "pairs": 4,
         "significant": true,
-        "t": 76.25381188161947,
+        "t": 11.564187751157966,
         "t_crit95": 3.182
       },
       "rounds": 4,
@@ -50,26 +50,26 @@
     },
     {
       "baseline": {
-        "mean_latency_us": 3639.15215625,
-        "ops_per_sec_ci95_high": 305.2967039417073,
-        "ops_per_sec_ci95_low": 246.2583280341911,
-        "ops_per_sec_mean": 275.7775159879492
+        "mean_latency_us": 3929.7403125,
+        "ops_per_sec_ci95_high": 278.88817484766895,
+        "ops_per_sec_ci95_low": 231.3395032282497,
+        "ops_per_sec_mean": 255.11383903795934
       },
       "grouped": {
         "batch": 8,
-        "mean_latency_us": 446.47309375,
-        "ops_per_sec_ci95_high": 2291.5919929756706,
-        "ops_per_sec_ci95_low": 2188.6627260297923,
-        "ops_per_sec_mean": 2240.1273595027315
+        "mean_latency_us": 603.0714062500001,
+        "ops_per_sec_ci95_high": 2397.4136804051423,
+        "ops_per_sec_ci95_low": 1088.2944490323816,
+        "ops_per_sec_mean": 1742.854064718762
       },
       "paired_ops_per_sec": {
-        "ci95_high": 2034.6253280203305,
-        "ci95_low": 1894.0743590092338,
-        "mean_diff": 1964.3498435147822,
+        "ci95_high": 2157.706246634845,
+        "ci95_low": 817.7742047267603,
+        "mean_diff": 1487.7402256808025,
         "metric": "grouped_minus_baseline",
         "pairs": 4,
         "significant": true,
-        "t": 88.94369417788293,
+        "t": 7.0660141709501,
         "t_crit95": 3.182
       },
       "rounds": 4,
@@ -78,26 +78,26 @@
     },
     {
       "baseline": {
-        "mean_latency_us": 3574.567953125,
-        "ops_per_sec_ci95_high": 301.09235047864667,
-        "ops_per_sec_ci95_low": 259.3379401474671,
-        "ops_per_sec_mean": 280.2151453130569
+        "mean_latency_us": 4080.606765625,
+        "ops_per_sec_ci95_high": 272.12139834850814,
+        "ops_per_sec_ci95_low": 219.68513084582094,
+        "ops_per_sec_mean": 245.90326459716454
       },
       "grouped": {
         "batch": 8,
-        "mean_latency_us": 442.28565625,
-        "ops_per_sec_ci95_high": 2281.6978222561875,
-        "ops_per_sec_ci95_low": 2240.378012955215,
-        "ops_per_sec_mean": 2261.0379176057013
+        "mean_latency_us": 511.8989375000001,
+        "ops_per_sec_ci95_high": 2373.2419027440483,
+        "ops_per_sec_ci95_low": 1586.0365170686937,
+        "ops_per_sec_mean": 1979.639209906371
       },
       "paired_ops_per_sec": {
-        "ci95_high": 2004.4836738091838,
-        "ci95_low": 1957.1618707761056,
-        "mean_diff": 1980.8227722926447,
+        "ci95_high": 2142.610020494846,
+        "ci95_low": 1324.8618701235666,
+        "mean_diff": 1733.7359453092063,
         "metric": "grouped_minus_baseline",
         "pairs": 4,
         "significant": true,
-        "t": 266.3879082134452,
+        "t": 13.492535019416785,
         "t_crit95": 3.182
       },
       "rounds": 4,
@@ -106,26 +106,26 @@
     },
     {
       "baseline": {
-        "mean_latency_us": 3569.265296875,
-        "ops_per_sec_ci95_high": 282.18260872975696,
-        "ops_per_sec_ci95_low": 278.1652937220027,
-        "ops_per_sec_mean": 280.1739512258798
+        "mean_latency_us": 3735.9164296875,
+        "ops_per_sec_ci95_high": 279.73688138647753,
+        "ops_per_sec_ci95_low": 255.9247148113849,
+        "ops_per_sec_mean": 267.8307980989312
       },
       "grouped": {
         "batch": 8,
-        "mean_latency_us": 441.8833125,
-        "ops_per_sec_ci95_high": 2280.861629111148,
-        "ops_per_sec_ci95_low": 2245.3026779820907,
-        "ops_per_sec_mean": 2263.0821535466193
+        "mean_latency_us": 552.782859375,
+        "ops_per_sec_ci95_high": 2227.095235747038,
+        "ops_per_sec_ci95_low": 1440.3666285149707,
+        "ops_per_sec_mean": 1833.7309321310042
       },
       "paired_ops_per_sec": {
-        "ci95_high": 2000.720460823433,
-        "ci95_low": 1965.0959438180464,
-        "mean_diff": 1982.9082023207397,
+        "ci95_high": 1968.660663217965,
+        "ci95_low": 1163.139604846181,
+        "mean_diff": 1565.900134032073,
         "metric": "grouped_minus_baseline",
         "pairs": 4,
         "significant": true,
-        "t": 354.22874077594196,
+        "t": 12.371356837179844,
         "t_crit95": 3.182
       },
       "rounds": 4,
@@ -134,26 +134,26 @@
     },
     {
       "baseline": {
-        "mean_latency_us": 3551.43203515625,
-        "ops_per_sec_ci95_high": 289.2852625761417,
-        "ops_per_sec_ci95_low": 273.99171240802195,
-        "ops_per_sec_mean": 281.6384874920818
+        "mean_latency_us": 3658.1793359375,
+        "ops_per_sec_ci95_high": 293.99748793597064,
+        "ops_per_sec_ci95_low": 253.62909632849048,
+        "ops_per_sec_mean": 273.8132921322306
       },
       "grouped": {
         "batch": 8,
-        "mean_latency_us": 457.83774609375,
-        "ops_per_sec_ci95_high": 2459.043812350724,
-        "ops_per_sec_ci95_low": 1929.7611072194213,
-        "ops_per_sec_mean": 2194.4024597850726
+        "mean_latency_us": 528.6850937500001,
+        "ops_per_sec_ci95_high": 2545.6358767912516,
+        "ops_per_sec_ci95_low": 1365.4614486171101,
+        "ops_per_sec_mean": 1955.548662704181
       },
       "paired_ops_per_sec": {
-        "ci95_high": 2181.983273016608,
-        "ci95_low": 1643.5446715693736,
-        "mean_diff": 1912.7639722929907,
+        "ci95_high": 2254.3702456908577,
+        "ci95_low": 1109.100495453043,
+        "mean_diff": 1681.7353705719504,
         "metric": "grouped_minus_baseline",
         "pairs": 4,
         "significant": true,
-        "t": 22.607647161540847,
+        "t": 9.34501578872358,
         "t_crit95": 3.182
       },
       "rounds": 4,
@@ -163,10 +163,10 @@
   ],
   "schema": "orfs.evidence.group-commit.v1",
   "single_writer_sequential_sync": {
-    "mean_us": 3539.210183333332,
+    "mean_us": 3583.585875,
     "note": "one writer, one transaction at a time: grouping does not apply, so group commit cannot (and does not) change this path; a group of one is byte-identical to a single commit (group_commit_is_byte_identical_to_serial_commit)",
-    "p50_us": 3424.272,
-    "p95_us": 5107.714,
+    "p50_us": 3394.733,
+    "p95_us": 5093.413,
     "samples": 120
   },
   "workload": {

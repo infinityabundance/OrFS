@@ -1,0 +1,22 @@
+{
+  "court": "group-commit-e2e",
+  "threads": 8,
+  "rounds": 500,
+  "durability": "sync",
+  "kernel": "7.2.9-2-cachyos",
+  "results": [
+    {
+      "group_commit": false,
+      "ops": 4000,
+      "seconds": 53.939,
+      "ops_per_s": 74.2
+    },
+    {
+      "group_commit": true,
+      "ops": 4000,
+      "seconds": 42.749,
+      "ops_per_s": 93.6
+    }
+  ],
+  "note": "create+write+read+unlink per round; the coordinator is opt-in. Single paired run: the effect varied in both directions across repeated trials (host under contention), so NO statistically defensible end-to-end win is claimed on this workload \u2014 the per-mutation cost is not dominated by one barrier. The engine-level win (Phase 31) needs a larger prepared backlog than a mount workload produces here."
+}

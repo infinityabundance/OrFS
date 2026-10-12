@@ -104,7 +104,7 @@
       "covering_test": "tests/fuse_integration.rs / tests/fuse_passthrough.rs",
       "file": "fuse.rs",
       "has_safety_comment": true,
-      "line": 2086,
+      "line": 2157,
       "safety_invariant": "SAFETY: `c` is a valid NUL-terminated path and `st` is a valid, aligned,",
       "text": "let mut st: libc::statvfs = unsafe { std::mem::zeroed() };"
     },
@@ -112,7 +112,7 @@
       "covering_test": "tests/fuse_integration.rs / tests/fuse_passthrough.rs",
       "file": "fuse.rs",
       "has_safety_comment": true,
-      "line": 2087,
+      "line": 2158,
       "safety_invariant": "SAFETY: `c` is a valid NUL-terminated path and `st` is a valid, aligned,",
       "text": "let rc = unsafe { libc::statvfs(c.as_ptr(), &mut st) };"
     },
@@ -120,7 +120,7 @@
       "covering_test": "tests/fuse_integration.rs / tests/fuse_passthrough.rs",
       "file": "fuse.rs",
       "has_safety_comment": true,
-      "line": 2407,
+      "line": 2478,
       "safety_invariant": "SAFETY: the handler performs only a single atomic store and returns, which is",
       "text": "unsafe {"
     },
@@ -128,7 +128,7 @@
       "covering_test": "tests/fuse_integration.rs / tests/fuse_passthrough.rs",
       "file": "fuse.rs",
       "has_safety_comment": true,
-      "line": 2643,
+      "line": 2714,
       "safety_invariant": "SAFETY: `c` is a valid NUL-terminated path; `umount2` performs a lazy",
       "text": "let rc = unsafe { libc::umount2(c.as_ptr(), libc::MNT_DETACH) };"
     },

@@ -194,6 +194,12 @@ pub enum StatfsMode {
 pub struct MountOptions {
     /// Durability profile for every committed mutation.
     pub durability: DurabilityMode,
+    /// Enable the end-to-end group-commit coordinator (Phase 32). Off by default;
+    /// when on, concurrently-arrived mutations executed under `sync` share one
+    /// durability barrier (Phase 31's amortisation), observed through the mount.
+    pub group_commit: bool,
+    /// Maximum number of concurrently-arrived mutations coalesced into one batch.
+    pub group_commit_batch: usize,
     /// Mount read-only.
     pub read_only: bool,
     /// Requested FUSE transport (`fuse` = F0/F1, `fuse-uring` = attempt F2).
@@ -250,6 +256,8 @@ impl Default for MountOptions {
     fn default() -> Self {
         MountOptions {
             durability: DurabilityMode::Ordered,
+            group_commit: false,
+            group_commit_batch: 64,
             read_only: false,
             transport: Transport::Fuse,
             backing_io: BackingIo::Sync,
@@ -413,12 +421,33 @@ pub(crate) struct Inner<C: OrfsCore + Send + 'static> {
     pub(crate) metrics: Arc<Mutex<Metrics>>,
     pub(crate) backing: PathBuf,
     pub(crate) root_inode: u64,
+    /// End-to-end group-commit coordinator (Phase 32). When present, mutating
+    /// requests are submitted here instead of taking the core lock directly, so
+    /// concurrently-arrived mutations share one durability barrier under `sync`.
+    coordinator: Option<Arc<crate::group_commit::BatchCoordinator<C>>>,
 }
 
 impl<C: OrfsCore + Send + 'static> Inner<C> {
     /// Clone the current immutable read view (a cheap `Arc` bump, no I/O).
     pub(crate) fn read_view(&self) -> Arc<dyn CoreRead> {
         self.read.read().clone()
+    }
+
+    /// Run `f` against the core. With a group-commit coordinator active the job
+    /// is submitted to it (so it can share a batch's durability barrier);
+    /// otherwise it runs directly under the core lock. Either way the mutation
+    /// executes against the single authoritative core with its order preserved.
+    pub(crate) fn mutate<F>(&self, f: F) -> Result<i64>
+    where
+        F: FnOnce(&mut C) -> Result<i64> + Send + 'static,
+    {
+        match &self.coordinator {
+            Some(coord) => coord.submit(Box::new(f)),
+            None => {
+                let mut core = self.core.lock();
+                f(&mut core)
+            }
+        }
     }
 
     /// A shared handle to the operation counters, so a mount can report the
@@ -554,7 +583,7 @@ impl<C: OrfsCore + Send + 'static> OrfsFuse<C> {
         // The core owns the publication cell; the adaptor shares it so it never
         // has to take the core lock just to obtain the current read view.
         let read = core.read_view_cell();
-        let inner = Arc::new(Inner {
+        let mut inner = Arc::new(Inner {
             core: Mutex::new(core),
             read,
             handles: Mutex::new(HandleTable::default()),
@@ -562,7 +591,19 @@ impl<C: OrfsCore + Send + 'static> OrfsFuse<C> {
             metrics: Arc::new(Mutex::new(Metrics::default())),
             backing,
             root_inode: ROOT_INODE,
+            coordinator: None,
         });
+        // Start the end-to-end group-commit coordinator (Phase 32) when opted in.
+        // `BatchCoordinator::start` only takes a *weak* handle to `inner`, so the
+        // strong count stays 1 here and `get_mut` succeeds; if it ever did not, we
+        // simply fall back to the direct (per-request) path.
+        if options.group_commit {
+            let coord =
+                crate::group_commit::BatchCoordinator::start(&inner, options.group_commit_batch);
+            if let Some(slot) = Arc::get_mut(&mut inner) {
+                slot.coordinator = Some(coord);
+            }
+        }
         let notifier: NotifierCell = Arc::new(Mutex::new(None));
         // Cache invalidation runs on its own thread. Sending a FUSE notify from
         // inside a request handler can deadlock the kernel: the notify path
@@ -1016,29 +1057,32 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             libc::S_IFDIR => InodeType::Directory,
             _ => return reply.error(Errno::EOPNOTSUPP),
         };
-        let mut core = self.inner.core.lock();
-        if let Err(e) = check_create(&*core, req, parent.0, 0o2 | 0o1) {
-            return reply.error(errno(&e));
-        }
+        let is_dir = kind == InodeType::Directory;
+        let uid = req.uid();
+        let gid = req.gid();
+        let parent_ino = parent.0;
+        let name_bytes = name.as_bytes().to_vec();
         let perm = mode & 0o7777;
-        let created = match kind {
-            InodeType::File => core.create(parent.0, name.as_bytes(), perm, req.uid(), req.gid()),
-            InodeType::Directory => {
-                core.mkdir(parent.0, name.as_bytes(), perm, req.uid(), req.gid())
-            }
-            _ => unreachable!(),
-        };
-        let ino = match created {
-            Ok(i) => i,
+        let res = self.inner.mutate(move |core| {
+            check_create_uid(&*core, uid, gid, parent_ino, 0o2 | 0o1)?;
+            let ino = match kind {
+                InodeType::File => core.create(parent_ino, &name_bytes, perm, uid, gid)?,
+                InodeType::Directory => core.mkdir(parent_ino, &name_bytes, perm, uid, gid)?,
+                _ => unreachable!(),
+            };
+            Ok(ino as i64)
+        });
+        let ino = match res {
+            Ok(i) => i as u64,
             Err(e) => return reply.error(errno(&e)),
         };
-        let st = match core.getattr(ino, core.root()) {
+        let view = self.read_view();
+        let st = match view.getattr(ino, view.root()) {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
-        drop(core);
         self.inner.metrics.lock().create += 1;
-        if kind == InodeType::Directory {
+        if is_dir {
             self.inner.metrics.lock().mkdir += 1;
         }
         self.inner.record_lookup(ino);
@@ -1063,25 +1107,25 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         if let Err(e) = self.ensure_writable() {
             return reply.error(errno(&e));
         }
-        let mut core = self.inner.core.lock();
-        if let Err(e) = check_create(&*core, req, parent.0, 0o2 | 0o1) {
-            return reply.error(errno(&e));
-        }
-        let ino = match core.mkdir(
-            parent.0,
-            name.as_bytes(),
-            mode & 0o7777,
-            req.uid(),
-            req.gid(),
-        ) {
-            Ok(i) => i,
+        let uid = req.uid();
+        let gid = req.gid();
+        let parent_ino = parent.0;
+        let name_bytes = name.as_bytes().to_vec();
+        let perm = mode & 0o7777;
+        let res = self.inner.mutate(move |core| {
+            check_create_uid(&*core, uid, gid, parent_ino, 0o2 | 0o1)?;
+            let ino = core.mkdir(parent_ino, &name_bytes, perm, uid, gid)?;
+            Ok(ino as i64)
+        });
+        let ino = match res {
+            Ok(i) => i as u64,
             Err(e) => return reply.error(errno(&e)),
         };
-        let st = match core.getattr(ino, core.root()) {
+        let view = self.read_view();
+        let st = match view.getattr(ino, view.root()) {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
-        drop(core);
         self.inner.metrics.lock().mkdir += 1;
         self.inner.record_lookup(ino);
         self.invalidate_entry(parent.0, name.as_bytes());
@@ -1097,69 +1141,73 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         if let Err(e) = self.ensure_writable() {
             return reply.error(errno(&e));
         }
-        let mut core = self.inner.core.lock();
-        let root = core.root();
-        if let Err(e) = check_dir_write(&*core, req, parent.0, 0o2 | 0o1) {
-            return reply.error(errno(&e));
-        }
-        // Sticky-bit handling: in a sticky directory only the owner of the
-        // entry (or a privileged caller) may remove it.
-        if let Ok(dir) = core.getattr(parent.0, root) {
-            if dir.mode & libc::S_ISVTX != 0 && req.uid() != 0 {
-                match core.lookup(parent.0, name.as_bytes(), root) {
-                    Ok(child) => {
-                        if let Ok(st) = core.getattr(child, root) {
-                            if st.uid != req.uid() && dir.uid != req.uid() {
-                                return reply.error(Errno::EPERM);
-                            }
+        let uid = req.uid();
+        let gid = req.gid();
+        let parent_ino = parent.0;
+        let name_bytes = name.as_bytes().to_vec();
+        let res = self.inner.mutate(move |core| {
+            let root = core.root();
+            check_dir_write_uid(&*core, uid, gid, parent_ino, 0o2 | 0o1)?;
+            // Sticky-bit handling: in a sticky directory only the owner of the
+            // entry (or a privileged caller) may remove it.
+            if let Ok(dir) = core.getattr(parent_ino, root) {
+                if dir.mode & libc::S_ISVTX != 0 && uid != 0 {
+                    let child = core.lookup(parent_ino, &name_bytes, root)?;
+                    if let Ok(st) = core.getattr(child, root) {
+                        if st.uid != uid && dir.uid != uid {
+                            return Err(OrfsError::NotPermitted);
                         }
                     }
-                    Err(e) => return reply.error(errno(&e)),
                 }
             }
+            core.unlink(parent_ino, &name_bytes)?;
+            Ok(0)
+        });
+        match res {
+            Ok(_) => {
+                self.inner.metrics.lock().unlink += 1;
+                self.invalidate_entry(parent.0, name.as_bytes());
+                reply.ok();
+            }
+            Err(e) => reply.error(errno(&e)),
         }
-        if let Err(e) = core.unlink(parent.0, name.as_bytes()) {
-            return reply.error(errno(&e));
-        }
-        drop(core);
-        self.inner.metrics.lock().unlink += 1;
-        self.invalidate_entry(parent.0, name.as_bytes());
-        reply.ok();
     }
 
     fn rmdir(&self, req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEmpty) {
         if let Err(e) = self.ensure_writable() {
             return reply.error(errno(&e));
         }
-        let mut core = self.inner.core.lock();
-        if let Err(e) = check_dir_write(&*core, req, parent.0, 0o2 | 0o1) {
-            return reply.error(errno(&e));
-        }
-        // Sticky-bit handling (same rule as `unlink`): in a sticky directory only
-        // the owner of the entry to be removed — or the owner of the sticky
-        // directory, or root — may remove it. POSIX applies this to `rmdir` too.
-        let root = core.root();
-        if let Ok(dir) = core.getattr(parent.0, root) {
-            if dir.mode & libc::S_ISVTX != 0 && req.uid() != 0 {
-                match core.lookup(parent.0, name.as_bytes(), root) {
-                    Ok(child) => {
-                        if let Ok(st) = core.getattr(child, root) {
-                            if st.uid != req.uid() && dir.uid != req.uid() {
-                                return reply.error(Errno::EPERM);
-                            }
+        let uid = req.uid();
+        let gid = req.gid();
+        let parent_ino = parent.0;
+        let name_bytes = name.as_bytes().to_vec();
+        let res = self.inner.mutate(move |core| {
+            let root = core.root();
+            check_dir_write_uid(&*core, uid, gid, parent_ino, 0o2 | 0o1)?;
+            // Sticky-bit handling (same rule as `unlink`): in a sticky directory only
+            // the owner of the entry to be removed — or the owner of the sticky
+            // directory, or root — may remove it. POSIX applies this to `rmdir` too.
+            if let Ok(dir) = core.getattr(parent_ino, root) {
+                if dir.mode & libc::S_ISVTX != 0 && uid != 0 {
+                    let child = core.lookup(parent_ino, &name_bytes, root)?;
+                    if let Ok(st) = core.getattr(child, root) {
+                        if st.uid != uid && dir.uid != uid {
+                            return Err(OrfsError::NotPermitted);
                         }
                     }
-                    Err(e) => return reply.error(errno(&e)),
                 }
             }
+            core.rmdir(parent_ino, &name_bytes)?;
+            Ok(0)
+        });
+        match res {
+            Ok(_) => {
+                self.inner.metrics.lock().rmdir += 1;
+                self.invalidate_entry(parent.0, name.as_bytes());
+                reply.ok();
+            }
+            Err(e) => reply.error(errno(&e)),
         }
-        if let Err(e) = core.rmdir(parent.0, name.as_bytes()) {
-            return reply.error(errno(&e));
-        }
-        drop(core);
-        self.inner.metrics.lock().rmdir += 1;
-        self.invalidate_entry(parent.0, name.as_bytes());
-        reply.ok();
     }
 
     fn symlink(
@@ -1173,25 +1221,25 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         if let Err(e) = self.ensure_writable() {
             return reply.error(errno(&e));
         }
-        let mut core = self.inner.core.lock();
-        if let Err(e) = check_create(&*core, req, parent.0, 0o2 | 0o1) {
-            return reply.error(errno(&e));
-        }
-        let ino = match core.symlink(
-            parent.0,
-            link_name.as_bytes(),
-            target.as_os_str().as_bytes(),
-            req.uid(),
-            req.gid(),
-        ) {
-            Ok(i) => i,
+        let uid = req.uid();
+        let gid = req.gid();
+        let parent_ino = parent.0;
+        let link_bytes = link_name.as_bytes().to_vec();
+        let target_bytes = target.as_os_str().as_bytes().to_vec();
+        let res = self.inner.mutate(move |core| {
+            check_create_uid(&*core, uid, gid, parent_ino, 0o2 | 0o1)?;
+            let ino = core.symlink(parent_ino, &link_bytes, &target_bytes, uid, gid)?;
+            Ok(ino as i64)
+        });
+        let ino = match res {
+            Ok(i) => i as u64,
             Err(e) => return reply.error(errno(&e)),
         };
-        let st = match core.getattr(ino, core.root()) {
+        let view = self.read_view();
+        let st = match view.getattr(ino, view.root()) {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
-        drop(core);
         self.inner.metrics.lock().symlink += 1;
         self.inner.record_lookup(ino);
         self.invalidate_entry(parent.0, link_name.as_bytes());
@@ -1788,25 +1836,25 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         if let Err(e) = self.ensure_writable() {
             return reply.error(errno(&e));
         }
-        let mut core = self.inner.core.lock();
-        if let Err(e) = check_create(&*core, req, parent.0, 0o2 | 0o1) {
-            return reply.error(errno(&e));
-        }
-        let ino = match core.create(
-            parent.0,
-            name.as_bytes(),
-            mode & 0o7777,
-            req.uid(),
-            req.gid(),
-        ) {
-            Ok(i) => i,
+        let uid = req.uid();
+        let gid = req.gid();
+        let parent_ino = parent.0;
+        let name_bytes = name.as_bytes().to_vec();
+        let perm = mode & 0o7777;
+        let res = self.inner.mutate(move |core| {
+            check_create_uid(&*core, uid, gid, parent_ino, 0o2 | 0o1)?;
+            let ino = core.create(parent_ino, &name_bytes, perm, uid, gid)?;
+            Ok(ino as i64)
+        });
+        let ino = match res {
+            Ok(i) => i as u64,
             Err(e) => return reply.error(errno(&e)),
         };
-        let st = match core.getattr(ino, core.root()) {
+        let view = self.read_view();
+        let st = match view.getattr(ino, view.root()) {
             Ok(st) => st,
             Err(e) => return reply.error(errno(&e)),
         };
-        drop(core);
         let fh = self.inner.register_file(ino, flags);
         let mut m = self.inner.metrics.lock();
         m.create += 1;
@@ -2051,8 +2099,31 @@ pub(crate) fn caller_in_group(pid: u32, egid: u32, target_gid: u32) -> bool {
         })
 }
 
-fn check_create<C: OrfsCore>(core: &C, req: &Request, parent: u64, mask: u32) -> Result<()> {
-    check_dir_write(core, req, parent, mask)
+fn check_create_uid<C: OrfsCore>(
+    core: &C,
+    uid: u32,
+    gid: u32,
+    parent: u64,
+    mask: u32,
+) -> Result<()> {
+    check_dir_write_uid(core, uid, gid, parent, mask)
+}
+
+fn check_dir_write_uid<C: OrfsCore>(
+    core: &C,
+    uid: u32,
+    gid: u32,
+    parent: u64,
+    mask: u32,
+) -> Result<()> {
+    let st = core.getattr(parent, core.root())?;
+    if st.kind != InodeType::Directory {
+        return Err(OrfsError::NotADirectory);
+    }
+    if !has_permission(uid, gid, &st, mask) {
+        return Err(OrfsError::PermissionDenied);
+    }
+    Ok(())
 }
 
 fn check_dir_write<C: OrfsCore>(core: &C, req: &Request, parent: u64, mask: u32) -> Result<()> {

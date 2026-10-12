@@ -1971,6 +1971,13 @@ pub trait OrfsCore {
         -> Result<Option<u64>>;
     /// Flush the authoritative log (durability hook).
     fn sync(&mut self) -> Result<()>;
+    /// The durability profile in force for this core's commits.
+    fn durability(&self) -> DurabilityMode;
+    /// Temporarily override the durability profile. Used by the group-commit
+    /// coordinator to coalesce one durability barrier over a whole batch of
+    /// concurrently-submitted mutations; the caller restores the previous value
+    /// immediately afterwards. A read-only core ignores it.
+    fn set_durability(&mut self, mode: DurabilityMode);
     fn create(&mut self, parent: u64, name: &[u8], mode: u32, uid: u32, gid: u32) -> Result<u64>;
     fn mkdir(&mut self, parent: u64, name: &[u8], mode: u32, uid: u32, gid: u32) -> Result<u64>;
     fn unlink(&mut self, parent: u64, name: &[u8]) -> Result<()>;
@@ -2067,6 +2074,12 @@ impl OrfsCore for Namespace {
     }
     fn sync(&mut self) -> Result<()> {
         Namespace::sync(self)
+    }
+    fn durability(&self) -> DurabilityMode {
+        Namespace::durability(self)
+    }
+    fn set_durability(&mut self, mode: DurabilityMode) {
+        self.durability = mode;
     }
     fn create(&mut self, parent: u64, name: &[u8], mode: u32, uid: u32, gid: u32) -> Result<u64> {
         Namespace::create(self, parent, name, mode, uid, gid)

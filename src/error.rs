@@ -51,6 +51,11 @@ pub enum OrfsError {
     #[error("permission denied")]
     PermissionDenied,
 
+    /// The operation is not permitted for a reason other than the permission
+    /// bits (e.g. the POSIX sticky-directory removal rule); maps to `EPERM`.
+    #[error("operation not permitted")]
+    NotPermitted,
+
     /// A path component was not a directory.
     #[error("not a directory")]
     NotADirectory,
@@ -141,6 +146,7 @@ impl OrfsError {
             OrfsError::NameTooLong => libc::ENAMETOOLONG,
             OrfsError::NoData => libc::ENODATA,
             OrfsError::PermissionDenied => libc::EACCES,
+            OrfsError::NotPermitted => libc::EPERM,
             OrfsError::NotADirectory => libc::ENOTDIR,
             OrfsError::IsADirectory => libc::EISDIR,
             OrfsError::DirectoryNotEmpty => libc::ENOTEMPTY,

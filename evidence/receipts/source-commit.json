@@ -1,11 +1,12 @@
 {
   "schema": "orfs.evidence.source-commit.v1",
-  "captured_at_utc": "2026-10-11T23:33:44Z",
-  "orfs_git_commit": "691a65c9b14a8ca59fcaf3ee302d8b51c1901297",
-  "orfs_git_commit_short": "691a65c",
+  "captured_at_utc": "2026-10-12T10:08:02Z",
+  "orfs_git_commit": "1024b5f5de8128a521baff7a9c04f2efeb6ffb7a",
+  "orfs_git_commit_short": "1024b5f",
   "orfs_git_branch": "master",
   "orfs_worktree_dirty": false,
-  "ekbloom_pin_rev": "708c349128668bf26b50684ce473d8de4058dc31",
-  "ekbloom_pin_url": "https://github.com/infinityabundance/EKBLOOM",
-  "ekbloom_pin_version": "0.3.0"
+  "ekbloom_pin_kind": "registry-exact",
+  "ekbloom_version": "0.3.0",
+  "ekbloom_checksum_sha256": "b02f89add93be1429809445c7570c1271a68957702728c95437887243bdcf2cf",
+  "ekbloom_repository": "https://github.com/infinityabundance/EKBLOOM"
 }

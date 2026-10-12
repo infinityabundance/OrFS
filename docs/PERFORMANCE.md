@@ -733,3 +733,107 @@ byte-for-byte. The coordinator is therefore **off by default**: a correct, teste
 building block whose benefit needs a workload/transport that supplies a deeper
 concurrent-writer backlog and a barrier-dominated per-op cost (the native F2 pool
 is the intended source).
+
+## 13. Reviewer item 4 — history-scaling court (foreground work vs growing history and manifestations)
+
+**Question.** How does the time spent answering *the same* historical read workload
+change as additional certified manifestations accumulate over a growing committed
+history? And how does that compare with the same history answered without the
+manifested plane?
+
+**Court.** `tests/history_scaling.rs`. A deterministic committed history is built
+from epochs; each epoch performs small **misaligned writes of the exact bytes
+already present**, so the live logical content is *byte-identical at every
+checkpoint* while the non-withdrawn authoritative log grows and each object's
+extent map fragments further. Checkpoints are taken at epochs `{0, 4, 12, 36}`
+(genesis and geometric depth). At each checkpoint the *same fixed read workload*
+(every object read at the same fixed 4 KiB offsets, 64 rounds) is run over the
+checkpoint's **pinned committed root**. The always-on smoke asserts the two arms'
+pinned roots and per-checkpoint read digests are identical; the full sweep is
+opt-in behind `ORFS_HISTORY_SCALING=1` and writes
+`evidence/performance/history-scaling.json`. Run it with
+`sh scripts/container-history-scaling.sh` (release build).
+
+**Comparison contract (explicit).** A different filesystem implementing OrFS's
+historical + correctness guarantees does not exist in this repository, so the
+defensible baseline is **OrFS itself with the manifested plane disabled over the
+same history** (the authoritative arm). It shares the committed, non-withdrawable
+history; the pinned-root/snapshot semantics and read API; the storage engine,
+index, and recovery path; and the identical deterministic workload and
+byte-exact answers. It differs *only* in that the concealed manifested plane
+(EKBLOOM bodies) and the measured read planner are absent. A conventional-
+directory reference is not used: it is a different storage interface without
+committed history or snapshots, so it would not isolate the manifested plane.
+The manifested arm enables manifestation (profile `full`); the plane auto-
+manifests every committed write and a full generation is published per object at
+each checkpoint.
+
+**Measured (release build, single host/run; 8 reads/object × 4 objects × 64
+rounds = 2048 reads per checkpoint).** `exts` = logical extents summed over the
+objects; `m_total` = total physical backing bytes; `gens` = committed manifested
+generations; `rec` = recovery time at that depth (`auth` = authoritative index
+rebuild; `man` = manifested-plane generation recovery).
+
+| epoch | exts | auth p50 / p99 / p99.9 (ns) | auth `m_total` | manifest p50 / p99 / p99.9 (ns) | manifest `m_total` | served / avoided | gens | rec auth / man (µs) |
+|---|---|---|---|---|---|---|---|---|
+| 0  | 128  | 711 / 1643 / 3026      | 190 KiB  | 1422 / 2555 / 273339      | 833 KiB | 0 / 0 | 4 | 738 / 80 |
+| 4  | 625  | 3115 / 5140 / 7023     | 312 KiB  | 3968 / 12874 / 260916     | 2.2 MiB | 32 / 0.13 MiB | 264 | 2158 / 31354 |
+| 12 | 1586 | 7303 / 11221 / 14106   | 556 KiB  | 12834 / 14617 / 268531    | 5.3 MiB | 1536 / 6.0 MiB | 780 | 5129 / 154186 |
+| 36 | 4097 | 23153 / 31388 / 45184  | 1.26 MiB | 12874 / 14177 / 286875    | 23.4 MiB | 2048 / 8.0 MiB | 2320 | 14901 / 1159487 |
+
+**Construction.** Building the manifested arm's history took **17.2 s** of epoch
+work vs **23.4 ms** for the authoritative arm (**≈736×**); each checkpoint's
+explicit full generation set cost ~10–12 ms and wrote 657,120 physical bytes (4
+objects × ~164 KiB, ≈5× the 128 KiB of live object bytes). Persistent bytes grew
+**6.8×** (authoritative) and **28.8×** (manifested) from genesis to the deepest
+checkpoint. Resident RSS reached **31.6 MiB** (manifested) vs **5.0 MiB**
+(authoritative).
+
+**Reuse.** At the deepest checkpoint the manifested arm's first round cost
+~49.4 µs/read (cold: load + verify + calibrate) and the remaining rounds ~14.2 µs
+— the manifested body and calibrated path are reused, not rebuilt per read. (The
+authoritative arm's first round was ~32.0 µs and its remaining rounds ~24.4 µs.)
+
+**Findings, stated honestly.**
+
+1. The **authoritative** arm degrades sharply as history grows: p50 ×**33**
+   (711 ns → 23.2 µs) and throughput ×**31** down (1.29 M/s → 42.3 k/s), because
+   preserving the same logical content by appending non-withdrawn extents
+   fragments the object and the authoritative read must assemble more pieces. This
+   is the honest baseline cost of non-withdrawal.
+2. The manifested arm's chosen `history` path is **flat** once selected
+   (12.83 µs p50 at epoch 12 and 12.87 µs at epoch 36; ratio **1.003**), and at the
+   deepest checkpoint it is **1.8× faster** than the authoritative arm. But it is
+   **not** faster everywhere: at epoch 12 it selected `history` (1536/2048 reads)
+   at ~12.8 µs while the authoritative arm was ~7.3 µs, so at that depth the
+   manifested arm was **~1.8× slower**. The `history` path costs a roughly constant
+   ~3.1 ns/byte (EKBLOOM reveal is per-symbol); it only beats the authoritative
+   piece-assembly once fragmentation is heavy enough (crossover around 2.5–3k
+   extents). The measured planner, as designed, decided `history` was cheaper
+   there.
+3. **Construction and persistent bytes grow** and are the real price of concealed
+   expansion: the manifested arm's history build was ~736× the authoritative one,
+   its persistent footprint was ~19× the authoritative history at the deepest
+   checkpoint (23.4 MiB vs 1.26 MiB), and manifested-plane **recovery** grew from
+   80 µs to **1.16 s** (2320 committed generations) while authoritative recovery
+   grew 738 µs → 14.9 ms.
+4. **Unnecessary backing reads avoided**: at the deepest checkpoint 2048/2048
+   reads were served by `history`, avoiding 8.0 MiB of authoritative logical-
+   extent reads that the authoritative path would have performed. The counter is
+   justified by the planner's own `ReadPathKind`: a `History`/`PathBloom` path is
+   certified, so no verify-on-use authoritative read is issued for it.
+5. **Verdict.** The hypothesis is **partially** supported: the manifested arm is
+   flat once selected and wins at depth, but it is a *net loss* at shallow depth
+   (fixed per-symbol reveal cost, planner overhead, and heavy construction/bytes),
+   and recovery grows with accumulated generations. Reported as measured, not
+   curated to the flattering depth.
+
+**Caveats.** Single run, single host; absolute nanoseconds are host/build
+sensitive (**release** is the representative build recorded here). The manifested
+arm's genesis checkpoint is a cold calibration (no manifested path selected yet),
+so the flatness ratio compares the *selection onset* (epoch 12) to the deepest
+checkpoint. Recovery is in-process index/generation reconstruction, not a full
+remount; and the workload is library-level (`Namespace::planned_read`), not a FUSE
+round trip. `evidence/performance/history-scaling.json` is the machine-generated
+source of truth; a fresh sweep overwrites it and the quoted nanoseconds will move
+(the byte counts and the qualitative shape are stable).

@@ -2200,3 +2200,62 @@ advantage is claimed** and the coordinator stays **off by default**. See
 The native F2 mutating paths are compiled and equivalence-tested but not exercised
 by a live F2 mount on this host (the kernel does not offer `FUSE_OVER_IO_URING`
 here) — stated plainly, as before.
+
+## Phase 40 — Whole-system history-scaling court
+
+**Complete.** External review item 4: measure how answering a fixed historical
+workload changes as history and manifested structures accumulate — construction,
+persistent bytes, foreground work, recovery and reuse — against an implementation
+that supplies the same historical and correctness guarantees.
+
+### The court (`tests/history_scaling.rs` + `scripts/container-history-scaling.sh`)
+
+* **Grows:** committed history, built in deterministic **epochs** that perform
+  small (16 B) misaligned rewrites of the bytes already present, so the live
+  logical content is byte-identical at every checkpoint while the non-withdrawn
+  log grows and each object's extent map fragments further; manifested
+  generations accumulate in the manifested arm.
+* **Fixed:** 4 objects × 32 KiB; the same 2048-read workload (4 KiB reads) at each
+  checkpoint over that checkpoint's **pinned committed root**; checkpoints at
+  epochs `{0, 4, 12, 36}`.
+* **Measured per checkpoint per arm:** p50/p99/p99.9, throughput, physical bytes
+  (`m_log`/`m_ekbloom`/`m_indexes`/`m_total`), resident RSS, construction work and
+  time, recovery (index rebuild, checkpoint mount, manifested-plane recovery), and
+  unnecessary backing reads avoided (from the planner's own `ReadPathKind`).
+* **Comparison contract:** a different filesystem with OrFS's historical +
+  correctness guarantees does not exist here, so the baseline is **OrFS with the
+  manifested plane disabled over the *same* history** (shared committed history,
+  pinned-root/snapshot semantics, read API, engine/recovery path, byte-exact
+  answers; differing only by the concealed plane). Both arms' pinned roots and
+  per-checkpoint read digests are asserted equal. Stated in the evidence.
+
+### Result (honest; release, single run)
+
+* **Authoritative read degrades under non-withdrawal:** p50 711 ns (epoch 0) →
+  **23.2 µs** (epoch 36, 4097 extents), ~31× slower; physical history 190 KiB →
+  1.26 MiB.
+* **Manifested reads are flat once selected:** p50 12.83 µs (ep 12) → 12.87 µs
+  (ep 36), ratio **1.003**; **1.8× faster than authoritative** at the deepest
+  checkpoint. **But it is a net loss at shallow depth:** at ep 12 the planner chose
+  the ~12.8 µs `history` body while authoritative was ~7.3 µs (~1.8× slower) — it
+  only wins once fragmentation pushes the authoritative cost above the body's
+  roughly constant ~3.1 ns/byte.
+* **Costs grow:** manifested footprint ~19× the authoritative history at depth;
+  manifested-plane recovery 80 µs → **1.16 s** (2320 generations); manifested
+  history build 17.2 s vs 23.4 ms (~736×); RSS up to 31.6 MiB vs 5.0 MiB.
+
+This is the reviewer's decisive experiment: concealed expansion **does** hold
+foreground latency flat as history deepens, at a growing construction/storage/
+recovery cost, and **only pays off past a fragmentation threshold** — reported as
+measured, including the shallow-depth loss. Evidence:
+`evidence/performance/history-scaling.json`; `docs/PERFORMANCE.md` §13;
+`docs/MANIFESTATION.md` §14.7.
+
+### Caveats (documented)
+
+Single-run/single-host absolute numbers; recovery is in-process index/generation
+reconstruction (not a full remount); the workload is library-level
+(`Namespace::planned_read`), not a FUSE round trip; and a manifested counterpart
+cannot be measured at a genuinely *old* fixed root with the public API
+(`manifest_eligible` publishes at the current root; the planner considers
+`latest_for` only), so the manifested arm pins each checkpoint's own root.

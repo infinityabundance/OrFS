@@ -409,3 +409,19 @@ snapshots
 async chained-overlay court
 (`async_incremental_generations_recover_without_rejection`) that every committed
 generation recovers with no rejection.
+
+### 14.7 History-scaling court (reviewer item 4)
+
+`tests/history_scaling.rs` measures what happens to the time spent answering the
+same historical read workload as certified manifestations accumulate over a
+growing committed history, and compares it with the same history answered with
+the manifested plane **disabled**. Construction, persistent bytes, foreground
+work, recovery and reuse are all recorded; byte-exactness of the pinned-root reads
+across the two arms is asserted. The result is nuanced and reported as measured:
+the generic `history` body is a roughly constant ~3.1 ns/byte, flat once selected
+but **slower** than a lightly-fragmented authoritative read and **faster** than a
+heavily-fragmented one, while construction and persistent bytes grow steeply and
+manifested-plane recovery grows with the accumulated generation count. See
+**`docs/PERFORMANCE.md` §13** for the numbers and
+`evidence/performance/history-scaling.json` for the evidence; run the sweep with
+`sh scripts/container-history-scaling.sh`.

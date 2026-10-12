@@ -1,6 +1,6 @@
 {
   "schema": "orfs.evidence.ekbloom-pin.v2",
-  "captured_at_utc": "2026-10-12T10:08:02Z",
+  "captured_at_utc": "2026-10-12T12:38:48Z",
   "crate": "ekbloom",
   "version": "0.3.0",
   "pin_kind": "registry-exact",

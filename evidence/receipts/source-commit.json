@@ -1,8 +1,8 @@
 {
   "schema": "orfs.evidence.source-commit.v1",
-  "captured_at_utc": "2026-10-12T10:08:02Z",
-  "orfs_git_commit": "1024b5f5de8128a521baff7a9c04f2efeb6ffb7a",
-  "orfs_git_commit_short": "1024b5f",
+  "captured_at_utc": "2026-10-12T12:38:48Z",
+  "orfs_git_commit": "da9b74b390d9a2419a59b4883cb36bdb5e0c913a",
+  "orfs_git_commit_short": "da9b74b",
   "orfs_git_branch": "master",
   "orfs_worktree_dirty": false,
   "ekbloom_pin_kind": "registry-exact",

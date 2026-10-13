@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–50)
+## 4. The ordered build phases (0–51)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -136,12 +136,14 @@ per-phase record.
 | 48 | Persistent index layout competition (nothing integrated; treap wins on mutation) | **complete** |
 | 49 | Scan-resistant volatile planner caches (S3-FIFO-style admission); §10 volatile-cache court | **complete** |
 | 50 | CPU microarchitecture court (§11); per-read manifest clone removed; lock-free served counters | **complete** |
+| 51 | Documentation refresh (cache/eviction descriptions); publish `orfs` v0.2.0 to crates.io | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–50 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–51 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
-The crate `orfs` v0.1.0 is published on crates.io (see `docs/PUBLISHING.md`).
+The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
+v0.1.0 was the first release.
 
 - The `orfs` crate builds, its **431** tests (default) pass, and
   `cargo test --features failpoints` adds the crash-injection court (441 tests in

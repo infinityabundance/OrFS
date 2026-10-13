@@ -2790,3 +2790,32 @@ the read still takes the body-cache mutex per request, which the court identifie
 as the remaining shared-lock surface (sharding it is the concrete follow-up, not
 done here). Test counts rise to **431** (default) / **441** (`--features
 failpoints`); `fmt`/`clippy` clean.
+
+## Phase 51 — Documentation refresh and `orfs` v0.2.0 publication
+
+**Complete.** Refreshed the documentation left stale by Phases 49–50 and published
+the accumulated work as **`orfs` v0.2.0** on crates.io (v0.1.0 was the first
+release, Phase 36).
+
+### Delivered
+
+* `docs/PERFORMANCE.md` §15 and `docs/EKBLOOM-INTEGRATION.md` — the read planner's
+  volatile caches (parsed EKBLOOM bodies + precompiled plans, region bodies,
+  coverage tables) now use the Phase-49 scan-resistant admission policy, not pure
+  insertion-order age eviction; only the identity-keyed bookkeeping retires in
+  insertion order. Also corrected the packaged-file count in `docs/PUBLISHING.md`
+  (84 → 95).
+* `Cargo.toml` / `Cargo.lock` — version `0.1.0` → `0.2.0`.
+* Published from the pinned `orfs-build:1.99.0` container against the clean tree at
+  commit `bcb8e0c`: **`orfs` v0.2.0**, crate checksum
+  `sha256:cc9260ba4d79461de6759143ac4ba29325c070faa5f2de41525f02c18146643e`
+  (666 556 bytes), `<https://crates.io/crates/orfs>`, docs at
+  <https://docs.rs/orfs>. The `ekbloom = "=0.3.0"` registry dependency is unchanged.
+
+### Recorded
+
+* `evidence/receipts/crates-io.json` — the v0.2.0 publication record (checksum,
+  size, publisher, source commit, dependency pin), with a `supersedes` block for the
+  0.1.0 release. The crates.io API record was fetched and the packaged `.crate`
+  sha256 was independently recomputed and matches.
+* `docs/PUBLISHING.md` — status updated to v0.2.0.

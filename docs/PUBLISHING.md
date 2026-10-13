@@ -1,12 +1,13 @@
 # Publishing OrFS to crates.io
 
-Status: **published.** `orfs` v0.1.0 is live at <https://crates.io/crates/orfs>
-(published 2026-10-12, crate checksum
-`sha256:160aa0dd26fa9cb250544901377b1d9132d1590acba76f738d5618a4d4b38a62`; docs
-at <https://docs.rs/orfs>). The authoritative record is
+Status: **published.** `orfs` v0.2.0 is live at <https://crates.io/crates/orfs>
+(published 2026-10-13, crate checksum
+`sha256:cc9260ba4d79461de6759143ac4ba29325c070faa5f2de41525f02c18146643e`, 666 556
+bytes; docs at <https://docs.rs/orfs>). v0.1.0 was the first release (2026-10-12);
+v0.2.0 supersedes it with the work of phases 37–50. The authoritative record is
 `evidence/receipts/crates-io.json`. crates.io versions are **immutable**, so any
-source change requires a new version number — `0.1.0` cannot be replaced, only
-yanked.
+source change requires a new version number — a published version cannot be
+replaced, only yanked.
 
 The sections below record what made the crate publishable and how to publish a
 future version.

@@ -3989,3 +3989,76 @@ documentation only (no `src/`, `tests/`, or scripts).
   `docs/PERFORMANCE.md` §16/§24 and the two receipts; the spine size, ratio, and
   mutation penalties in `docs/INDEX.md` are machine-checked by
   `scripts/check-docs-receipts.sh`.
+
+## Phase 72 — ENOSPC fault injection at the edge (reviewer item #13)
+
+**Complete.** OrFS is non-withdrawal: it never releases committed history, so the
+backing store *will* fill. This phase adds the court that proves the **recovery
+path is safe at the edge** — a volume driven to ~99% of its usable capacity, a
+`write + fsync + crash`, and a `recover` that must select the **newest valid
+committed generation**.
+
+### Delivered
+
+* **`tests/fault_enospc.rs`** — the always-on court plus an opt-in
+  (`ORFS_ENOSPC_SWEEP=1`) heavier matrix.
+  * **Fill mechanism (documented, deterministic).** The **primary** mechanism is
+    the Phase-23 **explicit-capacity latch**
+    (`CapacityPolicy::with_authoritative_capacity`), set so `used/capacity ≈
+    level/100`; it needs no large files and does not depend on the host's free
+    space. Filling to 99% then attempting a `write + fsync` either **commits
+    cleanly** (it fit) or is refused with the typed `NoSpace` (ENOSPC) **before
+    any byte is written**, leaving the previous committed root byte-identical
+    (physical segments compared), and latches the orderly **read-only** state
+    (the next mutation is `EROFS`). The **secondary** mechanism is the Phase-68
+    **live backing reserve** (`with_reserve(free - K)`), which refuses a
+    too-large transaction with the **non-latching** `CapacityExhausted` and still
+    commits a smaller one.
+  * **Crash at the edge, then recover.** With the volume at the edge, a
+    `write + fsync` is followed by a crash — a genuine **process crash** (a child
+    terminated with `SIGABRT` immediately after the `fsync` returns) or an
+    un-clean **power failure** on the project's simulated device
+    (`orfs::powerloss`; `docs/RECOVERY.md` §4). The **real `orfs recover`** is
+    then run and must select the newest valid committed generation
+    (`fsync`+crash → the new generation; ordered+crash → the durable baseline);
+    a torn durable tail leaves the commit watermark ahead of the surviving bytes
+    and is **refused**, never silently repaired (`docs/RECOVERY.md` §5).
+  * **The matrix** — levels 90/95/99/100% × transaction sizes × crash points
+    (`ORFS_ENOSPC_SWEEP=1`).
+* **`evidence/recovery/fault-enospc.json`** (schema
+  `orfs.recovery.fault-enospc.v1`) — the fill mechanism, the per-row outcome
+  (committed / refused+intact / recovered root), the invariants checked, and
+  `runs.default` (12 rows) / `runs.sweep` (20 rows).
+* **`scripts/container-fault-enospc.sh`** — the runner (a default smoke run and
+  the release sweep), one container at a time.
+
+### Results
+
+`sh -c '. scripts/lib.sh && docker_run cargo test -p orfs --test fault_enospc'`:
+**8 passed**; `ORFS_ENOSPC_SWEEP=1` adds a **20-row** sweep. Every row asserts the
+invariants in `docs/RECOVERY.md` §3/§5/§7: a refusal is a typed `ENOSPC` that
+advances no root and rewrites no committed byte; a crash is recovered to a
+complete committed boundary with the committed prefix byte-identical on disk;
+nothing is silently repaired or truncated.
+
+### Test counts
+
+The default suite is now **493** tests (+8); `--features failpoints` is **503**
+(+8).
+
+### Docs
+
+`docs/CAPACITY.md` §3.1 and `docs/RECOVERY.md` §6/§7.1 point at the new court;
+the phase row in `README.md` and `docs/ORFS-SPEC.md`; the receipt row in
+`docs/REPRODUCE.md`; this entry.
+
+### Notes, stated honestly
+
+* The fill is a **declared** capacity on a small in-process volume (the primary
+  mechanism) or a **declared** live reserve on a temp directory (the secondary
+  one); no large files are written and no host disk is filled, so the court is
+  reproducible without a bounded `tmpfs`.
+* The crash seams are the project's existing ones: a real `SIGABRT` child (a
+  process crash — the OS page cache survives) and the simulated storage device
+  (an un-clean power failure, including a torn durable tail). Neither models real
+  hardware; `docs/RECOVERY.md` §4 states the boundary.

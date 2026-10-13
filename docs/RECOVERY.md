@@ -199,6 +199,7 @@ before (§2.4).
 | `evidence/recovery/capacity.json` | Capacity-policy invariant verdicts (ENOSPC/latch) |
 | `evidence/recovery/enospc.json` | ENOSPC injection at record/rollover/watermark points |
 | `evidence/recovery/device-error.json` | EIO / short write / failed fsync injection |
+| `evidence/recovery/fault-enospc.json` | ENOSPC at the edge (Phase 72): fill a volume to ~90/95/99/100% of its usable capacity, then `write + fsync` (clean commit or a typed refusal) or `write + fsync + crash` and the real `orfs recover` |
 
 ---
 
@@ -229,6 +230,17 @@ Tests: `recovery_adversarial::early_enospc_refuses_before_writing_any_byte`,
 `power_loss::enospc_and_eio_at_every_record_write_never_violate_acknowledged_durability`
 (sweeps every write point), `enospc_at_segment_rollover_never_violates_acknowledged_durability`,
 `enospc_at_the_commit_watermark_never_violates_acknowledged_durability`.
+
+**The edge of the backing (Phase 72).** `tests/fault_enospc.rs` drives a volume
+to ~90/95/99/100% of its usable capacity (the Phase-23 explicit-capacity latch,
+deterministic and requiring no large files) and, at the edge, proves a
+`write + fsync` either commits cleanly or is refused with a typed `ENOSPC`
+leaving the previous committed root byte-identical and the volume read-only; and
+that a crash at the edge (a real post-`fsync` `SIGABRT` child and the simulated
+device's un-clean power failure) followed by the real `orfs recover` selects the
+**newest valid committed generation**, keeps every previously committed byte
+intact, and silently repairs or truncates nothing. Evidence:
+`evidence/recovery/fault-enospc.json`.
 
 ### 7.2 Device errors (`EIO`, short writes, failed `fsync`)
 

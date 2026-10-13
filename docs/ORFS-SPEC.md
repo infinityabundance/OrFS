@@ -157,16 +157,17 @@ per-phase record.
 | 69 | Endurance space-amplification curve (reviewer item 8): a bounded court grows a committed history over many epochs (content-neutral rewrites) and samples `logical` vs `authoritative_physical` vs `manifested` vs `total physical` bytes, the amplification ratio, and the growth counters, in an authoritative and a manifested arm over the same history; rendered as charts. Amplification grows monotonically (authoritative 1.50→10.08; manifested 6.56→88.48) over the bounded run; the multi-day run is the follow-up | **complete** |
 | 70 | Bounded Loom model for the concurrent immutable read views and the group-commit coordinator (reviewer item 11): `src/sync_model.rs` mirrors the read-view publication and the coordinator's admission/fence, compiled against `loom::sync` under `--cfg loom`; `tests/loom_concurrency.rs` proves no deadlock/race after the Phase-19 lock removal (a reader never sees a partial view; a batch never acks before the barrier covering its bytes); `scripts/container-loom.sh` | **complete** |
 | 71 | Documentation decisions (docs-only, no code change): the final index-spine decision (`docs/INDEX.md`) — the live, publication-sensitive writer spine stays the path-copying treap (radix/page-tree regress mutation, Phase 48) while the sealed, immutable historical role uses the dense-ordinal `InodeStore::Sealed` (Phase 58); the Docker-only operator runbook (`docs/OPERATIONS.md`); and the image pixel-surface pyramid moved to `docs/REJECTED.md` and removed from the implemented spec | **complete** |
+| 72 | ENOSPC fault injection at the edge (reviewer item #13): `tests/fault_enospc.rs` drives a volume to ~90/95/99/100% of its usable capacity (the Phase-23 explicit-capacity latch — deterministic, no large files), then a `write + fsync` either commits cleanly or is refused with a typed `CapacityExhausted`/`NoSpace` (ENOSPC) leaving the previous committed root byte-identical and the volume read-only; and a crash at the edge (a real post-fsync `SIGABRT` child and the `orfs::powerloss` simulated device) followed by the real `orfs recover`, proving recovery selects the newest valid committed generation and silently repairs or truncates nothing | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–71 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–72 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
 v0.1.0 was the first release.
 
-- The `orfs` crate builds, its **485** tests (default) pass, and
-  `cargo test --features failpoints` adds the crash-injection court (495 tests in
+- The `orfs` crate builds, its **493** tests (default) pass, and
+  `cargo test --features failpoints` adds the crash-injection court (503 tests in
   total); `cargo fmt -p orfs --check` / `clippy --all-targets -- -D warnings` are
   clean **inside the pinned container** (`scripts/container-*.sh`).
 - `src/capabilities.rs` + `orfs doctor` perform a **real** kernel/container
@@ -261,7 +262,7 @@ sibling working tree is required):
 
 ```sh
 scripts/container-build.sh        # cargo build
-scripts/container-test.sh        # cargo test  (485 tests)
+scripts/container-test.sh        # cargo test  (493 tests)
 scripts/container-fuse-test.sh    # real-mount FUSE + performance court
 scripts/container-uring-test.sh   # io_uring integration + backing benchmark
 scripts/container-check.sh        # cargo fmt -p orfs --check + clippy -D warnings

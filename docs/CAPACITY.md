@@ -99,6 +99,14 @@ is the operational guardrail against a surprise `ENOSPC` mid-commit; see §11.
 same check before creating anything, refusing (`CapacityExhausted`) when the
 framed genesis record plus the reserve cannot fit.
 
+The **recovery edge** of a nearly-full backing is proven by
+`tests/fault_enospc.rs` (Phase 72; `evidence/recovery/fault-enospc.json`): a
+volume is filled to ~90/95/99/100% of its usable capacity, a `write + fsync` is
+either committed cleanly or refused with a typed `ENOSPC` leaving the previous
+committed root byte-identical and the volume read-only, and a crash at the edge
+then `recover` selects the newest valid committed generation — see
+`docs/RECOVERY.md` §7.1.
+
 ---
 
 ## 4. Throttling order

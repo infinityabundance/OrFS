@@ -28,12 +28,14 @@
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use crate::error::{OrfsError, Result};
 use crate::index::Index;
 use crate::inode::{has_permission_grouped, InodeStat};
 use crate::namespace::Namespace;
-use crate::trigram::{sketch_possible, CandidatePlan, TrigramIndex, MIN_PATTERN};
+use crate::searchdir::{DirectoryBuilder, DirectoryPlan};
+use crate::trigram::{sketch_possible, CandidatePlan, TrigramIndex, TrigramState, MIN_PATTERN};
 
 /// The result schema identifier for JSON output and evidence.
 pub const QUERY_SCHEMA: &str = "orfs.query.v1";
@@ -168,6 +170,10 @@ pub struct QueryStats {
     pub false_candidates: u64,
     /// Bytes of authoritative content read.
     pub content_bytes_read: u64,
+    /// Files the global search directory (research §9) pruned without examining
+    /// them. Zero when no complete directory was used.
+    #[serde(default)]
+    pub files_pruned_by_directory: u64,
     /// Whether the limit truncates the result set.
     pub limit_reached: bool,
     /// Whether the query was cancelled.
@@ -233,117 +239,149 @@ impl<'a> QueryEngine<'a> {
             ));
         }
         let mut stats = QueryStats::default();
+        let trigram = self.ns.trigram_state();
+
+        // --- global search directory (Phase 52, research §9) --------------------
+        // A whole-tree recursive query whose object set is fully covered by the
+        // derived directory can be answered from the candidate intersection alone,
+        // never opening the pruned files. The directory is only consulted when it is
+        // complete, root-qualified, and the request covers the whole tree, so it can
+        // only ever remove files that provably cannot match.
+        if let Some(dir) = trigram.as_ref().and_then(|s| s.cached_search_directory()) {
+            if dir.root() == req.root
+                && dir.complete()
+                && req.recursive
+                && req.inode == self.ns.root_inode()
+            {
+                match dir.candidates(&req.pattern) {
+                    DirectoryPlan::Impossible => {
+                        stats.files_pruned_by_directory = dir.objects();
+                        return Ok(stats);
+                    }
+                    DirectoryPlan::Candidates(ids) => {
+                        stats.files_pruned_by_directory =
+                            dir.objects().saturating_sub(ids.len() as u64);
+                        for inode in ids {
+                            if cancel.load(Ordering::SeqCst) {
+                                stats.canceled = true;
+                                break;
+                            }
+                            if self.examine_file(
+                                inode,
+                                req,
+                                &trigram,
+                                cancel,
+                                &mut stats,
+                                &mut on_match,
+                            )? {
+                                break;
+                            }
+                        }
+                        return Ok(stats);
+                    }
+                    DirectoryPlan::Unsupported => {}
+                }
+            }
+        }
 
         // Discover the candidate files at the pinned root, in a deterministic
         // order (ascending inode id) so indexed and scan paths agree exactly.
         let files = self.candidate_files(req)?;
-        let trigram = self.ns.trigram_state();
 
         'files: for inode in files {
             if cancel.load(Ordering::SeqCst) {
                 stats.canceled = true;
                 break;
             }
-            let Some(ino) = self.ns.search_inode(inode, req.root)? else {
-                continue;
-            };
-            if !ino.is_file() {
-                continue;
-            }
-            let st = ino.stat();
-            if !may_read(&req.credential, &st) {
-                stats.files_skipped_unreadable += 1;
-                continue;
-            }
-            stats.files_considered += 1;
-            let size = st.size;
-            if (size as usize) < req.pattern.len() {
-                continue;
-            }
-
-            // A pattern shorter than a trigram cannot be accelerated; scan it.
-            if req.pattern.len() < MIN_PATTERN {
-                if self.scan_file(
-                    inode,
-                    st.version,
-                    size,
-                    req,
-                    cancel,
-                    &mut stats,
-                    &mut on_match,
-                )? {
-                    break 'files;
-                }
-                continue;
-            }
-
-            // Try the concealed index for exactly this identity (I6). The compact
-            // sketch in the manifest prunes files whose pattern trigrams are
-            // provably absent, without loading their positional payload. Any
-            // rejection (absent, stale, partial, corrupt) falls back to a scan.
-            let mut handled_by_index = false;
-            if let Some(state) = trigram.as_ref() {
-                if let Some(manifest) = state.usable_for(inode, st.version, req.root, size) {
-                    if !sketch_possible(manifest.sketch_bits, &manifest.sketch, &req.pattern) {
-                        stats.files_indexed += 1;
-                        stats.impossible_by_index += 1;
-                        handled_by_index = true;
-                    } else if let Ok(index) = state.store().load_index(&manifest) {
-                        stats.files_indexed += 1;
-                        match index.plan(&req.pattern) {
-                            CandidatePlan::Impossible => {
-                                stats.impossible_by_index += 1;
-                            }
-                            CandidatePlan::Unsupported => {
-                                stats.files_indexed -= 1;
-                                if self.scan_file(
-                                    inode,
-                                    st.version,
-                                    size,
-                                    req,
-                                    cancel,
-                                    &mut stats,
-                                    &mut on_match,
-                                )? {
-                                    break 'files;
-                                }
-                            }
-                            CandidatePlan::Candidates(cands) => {
-                                stats.indexed_candidates += cands.len() as u64;
-                                if self.verify_candidates(
-                                    inode,
-                                    st.version,
-                                    size,
-                                    &index,
-                                    &cands,
-                                    req,
-                                    cancel,
-                                    &mut stats,
-                                    &mut on_match,
-                                )? {
-                                    break 'files;
-                                }
-                            }
-                        }
-                        handled_by_index = true;
-                    }
-                }
-            }
-            if !handled_by_index
-                && self.scan_file(
-                    inode,
-                    st.version,
-                    size,
-                    req,
-                    cancel,
-                    &mut stats,
-                    &mut on_match,
-                )?
-            {
+            if self.examine_file(inode, req, &trigram, cancel, &mut stats, &mut on_match)? {
                 break 'files;
             }
         }
         Ok(stats)
+    }
+
+    /// Examine one file for matches, updating `stats`. Returns `true` when the run
+    /// should stop (the match limit was reached, the callback asked to stop, or a
+    /// scan was cancelled). Shared by the full walk and the directory fast path.
+    fn examine_file<F>(
+        &self,
+        inode: u64,
+        req: &QueryRequest,
+        trigram: &Option<Arc<TrigramState>>,
+        cancel: &AtomicBool,
+        stats: &mut QueryStats,
+        on_match: &mut F,
+    ) -> Result<bool>
+    where
+        F: FnMut(&QueryMatch) -> MatchFlow,
+    {
+        let Some(ino) = self.ns.search_inode(inode, req.root)? else {
+            return Ok(false);
+        };
+        if !ino.is_file() {
+            return Ok(false);
+        }
+        let st = ino.stat();
+        if !may_read(&req.credential, &st) {
+            stats.files_skipped_unreadable += 1;
+            return Ok(false);
+        }
+        stats.files_considered += 1;
+        let size = st.size;
+        if (size as usize) < req.pattern.len() {
+            return Ok(false);
+        }
+
+        // A pattern shorter than a trigram cannot be accelerated; scan it.
+        if req.pattern.len() < MIN_PATTERN {
+            return self.scan_file(inode, st.version, size, req, cancel, stats, on_match);
+        }
+
+        // Try the concealed index for exactly this identity (I6). The compact
+        // sketch in the manifest prunes files whose pattern trigrams are provably
+        // absent, without loading their positional payload. Any rejection (absent,
+        // stale, partial, corrupt) falls back to a scan.
+        let mut handled_by_index = false;
+        if let Some(state) = trigram.as_ref() {
+            if let Some(manifest) = state.usable_for(inode, st.version, req.root, size) {
+                if !sketch_possible(manifest.sketch_bits, &manifest.sketch, &req.pattern) {
+                    stats.files_indexed += 1;
+                    stats.impossible_by_index += 1;
+                    handled_by_index = true;
+                } else if let Ok(index) = state.store().load_index(&manifest) {
+                    stats.files_indexed += 1;
+                    match index.plan(&req.pattern) {
+                        CandidatePlan::Impossible => {
+                            stats.impossible_by_index += 1;
+                        }
+                        CandidatePlan::Unsupported => {
+                            stats.files_indexed -= 1;
+                            if self
+                                .scan_file(inode, st.version, size, req, cancel, stats, on_match)?
+                            {
+                                return Ok(true);
+                            }
+                        }
+                        CandidatePlan::Candidates(cands) => {
+                            stats.indexed_candidates += cands.len() as u64;
+                            if self.verify_candidates(
+                                inode, st.version, size, &index, &cands, req, cancel, stats,
+                                on_match,
+                            )? {
+                                return Ok(true);
+                            }
+                        }
+                    }
+                    handled_by_index = true;
+                }
+            }
+        }
+        if !handled_by_index
+            && self.scan_file(inode, st.version, size, req, cancel, stats, on_match)?
+        {
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     /// Read the whole content once, verify each candidate against it, and emit
@@ -554,5 +592,66 @@ impl Namespace {
         F: FnMut(&QueryMatch) -> MatchFlow,
     {
         QueryEngine::with_limit(self, request.limit).run(&request, cancel, on_match)
+    }
+
+    /// Build and cache the derived **global search directory** (research §9) over
+    /// every file at the current committed root, folding each file's committed
+    /// positional index. Returns the number of objects folded. Derived and never
+    /// authoritative: the query engine consults it only when it is `complete`, and
+    /// every candidate is still verified against committed content.
+    ///
+    /// Requires the concealed search plane (`enable_trigram`).
+    pub fn prime_search_directory(&self) -> Result<u64> {
+        let state = self.trigram_state().ok_or_else(|| {
+            OrfsError::Unsupported("the concealed search plane is not enabled".into())
+        })?;
+        let root = self.root();
+        let view = self.search_view(root)?;
+        let mut files: Vec<u64> = Vec::new();
+        collect_all_files(&view, self.root_inode(), &mut files);
+        files.sort_unstable();
+        files.dedup();
+
+        let mut b = DirectoryBuilder::new(root, state.uuid());
+        for &inode in &files {
+            let Some(ino) = view.inode(inode) else {
+                b.mark_incomplete();
+                continue;
+            };
+            if !ino.is_file() {
+                continue;
+            }
+            let st = ino.stat();
+            match state.usable_for(inode, st.version, root, st.size) {
+                Some(m) if m.source_logical_size == st.size => match state.store().load_index(&m) {
+                    Ok(index) if index.logical_size() == st.size => b.fold(inode, &index),
+                    _ => b.mark_incomplete(),
+                },
+                _ => b.mark_incomplete(),
+            }
+        }
+        state.store_search_directory(Arc::new(b.finish()));
+        Ok(files.len() as u64)
+    }
+}
+
+/// Collect every regular file reachable from `start` (iterative, cycle-safe).
+fn collect_all_files(view: &Index, start: u64, out: &mut Vec<u64>) {
+    let mut stack = vec![start];
+    let mut visited: HashSet<u64> = HashSet::new();
+    while let Some(dir) = stack.pop() {
+        if !visited.insert(dir) {
+            continue;
+        }
+        for (_name, child) in view.readdir(dir).unwrap_or_default() {
+            let Some(ino) = view.inode(child) else {
+                continue;
+            };
+            if ino.is_file() {
+                out.push(child);
+            } else if ino.is_dir() && !visited.contains(&child) {
+                stack.push(child);
+            }
+        }
     }
 }

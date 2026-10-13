@@ -133,6 +133,7 @@ so it is not expected to name HEAD.
 | `manifest-s14-5-changed-bytes` | `docs/MANIFESTATION.md` §14.5 | fixed-256 KiB incremental build vs changed bytes (64 B/1 KiB/8 KiB/32 KiB) → `cost_vs_changed_bytes[changed_bytes=…].incremental_build_ns` |
 | `perf-s17-planner-cache-scan` | `docs/PERFORMANCE.md` §17 | volatile-cache court: body-plan rebuilds during a cold scan, admission policy vs the FIFO model → `planner-cache.json` `{measured,fifo_model}.scan_plan_builds` |
 | `perf-s18-microarch-manifest-handle` | `docs/PERFORMANCE.md` §18 | microarchitecture court: `latest_for_shared` allocations per call → `microarch.json` `manifest_handle_allocations.latest_for_shared_allocs` |
+| `perf-s19-search-directory-rare` | `docs/PERFORMANCE.md` §19 | global search directory: a rare pattern's files examined and content bytes read → `search-directory.json` `directory_path[pattern_hex=7a7a71].{files_considered,content_bytes_read}` |
 
 ### `docs/ACCEPTANCE-AUDIT.md` is exempt from live comparison
 

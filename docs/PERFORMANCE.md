@@ -1391,3 +1391,74 @@ load and the container is capped, so absolute nanoseconds and the reader-scaling
 aggregate are host/load sensitive. Hardware counters were unavailable, so TLB and
 cache-miss counts are not reported; the allocator counts and the
 `latest_for_shared`/`latest_for` comparison are the deterministic results.
+
+## 19. Reviewer task — the global search directory (research §9)
+
+**The question.** The per-object positional trigram index (Phase 9, §6) accelerates
+a query *within* one file, but the engine still examines every file under the
+pinned root to discover which are relevant. §9 asks for a global,
+version-qualified **directory mapping a trigram to the objects that contain it**,
+so a whole-tree query restricts itself to the candidate objects and never opens the
+rest; and for the posting sets to be represented according to candidate density
+(sparse arrays vs packed bitmaps vs runs, Roaring-style) rather than one shape
+everywhere.
+
+**The structure.** `src/searchdir.rs` implements the **global search directory**:
+`BTreeMap<trigram key, `[`PostingSet`]`>` where a `PostingSet` is either a sorted id
+array (sparse) or a packed 64-bit bitmap (dense over a bounded id universe,
+`len/universe >= 1/8`), chosen automatically and intersected in the cheaper
+representation. It is built by folding every file's committed positional index at
+a committed root (`Namespace::prime_search_directory` → `DirectoryBuilder`) and is
+cached in the trigram state. Like every other manifest, it is **derived and never
+authoritative**: it is consulted only when it is `complete` (every file at the root
+had a usable index) and root-qualified, every candidate is still verified against
+committed content, and an incomplete or absent directory simply leaves the query on
+the existing path — so it can only remove files that provably cannot match.
+
+**Court.** `tests/search_directory.rs`, run by
+`scripts/container-search-directory.sh` (release), writes
+`evidence/performance/search-directory.json`. It builds a deterministic tree,
+queries it three ways over the *same* committed root — the per-object index path,
+the global-directory path, and an authoritative full scan in a plane-free
+namespace — and asserts byte-identical matches, then measures files examined,
+content read, and latency.
+
+**Measured (one run; release; 2 048 files × 512 B over 64 directories; 522 distinct
+keys).**
+
+* The directory's posting sets are ~**135 KB** for ~**1.05 MB** of source
+  (**~13 %**), and the density-adaptive choice put **513 of 522** keys in the
+  bitmap representation.
+* A **rare** pattern (`zzq`, present in **8** of **2048** objects): the directory
+  path examines only **8** files and reads **4 120** content bytes, versus **2 048**
+  files and **1 048 600** bytes on the per-object index path — a **256×** reduction
+  in files examined — at **186 µs** versus **631 µs** (indexed) and **1 932 µs**
+  (full scan): **3.4×** and **10.4×** faster respectively.
+* An **absent** pattern (`mmm`, in no object): the directory short-circuits to **0**
+  files examined, **0** bytes read, and **0** matches at **138 ns**, versus **419 µs**
+  (indexed) and **1 907 µs** (scan).
+* A **common** pattern (`abc`, effectively everywhere): 780 of 2 048 files pruned;
+  the directory cannot help much when candidates are dense, and the numbers show it.
+* **Parity:** every pattern returned byte-identical matches by all three paths
+  (`parity.all_identical = true`).
+
+**Findings, stated honestly.**
+
+1. **The global directory removes the file-enumeration cost entirely for selective
+   queries.** The per-object index avoids reading content, but still performs a
+   namespace lookup, a `stat`, and a sketch check for every file; the directory skips
+   all of that for pruned objects, which is why 2 048 files of work become 8.
+2. **Density-adaptive posting sets are worth it here.** Because object ids are
+   dense and small, most posting sets are bitmaps (513/522) at ~1/8 the bytes of the
+   equivalent id arrays, so the directory stays small relative to the source.
+3. **The directory is not free to build, and this court does not hide that.** It
+   folds every file's committed index once (a construction cost proportional to the
+   tree); the win is on *repeated* queries. Automatic construction on mount (rather
+   than the explicit `prime_search_directory`) is deliberate follow-up, as is
+   extending the fast path to sub-directory (non-whole-tree) queries, which today
+   fall back to the full walk.
+
+**Caveats.** Single run, single host, release build; absolute nanoseconds are
+host/load sensitive. The corpus is deterministic, so the file counts and byte counts
+are exact. The directory is currently in-memory (derived and rebuildable), not a
+persisted plane; persisting it under the trigram store is future work.

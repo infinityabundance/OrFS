@@ -138,6 +138,7 @@ pub mod query;
 pub mod radix;
 pub mod readpath;
 pub mod record;
+pub mod searchdir;
 pub mod segment;
 pub mod snapshot;
 pub mod stats;

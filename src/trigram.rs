@@ -46,6 +46,7 @@ use crate::error::{OrfsError, Result};
 use crate::manifestation::{
     dir_bytes, Catalogue, CatalogueEntry, Dec, Enc, CAT_FAMILY_TRIGRAM, MANIFEST_DIR_SYNC_INTERVAL,
 };
+use crate::searchdir::GlobalSearchDirectory;
 use crate::segment::fsync_dir;
 
 /// The concealed subdirectory holding trigram payloads and manifests.
@@ -63,6 +64,20 @@ const HEAD_MAGIC: u32 = 0x4F52_5448; // "ORTH"
 
 fn trigram_key(a: u8, b: u8, c: u8) -> u32 {
     ((a as u32) << 16) | ((b as u32) << 8) | (c as u32)
+}
+
+/// The **distinct** trigram keys of `pattern`, ascending. Empty when the pattern
+/// is shorter than a trigram. Used by the global search directory (research §9).
+pub fn pattern_trigram_keys(pattern: &[u8]) -> Vec<u32> {
+    if pattern.len() < MIN_PATTERN {
+        return Vec::new();
+    }
+    let mut keys: Vec<u32> = (0..=pattern.len() - MIN_PATTERN)
+        .map(|i| trigram_key(pattern[i], pattern[i + 1], pattern[i + 2]))
+        .collect();
+    keys.sort_unstable();
+    keys.dedup();
+    keys
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +266,12 @@ impl TrigramIndex {
     /// The posting list for one trigram key (ascending positions).
     pub fn postings(&self, key: u32) -> Option<&[u32]> {
         self.entries.get(&key).map(|v| v.as_slice())
+    }
+
+    /// The distinct trigram keys present, ascending (research §9: the global
+    /// directory folds these into per-trigram object postings).
+    pub fn keys(&self) -> impl Iterator<Item = u32> + '_ {
+        self.entries.keys().copied()
     }
 
     /// Plan the candidates for `pattern`.
@@ -1017,6 +1038,10 @@ pub struct TrigramState {
     store: TrigramStore,
     uuid: [u8; 16],
     published: RwLock<BTreeMap<u64, TrigramManifest>>,
+    /// The derived global search directory (research §9), once built. Derived and
+    /// never authoritative; a missing one simply leaves queries on the existing
+    /// path.
+    search_dir: RwLock<Option<Arc<GlobalSearchDirectory>>>,
 }
 
 impl TrigramState {
@@ -1028,7 +1053,18 @@ impl TrigramState {
             store,
             uuid,
             published: RwLock::new(latest.published),
+            search_dir: RwLock::new(None),
         }))
+    }
+
+    /// The derived global search directory, if one has been built (research §9).
+    pub fn cached_search_directory(&self) -> Option<Arc<GlobalSearchDirectory>> {
+        self.search_dir.read().clone()
+    }
+
+    /// Install the derived global search directory (built by the namespace).
+    pub fn store_search_directory(&self, dir: Arc<GlobalSearchDirectory>) {
+        *self.search_dir.write() = Some(dir);
     }
 
     /// The generation store.
@@ -1439,6 +1475,7 @@ impl TrigramEngine {
             store: store.clone(),
             uuid,
             published: RwLock::new(latest.published),
+            search_dir: RwLock::new(None),
         });
         let next_generation = store.next_generation()?;
         let workers = if cfg.workers == 0 {

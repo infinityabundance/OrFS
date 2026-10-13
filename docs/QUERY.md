@@ -57,6 +57,30 @@ already resident in memory after recovery, so the pruning check is free of I/O.
 This is what makes the index a net win: the query reads only the payloads and
 content of files that survive the sketch (see §9).
 
+### 2.2 The global search directory (research §9)
+
+The per-object index above accelerates a query *within* one file, but the engine
+still has to examine every file to discover which are relevant. The **global
+search directory** (`src/searchdir.rs`) removes that enumeration: it maps a
+trigram to the set of object ids that contain it, so a whole-tree query intersects
+the pattern's trigram postings and examines only the candidates.
+
+* **Posting sets are density-adaptive** (Roaring-style): a sorted id array when
+  sparse, a packed 64-bit bitmap when the set is dense over a bounded id universe
+  (`len/universe >= 1/8`), chosen automatically and intersected in the cheaper
+  representation.
+* It is **derived and never authoritative**. `Namespace::prime_search_directory()`
+  folds every file's committed positional index at a committed root and caches the
+  result in the trigram state; the query engine consults it only when it is
+  `complete` and root-qualified, and **every candidate is still verified against
+  committed content**. An incomplete, stale, or absent directory leaves the query
+  on the existing per-object path, so it can only *remove* files that provably
+  cannot match — never change the result set.
+* Today it accelerates **whole-tree recursive** queries; sub-directory queries fall
+  back, and the directory is in-memory (rebuildable), not yet a persisted plane.
+
+Measured in `docs/PERFORMANCE.md` §19 (`evidence/performance/search-directory.json`).
+
 ## 3. Version identity (research §2 I6)
 
 Every trigram generation is a `TrigramManifest` that records **all** required

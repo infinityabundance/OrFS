@@ -1,0 +1,141 @@
+{
+  "directory": {
+    "bitmap_sets": 513,
+    "complete": true,
+    "objects": 2048,
+    "posting_bytes": 135360,
+    "root": 3358844,
+    "source_bytes": 1048600,
+    "trigram_keys": 522
+  },
+  "directory_path": [
+    {
+      "content_bytes_read": 649237,
+      "files_considered": 1268,
+      "files_indexed": 1268,
+      "files_pruned_by_directory": 780,
+      "files_scanned": 0,
+      "matches": 1971,
+      "pattern_hex": "616263",
+      "query_ns": 31540171.75
+    },
+    {
+      "content_bytes_read": 4120,
+      "files_considered": 8,
+      "files_indexed": 8,
+      "files_pruned_by_directory": 2040,
+      "files_scanned": 0,
+      "matches": 8,
+      "pattern_hex": "7a7a71",
+      "query_ns": 186005.5
+    },
+    {
+      "content_bytes_read": 0,
+      "files_considered": 0,
+      "files_indexed": 0,
+      "files_pruned_by_directory": 2048,
+      "files_scanned": 0,
+      "matches": 0,
+      "pattern_hex": "6d6d6d",
+      "query_ns": 137.75
+    }
+  ],
+  "environment": {
+    "bench": {
+      "cgroup_memory_max": "8589934592",
+      "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "container_image": null,
+      "cores_visible": 8,
+      "cpu_max": "800000 100000",
+      "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+      "fuse_enable_uring": true,
+      "kernel_release": "7.2.9-2-cachyos",
+      "likely_container": true,
+      "machine": "x86_64",
+      "perf_counters_available": false,
+      "perf_event_paranoid": "2",
+      "ram_total_bytes": 134723346432
+    },
+    "profile": "release"
+  },
+  "full_scan": [
+    {
+      "content_bytes_read": 1048600,
+      "files_considered": 2048,
+      "files_indexed": 0,
+      "files_pruned_by_directory": 0,
+      "files_scanned": 2048,
+      "matches": 1971,
+      "pattern_hex": "616263",
+      "query_ns": 1980848.75
+    },
+    {
+      "content_bytes_read": 1048600,
+      "files_considered": 2048,
+      "files_indexed": 0,
+      "files_pruned_by_directory": 0,
+      "files_scanned": 2048,
+      "matches": 8,
+      "pattern_hex": "7a7a71",
+      "query_ns": 1932140.75
+    },
+    {
+      "content_bytes_read": 1048600,
+      "files_considered": 2048,
+      "files_indexed": 0,
+      "files_pruned_by_directory": 0,
+      "files_scanned": 2048,
+      "matches": 0,
+      "pattern_hex": "6d6d6d",
+      "query_ns": 1906941.5
+    }
+  ],
+  "generated_by": "tests/search_directory.rs",
+  "indexed_path": [
+    {
+      "content_bytes_read": 649237,
+      "files_considered": 2048,
+      "files_indexed": 2048,
+      "files_pruned_by_directory": 0,
+      "files_scanned": 0,
+      "matches": 1971,
+      "pattern_hex": "616263",
+      "query_ns": 33109895.375
+    },
+    {
+      "content_bytes_read": 4120,
+      "files_considered": 2048,
+      "files_indexed": 2048,
+      "files_pruned_by_directory": 0,
+      "files_scanned": 0,
+      "matches": 8,
+      "pattern_hex": "7a7a71",
+      "query_ns": 630621.125
+    },
+    {
+      "content_bytes_read": 0,
+      "files_considered": 2048,
+      "files_indexed": 2048,
+      "files_pruned_by_directory": 0,
+      "files_scanned": 0,
+      "matches": 0,
+      "pattern_hex": "6d6d6d",
+      "query_ns": 418757.75
+    }
+  ],
+  "note": "Single-run, single-host measurement of the global search directory (research §9). The directory is derived from committed per-object trigram indexes at a committed root; every candidate is still verified against committed content, so it can only remove files that provably cannot match. The three query rows are, in order, the per-object index path, the global-directory path, and the authoritative full scan over the identical committed root.",
+  "parity": {
+    "all_identical": true
+  },
+  "prime": {
+    "objects_folded": 2048
+  },
+  "schema": "orfs.performance.search-directory.v1",
+  "tree": {
+    "absent_pattern_hex": "6d6d6d",
+    "directories": 64,
+    "files": 2048,
+    "object_bytes": 512,
+    "rare_pattern_hex": "7a7a71"
+  }
+}

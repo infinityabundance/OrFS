@@ -225,6 +225,17 @@
       "fields": [
         {"group": 1, "label": "latest_for_shared allocs per call", "evidence": "evidence/performance/microarch.json", "path": "manifest_handle_allocations.latest_for_shared_allocs"}
       ]
+    },
+    {
+      "id": "perf-s19-search-directory-rare",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§19",
+      "claim": "global search directory court: a rare pattern examines only a handful of files and reads a handful of content bytes",
+      "regex": "examines only \\*\\*([0-9][0-9 ]*?)\\*\\* files and reads \\*\\*([0-9][0-9 ]*?)\\*\\* content bytes",
+      "fields": [
+        {"group": 1, "label": "rare pattern files_considered", "evidence": "evidence/performance/search-directory.json", "path": "directory_path[pattern_hex=7a7a71].files_considered"},
+        {"group": 2, "label": "rare pattern content_bytes_read", "evidence": "evidence/performance/search-directory.json", "path": "directory_path[pattern_hex=7a7a71].content_bytes_read"}
+      ]
     }
   ]
 }

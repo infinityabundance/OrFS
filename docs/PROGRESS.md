@@ -2819,3 +2819,48 @@ release, Phase 36).
   0.1.0 release. The crates.io API record was fetched and the packaged `.crate`
   sha256 was independently recomputed and matches.
 * `docs/PUBLISHING.md` — status updated to v0.2.0.
+
+## Phase 52 — Global search directory (§9)
+
+**Complete.** Reviewer research §9: replace the per-object-only index walk with a
+version-qualified **global directory mapping a trigram to the objects that contain
+it**, so a whole-tree query examines only candidate objects, plus density-adaptive
+(Roaring-style) posting sets.
+
+### Delivered
+
+* `src/searchdir.rs` — `PostingSet` (sorted id array when sparse, packed 64-bit
+  bitmap when dense over a bounded universe; chosen automatically, intersected in
+  the cheaper representation) and `GlobalSearchDirectory` (`BTreeMap<trigram,
+  PostingSet>` + `DirectoryBuilder`), with `candidates(pattern)` returning the
+  intersection of the pattern's trigram postings, `Impossible` when any trigram is
+  absent, or `Unsupported` below a trigram.
+* `src/trigram.rs` — `TrigramIndex::keys()`, `pattern_trigram_keys()`, and a cached
+  derived directory on `TrigramState`.
+* `src/query.rs` — `Namespace::prime_search_directory()` builds and caches the
+  directory; `QueryEngine::run` gained a whole-tree fast path (guarded on
+  `complete` + root-qualified + recursive-from-root), with the per-file body
+  factored into `examine_file`. `QueryStats` gains `files_pruned_by_directory`.
+* `tests/search_directory.rs` + `scripts/container-search-directory.sh` — the court
+  (parity across directory/index/scan; files examined; content read; latency).
+  Evidence `evidence/performance/search-directory.json`.
+
+### Result (release, one run; 2 048 files × 512 B over 64 directories)
+
+Posting sets are ~**135 KB** for ~**1.05 MB** of source, with **513 of 522** keys in
+the bitmap representation. A **rare** pattern present in **8** of **2 048** objects:
+the directory examines **8** files and reads **4 120** bytes (**256×** fewer files
+than the per-object index path) at **186 µs** versus **631 µs** (indexed) and
+**1 932 µs** (full scan) — **3.4×** and **10.4×**. An **absent** pattern
+short-circuits to **0** files examined and **0** matches at **138 ns**. Matches were
+byte-identical by all three paths.
+
+### Integrity and honesty
+
+The directory is **derived and never authoritative**: it is used only when
+`complete` and root-qualified, every candidate is still verified against committed
+content, and an incomplete/absent one leaves the query on the existing path, so it
+can only remove files that provably cannot match. It is currently in-memory
+(derived, rebuildable) and used only for whole-tree queries; persisting it and
+supporting sub-directory queries are stated follow-ups. Test counts rise to **436**
+(default) / **446** (`--features failpoints`); `fmt`/`clippy` clean.

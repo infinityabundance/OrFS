@@ -1,0 +1,8 @@
+{
+  "produced": true,
+  "samples": 6164,
+  "frames": 200,
+  "folded": "/mnt/1tb_kingston/OrFS/evidence/performance/flamegraph-microarch.folded",
+  "svg": "/mnt/1tb_kingston/OrFS/evidence/performance/flamegraph-microarch.svg",
+  "reason": null
+}

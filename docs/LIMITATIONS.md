@@ -163,7 +163,10 @@ host/container; Phase 15 added `F2` (and `E2`, `F0`/`F1` comparisons in
 `docs/PERFORMANCE.md` and `docs/FUSE_URING.md`. The figures are **warm-cache
 single-run** measurements and are not a portable benchmark. `fio`, `hyperfine`,
 and `perf` are absent from the pinned image, and hardware counters are
-additionally blocked by `perf_event_paranoid=2` and dropped `CAP_PERFMON`;
+additionally blocked by the default container's seccomp profile (which denies
+`perf_event_open` with `EPERM`) — **not** by `perf_event_paranoid=2`, which
+permits user-space counters, nor by a dropped `CAP_PERFMON`, which restores them
+(see `docs/PMU.md`);
 Criterion/Divan were not added (the pinned build is offline-capable and
 dependency-free). No performance superiority is claimed.
 

@@ -2972,3 +2972,95 @@ Hardware perf counters are unavailable (`perf_event_paranoid=2`), so there are n
 flamegraphs — the SQ/CQ counters are the mechanism evidence (recorded honestly). The
 `uring_integration` court (7/7) and the equivalence court stay green. Test counts rise
 to **440** (default) / **450** (`--features failpoints`); `fmt`/`clippy` clean.
+
+## Phase 56 — 64-thread read scaling and the POSIX-extras court
+
+**Complete.** Two further reviewer items: the concurrent read path's p99/p99.9 tail
+under **64 threads**, and receipts for POSIX extras the pjdfstest suite does not
+cover.
+
+### Delivered
+
+* **64-thread read scaling.** `tests/reader_scale_64.rs` +
+  `scripts/container-reader-scale64.sh` (release) serve one manifested object
+  through **one shared `ReadPlanner`** to `1/2/4/8/16/32/64` concurrent readers,
+  assert every read **byte-exact** against the authoritative extent read, and record
+  aggregate ops/s plus pooled p50/p95/p99/p99.9. Evidence
+  `evidence/performance/reader-scaling-64.json`; docs `docs/PERFORMANCE.md` §22.
+* **POSIX extras.** `tests/posix_extras.rs` exercises the primitives pjdfstest does
+  not: **xattrs** (set/get/list/remove, `XATTR_CREATE`, the derived `user.orfs.*`
+  set, name bounds, the uniform access rule), **symlinks** (create/readlink/resolve,
+  rename-replace identity), **hard links** (nlink accounting, shared-inode reads,
+  tombstone removal), **supplementary groups** (the grouped permission rule, allowed
+  and denied), and **durability** (`fsync` ack-state vs `fdatasync`). Evidence
+  `evidence/correctness/posix-extras.json` (`all_ok: true`).
+* **`EPERM` on a directory hard-link (correction).** `src/namespace.rs` `link()` on a
+  directory now returns `OrfsError::NotPermitted` (**EPERM**), matching Linux and
+  `docs/NAMESPACE.md` §4.2, in place of `PermissionDenied` (**EACCES**);
+  `tests/posix_extras.rs` asserts EPERM.
+
+### Result (release, one run; container CFS-capped at 8 CPUs; host under load)
+
+Concurrent reads are byte-exact at every reader count and the shared planner never
+re-plans (steady-state `plan_builds_delta = 0`). Aggregate throughput **peaks at 4
+readers (~8.0 M ops/s)** then falls to a **~2.8 M ops/s plateau at 16–64**; p50 rises
+modestly (181 → 1 593 ns) while **p99.9 rises to 201 µs at 64 readers** — the tail,
+not the mean, is where the shared-lock wait appears. All POSIX extras PASS;
+`fdatasync` has no distinct primitive and is served by the same full `sync()` (a
+strictly stronger guarantee, stated rather than faked).
+
+### Integrity
+
+The scaling curve is reported as measured, not smoothed: only 8 cores are visible to
+the container, so readers above the core count **contend rather than scale** (stated
+in the receipt's `caveat`). The EPERM correction is a semantic fix with new test
+coverage. Test counts rise to **443** (default) / **453** (`--features failpoints`);
+`fmt`/`clippy` clean.
+
+## Phase 57 — Real PMU counters and a flamegraph; the paranoid myth corrected
+
+**Complete.** The reviewer asked to *show* the microarchitecture rather than infer
+it — hardware counters and a flamegraph. The project had claimed these were
+impossible because `perf_event_paranoid=2`.
+
+### Delivered
+
+* **The correction.** That claim was **wrong and had never been verified with the
+  syscall.** `perf_event_paranoid=2` denies only *kernel* profiling; a **user-space,
+  per-thread** counter is permitted. The real gate is the container profile: the
+  **default seccomp profile denies `perf_event_open` with `EPERM`**, exactly as it
+  denies `io_uring_setup`. `src/bench.rs` now **probes** the syscall instead of
+  guessing from the paranoid level, and records `perf_counters_available` plus a new
+  `perf_event_open_error` (the errno). The reason is corrected in
+  `docs/PERFORMANCE.md` (§1, §5.3, §7, §16–§18, §20, §21), `docs/LIMITATIONS.md` §7,
+  `tests/{microarch,uring_depth,index_layout}.rs`, and `benches/mechanisms.rs`.
+* **The mechanism proof.** `scripts/pmu-probe.c` + `scripts/container-pmu.sh` prove
+  at run time which flags are required: the default profile → **DENIED** (`EPERM`);
+  `--cap-add PERFMON`, `--cap-add SYS_ADMIN`, or `seccomp=unconfined` →
+  **PERMITTED**. The script selects the least-privilege option and runs the court
+  under it.
+* **The counters and the flamegraph.** `tests/support/pmu.rs` (a minimal
+  `perf_event_open` module: the 64-byte ABI-v0 attr, a user-space counter group, and
+  a `PERF_SAMPLE_IP` sampler), `tests/microarch_pmu.rs` (the court), and `docs/PMU.md`.
+  Evidence `evidence/performance/pmu.json` and
+  `flamegraph-microarch.{folded,svg,json}`; docs `docs/PERFORMANCE.md` §23.
+
+### Result (release; one host; one thread)
+
+Real counters at `perf_event_paranoid=2` under `--cap-add PERFMON`: **`PMap` point
+lookup 659 cycles/op, IPC 0.30, 9.53 cache-misses/op** (cache-miss-bound — the shape
+§18 could previously only infer); **EKBLOOM manifested read 1 477 cycles/op, IPC
+3.45**; **`ReadPlanner` steady-state selection 890 cycles/op, IPC 3.98**; **backing
+log segment read 456 cycles/op, IPC 2.54**. A leaf-IP flamegraph (~6 100 samples,
+~200 collapsed leaves) was produced.
+
+### Integrity
+
+The flamegraph is a **leaf-IP** profile, not a call-chain one — an honest caveat in
+`docs/PMU.md` (frame-pointer stacks were unreliable, release LTO merges leaves, so it
+is run in a **debug** build); it is *indicative*, and the **counter table is the
+decisive evidence**. The correction does **not** claim counters are universally
+available: a court running in the **default** container still records
+`perf_counters_available=false`. The `uring_integration` and equivalence courts stay
+green. Test counts rise to **446** (default) / **456** (`--features failpoints`);
+`fmt`/`clippy` clean; `check-all.sh --fast` PASS (docs-receipts 44/44).

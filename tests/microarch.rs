@@ -7,10 +7,13 @@
 //! alignment, compact candidate arrays, **reduced temporary allocations**, and
 //! fewer contended shared locks.
 //!
-//! On this host hardware performance counters are **unavailable**
-//! (`perf_event_paranoid=2`, so `perf_counters_available=false`); AMD IBS and
-//! cache/TLB event counts cannot be read. The court therefore records that
-//! honestly and uses the PMU-free probes that are still decisive:
+//! In the **default container** hardware performance counters are unavailable:
+//! the seccomp profile denies `perf_event_open` with `EPERM`, so
+//! `perf_counters_available=false`. This is **not** the paranoid level —
+//! `perf_event_paranoid=2` permits user-space counters, and with
+//! `--cap-add PERFMON` `tests/microarch_pmu.rs` reads them for real (see
+//! `docs/PMU.md`). This court records the default-container limitation honestly
+//! and uses the PMU-free probes that are still decisive:
 //!
 //! * **Allocator traffic on the steady-state read.** A counting global allocator
 //!   measures allocations and bytes per certified read in the hot path — the
@@ -480,19 +483,23 @@ fn microarch_sweep() {
     let doc = serde_json::json!({
         "schema": "orfs.performance.microarch.v1",
         "generated_by": "tests/microarch.rs",
-        "note": "Single-run, single-host, PMU-free microarchitecture probes. Hardware \
-                 performance counters are unavailable on this host \
-                 (perf_event_paranoid level and no usable `perf`), so AMD IBS and \
-                 cache/TLB event counts could not be read; the court records that and \
-                 uses proxies that need no PMU: a counting global allocator for \
-                 hot-path allocator traffic, concurrent-reader throughput for the \
-                 remaining shared-lock surface, and a working-set latency curve as a \
-                 cache-hierarchy proxy. Absolute nanoseconds are host/load sensitive; \
-                 the shape and the allocator counts are the point.",
+        "note": "Single-run, single-host, PMU-free microarchitecture probes. In \
+                 the default container hardware performance counters are unavailable \
+                 (the seccomp profile denies perf_event_open with EPERM; \
+                 perf_event_paranoid=2 alone does not block user-space counters — \
+                 see docs/PMU.md), so AMD IBS and cache/TLB event counts could not be \
+                 read here; the court records that and uses proxies that need no PMU: \
+                 a counting global allocator for hot-path allocator traffic, \
+                 concurrent-reader throughput for the remaining shared-lock surface, \
+                 and a working-set latency curve as a cache-hierarchy proxy. Absolute \
+                 nanoseconds are host/load sensitive; the shape and the allocator \
+                 counts are the point.",
         "pmu": {
             "hardware_counters_available": counters_available,
             "perf_event_paranoid": environment.perf_event_paranoid,
-            "note": "IBS / cache / TLB counter attribution is unavailable when false.",
+            "note": "IBS / cache / TLB counter attribution is unavailable in the \
+                     default container when false; with --cap-add PERFMON the counters \
+                     are read by tests/microarch_pmu.rs (see docs/PMU.md).",
         },
         "steady_state_read_allocations": {
             "reads": a.reads,

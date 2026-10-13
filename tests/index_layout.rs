@@ -38,8 +38,10 @@
 //! point lookup, ordered range enumeration, mutation (persistent candidates),
 //! publication cost (clone for persistent, seal-rebuild for static), estimated
 //! structural bytes, build minor page faults, and resident set size. Hardware
-//! cache/TLB counters require `perf_event_paranoid <= 1`; when unavailable the
-//! court records that honestly and uses minor page faults as the proxy.
+//! cache/TLB counters are denied to the default seccomp-confined container
+//! (`perf_event_open` returns `EPERM`; `perf_event_paranoid=2` alone does **not**
+//! block user-space counters — see `docs/PMU.md`); when unavailable the court
+//! records that honestly and uses minor page faults as the proxy.
 //!
 //! ## Running
 //!
@@ -990,8 +992,10 @@ fn index_layout_sweep() {
         "note": "Single run, single host. Absolute nanoseconds are host/build \
                  dependent; the *shape* (depth-bounded radix vs pointer-heavy \
                  treap) and the ratios are the point. Hardware cache/TLB counters \
-                 are unavailable at perf_event_paranoid=2 (perf_counters_available \
-                 is recorded); build minor page faults are reported as the memory \
+                 are unavailable in the default container (perf_event_open is \
+                 denied with EPERM, not by perf_event_paranoid=2; \
+                 perf_counters_available is recorded); build minor page faults are \
+                 reported as the memory \
                  proxy. estimated_bytes is a structural lower bound computed from \
                  node/entry capacities (no allocator slop). Sealed candidates have \
                  no persistent mutation path; their publication column records the \

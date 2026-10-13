@@ -606,9 +606,12 @@ fn bench_frontier(scratch: &Path) -> serde_json::Value {
         "environment": orfs::bench::Environment::capture(std::env::var("ORFS_IMAGE").ok()),
         "hardware_counters": {
             "available": false,
-            "reason": "perf is not installed in the pinned image and \
-                       /proc/sys/kernel/perf_event_paranoid > 1 with CAP_PERFMON dropped, \
-                       so cycles/instructions/cache-misses/memory-bandwidth are unavailable",
+            "reason": "the perf CLI is not installed in the pinned image, and the \
+                       default container's seccomp profile denies perf_event_open with \
+                       EPERM, so cycles/instructions/cache-misses/memory-bandwidth are \
+                       unavailable here. This is not /proc/sys/kernel/perf_event_paranoid \
+                       (level 2 permits user-space counters); with --cap-add PERFMON the \
+                       counters are read for real (see docs/PMU.md)",
         },
         "separation": {
             "fuse_transport": "absent: every measurement here is through the in-crate read \
@@ -843,8 +846,10 @@ fn main() {
             "divan": "absent (dependency-free harness; see docs/PERFORMANCE.md)",
             "fio": "absent from the pinned image",
             "hyperfine": "absent from the pinned image",
-            "perf": "absent from the pinned image; hardware counters unavailable \
-                     (perf_event_paranoid > 1, CAP_PERFMON dropped)",
+            "perf": "the CLI is absent from the pinned image; the counters come from \
+                     perf_event_open, which the default container's seccomp profile \
+                     denies with EPERM (not perf_event_paranoid; --cap-add PERFMON \
+                     works — see docs/PMU.md)",
         },
     });
 

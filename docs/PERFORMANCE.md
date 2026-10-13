@@ -30,7 +30,7 @@ methodology), and §36 (tools and metrics).
 | Build image id | `sha256:e40e40e85910336674268fec578991ae3c0fd985b42be22fd7641fca94cd5af5` |
 | `fuse.enable_uring` | `Y` (FUSE-over-`io_uring` enabled; F2 mounts for real) |
 | `io_uring_disabled` | `0` (io_uring usable under `seccomp=unconfined`) |
-| `perf_event_paranoid` | `2` (hardware counters unavailable) |
+| `perf_event_paranoid` | `2` (this permits *user-space* per-thread counters; the default seccomp-confined container — not the paranoid level — blocks `perf_event_open` with `EPERM`; see §23 and `docs/PMU.md`) |
 
 FUSE mounts run in the `orfs-kmount` container (`scripts/container-fuse-test.sh`);
 every other benchmark runs in the unprivileged `orfs-build` container. There is
@@ -355,10 +355,13 @@ cache.
 ### 5.3 CPU counters
 
 `cycles`, `instructions`, `cache-misses`, and `memory-bandwidth` are
-**unavailable**: `perf` is absent from the pinned image and
-`perf_event_paranoid = 2` with `CAP_PERFMON` dropped prevents any counter
-collection. The frontier records this precisely (`hardware_counters.available:
-false`). No counter is estimated.
+**unavailable in this court's default container**: the `perf` CLI is absent from
+the pinned image, and the default seccomp-confined container denies the
+`perf_event_open` syscall with `EPERM`. This is **not** the paranoid level —
+`perf_event_paranoid = 2` permits *user-space* per-thread counters; the container
+profile is the gate (§23, `docs/PMU.md`). The frontier records this precisely
+(`hardware_counters.available: false`). No counter is estimated; granted
+`--cap-add PERFMON` the same counters *are* obtained (§23).
 
 ### 5.4 Phase 16: the frontier **end to end** through a real FUSE mount
 
@@ -499,7 +502,7 @@ index-backed lookup.
 | Divan | **not used** | same as Criterion |
 | `fio` | **unavailable** | absent from `rust:1.99.0-slim-bookworm`; installing it means a new image |
 | `hyperfine` | **unavailable** | absent from the pinned image |
-| `perf` | **unavailable** | absent from the pinned image **and** `perf_event_paranoid=2` / `CAP_PERFMON` dropped |
+| `perf` | **unavailable** (the CLI) | the `perf` binary is absent from the pinned image; the counters themselves come from the `perf_event_open` syscall, which the default container's seccomp profile denies with `EPERM` — **not** `perf_event_paranoid=2`. Granted `--cap-add PERFMON`, real counters are read via the syscall (§23, `docs/PMU.md`) |
 | `pjdfstest` | **used** (Phase 24) | run in the `orfs-posix:1.99.0` image against both a mounted OrFS volume and a reference ext4 directory; results in `evidence/correctness/pjdfstest.json` (docs/FUSE-SEMANTICS.md §11.1) |
 | `xfstests` | **assessed, not runnable here** (Phase 24) | a FUSE substrate exists but needs xfstests' built helper tools, xfsprogs, and a mount helper; exact commands/errors in `evidence/correctness/xfstests.json` (docs/FUSE-SEMANTICS.md §11.2) |
 | `setfattr`/`getfattr` | **unavailable** | absent; xattrs are exercised via direct syscalls |
@@ -1148,9 +1151,11 @@ bulk mean that removes the `Instant::now` floor), ordered range enumeration,
 mutation (insert+remove, i.e. two path copies), publication (`Clone` for the
 persistent candidates, one-time seal-rebuild for the static ones), estimated
 structural bytes (`mem_bytes`: nodes/pages + capacities, no allocator slop), and
-build minor page faults. Hardware cache/TLB counters are **unavailable** here
-(`perf_event_paranoid=2`; `perf_counters_available=false` in the evidence), so
-the court records that honestly and reports page faults as the memory proxy.
+build minor page faults. Hardware cache/TLB counters are **unavailable in this
+court's default container** (the seccomp profile denies `perf_event_open` with
+`EPERM`, not `perf_event_paranoid=2`; `perf_counters_available=false` in the
+evidence), so the court records that honestly and reports page faults as the
+memory proxy.
 
 Candidates: the production treap (`PMap`); two new persistent prototypes — a
 **segmented radix** (`src/radix.rs`) and a **segmented page tree**
@@ -1240,8 +1245,9 @@ host/load sensitive and some cells moved between two runs of the same binary.
 `estimated_bytes` is a structural lower bound (capacities, no allocator slop).
 Build minor page faults are reported in the evidence but are only indicative:
 all candidates are built in one process, so after the first the allocator reuses
-faulted pages. Hardware cache/TLB counters were unavailable
-(`perf_event_paranoid=2`). The sealed layouts are measured as **sealed** (their
+faulted pages. Hardware cache/TLB counters were unavailable in the default
+container (seccomp denied `perf_event_open`; see §23). The sealed layouts are
+measured as **sealed** (their
 publication is an `Arc` clone; their rebuild column is the counterfactual cost of
 using them as a live spine), and the 10 000 000 scale is opt-in and was not run
 for this record. The radix/pagetree unit tests cross-check every operation
@@ -1311,8 +1317,9 @@ policy over identical keys, not a second filesystem run).
    distinct keys through an `AdmissionCache` of capacity 8 asserting the bound and
    <32 MiB of RSS growth.
 4. **Scope, stated plainly.** This court does not separately instrument
-   allocations or lock-contention counters (hardware counters are unavailable at
-   `perf_event_paranoid=2`, and per-lookup allocation counting would be dominated
+   allocations or lock-contention counters (hardware counters are denied to the
+   default container by its seccomp profile — `EPERM`, not `perf_event_paranoid=2`
+   — and per-lookup allocation counting would be dominated
    by the harness's own result buffers); it reports the decisive, policy-neutral
    observable (body-plan rebuilds), the steady-state hit rate, and ns/read. The
    identity-keyed tables' one-million-identity bound is the separate Phase 43
@@ -1332,11 +1339,14 @@ than guessing which Rust constructs are slow, names AMD IBS and cache/TLB
 counters, and proposes mitigations: cache-line alignment, compact candidate
 arrays, **reduced temporary allocations**, and fewer contended shared locks.
 
-**PMU availability (recorded honestly).** Hardware performance counters are
-**unavailable** on this host: `perf_event_paranoid=2` and no usable `perf`, so
-`perf_counters_available=false` in the evidence. AMD IBS and cache/TLB event
-counts could not be read. The court therefore uses PMU-free probes that are still
-decisive, and records the limitation rather than inventing counter numbers.
+**PMU availability (recorded honestly).** This court ran in the **default
+container**, where `perf_counters_available=false`: the seccomp profile denies
+`perf_event_open` with `EPERM`. The blocker is the container profile, **not** the
+paranoid level — `perf_event_paranoid=2` permits user-space per-thread counters,
+and with `--cap-add PERFMON` this court's counters are read for real (§23,
+`docs/PMU.md`). In this default run AMD IBS and cache/TLB event counts could not
+be read, so the court uses PMU-free probes that are still decisive and records
+the limitation rather than inventing counter numbers.
 
 **Court.** `tests/microarch.rs`, run by `scripts/container-microarch.sh`
 (release), writes `evidence/performance/microarch.json`. It uses a counting
@@ -1383,14 +1393,18 @@ a lock-free `[AtomicU64; ReadPathKind::COUNT]`.
    this remains the dominant shared-lock surface.
 3. **The `PMap` curve shows the expected monotone cache-pressure growth**
    (~31 ns working-set-resident to ~174 ns at 262 k entries) but, without PMU
-   counters, whether each step is an L1/L2/L3 or TLB boundary is **not**
-   attributed — the curve is a shape, not a counter attribution.
+   counters in *this* run, whether each step is an L1/L2/L3 or TLB boundary is
+   **not** attributed — the curve is a shape, not a counter attribution. §23's
+   PMU court does attribute the `PMap` lookup: IPC 0.30 with ~9.5 cache misses
+   per lookup — it is cache-miss-bound, exactly the shape this curve implies.
 
 **Caveats.** Single run, single host, release build; the host is under external
 load and the container is capped, so absolute nanoseconds and the reader-scaling
-aggregate are host/load sensitive. Hardware counters were unavailable, so TLB and
-cache-miss counts are not reported; the allocator counts and the
-`latest_for_shared`/`latest_for` comparison are the deterministic results.
+aggregate are host/load sensitive. Hardware counters were unavailable *in this
+default container* (seccomp), so TLB and cache-miss counts are not reported here;
+the allocator counts and the `latest_for_shared`/`latest_for` comparison are the
+deterministic results. The separate PMU court (§23), which runs with
+`--cap-add PERFMON`, *does* read the counters.
 
 ## 19. Reviewer task — the global search directory (research §9)
 
@@ -1513,8 +1527,9 @@ workload and the read-latency floor.
    reaching 88–103 % of F0 throughput but with the **p99 target unmet**; until p99 is
    met, F2 is not claimed to beat the conventional path.
 
-**Caveats.** Single run, single host, page-cache warm; `perf_event_paranoid=2` so no
-counter attribution. A FUSE-passthrough baseline is produced separately by the
+**Caveats.** Single run, single host, page-cache warm; the default container's
+seccomp profile denies `perf_event_open` (`EPERM`), so this court has no counter
+attribution (§23). A FUSE-passthrough baseline is produced separately by the
 phase-21 court because it needs a real mount. The `host-fs` scratch lives under
 `target/` (gitignored) and is removed by the court.
 
@@ -1574,11 +1589,136 @@ more, smaller submission rounds, which is why write throughput climbs from
 ~2.0 GB/s at depth 2 to ~3.9 GB/s at depth 128.
 
 **Honesty caveats.** Single run, single host, page-cache warm; absolute
-nanoseconds are load-sensitive. **Hardware performance counters are unavailable
-on this host** (`perf_event_paranoid=2`, `perf_counters_available=false`), so
-there are no flamegraphs or PMU attribution here — the SQ/CQ counters above are
-the mechanism evidence. `UringEngine::try_new` rounds a requested depth up to a
+nanoseconds are load-sensitive. **This court ran in the default container**, where
+the seccomp profile denies `perf_event_open` with `EPERM`, so its evidence records
+`perf_counters_available=false` and carries no PMU attribution — the SQ/CQ
+counters above are the mechanism evidence. This is a container-profile limit, not
+`perf_event_paranoid=2`: with `--cap-add PERFMON` real counters **are** read
+(§23, `docs/PMU.md`). `UringEngine::try_new` rounds a requested depth up to a
 power of two with a floor of 2, so the `requested 1` row runs on a ring of depth
 2 and is not a distinct configuration. This is a syscall/submission
 micro-benchmark (warm page cache, `tmpfs`-backed temp dir), not a device
 durability benchmark.
+
+## 22. Concurrent read scaling to 64 threads (p50/p95/p99/p99.9)
+
+**Why this exists.** The Phase-19 and Phase-50 courts scaled the read path to
+8 concurrent readers. The reviewer asked for **64 threads** and for the tail
+percentiles (p99/p99.9), not just mean throughput.
+
+**Court.** `tests/reader_scale_64.rs`, run by `scripts/container-reader-scale64.sh`
+(release), writes `evidence/performance/reader-scaling-64.json` (schema
+`orfs.performance.reader-scaling-64.v1`). One manifested object (profile
+`max-speed`, 64 KiB logical) is served through **one shared `ReadPlanner`** and
+read by `1 / 2 / 4 / 8 / 16 / 32 / 64` concurrent threads at nine 4 KiB offsets;
+24 000 timed reads per row. Every read is asserted **byte-exact** against the
+authoritative extent read, and latency percentiles are pooled over all of that
+row's per-op samples.
+
+**Measured (one run; release; container CFS-capped at 8 CPUs; host under external
+load).** Aggregate `ops/s` is per row; latency is nanoseconds.
+
+| readers | aggregate ops/s | ns/op | p50 | p95 | p99 | p99.9 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 3.37 M | 297.1 | 181 | 200 | 201 | 300 |
+| 2 | 5.08 M | 197.0 | 241 | 311 | 421 | 551 |
+| 4 | 7.99 M | 125.1 | 321 | 662 | 841 | 1 452 |
+| 8 | 5.67 M | 176.5 | 531 | 4 538 | 9 367 | 20 849 |
+| 16 | 2.81 M | 356.5 | 1 453 | 19 606 | 31 458 | 50 154 |
+| 32 | 2.86 M | 349.1 | 1 483 | 39 864 | 65 692 | 109 053 |
+| 64 | 2.84 M | 352.6 | 1 593 | 81 832 | 132 927 | 201 476 |
+
+**Reading the curve, honestly.**
+
+1. **Throughput peaks at 4 readers (~8.0 M ops/s) and then falls**, flattening to
+   **~2.8 M ops/s at 16–64 readers**. Only 8 cores are visible to the container
+   (`ORFS_CPUS`, a CFS quota) and the host is under external load, so readers above
+   the effective core count **contend rather than add parallelism** — the honest
+   reading is that the shared read path does not scale past the core count, and the
+   curve is reported as measured, not smoothed.
+2. **The tail grows sharply with contention.** p50 rises only from 181 ns (1
+   reader) to 1 593 ns (64), but p99.9 rises from 300 ns to **201 µs** — the tail
+   is where the shared-lock wait shows up. This is the number the mean hides.
+3. **The steady state is provably plan-free.** The court asserts the shared
+   planner neither re-plans, re-sorts, re-calibrates, nor takes the cost-model
+   write lock during the timed phase: the plan-build delta is **0**
+   (`plan_builds_delta = 0`, and likewise `calibrations_delta = 0`), so the
+   scaling curve is pure read-path contention, not planning. `ReadPlanner::`
+   `resident()` stays within every configured capacity (`body_plans = 1` of 64,
+   one object model of 64, 2 resident entries of 1 152 total capacity).
+
+**Caveats.** Single run, single host, single container; absolute nanoseconds are
+host/load sensitive, and the container is capped at 8 CPUs. The byte-exactness
+and the zero steady-state deltas are the deterministic results; the aggregate
+throughput and the percentiles are shape, not constants. This court runs in the
+default container, so its evidence records `perf_counters_available=false` (see
+§23 for the counter-attributed view).
+
+## 23. Real PMU counters and a flamegraph (the paranoid myth, corrected)
+
+**The correction.** The project previously stated that hardware counters were
+unavailable because `perf_event_paranoid=2`, "so there are no flamegraphs". That
+was **wrong and never verified with the syscall.** On Linux `perf_event_paranoid=2`
+denies only *kernel* profiling to an unprivileged caller; a **user-space,
+per-thread** counter (`pid=0`, `cpu=-1`, `exclude_kernel=1`) is permitted at level
+2. The real gate on this host is the **container profile**: the default seccomp
+profile denies `perf_event_open` with `EPERM`, exactly as it denies
+`io_uring_setup`. With `--cap-add PERFMON` (or `--security-opt seccomp=unconfined`)
+the counters **work**. `src/bench.rs` no longer guesses from the paranoid level; it
+performs the syscall and records `perf_counters_available` plus
+`perf_event_open_error` (the errno). Full details: `docs/PMU.md`.
+
+**Court.** `tests/microarch_pmu.rs` (with `tests/support/pmu.rs`), run by
+`scripts/container-pmu.sh`, which first **proves** at run time with
+`scripts/pmu-probe.c` which container flags are required. On this host
+(`perf_event_paranoid=2`, kernel `7.2.9-2-cachyos`): the default profile is
+**DENIED** (`EPERM`); `--cap-add PERFMON`, `--cap-add SYS_ADMIN`, and
+`seccomp=unconfined` all PERMIT. It writes `evidence/performance/pmu.json`
+(release) and the flamegraph under `evidence/performance/flamegraph-microarch.*`
+(debug).
+
+**Measured (release; single host; one thread; per-op hardware counters over the
+measured loop).**
+
+| Component | ops | wall ns/op | cycles/op | insn/op | cache-miss/op | branch-miss/op | IPC | cache-miss rate |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `PMap` point lookup | 500 000 | 126.4 | **659** | 198.9 | 9.53 | 8.81 | **0.30** | 0.298 |
+| EKBLOOM manifested read (via planner) | 20 000 | 284.5 | **1 477** | 5 101.0 | 0.14 | 1.24 | **3.45** | 0.085 |
+| `ReadPlanner` steady-state selection | 500 000 | 170.8 | **890** | 3 547.0 | 0.013 | 1.01 | **3.98** | 0.027 |
+| backing log segment read | 100 000 | 188.2 | **456** | 1 160.0 | 0.03 | 1.01 | **2.54** | 0.005 |
+
+**Reading the counters.**
+
+1. **The `PMap` point lookup is cache-miss-bound**, not instruction-bound: IPC
+   **0.30** with **9.53 cache misses per lookup** — the treap walks pointer-linked
+   nodes across cache lines. This is the counter attribution §18 could only infer
+   as a latency *shape*; the counters confirm it.
+2. **The manifested acceleration is instruction-bound and stayed in cache:** the
+   steady-state planner selection runs at IPC **3.98** with a 0.027 cache-miss rate,
+   and the EKBLOOM manifested read at IPC **3.45** — the point of spending manifested
+   space.
+3. **Caveat on the absolute numbers:** wall nanoseconds are host/load sensitive, and
+   the selection's instruction count varies between runs because the planner's
+   calibration is timing-based (it may pick a different path on a different run). The
+   counters and the IPC / miss-rate **ratios** are the point; each row also carries
+   wall-clock time.
+
+**Flamegraph.** `pmu_flamegraph` (opt-in `ORFS_PMU=1`) samples instruction pointers
+(`PERF_SAMPLE_IP`) over a mixed workload and symbolizes them with `addr2line`,
+writing `evidence/performance/flamegraph-microarch.{folded,svg,json}` (~6 100
+samples, ~200 collapsed leaf frames). **Caveat, recorded honestly:** this is a
+*leaf-IP* profile, not a call-chain flamegraph — frame-pointer stacks were tried
+but were unreliable, so no full stack is claimed, and on this host a fraction of
+sampled leaves fall outside the workload's actual call path. It is run in a
+**debug** build because release LTO merges distinct leaves onto shared addresses.
+The flamegraph is **indicative** of where the read path spends time; the counter
+table above is the decisive, deterministic evidence. The dominant leaves observed
+are the per-read `Result<Arc<LoadedBody>, _>` handling and the planner's candidate
+ordering (`rank_measured`).
+
+**Caveats.** Single run, single host, one thread. The PMU court itself records
+`perf_counters_available: true` at `perf_event_paranoid: "2"` — i.e. **real
+counters at paranoid level 2** — precisely because it runs under `--cap-add
+PERFMON`. A court running in the **default** container (e.g. §18, §21) still
+records `perf_counters_available=false`; that is a property of the container
+profile, not the kernel's paranoid level.

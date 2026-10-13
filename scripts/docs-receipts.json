@@ -246,6 +246,16 @@
       "fields": [
         {"group": 1, "label": "read sq_full_events at requested depth 1", "evidence": "evidence/performance/uring-depth.json", "path": "rows[requested_depth=1].read.stats.sq_full_events"}
       ]
+    },
+    {
+      "id": "perf-s22-reader-scale64-noreplan",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§22",
+      "claim": "64-thread reader-scaling court: the shared planner rebuilt no plan during the steady-state (timed) phase",
+      "regex": "plan_builds_delta = ([0-9]+)",
+      "fields": [
+        {"group": 1, "label": "steady-state plan_builds_delta", "evidence": "evidence/performance/reader-scaling-64.json", "path": "steady_state_counters.plan_builds_delta"}
+      ]
     }
   ]
 }

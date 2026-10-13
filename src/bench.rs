@@ -34,7 +34,7 @@
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::os::unix::fs::FileExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
@@ -77,6 +77,12 @@ pub struct Environment {
     pub fuse_enable_uring: Option<bool>,
     pub perf_event_paranoid: Option<String>,
     pub perf_counters_available: bool,
+    /// When `perf_counters_available` is false, the failure of the real probe:
+    /// the `perf_event_open` errno name (e.g. `EPERM`) and message. `None` when
+    /// the probe succeeded. This distinguishes the two independent blockers — the
+    /// kernel's paranoid level versus a container seccomp profile — instead of
+    /// guessing from `/proc/sys/kernel/perf_event_paranoid`.
+    pub perf_event_open_error: Option<String>,
 }
 
 impl Environment {
@@ -86,14 +92,15 @@ impl Environment {
         let perf_paranoid = std::fs::read_to_string("/proc/sys/kernel/perf_event_paranoid")
             .ok()
             .map(|s| s.trim().to_string());
-        // Hardware counters require an unprivileged-capable paranoid level AND the
-        // `perf` tool; both are checked truthfully.
-        let perf_counters_available = perf_paranoid
-            .as_deref()
-            .and_then(|s| s.parse::<i32>().ok())
-            .map(|p| p <= 1)
-            .unwrap_or(false)
-            && which("perf").is_some();
+        // Do not guess from the paranoid level: perform the syscall. A
+        // `perf_event_paranoid=2` kernel (this host's value, and the common
+        // default) denies only *kernel* profiling to an unprivileged caller; a
+        // user-space counter for the calling thread is still permitted. The
+        // frequent real blocker is the container's seccomp profile, which denies
+        // `perf_event_open` outright with EPERM — exactly as Docker's default
+        // profile denies `io_uring_setup` (see scripts/container-pmu.sh).
+        let perf_event_open_error = probe_user_hardware_counter().err();
+        let perf_counters_available = perf_event_open_error.is_none();
         Environment {
             cpu_model: cpu_model(),
             cores_visible: std::thread::available_parallelism()
@@ -112,8 +119,83 @@ impl Environment {
                 .map(|t| matches!(t.trim(), "Y" | "y" | "1")),
             perf_event_paranoid: perf_paranoid,
             perf_counters_available,
+            perf_event_open_error,
         }
     }
+}
+
+/// The prefix of `struct perf_event_attr` published as the kernel ABI version 0
+/// (`PERF_ATTR_SIZE_VER0`, 64 bytes). Only the fields this probe sets are named;
+/// the kernel accepts this exact size. `libc` exposes `SYS_perf_event_open` but
+/// not the `perf_event_attr` type or the `PERF_*` constants, so they are declared
+/// here from `include/uapi/linux/perf_event.h`.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct PerfEventAttrV0 {
+    type_: u32,
+    size: u32,
+    config: u64,
+    sample_period: u64,
+    sample_type: u64,
+    read_format: u64,
+    /// The packed bitfield (`disabled:1, inherit:1, …, exclude_kernel:1,
+    /// exclude_hv:1, …`). Bit positions are the declaration order in the header.
+    flags: u64,
+    wakeup_events: u32,
+    bp_type: u32,
+    /// The `bp_addr`/`config1` union tail, present so the struct is exactly 64
+    /// bytes.
+    config1: u64,
+}
+
+/// `PERF_TYPE_HARDWARE` (`include/uapi/linux/perf_event.h`).
+const PERF_TYPE_HARDWARE: u32 = 0;
+/// `PERF_COUNT_HW_INSTRUCTIONS`.
+const PERF_COUNT_HW_INSTRUCTIONS: u64 = 1;
+/// A user-space-only, per-thread event: `disabled` and `exclude_kernel` are bits
+/// 0 and 5 of the attribute flag word; `exclude_hv` is bit 6.
+const PERF_ATTR_DISABLED: u64 = 1 << 0;
+const PERF_ATTR_EXCLUDE_KERNEL: u64 = 1 << 5;
+const PERF_ATTR_EXCLUDE_HV: u64 = 1 << 6;
+
+/// Attempt to open a **user-space** per-thread hardware counter for the calling
+/// process with `perf_event_open`, and return `Ok(())` only if the kernel
+/// actually granted it (the fd is closed immediately).
+///
+/// The probe uses `PERF_TYPE_HARDWARE`/`PERF_COUNT_HW_INSTRUCTIONS` with `pid=0`
+/// (the calling thread), `cpu=-1` (not a CPU-wide event), `exclude_kernel=1` and
+/// `exclude_hv=1`. With those attributes `perf_event_paranoid=2` permits the
+/// event (it forbids kernel profiling, not user-space counting); the common
+/// failure is a seccomp profile returning `EPERM`. On failure the error names
+/// the errno (e.g. `EPERM (os error 1)`), which is the decisive fact.
+fn probe_user_hardware_counter() -> std::result::Result<(), String> {
+    let mut attr = PerfEventAttrV0 {
+        type_: PERF_TYPE_HARDWARE,
+        size: std::mem::size_of::<PerfEventAttrV0>() as u32,
+        config: PERF_COUNT_HW_INSTRUCTIONS,
+        flags: PERF_ATTR_DISABLED | PERF_ATTR_EXCLUDE_KERNEL | PERF_ATTR_EXCLUDE_HV,
+        ..Default::default()
+    };
+    // SAFETY: `attr` is a valid, fully initialised ABI struct for the duration of
+    // the call; `syscall` is called with the exact argument layout of
+    // `perf_event_open(2)` and the return value is checked before use.
+    let attr_ptr: *mut PerfEventAttrV0 = &mut attr;
+    let fd = unsafe {
+        libc::syscall(
+            libc::SYS_perf_event_open,
+            attr_ptr,
+            0,  // pid 0: measure the calling thread
+            -1, // cpu -1: no CPU-wide event (permitted unprivileged)
+            -1, // group_fd -1: a standalone event
+            0,  // flags
+        )
+    };
+    if fd < 0 {
+        return Err(format!("{}", std::io::Error::last_os_error()));
+    }
+    // SAFETY: `fd` is a live, owned file descriptor returned by the kernel.
+    unsafe { libc::close(fd as i32) };
+    Ok(())
 }
 
 fn read_trim(path: &str) -> Option<String> {
@@ -154,17 +236,6 @@ fn rustc_version() -> Option<String> {
         return None;
     }
     Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
-}
-
-fn which(tool: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
-        let candidate = dir.join(tool);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
 }
 
 // ---------------------------------------------------------------------------

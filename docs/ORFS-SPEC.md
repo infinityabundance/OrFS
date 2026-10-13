@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–55)
+## 4. The ordered build phases (0–57)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -141,16 +141,18 @@ per-phase record.
 | 53 | External baseline comparators (ext4 / tmpfs / overlay / raw memory) | **complete** |
 | 54 | Serious-filesystem docs: threat model, acceptance-gate definitions (A–N), reproducibility index | **complete** |
 | 55 | io_uring depth sweep with SQ/CQ-pressure counters; on-disk wire-format specification | **complete** |
+| 56 | 64-thread read scaling (p50/p95/p99/p99.9); POSIX-extras court; directory hard-link returns `EPERM` | **complete** |
+| 57 | Real PMU hardware counters + flamegraph; the "no counters" claim corrected (the container seccomp profile was the gate, not `perf_event_paranoid`) | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–55 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–57 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
 v0.1.0 was the first release.
 
-- The `orfs` crate builds, its **440** tests (default) pass, and
-  `cargo test --features failpoints` adds the crash-injection court (450 tests in
+- The `orfs` crate builds, its **446** tests (default) pass, and
+  `cargo test --features failpoints` adds the crash-injection court (456 tests in
   total); `cargo fmt -p orfs --check` / `clippy --all-targets -- -D warnings` are
   clean **inside the pinned container** (`scripts/container-*.sh`).
 - `src/capabilities.rs` + `orfs doctor` perform a **real** kernel/container
@@ -208,6 +210,7 @@ Normative implementation documents to be produced. Status is marked honestly.
 | `docs/GATES.md` | Acceptance gates A–N: definitions, commands, acceptance criteria | **exists** (Phase 54) |
 | `docs/REPRODUCE.md` | Reproducibility index: doc claim → receipt → command | **exists** (Phase 54) |
 | `docs/PERFORMANCE.md` | Benchmark methodology, metrics, reproducibility rules | **exists** (Phase 12) |
+| `docs/PMU.md` | Real hardware performance counters and the flamegraph; the container-flag requirement | **exists** (Phase 57) |
 | `docs/LIMITATIONS.md` | Known limits, kernel-dependence, unsupported capabilities | **exists** |
 
 Every normative document above exists; there are no planned-only documents.
@@ -236,7 +239,7 @@ sibling working tree is required):
 
 ```sh
 scripts/container-build.sh        # cargo build
-scripts/container-test.sh         # cargo test  (440 tests)
+scripts/container-test.sh         # cargo test  (446 tests)
 scripts/container-fuse-test.sh    # real-mount FUSE + performance court
 scripts/container-uring-test.sh   # io_uring integration + backing benchmark
 scripts/container-check.sh        # cargo fmt -p orfs --check + clippy -D warnings

@@ -91,6 +91,8 @@ enable it (see `docs/FUSE_URING.md`).
 | 53 | External baseline comparators (ext4 / tmpfs / overlay / raw memory) — the floor every speedup is measured against | complete |
 | 54 | Serious-filesystem docs: threat model, acceptance-gate definitions (A–N), reproducibility index | complete |
 | 55 | io_uring depth sweep with SQ/CQ-pressure counters; on-disk wire-format specification | complete |
+| 56 | 64-thread read scaling (p50/p95/p99/p99.9); POSIX-extras court (xattrs, links, groups, durability); directory hard-link returns `EPERM` | complete |
+| 57 | Real PMU hardware counters + flamegraph; the "no counters" claim corrected (`perf_event_paranoid` was a myth — the container seccomp profile was the gate) | complete |
 
 Honest non-claims: the image pixel-surface pyramid is **not materialised** (only
 its geometry is implemented), and no performance superiority of F2 or of the

@@ -1,0 +1,127 @@
+{
+  "available": true,
+  "build": "release",
+  "components": [
+    {
+      "chosen": [],
+      "measured_paths": [],
+      "name": "pmap_point_lookup",
+      "ops": 500000,
+      "per_op": {
+        "branch_instructions": 51.188144,
+        "branch_miss_rate": 0.044275780614500146,
+        "branch_misses": 8.8053,
+        "cache_miss_rate": 0.29774075280919093,
+        "cache_misses": 9.532144,
+        "cache_references": 32.014912,
+        "cycles": 659.234366,
+        "instructions": 198.873964,
+        "ipc": 0.301674145428274
+      },
+      "wall_ns_per_op": 126.442238
+    },
+    {
+      "chosen": [],
+      "measured_paths": [
+        "path-bloom",
+        "logical-extent"
+      ],
+      "name": "ekbloom_manifested_read",
+      "ops": 20000,
+      "per_op": {
+        "branch_instructions": 928.0055,
+        "branch_miss_rate": 0.00024270606093522787,
+        "branch_misses": 1.23805,
+        "cache_miss_rate": 0.08548371962090645,
+        "cache_misses": 0.13665,
+        "cache_references": 1.59855,
+        "cycles": 1476.76725,
+        "instructions": 5101.0263,
+        "ipc": 3.4541843340580582
+      },
+      "wall_ns_per_op": 284.45115
+    },
+    {
+      "chosen": [
+        {
+          "count": 500128,
+          "path": "path-bloom"
+        }
+      ],
+      "measured_paths": [],
+      "name": "readplanner_steady_state_selection",
+      "ops": 500000,
+      "per_op": {
+        "branch_instructions": 652.00049,
+        "branch_miss_rate": 0.00028396157095733214,
+        "branch_misses": 1.007212,
+        "cache_miss_rate": 0.02683569311820876,
+        "cache_misses": 0.01304,
+        "cache_references": 0.48592,
+        "cycles": 890.166184,
+        "instructions": 3547.001084,
+        "ipc": 3.9846504481459837
+      },
+      "wall_ns_per_op": 170.800358
+    },
+    {
+      "chosen": [],
+      "measured_paths": [],
+      "name": "backing_log_segment_read",
+      "ops": 100000,
+      "per_op": {
+        "branch_instructions": 259.00083,
+        "branch_miss_rate": 0.0008670920020622692,
+        "branch_misses": 1.00583,
+        "cache_miss_rate": 0.0051677738521677475,
+        "cache_misses": 0.02529,
+        "cache_references": 4.89379,
+        "cycles": 456.1012,
+        "instructions": 1160.00378,
+        "ipc": 2.5433035036961096
+      },
+      "wall_ns_per_op": 188.22482
+    }
+  ],
+  "environment": {
+    "cgroup_memory_max": "8589934592",
+    "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "container_image": null,
+    "cores_visible": 8,
+    "cpu_max": "800000 100000",
+    "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+    "fuse_enable_uring": true,
+    "kernel_release": "7.2.9-2-cachyos",
+    "likely_container": true,
+    "machine": "x86_64",
+    "perf_counters_available": true,
+    "perf_event_open_error": null,
+    "perf_event_paranoid": "2",
+    "ram_total_bytes": 134723346432
+  },
+  "flamegraph": {
+    "folded": "/mnt/1tb_kingston/OrFS/evidence/performance/flamegraph-microarch.folded",
+    "frames": 200,
+    "produced": true,
+    "reason": null,
+    "samples": 6164,
+    "svg": "/mnt/1tb_kingston/OrFS/evidence/performance/flamegraph-microarch.svg"
+  },
+  "generated_by": "tests/microarch_pmu.rs",
+  "note": "Single run, single host, one thread. Per-op hardware counters over the measured loop (reset/enable around the loop, disable before reading). Absolute nanoseconds are host/load sensitive; the counters and the IPC / miss-rate ratios are the point.",
+  "probe": {
+    "counters": [
+      "cycles",
+      "instructions",
+      "cache_references",
+      "cache_misses",
+      "branch_instructions",
+      "branch_misses"
+    ],
+    "error": null,
+    "missing_counters": [],
+    "note": "perf_event_paranoid=2 permits user-space per-thread counters; a seccomp profile that denies perf_event_open returns EPERM. The container flag that fixes it is proven by scripts/container-pmu.sh.",
+    "perf_event_paranoid": "2"
+  },
+  "schema": "orfs.performance.pmu.v1"
+}

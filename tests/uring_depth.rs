@@ -11,9 +11,11 @@
 //!
 //! ## Why counters, not just time
 //!
-//! On this host hardware performance counters are **unavailable**
-//! (`perf_event_paranoid=2`), so there are no flamegraphs and no PMU attribution.
-//! The SQ/CQ counters are the PMU-free mechanism evidence: at a small depth a
+//! In the **default container** hardware performance counters are unavailable
+//! because the seccomp profile denies `perf_event_open` with `EPERM` — **not**
+//! because of `perf_event_paranoid=2`, which permits user-space counters; see
+//! `docs/PMU.md`. So this court carries no PMU attribution, but the SQ/CQ
+//! counters are the PMU-free mechanism evidence: at a small depth a
 //! read batch larger than the ring *must* fill the SQ (`sq_full_events > 0`),
 //! whereas `write_batch` caps each batch at the ring depth so the SQ can never
 //! saturate (`sq_full_events == 0`). `cq_max_len` records the largest number of
@@ -377,9 +379,11 @@ fn uring_depth_sweep() {
         "pmu": {
             "hardware_counters_available": environment.perf_counters_available,
             "perf_event_paranoid": environment.perf_event_paranoid,
-            "note": "Hardware performance counters (and thus flamegraphs / PMU \
-                     attribution) are unavailable on this host; the SQ/CQ counters are \
-                     the PMU-free mechanism evidence.",
+            "note": "Hardware performance counters (and thus PMU attribution) are \
+                     unavailable in the default container, where the seccomp profile \
+                     denies perf_event_open with EPERM (not perf_event_paranoid=2 — see \
+                     docs/PMU.md); the SQ/CQ counters are the PMU-free mechanism \
+                     evidence.",
         },
         "design": {
             "depths": SWEEP_DEPTHS,

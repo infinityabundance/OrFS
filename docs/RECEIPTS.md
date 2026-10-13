@@ -135,6 +135,7 @@ so it is not expected to name HEAD.
 | `perf-s18-microarch-manifest-handle` | `docs/PERFORMANCE.md` §18 | microarchitecture court: `latest_for_shared` allocations per call → `microarch.json` `manifest_handle_allocations.latest_for_shared_allocs` |
 | `perf-s19-search-directory-rare` | `docs/PERFORMANCE.md` §19 | global search directory: a rare pattern's files examined and content bytes read → `search-directory.json` `directory_path[pattern_hex=7a7a71].{files_considered,content_bytes_read}` |
 | `perf-s21-uring-sq-pressure` | `docs/PERFORMANCE.md` §21 | io_uring depth sweep: SQ-full events at the smallest ring depth → `uring-depth.json` `rows[requested_depth=1].read.stats.sq_full_events` |
+| `perf-s22-reader-scale64-noreplan` | `docs/PERFORMANCE.md` §22 | 64-thread reader scaling: the shared planner rebuilt no plan during the steady-state phase → `reader-scaling-64.json` `steady_state_counters.plan_builds_delta` |
 
 ### `docs/ACCEPTANCE-AUDIT.md` is exempt from live comparison
 
@@ -183,6 +184,13 @@ numbers were not curated in this first pass:
   §19's rare-pattern file/byte counts are curated; the host-sensitive latency
   figures (ns/read, reader scaling, the ext4/tmpfs/overlay latencies) are
   deliberately left uncovered because they move between runs.
+* `docs/PERFORMANCE.md` §22–§23 — the 64-thread reader-scaling and PMU courts. §22's
+  steady-state no-replan invariant (`plan_builds_delta`) **is** curated; the
+  host-sensitive aggregate throughput and p50/p95/p99/p99.9 figures, every
+  `pmu.json` counter (cycles, IPC, cache/branch miss rates — which move between runs
+  and hosts), and the flamegraph are deliberately uncovered.
+  `evidence/correctness/posix-extras.json` is likewise not curated: it is
+  qualitative (`all_ok: true` plus per-check PASS/errno strings), not numeric.
 * `docs/PROGRESS.md`, `README.md` — out of scope by construction (this check
   governs docs against receipts, not the reverse index of phases).
 

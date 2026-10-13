@@ -102,6 +102,7 @@ enable it (see `docs/FUSE_URING.md`).
 | 64 | Direct-page manifestations (research §5): a manifested, page-aligned contiguous atlas of a selected object's bytes, wired in as a measured `direct-image` planner candidate | complete |
 | 65 | Autonomous concealed-expansion controller (research §12): a pure predictor chooses no-manifestation vs the direct-page atlas under a manifested-space budget `B`; best-effort construction + byte-identity verification; measured monotone answer-time improvement with authority retained | complete |
 | 66 | Mounted courts for three reviewer items: F2 concurrency extended to 64 readers (throughput 86–107% of F0; the strict p99 target is **not** met at every count, stated plainly); a `baseline_passthrough` three-way comparison (ext4 vs FUSE passthrough vs ordinary OrFS mount); and a paired mounted planner benchmark (manifested vs authoritative-only over one history) | complete |
+| 67 | Explicit `format_version` in the authoritative log's genesis identity (`0` = legacy, `1` = current; accept any known version `≤` current, refuse a higher one with a typed error); frozen `legacy_v0`/`current_v1` compatibility fixtures + a byte-identity court (`tests/format_compat.rs`); `docs/MIGRATION.md` | complete |
 
 Honest non-claims: the image pixel-surface pyramid is **not materialised** (only
 its geometry is implemented), and no performance superiority of F2 or of the

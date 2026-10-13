@@ -1,16 +1,16 @@
 {
   "all_verdicts_ok": true,
-  "baseline_root": 1429,
+  "baseline_root": 1431,
   "evidence_kind": "process-crash (NOT power-loss)",
   "failpoints": [
     {
-      "baseline_root": 1429,
+      "baseline_root": 1431,
       "crashed_by_sigabrt": true,
       "failpoint": "during_record_write",
-      "recovered_root": 1429,
+      "recovered_root": 1431,
       "recovered_root_advanced": false,
-      "scan_committed_root": 1429,
-      "scan_physical_end": 1481,
+      "scan_committed_root": 1431,
+      "scan_physical_end": 1483,
       "scan_tail_abandoned_bytes": 52,
       "scan_tail_kind": "TornRecord",
       "verdicts": {
@@ -24,13 +24,13 @@
       }
     },
     {
-      "baseline_root": 1429,
+      "baseline_root": 1431,
       "crashed_by_sigabrt": true,
       "failpoint": "after_partial_record_write",
-      "recovered_root": 1429,
+      "recovered_root": 1431,
       "recovered_root_advanced": false,
-      "scan_committed_root": 1429,
-      "scan_physical_end": 1673,
+      "scan_committed_root": 1431,
+      "scan_physical_end": 1675,
       "scan_tail_abandoned_bytes": 244,
       "scan_tail_kind": "Uncommitted",
       "verdicts": {
@@ -44,13 +44,13 @@
       }
     },
     {
-      "baseline_root": 1429,
+      "baseline_root": 1431,
       "crashed_by_sigabrt": true,
       "failpoint": "during_commit_record_write",
-      "recovered_root": 1429,
+      "recovered_root": 1431,
       "recovered_root_advanced": false,
-      "scan_committed_root": 1429,
-      "scan_physical_end": 1871,
+      "scan_committed_root": 1431,
+      "scan_physical_end": 1873,
       "scan_tail_abandoned_bytes": 74,
       "scan_tail_kind": "TornRecord",
       "verdicts": {

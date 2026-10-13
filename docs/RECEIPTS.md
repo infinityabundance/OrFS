@@ -219,6 +219,13 @@ numbers were not curated in this first pass:
   `recovery-s9-fault-verify-recover-rows`). Its `dm_probe` block records
   `ran: false` with the exact failing `losetup`/`dmsetup` commands — no `dm-*`
   result is fabricated.
+* `tests/fixtures/` (Phase 67) — the frozen `or.log` compatibility fixtures and
+  the `tests/format_compat.rs` court. These are **frozen bytes** plus boolean
+  assertions (byte-identity against a fresh write, the reported `format_version`,
+  and the typed refusal of a higher version), not numeric receipts under
+  `evidence/`, so there is nothing to curate. They are indexed in
+  `docs/REPRODUCE.md` and documented in `tests/fixtures/README.md` and
+  `docs/MIGRATION.md`.
 * `docs/PROGRESS.md`, `README.md` — out of scope by construction (this check
   governs docs against receipts, not the reverse index of phases).
 

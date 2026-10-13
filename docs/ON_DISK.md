@@ -157,16 +157,32 @@ the containing directory is then fsynced. It is written **after** the genesis
 record, so a crash during `init` leaves an orphan log (not a volume) rather than
 a volume without authoritative content.
 
-### 4.1 Genesis payload (24 bytes)
+### 4.1 Genesis payload (24 or 26 bytes)
 
-| Offset | Size | Field |
-|-------:|-----:|-------|
-| 0      | 16   | volume `uuid` |
-| 16     | 8    | `segment_size` u64 |
+The genesis payload is the payload of the first committed record
+(`VOLUME_GENESIS`); it is the **authoritative-log identity**. It carries the
+log format version explicitly, so a reader decides compatibility from the log
+itself rather than from a rebuildable sidecar.
+
+| Offset | Size | Field | Layout |
+|-------:|-----:|-------|--------|
+| 0      | 16   | volume `uuid` | both |
+| 16     | 8    | `segment_size` u64 | both |
+| 24     | 2    | `format_version` u16 | **v1 only** |
+
+* A payload of exactly **24** bytes has **no** version field; the version is
+  inferred as **0** (*legacy* — a genesis written before the field existed).
+* A payload of **≥ 26** bytes carries the little-endian `format_version` at
+  offset 24. The current writer emits **26** bytes with `format_version = 1`
+  (`LOG_FORMAT_VERSION`, `src/lib.rs`; `LegacyGenesis`, `genesis_payload`,
+  `parse_genesis_payload`, `GenesisIdentity`, `src/volume.rs`).
+* The first 24 bytes are a strict prefix shared by both layouts, so a reader that
+  predates the field can still read the UUID and segment size.
 
 `volume.meta` and the genesis payload redundantly carry the UUID and segment
 size so that `orfs verify` can cross-check identity against authoritative
-content.
+content. `volume.meta` carries its own `format_version` (currently `1`, §4); the
+reader accepts any known version `≤` the current one there too.
 
 ## 5. Integrity model
 
@@ -668,6 +684,7 @@ Properties (all `src/manifestation.rs`, `docs/MANIFESTATION.md` §7.1/§15):
 
 | Artifact | Field | Width | Current value | Source |
 |---|---|---|---|---|
+| Genesis payload (**authoritative-log identity**) | `format_version` | `u16` | `1` (`LOG_FORMAT_VERSION`); `0` = legacy, field absent | `src/volume.rs`, `src/lib.rs` |
 | Record header | `format_version` | `u16` | `1` (`FORMAT_VERSION`) | `src/record.rs`, `src/lib.rs` |
 | `volume.meta` | `format_version` | `u16` | `1` | `docs/ON_DISK.md` §4; `src/volume.rs` |
 | `commit.watermark` | `format_version` | `u16` | `1` | `src/watermark.rs` |
@@ -682,11 +699,55 @@ decodes (its overlay fields default to a self-contained full base)
 (`src/manifestation.rs`). The catalogue's `CAT_SCHEMA` is independent of the
 manifest schema.
 
+#### 10.1.1 The log format version registry
+
+`LOG_FORMAT_VERSION` (`src/lib.rs`) is the current authoritative-log format
+version, written into the genesis payload (§4.1). Only **explicitly known**
+versions are accepted; a reader never guesses.
+
+| Version | Meaning | Reader behaviour |
+|---:|---|---|
+| `0` | *legacy*: a genesis written before the field existed (24-byte payload, or an explicit zero) | **accept**, never reject |
+| `1` | current: the versioned 26-byte genesis payload (`uuid ‖ segment_size ‖ format_version`) | **accept** |
+| `> LOG_FORMAT_VERSION` | unknown future format | **refuse** with `OrfsError::UnsupportedFormatVersion { found, supported }` (`errno` `EPROTONOSUPPORT`) |
+
+The same rule applies to `volume.meta`'s `format_version`: a known version `≤`
+the current one is accepted; a higher one is refused with the typed error
+(`VolumeMeta::decode`, `src/volume.rs`). The rule is enforced **at open**
+(`Volume::open` reads and parses the genesis before returning), so a
+future-format volume is never interpreted on a guess, and it is surfaced by
+`orfs inspect` (`log_format_version`) and `orfs verify` (the `log_format_version`
+check).
+
+#### 10.1.2 Compatibility matrix (`or.log` v0 → v1 reader support)
+
+| Frozen log | v0 (pre-versioning) reader | v1 (current) reader |
+|---|---|---|
+| `or.log` **v0** (24-byte genesis, version inferred `0`) | reads (it wrote it) | **reads** — replays, `verify --deep`s and reports `format_version = 0` |
+| `or.log` **v1** (26-byte genesis, version `1`) | **must not guess** — the trailing 2 bytes are an unrecognised extension; a v0 reader may read the shared 24-byte prefix but must treat the format as newer and refuse | **reads** — reports `format_version = 1` |
+| `or.log` **v>1** (unknown higher) | — | **refuses** with `UnsupportedFormatVersion` (never reinterprets) |
+
+What a **v0 reader must never do**: interpret a versioned genesis as if the
+trailing bytes were part of `segment_size` (or absent), silently truncate,
+re-write, or “repair” the record, or mount on a guess. The frozen `legacy_v0`
+and `current_v1` fixtures under `tests/fixtures/` pin both rows; the
+`tests/format_compat.rs` court asserts them, and `docs/MIGRATION.md` gives the
+field locations and the fixture-freezing procedure.
+
 ### 10.2 What a reader MUST do
 
-* **Unknown `format_version`** (record header, `volume.meta`, or watermark) →
-  `Compatibility` error; do **not** interpret the bytes. (`RecordHeader::decode`,
-  `Watermark::decode`.)
+* **Genesis `format_version`** (the authoritative-log identity, §4.1) and
+  **`volume.meta` `format_version`**: accept every **known** version `≤` the
+  current one (`0` and `1`); never reject an older known version; refuse an
+  unknown **higher** version with `OrfsError::UnsupportedFormatVersion { found,
+  supported }` (`errno` `EPROTONOSUPPORT`). Enforced at open in `Volume::open`
+  (`parse_genesis_payload` / `GenesisIdentity`, `read_log_format_version`) and in
+  `VolumeMeta::decode` (`src/volume.rs`).
+* **Unknown record-header `format_version`** (a version this build does not
+  implement) → `Compatibility` error; do **not** interpret the bytes.
+  (`RecordHeader::decode`.)
+* **Unknown `commit.watermark` `format_version`** → `Compatibility` error
+  (`Watermark::decode`).
 * **Unknown record type, bit 15 clear** → `Compatibility` error, and stop.
   (`classify_code`.) The scanner maps this to `OrfsError::Compatibility` and
   refuses the open with no silent repair (`docs/LOG-INVARIANTS.md` *No silent
@@ -721,8 +782,10 @@ manifest schema.
   takes a code with bit 15 clear; an *optional* extension sets bit 15
   (`0x8000`), so pre-existing readers skip it. An unknown mandatory code must halt
   a reader (`src/record.rs`).
-* A new record format version is signalled by `format_version`; a reader that does
-  not implement it refuses rather than guessing (§10.2).
+* A new record format version is signalled by `format_version` (the log version
+  registry §10.1.1, or the record header); a reader that does not implement it
+  refuses rather than guessing (§10.2). A new **log** format version is registered
+  by extending the registry and freezing a new fixture (`docs/MIGRATION.md`).
 * The catalogue and `HEAD` carry explicit `schema` fields so a future layout change
   is detectable without reinterpreting old bytes.
 

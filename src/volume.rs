@@ -34,8 +34,13 @@ pub const VOLUME_MAGIC: u32 = 0x5646_524F;
 /// Fixed `volume.meta` length in bytes.
 pub const VOLUME_META_LEN: usize = 44;
 
-/// Length of the genesis payload (UUID + segment size).
-pub const GENESIS_PAYLOAD_LEN: usize = 24;
+/// Length of the **legacy** (log format version `0`) genesis payload: the
+/// volume UUID followed by the segment size. A genesis of exactly this length
+/// predates the `format_version` field and must be read as version `0`.
+pub const LEGACY_GENESIS_PAYLOAD_LEN: usize = 24;
+
+/// Length of the current genesis payload: UUID + segment size + `format_version`.
+pub const GENESIS_PAYLOAD_LEN: usize = 26;
 
 /// The concealed acceleration subdirectories created by `orfs init`.
 pub const BLOOM_SUBDIRS: [&str; 6] = [
@@ -97,11 +102,13 @@ impl VolumeMeta {
             )));
         }
         let format_version = get_u16(buf, 4);
-        if format_version != crate::FORMAT_VERSION {
-            return Err(OrfsError::Compatibility(format!(
-                "volume format version {format_version} (this build supports {})",
-                crate::FORMAT_VERSION
-            )));
+        // Accept any known version <= this build's, never rejecting an older one;
+        // refuse an unknown *higher* version with the typed error.
+        if format_version > crate::FORMAT_VERSION {
+            return Err(OrfsError::UnsupportedFormatVersion {
+                found: format_version,
+                supported: crate::FORMAT_VERSION,
+            });
         }
         let mut uuid = [0u8; 16];
         uuid.copy_from_slice(&buf[8..24]);
@@ -174,31 +181,81 @@ fn now_unix_secs() -> u64 {
         .unwrap_or(0)
 }
 
-/// The genesis payload: the volume UUID followed by the segment-size policy.
+/// The parsed genesis (volume-identity) payload.
+///
+/// The first 24 bytes are the layout every legacy genesis shares — the volume
+/// UUID and the segment-size policy — so the two-byte `format_version` is a
+/// strict suffix and a legacy reader (or a reader that predates the field) can
+/// still read the shared prefix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GenesisIdentity {
+    pub uuid: [u8; 16],
+    pub segment_size: u64,
+    /// The authoritative-log format version. `0` = legacy (the field was
+    /// absent). See [`crate::LOG_FORMAT_VERSION`].
+    pub format_version: u16,
+}
+
+/// The genesis payload written for a **new** volume: the volume UUID, the
+/// segment-size policy, and the current [`crate::LOG_FORMAT_VERSION`].
 pub fn genesis_payload(uuid: &[u8; 16], segment_size: u64) -> Vec<u8> {
     let mut v = Vec::with_capacity(GENESIS_PAYLOAD_LEN);
     v.extend_from_slice(uuid);
     v.extend_from_slice(&segment_size.to_le_bytes());
+    v.extend_from_slice(&crate::LOG_FORMAT_VERSION.to_le_bytes());
     v
 }
 
 /// Parse a genesis payload.
-pub fn parse_genesis_payload(payload: &[u8]) -> Result<([u8; 16], u64)> {
-    if payload.len() != GENESIS_PAYLOAD_LEN {
+///
+/// A payload of exactly [`LEGACY_GENESIS_PAYLOAD_LEN`] bytes carries no version
+/// field and is read as version `0`. A longer payload carries a little-endian
+/// `u16` version at offset [`LEGACY_GENESIS_PAYLOAD_LEN`]. Every known version
+/// `<= crate::LOG_FORMAT_VERSION` is accepted (an older version is **never**
+/// rejected); an unknown **higher** version is refused with
+/// [`OrfsError::UnsupportedFormatVersion`].
+pub fn parse_genesis_payload(payload: &[u8]) -> Result<GenesisIdentity> {
+    if payload.len() < LEGACY_GENESIS_PAYLOAD_LEN {
         return Err(OrfsError::Corrupt(format!(
-            "genesis payload is {} bytes, expected {GENESIS_PAYLOAD_LEN}",
+            "genesis payload is {} bytes, expected at least {LEGACY_GENESIS_PAYLOAD_LEN}",
             payload.len()
         )));
     }
     let mut uuid = [0u8; 16];
     uuid.copy_from_slice(&payload[..16]);
-    Ok((uuid, get_u64(payload, 16)))
+    let segment_size = get_u64(payload, 16);
+    let format_version = if payload.len() == LEGACY_GENESIS_PAYLOAD_LEN {
+        // Legacy: the version field is absent, so the value is inferred as 0.
+        0
+    } else if payload.len() >= GENESIS_PAYLOAD_LEN {
+        get_u16(payload, LEGACY_GENESIS_PAYLOAD_LEN)
+    } else {
+        return Err(OrfsError::Corrupt(format!(
+            "genesis payload length {} is neither legacy ({LEGACY_GENESIS_PAYLOAD_LEN}) \
+             nor versioned (>= {GENESIS_PAYLOAD_LEN})",
+            payload.len()
+        )));
+    };
+    if format_version > crate::LOG_FORMAT_VERSION {
+        return Err(OrfsError::UnsupportedFormatVersion {
+            found: format_version,
+            supported: crate::LOG_FORMAT_VERSION,
+        });
+    }
+    Ok(GenesisIdentity {
+        uuid,
+        segment_size,
+        format_version,
+    })
 }
 
 /// An opened volume: identity plus the authoritative log.
 pub struct Volume {
     pub root_dir: PathBuf,
     pub meta: VolumeMeta,
+    /// The authoritative-log format version read from (or written into) the
+    /// genesis record. `0` = legacy; see [`crate::LOG_FORMAT_VERSION`].
+    pub log_format_version: u16,
     pub log: Log,
 }
 
@@ -279,6 +336,7 @@ impl Volume {
         Ok(Volume {
             root_dir: dir.to_path_buf(),
             meta,
+            log_format_version: crate::LOG_FORMAT_VERSION,
             log,
         })
     }
@@ -287,11 +345,46 @@ impl Volume {
     pub fn open(dir: &Path, mode: OpenMode) -> Result<Volume> {
         let meta = Self::read_meta(dir)?;
         let log = Log::open(&Self::log_dir(dir), meta.segment_size, mode)?;
+        // Decide compatibility from the authoritative log itself. An unknown
+        // *higher* log format version is refused here, so a future-format volume
+        // is never interpreted on a guess (no silent repair; `docs/RECOVERY.md`).
+        let log_format_version = Self::read_log_format_version(&log)?;
         Ok(Volume {
             root_dir: dir.to_path_buf(),
             meta,
+            log_format_version,
             log,
         })
+    }
+
+    /// Read and validate the authoritative-log format version from the first
+    /// committed record (the genesis). Returns `0` (legacy) when the genesis
+    /// carries no version field, and refuses an unknown higher version.
+    fn read_log_format_version(log: &Log) -> Result<u16> {
+        if log.committed_end_offset() == 0 {
+            // No committed genesis (an orphan log, not yet a volume): there is no
+            // version to read. Report the current version; the missing-genesis
+            // condition is `verify`'s explicit concern.
+            return Ok(crate::LOG_FORMAT_VERSION);
+        }
+        let genesis_root = log
+            .boundaries()
+            .first()
+            .copied()
+            .ok_or_else(|| OrfsError::Corrupt("committed log has no boundary".to_string()))?;
+        let records = log.replay_upto(genesis_root)?;
+        let genesis = records
+            .first()
+            .ok_or_else(|| OrfsError::Corrupt("committed log has no genesis record".to_string()))?;
+        if !matches!(
+            genesis.header.classify_type().map_err(OrfsError::from)?,
+            TypeClass::Known(RecordType::VolumeGenesis)
+        ) {
+            return Err(OrfsError::Corrupt(
+                "first committed record is not VOLUME_GENESIS".to_string(),
+            ));
+        }
+        Ok(parse_genesis_payload(&genesis.payload)?.format_version)
     }
 
     /// Flush and fsync the authoritative log.
@@ -357,16 +450,27 @@ impl Volume {
             },
         });
         if genesis_ok {
-            let (uuid, segment_size) = parse_genesis_payload(&first.payload)?;
-            let ok = uuid == self.meta.uuid && segment_size == self.meta.segment_size;
+            let id = parse_genesis_payload(&first.payload)?;
+            let ok = id.uuid == self.meta.uuid && id.segment_size == self.meta.segment_size;
             checks.push(VerifyCheck {
                 name: "genesis_matches_meta".to_string(),
                 ok,
                 detail: format!(
-                    "genesis uuid={} segment_size={segment_size}",
-                    uuid_string(&uuid)
+                    "genesis uuid={} segment_size={}",
+                    uuid_string(&id.uuid),
+                    id.segment_size
                 ),
             });
+            // The authoritative-log format version is carried by the genesis, so
+            // a reader decides compatibility from the log itself. `0` = legacy.
+            checks.push(VerifyCheck::ok(
+                "log_format_version",
+                format!(
+                    "genesis log format version {} (legacy=0, this build supports up to {})",
+                    id.format_version,
+                    crate::LOG_FORMAT_VERSION
+                ),
+            ));
         }
 
         checks.push(VerifyCheck {

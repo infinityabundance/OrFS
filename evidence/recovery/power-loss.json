@@ -22,16 +22,16 @@
   "matrix": [
     {
       "acknowledged_durable_roots": [
-        543
+        545
       ],
       "acknowledged_transaction_ids": [
         1
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 1,
-      "final_acknowledged_root": 543,
+      "final_acknowledged_root": 545,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -43,7 +43,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 543,
+            "durable_len": 545,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -67,7 +67,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 543,
+          "durable_watermark_root": 545,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -76,16 +76,16 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 543
+          "root": 545
         }
       },
       "surviving_durable_mutations": 1
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429
+        545,
+        988,
+        1431
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -93,10 +93,10 @@
         3
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 3,
-      "final_acknowledged_root": 1429,
+      "final_acknowledged_root": 1431,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -108,7 +108,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -116,7 +116,7 @@
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 443,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
@@ -139,7 +139,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 1429,
+          "durable_watermark_root": 1431,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -148,19 +148,19 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 1429
+          "root": 1431
         }
       },
       "surviving_durable_mutations": 3
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429,
-        1872,
-        2315,
-        2758
+        545,
+        988,
+        1431,
+        1874,
+        2317,
+        2760
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -171,10 +171,10 @@
         6
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 6,
-      "final_acknowledged_root": 2758,
+      "final_acknowledged_root": 2760,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -186,7 +186,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -194,14 +194,14 @@
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 990,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 782,
-            "name": "0000000000001976.seg",
+            "name": "0000000000001978.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
@@ -224,7 +224,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 2758,
+          "durable_watermark_root": 2760,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -233,23 +233,23 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 2758
+          "root": 2760
         }
       },
       "surviving_durable_mutations": 6
     },
     {
       "acknowledged_durable_roots": [
-        543
+        545
       ],
       "acknowledged_transaction_ids": [
         1
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 1,
-      "final_acknowledged_root": 543,
+      "final_acknowledged_root": 545,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -261,7 +261,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 543,
+            "durable_len": 545,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -285,7 +285,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 543,
+          "durable_watermark_root": 545,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -294,16 +294,16 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 543
+          "root": 545
         }
       },
       "surviving_durable_mutations": 1
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429
+        545,
+        988,
+        1431
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -311,10 +311,10 @@
         3
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 3,
-      "final_acknowledged_root": 1429,
+      "final_acknowledged_root": 1431,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -326,7 +326,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -334,7 +334,7 @@
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 443,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
@@ -357,7 +357,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 1429,
+          "durable_watermark_root": 1431,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -366,19 +366,19 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 1429
+          "root": 1431
         }
       },
       "surviving_durable_mutations": 3
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429,
-        1872,
-        2315,
-        2758
+        545,
+        988,
+        1431,
+        1874,
+        2317,
+        2760
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -389,10 +389,10 @@
         6
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 6,
-      "final_acknowledged_root": 2758,
+      "final_acknowledged_root": 2760,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -404,7 +404,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -412,14 +412,14 @@
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 990,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 782,
-            "name": "0000000000001976.seg",
+            "name": "0000000000001978.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
@@ -442,7 +442,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 2758,
+          "durable_watermark_root": 2760,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -451,23 +451,23 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 2758
+          "root": 2760
         }
       },
       "surviving_durable_mutations": 6
     },
     {
       "acknowledged_durable_roots": [
-        543
+        545
       ],
       "acknowledged_transaction_ids": [
         1
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 1,
-      "final_acknowledged_root": 543,
+      "final_acknowledged_root": 545,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -479,7 +479,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 543,
+            "durable_len": 545,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -503,7 +503,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 543,
+          "durable_watermark_root": 545,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -512,16 +512,16 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 543
+          "root": 545
         }
       },
       "surviving_durable_mutations": 1
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429
+        545,
+        988,
+        1431
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -529,10 +529,10 @@
         3
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 3,
-      "final_acknowledged_root": 1429,
+      "final_acknowledged_root": 1431,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -544,7 +544,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -552,7 +552,7 @@
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 443,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
@@ -575,7 +575,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 1429,
+          "durable_watermark_root": 1431,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -584,19 +584,19 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 1429
+          "root": 1431
         }
       },
       "surviving_durable_mutations": 3
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429,
-        1872,
-        2315,
-        2758
+        545,
+        988,
+        1431,
+        1874,
+        2317,
+        2760
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -607,10 +607,10 @@
         6
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 6,
-      "final_acknowledged_root": 2758,
+      "final_acknowledged_root": 2760,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -622,7 +622,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -630,14 +630,14 @@
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 990,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 782,
-            "name": "0000000000001976.seg",
+            "name": "0000000000001978.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
@@ -660,7 +660,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 2758,
+          "durable_watermark_root": 2760,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -669,7 +669,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 2758
+          "root": 2760
         }
       },
       "surviving_durable_mutations": 6
@@ -681,13 +681,13 @@
         2
       ],
       "acknowledged_unsynced_roots": [
-        543,
-        986
+        545,
+        988
       ],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "ordered",
       "fail_after_transactions": 2,
-      "final_acknowledged_root": 986,
+      "final_acknowledged_root": 988,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -699,7 +699,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 886,
-            "durable_len": 100,
+            "durable_len": 102,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -723,7 +723,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 100,
+          "durable_watermark_root": 102,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -732,7 +732,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 100
+          "root": 102
         }
       },
       "surviving_durable_mutations": 0
@@ -746,15 +746,15 @@
         4
       ],
       "acknowledged_unsynced_roots": [
-        543,
-        986,
-        1429,
-        1872
+        545,
+        988,
+        1431,
+        1874
       ],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "ordered",
       "fail_after_transactions": 4,
-      "final_acknowledged_root": 1872,
+      "final_acknowledged_root": 1874,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -766,7 +766,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 1772,
-            "durable_len": 100,
+            "durable_len": 102,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -790,7 +790,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 100,
+          "durable_watermark_root": 102,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -799,7 +799,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 100
+          "root": 102
         }
       },
       "surviving_durable_mutations": 0
@@ -815,17 +815,17 @@
         6
       ],
       "acknowledged_unsynced_roots": [
-        543,
-        986,
-        1429,
-        1872,
-        2315,
-        2758
+        545,
+        988,
+        1431,
+        1874,
+        2317,
+        2760
       ],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "ordered",
       "fail_after_transactions": 6,
-      "final_acknowledged_root": 2758,
+      "final_acknowledged_root": 2760,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -837,7 +837,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 2658,
-            "durable_len": 100,
+            "durable_len": 102,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -861,7 +861,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 100,
+          "durable_watermark_root": 102,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -870,14 +870,14 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 100
+          "root": 102
         }
       },
       "surviving_durable_mutations": 0
     },
     {
       "acknowledged_durable_roots": [
-        1429
+        1431
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -885,13 +885,13 @@
         3
       ],
       "acknowledged_unsynced_roots": [
-        543,
-        986
+        545,
+        988
       ],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "batched",
       "fail_after_transactions": 3,
-      "final_acknowledged_root": 1429,
+      "final_acknowledged_root": 1431,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -903,7 +903,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 1429,
+            "durable_len": 1431,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -927,7 +927,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 1429,
+          "durable_watermark_root": 1431,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -936,14 +936,14 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 1429
+          "root": 1431
         }
       },
       "surviving_durable_mutations": 1
     },
     {
       "acknowledged_durable_roots": [
-        1429
+        1431
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -953,15 +953,15 @@
         5
       ],
       "acknowledged_unsynced_roots": [
-        543,
-        986,
-        1872,
-        2315
+        545,
+        988,
+        1874,
+        2317
       ],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "batched",
       "fail_after_transactions": 5,
-      "final_acknowledged_root": 2315,
+      "final_acknowledged_root": 2317,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -973,7 +973,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 886,
-            "durable_len": 1429,
+            "durable_len": 1431,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -997,7 +997,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 1429,
+          "durable_watermark_root": 1431,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -1006,15 +1006,15 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 1429
+          "root": 1431
         }
       },
       "surviving_durable_mutations": 1
     },
     {
       "acknowledged_durable_roots": [
-        1429,
-        2758
+        1431,
+        2760
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -1026,16 +1026,16 @@
         7
       ],
       "acknowledged_unsynced_roots": [
-        543,
-        986,
-        1872,
-        2315,
-        3201
+        545,
+        988,
+        1874,
+        2317,
+        3203
       ],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "batched",
       "fail_after_transactions": 7,
-      "final_acknowledged_root": 3201,
+      "final_acknowledged_root": 3203,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -1047,7 +1047,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 443,
-            "durable_len": 2758,
+            "durable_len": 2760,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -1071,7 +1071,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 2758,
+          "durable_watermark_root": 2760,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -1080,16 +1080,16 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 2758
+          "root": 2760
         }
       },
       "surviving_durable_mutations": 2
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429
+        545,
+        988,
+        1431
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -1097,10 +1097,10 @@
         3
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 3,
-      "final_acknowledged_root": 1429,
+      "final_acknowledged_root": 1431,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -1112,7 +1112,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 208,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -1120,7 +1120,7 @@
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 443,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
@@ -1143,19 +1143,19 @@
       },
       "recovery": {
         "Refused": {
-          "error": "corrupt committed state: torn record in non-final segment 0 at physical offset 100"
+          "error": "corrupt committed state: torn record in non-final segment 0 at physical offset 102"
         }
       },
       "surviving_durable_mutations": 0
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429,
-        1872,
-        2315,
-        2758
+        545,
+        988,
+        1431,
+        1874,
+        2317,
+        2760
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -1166,10 +1166,10 @@
         6
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 6,
-      "final_acknowledged_root": 2758,
+      "final_acknowledged_root": 2760,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -1181,7 +1181,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 208,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -1189,14 +1189,14 @@
           {
             "dropped_volatile_bytes": 238,
             "durable_len": 886,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
           {
             "dropped_volatile_bytes": 219,
             "durable_len": 782,
-            "name": "0000000000001976.seg",
+            "name": "0000000000001978.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
@@ -1219,16 +1219,16 @@
       },
       "recovery": {
         "Refused": {
-          "error": "corrupt committed state: torn record in non-final segment 0 at physical offset 100"
+          "error": "corrupt committed state: torn record in non-final segment 0 at physical offset 102"
         }
       },
       "surviving_durable_mutations": 0
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429
+        545,
+        988,
+        1431
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -1236,10 +1236,10 @@
         3
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 3,
-      "final_acknowledged_root": 1429,
+      "final_acknowledged_root": 1431,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -1251,7 +1251,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 307,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -1259,7 +1259,7 @@
           {
             "dropped_volatile_bytes": 240,
             "durable_len": 295,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
@@ -1282,19 +1282,19 @@
       },
       "recovery": {
         "Refused": {
-          "error": "corrupt committed state: torn record in non-final segment 0 at physical offset 100"
+          "error": "corrupt committed state: torn record in non-final segment 0 at physical offset 102"
         }
       },
       "surviving_durable_mutations": 0
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429,
-        1872,
-        2315,
-        2758
+        545,
+        988,
+        1431,
+        1874,
+        2317,
+        2760
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -1305,10 +1305,10 @@
         6
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 6,
-      "final_acknowledged_root": 2758,
+      "final_acknowledged_root": 2760,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -1320,7 +1320,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 307,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -1328,14 +1328,14 @@
           {
             "dropped_volatile_bytes": 161,
             "durable_len": 990,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
           {
             "dropped_volatile_bytes": 487,
             "durable_len": 443,
-            "name": "0000000000001976.seg",
+            "name": "0000000000001978.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
@@ -1358,17 +1358,17 @@
       },
       "recovery": {
         "Refused": {
-          "error": "corrupt committed state: torn record in non-final segment 0 at physical offset 100"
+          "error": "corrupt committed state: torn record in non-final segment 0 at physical offset 102"
         }
       },
       "surviving_durable_mutations": 0
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429,
-        1872
+        545,
+        988,
+        1431,
+        1874
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -1377,10 +1377,10 @@
         4
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 4,
-      "final_acknowledged_root": 1872,
+      "final_acknowledged_root": 1874,
       "power_fail_report": {
         "config": {
           "durable_loss": "tear_tail",
@@ -1395,12 +1395,12 @@
             "durable_len": 512,
             "name": "0000000000000000.seg",
             "present": true,
-            "torn_durable_bytes": 474
+            "torn_durable_bytes": 476
           },
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 512,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 374
           },
@@ -1413,7 +1413,7 @@
           }
         ],
         "total_dropped_volatile_bytes": 0,
-        "total_torn_durable_bytes": 848
+        "total_torn_durable_bytes": 850
       },
       "profile": {
         "durable_loss": "tear_tail",
@@ -1423,17 +1423,17 @@
       },
       "recovery": {
         "Refused": {
-          "error": "corrupt committed state: torn record in non-final segment 0 at physical offset 395"
+          "error": "corrupt committed state: torn record in non-final segment 0 at physical offset 397"
         }
       },
       "surviving_durable_mutations": 0
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429,
-        1872
+        545,
+        988,
+        1431,
+        1874
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -1442,10 +1442,10 @@
         4
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 4,
-      "final_acknowledged_root": 1872,
+      "final_acknowledged_root": 1874,
       "power_fail_report": {
         "config": {
           "durable_loss": "tear_tail",
@@ -1460,12 +1460,12 @@
             "durable_len": 512,
             "name": "0000000000000000.seg",
             "present": true,
-            "torn_durable_bytes": 474
+            "torn_durable_bytes": 476
           },
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 512,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 374
           },
@@ -1478,7 +1478,7 @@
           }
         ],
         "total_dropped_volatile_bytes": 0,
-        "total_torn_durable_bytes": 848
+        "total_torn_durable_bytes": 850
       },
       "profile": {
         "durable_loss": "tear_tail",
@@ -1488,18 +1488,18 @@
       },
       "recovery": {
         "Refused": {
-          "error": "corrupt committed state: torn record in non-final segment 0 at physical offset 395"
+          "error": "corrupt committed state: torn record in non-final segment 0 at physical offset 397"
         }
       },
       "surviving_durable_mutations": 0
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429,
-        1872,
-        2315
+        545,
+        988,
+        1431,
+        1874,
+        2317
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -1509,10 +1509,10 @@
         5
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 5,
-      "final_acknowledged_root": 2315,
+      "final_acknowledged_root": 2317,
       "power_fail_report": {
         "config": {
           "durable_loss": "lost_watermark",
@@ -1524,7 +1524,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -1532,14 +1532,14 @@
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 990,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 339,
-            "name": "0000000000001976.seg",
+            "name": "0000000000001978.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
@@ -1562,7 +1562,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 100,
+          "durable_watermark_root": 102,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -1571,17 +1571,17 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 2315
+          "root": 2317
         }
       },
       "surviving_durable_mutations": 5
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429,
-        1872
+        545,
+        988,
+        1431,
+        1874
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -1590,10 +1590,10 @@
         4
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 4,
-      "final_acknowledged_root": 1872,
+      "final_acknowledged_root": 1874,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -1605,7 +1605,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -1613,7 +1613,7 @@
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 886,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
@@ -1636,7 +1636,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 1872,
+          "durable_watermark_root": 1874,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -1645,17 +1645,17 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 1872
+          "root": 1874
         }
       },
       "surviving_durable_mutations": 4
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429,
-        1872
+        545,
+        988,
+        1431,
+        1874
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -1664,10 +1664,10 @@
         4
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 4,
-      "final_acknowledged_root": 1872,
+      "final_acknowledged_root": 1874,
       "power_fail_report": {
         "config": {
           "durable_loss": "none",
@@ -1679,7 +1679,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -1687,7 +1687,7 @@
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 886,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
@@ -1710,7 +1710,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 1872,
+          "durable_watermark_root": 1874,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -1719,17 +1719,17 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 1872
+          "root": 1874
         }
       },
       "surviving_durable_mutations": 4
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429,
-        1872
+        545,
+        988,
+        1431,
+        1874
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -1738,10 +1738,10 @@
         4
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 4,
-      "final_acknowledged_root": 1872,
+      "final_acknowledged_root": 1874,
       "power_fail_report": {
         "config": {
           "durable_loss": "reorder_durable",
@@ -1756,12 +1756,12 @@
             "durable_len": 0,
             "name": "0000000000000000.seg",
             "present": true,
-            "torn_durable_bytes": 986
+            "torn_durable_bytes": 988
           },
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 0,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 886
           },
@@ -1774,7 +1774,7 @@
           }
         ],
         "total_dropped_volatile_bytes": 0,
-        "total_torn_durable_bytes": 1872
+        "total_torn_durable_bytes": 1874
       },
       "profile": {
         "durable_loss": "reorder_durable",
@@ -1784,17 +1784,17 @@
       },
       "recovery": {
         "Refused": {
-          "error": "corrupt committed state: segment id 986 does not continue from 0"
+          "error": "corrupt committed state: segment id 988 does not continue from 0"
         }
       },
       "surviving_durable_mutations": 0
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429,
-        1872
+        545,
+        988,
+        1431,
+        1874
       ],
       "acknowledged_transaction_ids": [
         1,
@@ -1803,10 +1803,10 @@
         4
       ],
       "acknowledged_unsynced_roots": [],
-      "baseline_root": 100,
+      "baseline_root": 102,
       "durability_mode": "sync",
       "fail_after_transactions": 4,
-      "final_acknowledged_root": 1872,
+      "final_acknowledged_root": 1874,
       "power_fail_report": {
         "config": {
           "durable_loss": "reorder_durable",
@@ -1821,12 +1821,12 @@
             "durable_len": 512,
             "name": "0000000000000000.seg",
             "present": true,
-            "torn_durable_bytes": 474
+            "torn_durable_bytes": 476
           },
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 512,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 374
           },
@@ -1839,7 +1839,7 @@
           }
         ],
         "total_dropped_volatile_bytes": 0,
-        "total_torn_durable_bytes": 848
+        "total_torn_durable_bytes": 850
       },
       "profile": {
         "durable_loss": "reorder_durable",
@@ -1849,7 +1849,7 @@
       },
       "recovery": {
         "Refused": {
-          "error": "corrupt committed state: torn record in non-final segment 0 at physical offset 395"
+          "error": "corrupt committed state: torn record in non-final segment 0 at physical offset 397"
         }
       },
       "surviving_durable_mutations": 0

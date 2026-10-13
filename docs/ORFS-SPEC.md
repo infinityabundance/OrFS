@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–65)
+## 4. The ordered build phases (0–67)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -152,16 +152,17 @@ per-phase record.
 | 64 | Direct-page manifestations (research §5): a manifested, page-aligned contiguous atlas of a selected object's bytes, wired in as a measured `direct-image` planner candidate | **complete** |
 | 65 | Autonomous concealed-expansion controller (research §12): a pure predictor chooses no-manifestation vs the direct-page atlas under a manifested-space budget `B`; best-effort construction + byte-identity verification; measured monotone answer-time improvement with authority retained | **complete** |
 | 66 | Mounted courts for three reviewer items: F2 concurrency to 64 readers (p99 target unmet, stated plainly), a `baseline_passthrough` three-way comparison, and a paired mounted planner benchmark (manifested vs authoritative-only, same history) | **complete** |
+| 67 | Explicit `format_version` in the authoritative log's genesis identity (`0` = legacy, `1` = current); frozen `v0`/`v1` compatibility fixtures + a byte-identity court; the accept-`≤`-current / refuse-higher rule with a typed error; `docs/MIGRATION.md` | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–66 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–67 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
 v0.1.0 was the first release.
 
-- The `orfs` crate builds, its **469** tests (default) pass, and
-  `cargo test --features failpoints` adds the crash-injection court (479 tests in
+- The `orfs` crate builds, its **478** tests (default) pass, and
+  `cargo test --features failpoints` adds the crash-injection court (488 tests in
   total); `cargo fmt -p orfs --check` / `clippy --all-targets -- -D warnings` are
   clean **inside the pinned container** (`scripts/container-*.sh`).
 - `src/capabilities.rs` + `orfs doctor` perform a **real** kernel/container
@@ -214,6 +215,7 @@ Normative implementation documents to be produced. Status is marked honestly.
 | `docs/QUERY.md` | Concealed query structures and the typed query API | **exists** (Phase 9) |
 | `docs/FUSE_URING.md` | FUSE-over-`io_uring` transport, capability negotiation, safe fallback | **exists** (Phase 10) |
 | `docs/RECOVERY.md` | Crash/torn-write recovery, rebuildable indexes, no silent repair | **exists** (Phase 11) |
+| `docs/MIGRATION.md` | On-disk migration: the `or.log` format-version registry, the v0→v1 compat matrix, the field locations for a third-party reader, and how to freeze a new compatibility fixture | **exists** (Phase 67) |
 | `docs/SECURITY.md` | Permission model, hostile-backing-data handling, threat model | **exists** (Phase 11) |
 | `docs/THREAT-MODEL.md` | Who can mount, what the security model prevents and does not | **exists** (Phase 54) |
 | `docs/GATES.md` | Acceptance gates A–N: definitions, commands, acceptance criteria | **exists** (Phase 54) |

@@ -86,7 +86,12 @@ fn genesis_is_the_first_boundary() {
     let td = TempDir::new().unwrap();
     let (vol, _) = build(td.path(), 1024, 3);
     let genesis_root = vol.log.boundaries()[0];
-    assert_eq!(genesis_root, (60 + 24 + 16) as u64);
+    // The genesis is one framed record: header + genesis payload + footer.
+    assert_eq!(
+        genesis_root,
+        (orfs::record::HEADER_LEN + orfs::volume::GENESIS_PAYLOAD_LEN + orfs::record::FOOTER_LEN)
+            as u64
+    );
     let recs = vol.log.replay_upto(genesis_root).unwrap();
     assert_eq!(recs.len(), 1);
     assert_eq!(recs[0].known_type().unwrap(), RecordType::VolumeGenesis);

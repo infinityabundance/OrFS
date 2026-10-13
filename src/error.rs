@@ -91,6 +91,18 @@ pub enum OrfsError {
     #[error("incompatible on-disk format: {0}")]
     Compatibility(String),
 
+    /// The authoritative log declares a format version this build does not
+    /// implement — a version **newer** than [`crate::LOG_FORMAT_VERSION`]. This
+    /// is distinct from [`OrfsError::Compatibility`] so a caller can report the
+    /// exact on-disk version, and so a compatibility test can assert the typed
+    /// refusal. A reader must refuse rather than interpret the bytes on a guess.
+    ///
+    /// Version `0` is *legacy* (the field was absent) and every known version
+    /// `<= LOG_FORMAT_VERSION` is accepted; only an unknown **higher** version
+    /// produces this error.
+    #[error("unsupported log format version {found} (this build supports up to {supported})")]
+    UnsupportedFormatVersion { found: u16, supported: u16 },
+
     /// A read or write range lies outside the object.
     #[error("out of bounds: offset {offset} length {length} (object limit {limit})")]
     OutOfBounds {
@@ -155,6 +167,10 @@ impl OrfsError {
             OrfsError::Corrupt(_) => libc::EIO,
             OrfsError::Unsupported(_) => libc::EOPNOTSUPP,
             OrfsError::Compatibility(_) => libc::EPROTONOSUPPORT,
+            // An on-disk format-version mismatch is the same class of failure as
+            // an incompatible framing: the store is a protocol this build cannot
+            // speak. EPROTONOSUPPORT is the honest, non-overloaded errno.
+            OrfsError::UnsupportedFormatVersion { .. } => libc::EPROTONOSUPPORT,
             OrfsError::OutOfBounds { .. } => libc::EINVAL,
             OrfsError::ReadOnly(_) => libc::EROFS,
             OrfsError::Pinned(_) => libc::EBUSY,

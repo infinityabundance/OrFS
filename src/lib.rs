@@ -165,6 +165,20 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The on-disk authoritative record format version implemented by this build.
 pub const FORMAT_VERSION: u16 = 1;
 
+/// The current authoritative-**log** format version. It is written into the
+/// genesis (volume-identity) payload so that compatibility is decided from the
+/// authoritative log itself, without trusting a rebuildable sidecar, and is
+/// reported by `orfs inspect` / `orfs verify`.
+///
+/// A reader accepts every known version `<= LOG_FORMAT_VERSION` and rejects an
+/// unknown **higher** version with `OrfsError::UnsupportedFormatVersion`.
+pub const LOG_FORMAT_VERSION: u16 = 1;
+
+/// The oldest log format version a reader still accepts. `0` is **legacy**: a
+/// genesis written before the version field existed, and the value a reader must
+/// infer when the field is absent or zero. A reader must never reject it.
+pub const MIN_LOG_FORMAT_VERSION: u16 = 0;
+
 /// Human-readable product name. `orfs` is the filesystem; `EKBLOOM` is the
 /// acceleration technology. No additional competing product names are used.
 pub const PRODUCT: &str = "OrFS";

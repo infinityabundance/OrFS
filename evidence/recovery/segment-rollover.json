@@ -1,63 +1,63 @@
 {
   "appends": 64,
-  "committed_root": 39144,
+  "committed_root": 39146,
   "committed_root_equals_reported_root": true,
   "generator": "tests/recovery_adversarial.rs",
   "recovered_root_is_boundary": true,
-  "reported_root": 39144,
+  "reported_root": 39146,
   "rollover_occurred": true,
   "schema": "orfs.evidence.segment-rollover.v1",
   "segment_count": 10,
   "segment_size": 4096,
   "segments": [
     {
-      "end": 4076,
+      "end": 4078,
       "segment_id": 0,
-      "valid_len": 4076
+      "valid_len": 4078
     },
     {
-      "end": 8048,
-      "segment_id": 4076,
+      "end": 8050,
+      "segment_id": 4078,
       "valid_len": 3972
     },
     {
-      "end": 12144,
-      "segment_id": 8048,
+      "end": 12146,
+      "segment_id": 8050,
       "valid_len": 4096
     },
     {
-      "end": 16196,
-      "segment_id": 12144,
+      "end": 16198,
+      "segment_id": 12146,
       "valid_len": 4052
     },
     {
-      "end": 20276,
-      "segment_id": 16196,
+      "end": 20278,
+      "segment_id": 16198,
       "valid_len": 4080
     },
     {
-      "end": 24248,
-      "segment_id": 20276,
+      "end": 24250,
+      "segment_id": 20278,
       "valid_len": 3972
     },
     {
-      "end": 28344,
-      "segment_id": 24248,
+      "end": 28346,
+      "segment_id": 24250,
       "valid_len": 4096
     },
     {
-      "end": 32396,
-      "segment_id": 28344,
+      "end": 32398,
+      "segment_id": 28346,
       "valid_len": 4052
     },
     {
-      "end": 36476,
-      "segment_id": 32396,
+      "end": 36478,
+      "segment_id": 32398,
       "valid_len": 4080
     },
     {
-      "end": 39144,
-      "segment_id": 36476,
+      "end": 39146,
+      "segment_id": 36478,
       "valid_len": 2668
     }
   ]

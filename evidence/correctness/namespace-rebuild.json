@@ -1,6 +1,6 @@
 {
   "all_ok": true,
-  "committed_root": 6047,
+  "committed_root": 6049,
   "dentry_count": 5,
   "digest_equals": true,
   "generator": "tests/namespace_model.rs",

@@ -32,7 +32,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 100,
+            "durable_len": 102,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -50,7 +50,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 100,
+          "durable_watermark_root": 102,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -59,7 +59,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 100
+          "root": 102
         }
       },
       "skip": 0,
@@ -86,7 +86,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 104,
-            "durable_len": 100,
+            "durable_len": 102,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -104,7 +104,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 100,
+          "durable_watermark_root": 102,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -113,7 +113,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 100
+          "root": 102
         }
       },
       "skip": 1,
@@ -140,7 +140,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 196,
-            "durable_len": 100,
+            "durable_len": 102,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -158,7 +158,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 100,
+          "durable_watermark_root": 102,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -167,7 +167,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 100
+          "root": 102
         }
       },
       "skip": 2,
@@ -194,7 +194,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 295,
-            "durable_len": 100,
+            "durable_len": 102,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -212,7 +212,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 100,
+          "durable_watermark_root": 102,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -221,7 +221,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 100
+          "root": 102
         }
       },
       "skip": 3,
@@ -230,10 +230,10 @@
     },
     {
       "acknowledged_durable_roots": [
-        543
+        545
       ],
       "acknowledged_roots": [
-        543
+        545
       ],
       "durability_mode": "sync",
       "failure": "no space on backing store: simulated device: out of space during Write",
@@ -252,7 +252,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 543,
+            "durable_len": 545,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -270,7 +270,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 543,
+          "durable_watermark_root": 545,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -279,7 +279,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 543
+          "root": 545
         }
       },
       "skip": 4,
@@ -288,10 +288,10 @@
     },
     {
       "acknowledged_durable_roots": [
-        543
+        545
       ],
       "acknowledged_roots": [
-        543
+        545
       ],
       "durability_mode": "sync",
       "failure": "no space on backing store: simulated device: out of space during Write",
@@ -310,7 +310,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 104,
-            "durable_len": 543,
+            "durable_len": 545,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -328,7 +328,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 543,
+          "durable_watermark_root": 545,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -337,7 +337,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 543
+          "root": 545
         }
       },
       "skip": 5,
@@ -346,10 +346,10 @@
     },
     {
       "acknowledged_durable_roots": [
-        543
+        545
       ],
       "acknowledged_roots": [
-        543
+        545
       ],
       "durability_mode": "sync",
       "failure": "no space on backing store: simulated device: out of space during Write",
@@ -368,7 +368,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 196,
-            "durable_len": 543,
+            "durable_len": 545,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -386,7 +386,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 543,
+          "durable_watermark_root": 545,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -395,7 +395,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 543
+          "root": 545
         }
       },
       "skip": 6,
@@ -404,10 +404,10 @@
     },
     {
       "acknowledged_durable_roots": [
-        543
+        545
       ],
       "acknowledged_roots": [
-        543
+        545
       ],
       "durability_mode": "sync",
       "failure": "no space on backing store: simulated device: out of space during Write",
@@ -426,7 +426,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 295,
-            "durable_len": 543,
+            "durable_len": 545,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -444,7 +444,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 543,
+          "durable_watermark_root": 545,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -453,7 +453,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 543
+          "root": 545
         }
       },
       "skip": 7,
@@ -462,12 +462,12 @@
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986
+        545,
+        988
       ],
       "acknowledged_roots": [
-        543,
-        986
+        545,
+        988
       ],
       "durability_mode": "sync",
       "failure": "no space on backing store: simulated device: out of space during Write",
@@ -486,7 +486,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -504,7 +504,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 986,
+          "durable_watermark_root": 988,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -513,7 +513,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 986
+          "root": 988
         }
       },
       "skip": 8,
@@ -522,12 +522,12 @@
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986
+        545,
+        988
       ],
       "acknowledged_roots": [
-        543,
-        986
+        545,
+        988
       ],
       "durability_mode": "sync",
       "failure": "no space on backing store: simulated device: out of space during Write",
@@ -546,7 +546,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 104,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -564,7 +564,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 986,
+          "durable_watermark_root": 988,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -573,7 +573,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 986
+          "root": 988
         }
       },
       "skip": 9,
@@ -582,12 +582,12 @@
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986
+        545,
+        988
       ],
       "acknowledged_roots": [
-        543,
-        986
+        545,
+        988
       ],
       "durability_mode": "sync",
       "failure": "no space on backing store: simulated device: out of space during Write",
@@ -606,7 +606,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 196,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -624,7 +624,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 986,
+          "durable_watermark_root": 988,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -633,7 +633,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 986
+          "root": 988
         }
       },
       "skip": 10,
@@ -642,12 +642,12 @@
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986
+        545,
+        988
       ],
       "acknowledged_roots": [
-        543,
-        986
+        545,
+        988
       ],
       "durability_mode": "sync",
       "failure": "no space on backing store: simulated device: out of space during Write",
@@ -666,7 +666,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 295,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -684,7 +684,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 986,
+          "durable_watermark_root": 988,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -693,7 +693,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 986
+          "root": 988
         }
       },
       "skip": 11,
@@ -702,12 +702,12 @@
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986
+        545,
+        988
       ],
       "acknowledged_roots": [
-        543,
-        986
+        545,
+        988
       ],
       "durability_mode": "sync",
       "failure": "no space on backing store: simulated device: out of space during Create",
@@ -726,7 +726,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -744,7 +744,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 986,
+          "durable_watermark_root": 988,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -753,7 +753,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 986
+          "root": 988
         }
       },
       "skip": 0,
@@ -762,16 +762,16 @@
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429,
-        1872
+        545,
+        988,
+        1431,
+        1874
       ],
       "acknowledged_roots": [
-        543,
-        986,
-        1429,
-        1872
+        545,
+        988,
+        1431,
+        1874
       ],
       "durability_mode": "sync",
       "failure": "no space on backing store: simulated device: out of space during Create",
@@ -790,7 +790,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -798,7 +798,7 @@
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 990,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
@@ -815,7 +815,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 1872,
+          "durable_watermark_root": 1874,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -824,7 +824,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 1872
+          "root": 1874
         }
       },
       "skip": 1,
@@ -833,20 +833,20 @@
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429,
-        1872,
-        2315,
-        2758
+        545,
+        988,
+        1431,
+        1874,
+        2317,
+        2760
       ],
       "acknowledged_roots": [
-        543,
-        986,
-        1429,
-        1872,
-        2315,
-        2758
+        545,
+        988,
+        1431,
+        1874,
+        2317,
+        2760
       ],
       "durability_mode": "sync",
       "failure": null,
@@ -865,7 +865,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -873,14 +873,14 @@
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 990,
-            "name": "0000000000000986.seg",
+            "name": "0000000000000988.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
           {
             "dropped_volatile_bytes": 0,
             "durable_len": 782,
-            "name": "0000000000001976.seg",
+            "name": "0000000000001978.seg",
             "present": true,
             "torn_durable_bytes": 0
           },
@@ -897,7 +897,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 2758,
+          "durable_watermark_root": 2760,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -906,7 +906,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 2758
+          "root": 2760
         }
       },
       "skip": 2,
@@ -933,7 +933,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 543,
+            "durable_len": 545,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -951,7 +951,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 100,
+          "durable_watermark_root": 102,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -960,7 +960,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 543
+          "root": 545
         }
       },
       "skip": 0,
@@ -969,10 +969,10 @@
     },
     {
       "acknowledged_durable_roots": [
-        543
+        545
       ],
       "acknowledged_roots": [
-        543
+        545
       ],
       "durability_mode": "sync",
       "failure": "no space on backing store: simulated device: out of space during Watermark",
@@ -991,7 +991,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 986,
+            "durable_len": 988,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -1009,7 +1009,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 543,
+          "durable_watermark_root": 545,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -1018,7 +1018,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 986
+          "root": 988
         }
       },
       "skip": 1,
@@ -1027,12 +1027,12 @@
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986
+        545,
+        988
       ],
       "acknowledged_roots": [
-        543,
-        986
+        545,
+        988
       ],
       "durability_mode": "sync",
       "failure": "no space on backing store: simulated device: out of space during Watermark",
@@ -1051,7 +1051,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 1429,
+            "durable_len": 1431,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -1069,7 +1069,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 986,
+          "durable_watermark_root": 988,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -1078,7 +1078,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 1429
+          "root": 1431
         }
       },
       "skip": 2,
@@ -1087,14 +1087,14 @@
     },
     {
       "acknowledged_durable_roots": [
-        543,
-        986,
-        1429
+        545,
+        988,
+        1431
       ],
       "acknowledged_roots": [
-        543,
-        986,
-        1429
+        545,
+        988,
+        1431
       ],
       "durability_mode": "sync",
       "failure": "no space on backing store: simulated device: out of space during Watermark",
@@ -1113,7 +1113,7 @@
         "files": [
           {
             "dropped_volatile_bytes": 0,
-            "durable_len": 1872,
+            "durable_len": 1874,
             "name": "0000000000000000.seg",
             "present": true,
             "torn_durable_bytes": 0
@@ -1131,7 +1131,7 @@
       },
       "recovery": {
         "Recovered": {
-          "durable_watermark_root": 1429,
+          "durable_watermark_root": 1431,
           "invariants": {
             "committed_physical_bytes_unchanged": true,
             "earlier_committed_roots_valid": true,
@@ -1140,7 +1140,7 @@
             "no_committed_record_rewritten": true,
             "recovered_root_is_transaction_boundary": true
           },
-          "root": 1872
+          "root": 1874
         }
       },
       "skip": 3,

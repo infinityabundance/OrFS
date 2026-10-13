@@ -1343,6 +1343,7 @@ fn inspect(backing: &Path, json: bool) -> Result<()> {
             "volume": backing.display().to_string(),
             "uuid": vol.meta.uuid_string(),
             "format_version": vol.meta.format_version,
+            "log_format_version": vol.log_format_version,
             "created_at_unix_secs": vol.meta.created_at_unix_secs,
             "segment_size": vol.meta.segment_size,
             "committed_root": log.committed_end_offset(),
@@ -1368,6 +1369,10 @@ fn inspect(backing: &Path, json: bool) -> Result<()> {
     println!("OrFS volume {}", backing.display());
     println!("  uuid:                   {}", vol.meta.uuid_string());
     println!("  format version:         {}", vol.meta.format_version);
+    println!(
+        "  log format version:     {} (genesis identity)",
+        vol.log_format_version
+    );
     println!(
         "  created at (unix secs): {}",
         vol.meta.created_at_unix_secs

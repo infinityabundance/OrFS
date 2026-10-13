@@ -2,10 +2,10 @@
   "format_version": 1,
   "generator": "tests/log_model.rs",
   "replay": {
-    "canonical_bytes": 14508,
-    "committed_digest_blake3": "a7699d2e40f4d334a0906135950fc8533352ecc10d74ac33121054522d32df63",
+    "canonical_bytes": 14510,
+    "committed_digest_blake3": "e84f7a03d34d6575a0d7eeb634bc18c0e5eb8b36f3a341cdd2a380793aa05edb",
     "committed_record_count": 97,
-    "committed_root": 14508,
+    "committed_root": 14510,
     "deterministic": {
       "committed_prefixes_replayed_twice_equal": true,
       "distinct_replays_agree": true
@@ -22,8 +22,8 @@
   },
   "schema": "orfs.evidence.log-replay.v1",
   "torn_tail": {
-    "committed_root_after_recovery": 1795,
-    "committed_root_before": 1795,
+    "committed_root_after_recovery": 1797,
+    "committed_root_before": 1797,
     "committed_root_unchanged": true,
     "detected": true,
     "fresh_segment_created": true,

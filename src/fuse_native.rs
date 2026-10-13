@@ -2576,51 +2576,64 @@ struct Done {
     reply_len: u64,
 }
 
+/// One lane's jobs and its shutdown flag, guarded together by a single mutex.
+///
+/// Keeping `closed` *inside* the locked state is what makes the condition
+/// variable lossless: a waiter checks the queue and `closed` under the same lock
+/// it will `wait` on, and [`JobQueue::close`] flips `closed` and notifies while
+/// holding that lock. A worker therefore cannot observe `closed == false` and
+/// then park after the wakeup has already been sent.
+#[derive(Default)]
+struct LaneState {
+    jobs: VecDeque<Job>,
+    closed: bool,
+}
+
 /// Two-lane job queues with condition variables (one waiter set per lane).
 struct JobQueue {
-    fast: Mutex<VecDeque<Job>>,
-    bulk: Mutex<VecDeque<Job>>,
+    fast: Mutex<LaneState>,
+    bulk: Mutex<LaneState>,
     fast_cv: Condvar,
     bulk_cv: Condvar,
-    closed: AtomicBool,
 }
 
 impl JobQueue {
     fn new() -> JobQueue {
         JobQueue {
-            fast: Mutex::new(VecDeque::new()),
-            bulk: Mutex::new(VecDeque::new()),
+            fast: Mutex::new(LaneState::default()),
+            bulk: Mutex::new(LaneState::default()),
             fast_cv: Condvar::new(),
             bulk_cv: Condvar::new(),
-            closed: AtomicBool::new(false),
+        }
+    }
+
+    /// The locked state and condition variable belonging to `lane`.
+    fn lane(&self, lane: Lane) -> (&Mutex<LaneState>, &Condvar) {
+        match lane {
+            Lane::Fast => (&self.fast, &self.fast_cv),
+            Lane::Bulk => (&self.bulk, &self.bulk_cv),
         }
     }
 
     fn push(&self, job: Job) {
-        match job.lane {
-            Lane::Fast => {
-                self.fast.lock().push_back(job);
-                self.fast_cv.notify_one();
-            }
-            Lane::Bulk => {
-                self.bulk.lock().push_back(job);
-                self.bulk_cv.notify_one();
-            }
-        }
+        let (state, cv) = self.lane(job.lane);
+        let mut guard = state.lock();
+        guard.jobs.push_back(job);
+        // Notify while still holding the lock: the queue-nonempty predicate and
+        // the wakeup are observed through the same mutex, so a worker that saw an
+        // empty queue is always woken (it holds the lock until it parks).
+        cv.notify_one();
     }
 
     /// Block until a job is available on `lane`, or `None` once the queue closes.
     fn pop(&self, lane: Lane) -> Option<Job> {
-        let (queue, cv) = match lane {
-            Lane::Fast => (&self.fast, &self.fast_cv),
-            Lane::Bulk => (&self.bulk, &self.bulk_cv),
-        };
-        let mut guard = queue.lock();
+        let (state, cv) = self.lane(lane);
+        let mut guard = state.lock();
         loop {
-            if let Some(job) = guard.pop_front() {
+            if let Some(job) = guard.jobs.pop_front() {
                 return Some(job);
             }
-            if self.closed.load(Ordering::SeqCst) {
+            if guard.closed {
                 return None;
             }
             cv.wait(&mut guard);
@@ -2628,9 +2641,16 @@ impl JobQueue {
     }
 
     fn close(&self) {
-        self.closed.store(true, Ordering::SeqCst);
-        self.fast_cv.notify_all();
-        self.bulk_cv.notify_all();
+        // Flip `closed` and wake every waiter while holding the lane mutex. A
+        // worker that observed `closed == false` still holds the lock until it
+        // parks in `wait`, and `close` cannot notify until it acquires that same
+        // lock — by which point the worker is parked and the wakeup is delivered.
+        // This closes the lost-wakeup window the HEAD audit recorded.
+        for (state, cv) in [(&self.fast, &self.fast_cv), (&self.bulk, &self.bulk_cv)] {
+            let mut guard = state.lock();
+            guard.closed = true;
+            cv.notify_all();
+        }
     }
 }
 
@@ -3994,5 +4014,185 @@ mod tests {
             "every outstanding job must have been served before Drop returns"
         );
         drop(entry);
+    }
+
+    /// **Regression (phase 61): `close` must acquire the lane mutex before it
+    /// notifies.** If it notified without the lock, a worker could check
+    /// `closed == false`, then `close` could flip the flag and call `notify_all`
+    /// while no waiter is parked yet (the notify is dropped), and only then would
+    /// the worker park in `wait` — a lost wakeup that can hang `WorkerPool::drop`
+    /// forever. Holding the lane mutex here forces `close` to block until the
+    /// worker that is about to park has released it, which cannot happen *after* a
+    /// wakeup it missed. The pre-fix code notified without the lock, so `close`
+    /// returns immediately and the first assertion fires.
+    #[test]
+    fn job_queue_close_acquires_the_lane_mutex_before_notifying() {
+        use std::sync::atomic::{AtomicBool as AB, Ordering as AO};
+        use std::sync::{Arc as A, Barrier};
+
+        let q = A::new(JobQueue::new());
+        let barrier = A::new(Barrier::new(2));
+        // Stand in for a worker that has observed an empty queue and
+        // `closed == false` and still holds the lane lock — the instant before it
+        // parks in `wait`.
+        let guard = q.fast.lock();
+
+        let done = A::new(AB::new(false));
+        let closer = {
+            let q = A::clone(&q);
+            let barrier = A::clone(&barrier);
+            let done = A::clone(&done);
+            std::thread::spawn(move || {
+                barrier.wait();
+                q.close();
+                done.store(true, AO::SeqCst);
+            })
+        };
+        barrier.wait();
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(
+            !done.load(AO::SeqCst),
+            "close() must acquire the lane mutex before notifying waiters"
+        );
+        drop(guard);
+        closer.join().unwrap();
+        assert!(
+            done.load(AO::SeqCst),
+            "close() returns once the lock is free"
+        );
+    }
+
+    /// **Regression (phase 61): repeatedly tearing a worker pool down with jobs
+    /// still outstanding must join every worker within a bounded time.** A lost
+    /// wakeup in `JobQueue::close` leaves a worker parked in `wait` forever, so
+    /// `WorkerPool::drop` never returns; the bounded `recv_timeout` turns that
+    /// hang into a deterministic test failure instead of a wedged suite.
+    ///
+    /// The default sweep is bounded so it fits the gate; set
+    /// `ORFS_JOBQUEUE_STRESS_ITERS=<n>` to run a longer sweep.
+    #[test]
+    fn worker_pool_drop_repeatedly_joins_within_bounded_time() {
+        use std::sync::mpsc::channel;
+
+        let iterations: usize = std::env::var("ORFS_JOBQUEUE_STRESS_ITERS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(2_000);
+
+        for i in 0..iterations {
+            let queue = Arc::new(JobQueue::new());
+            let (_tx, rx) = channel::<Done>();
+            // The entry outlives the pool, so queued raw pointers stay valid.
+            let entry = Box::new(EntryState::new(0, 1));
+            let ptr = &*entry as *const EntryState as *mut EntryState;
+
+            let mut threads = Vec::new();
+            for _ in 0..2 {
+                let q = Arc::clone(&queue);
+                threads.push(std::thread::spawn(
+                    move || {
+                        while q.pop(Lane::Fast).is_some() {}
+                    },
+                ));
+            }
+            for j in 0..8 {
+                queue.push(Job {
+                    idx: j,
+                    entry: EntryPtr(ptr),
+                    lane: Lane::Fast,
+                });
+            }
+
+            let pool = WorkerPool::<crate::namespace::Namespace> {
+                queue,
+                done_rx: rx,
+                threads,
+                _marker: std::marker::PhantomData,
+            };
+            // Drop (which closes and joins) on another thread so the wait here is
+            // bounded: if a worker is stranded in `wait`, the deadline fires.
+            let (joined_tx, joined_rx) = channel();
+            let joiner = std::thread::spawn(move || {
+                drop(pool);
+                let _ = joined_tx.send(());
+            });
+            assert!(
+                joined_rx.recv_timeout(Duration::from_secs(5)).is_ok(),
+                "WorkerPool::drop hung on iteration {i} (lost wakeup in JobQueue::close)"
+            );
+            joiner.join().unwrap();
+            drop(entry);
+        }
+    }
+
+    /// **Regression (phase 61): concurrent `push`/`pop`/`close` never loses a
+    /// wakeup.** Many workers on both lanes race a pusher and a closer; every
+    /// worker must observe `close` and exit within a bounded time.
+    #[test]
+    fn job_queue_concurrent_push_pop_close_joins_promptly() {
+        use std::sync::atomic::{AtomicUsize as AU, Ordering as AO};
+        use std::time::Instant;
+
+        let iterations: usize = std::env::var("ORFS_JOBQUEUE_STRESS_ITERS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(200);
+
+        for i in 0..iterations {
+            let queue = Arc::new(JobQueue::new());
+            let entry = Box::new(EntryState::new(0, 1));
+            let addr = &*entry as *const EntryState as usize;
+            let worker_count = 8;
+            let exited = Arc::new(AU::new(0));
+
+            let mut workers = Vec::new();
+            for k in 0..worker_count {
+                let q = Arc::clone(&queue);
+                let exited = Arc::clone(&exited);
+                let lane = if k % 2 == 0 { Lane::Fast } else { Lane::Bulk };
+                workers.push(std::thread::spawn(move || {
+                    while let Some(job) = q.pop(lane) {
+                        std::hint::black_box(job.idx);
+                    }
+                    exited.fetch_add(1, AO::SeqCst);
+                }));
+            }
+
+            // Build the jobs up front (a `Vec<Job>` is `Send`), then push them
+            // concurrently with `close`.
+            let jobs: Vec<Job> = (0..128)
+                .map(|j| Job {
+                    idx: j,
+                    entry: EntryPtr(addr as *mut EntryState),
+                    lane: if j % 2 == 0 { Lane::Fast } else { Lane::Bulk },
+                })
+                .collect();
+            let pusher = {
+                let q = Arc::clone(&queue);
+                std::thread::spawn(move || {
+                    for job in jobs {
+                        q.push(job);
+                    }
+                })
+            };
+
+            // Close while the pusher is still running, widening the race window.
+            std::thread::yield_now();
+            queue.close();
+
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while exited.load(AO::SeqCst) < worker_count {
+                assert!(
+                    Instant::now() < deadline,
+                    "worker stranded after close on iteration {i} (lost wakeup)"
+                );
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            for w in workers {
+                w.join().unwrap();
+            }
+            pusher.join().unwrap();
+            drop(entry);
+        }
     }
 }

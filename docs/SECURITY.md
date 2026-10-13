@@ -255,7 +255,14 @@ matching `Done` returns; `WorkerPool::drop` closes the queues and joins every
 worker **before** the ring and the entries are torn down, so no worker can still
 hold an `EntryPtr` when the buffers are freed
 (`worker_pool_drop_joins_workers_with_outstanding_jobs`,
-`job_queue_close_wakes_waiters_and_drains_cleanly`). A registered buffer is
+`worker_pool_drop_repeatedly_joins_within_bounded_time`,
+`job_queue_close_wakes_waiters_and_drains_cleanly`). The job queue's `closed` flag
+lives under the same mutex as each lane's `VecDeque`, and `close` flips it and
+notifies **while holding that mutex**, so a worker cannot observe an open queue
+and then park after the wakeup was already sent — the lost-wakeup window Phase 60
+recorded and Phase 61 fixed, pinned by
+`job_queue_close_acquires_the_lane_mutex_before_notifying` and
+`job_queue_concurrent_push_pop_close_joins_promptly`. A registered buffer is
 releasable only after every referencing completion is reaped **and** its pin is
 dropped; a *cancel* is not a completion
 (`buffers::tests::registered_buffers_are_released_only_after_every_completion_is_reaped`).

@@ -42,6 +42,12 @@ tree. **Supersedes (does not replace):** the phase-40 audit at `2187a3e`
 (45 binaries); `--features failpoints` **461 passed / 0 failed / 0 ignored**
 (45 binaries). `scripts/container-check.sh` (fmt + clippy `-D warnings`): **PASS**.
 
+> **Post-audit note (Phase 61, not a re-run).** The totals above are this run's
+> point-in-time numbers at `6021808` and are left unedited. The Gate J
+> nondeterministic-hang caveat recorded below was **fixed in Phase 61**, which
+> adds three `fuse_native` regression tests (current totals: default **454**,
+> failpoints **464**).
+
 ---
 
 ## 2. Two-run diff (`2187a3e` → `6021808`)
@@ -109,7 +115,12 @@ phase-41 provenance refresh and a docs/pub bump).
   mutex, while `JobQueue::pop` re-checks `closed` immediately before
   `Condvar::wait`, so a lost-wakeup window is plausible. The hang was **not
   diagnosed to a fix** in this audit (out of scope); it is recorded as a latent
-  defect and a follow-up (§4).
+  defect and a follow-up (§4). **Update (Phase 61): fixed.** The diagnosis was
+  confirmed — `close` notified without the queue mutex — and the queue was
+  rewritten so each lane's `closed` flag lives under the same mutex as its
+  `VecDeque`, with `close` flipping it and calling `notify_all` while holding that
+  mutex. A deterministic regression test that holds the lane mutex across a
+  `close` call fails against the pre-fix code and passes after the fix.
 * **`xfstests` / external `fsstress`/`fsx`: not runnable here.** Unchanged:
   `evidence/correctness/xfstests.json` remains an honest `ran:false`
   (assessed-not-runnable) record; phase 59 added a native equivalent
@@ -129,7 +140,9 @@ verdict.
 ## 4. Follow-ups surfaced by this run
 
 1. **Diagnose and fix the failpoints-suite deadlock** (`src/fuse_native.rs`
-   `JobQueue::close`/`pop` lost-wakeup window); add a regression test.
+   `JobQueue::close`/`pop` lost-wakeup window); add a regression test. — **Fixed
+   in Phase 61** (mutex-guarded `closed` + notify-under-lock; three `fuse_native`
+   regression tests).
 2. **Gate N breadth** (unchanged, honest, open research): the advantage holds only
    for 1-byte reads and content search; 4 KiB reads and F2/E1/E2 gain nothing.
 3. **Re-run Gate M** at a future HEAD, or promote the clean-checkout reproduce

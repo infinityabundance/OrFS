@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–60)
+## 4. The ordered build phases (0–61)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -146,16 +146,17 @@ per-phase record.
 | 58 | Integrate a sealed dense-ordinal inode-id spine for the immutable historical role (7× smaller, flat `O(1)` lookup); the live writer spine stays the treap | **complete** |
 | 59 | Native fsx/fsstress-equivalent fault-injection court (external xfstests not runnable) | **complete** |
 | 60 | Acceptance-audit re-run at HEAD with a two-run diff vs the phase-41 audit | **complete** |
+| 61 | Fix the native-FUSE `JobQueue` lost-wakeup race the HEAD audit recorded (mutex-guarded predicate + notify); regression tests | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–60 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–61 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
 v0.1.0 was the first release.
 
-- The `orfs` crate builds, its **451** tests (default) pass, and
-  `cargo test --features failpoints` adds the crash-injection court (461 tests in
+- The `orfs` crate builds, its **454** tests (default) pass, and
+  `cargo test --features failpoints` adds the crash-injection court (464 tests in
   total); `cargo fmt -p orfs --check` / `clippy --all-targets -- -D warnings` are
   clean **inside the pinned container** (`scripts/container-*.sh`).
 - `src/capabilities.rs` + `orfs doctor` perform a **real** kernel/container
@@ -243,7 +244,7 @@ sibling working tree is required):
 
 ```sh
 scripts/container-build.sh        # cargo build
-scripts/container-test.sh        # cargo test  (451 tests)
+scripts/container-test.sh        # cargo test  (454 tests)
 scripts/container-fuse-test.sh    # real-mount FUSE + performance court
 scripts/container-uring-test.sh   # io_uring integration + backing benchmark
 scripts/container-check.sh        # cargo fmt -p orfs --check + clippy -D warnings

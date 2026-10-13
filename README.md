@@ -93,6 +93,7 @@ enable it (see `docs/FUSE_URING.md`).
 | 55 | io_uring depth sweep with SQ/CQ-pressure counters; on-disk wire-format specification | complete |
 | 56 | 64-thread read scaling (p50/p95/p99/p99.9); POSIX-extras court (xattrs, links, groups, durability); directory hard-link returns `EPERM` | complete |
 | 57 | Real PMU hardware counters + flamegraph; the "no counters" claim corrected (`perf_event_paranoid` was a myth — the container seccomp profile was the gate) | complete |
+| 58 | Integrate a sealed dense-ordinal inode-id spine for the immutable historical role (7× smaller, flat `O(1)` lookup); the live writer spine stays the treap | complete |
 
 Honest non-claims: the image pixel-surface pyramid is **not materialised** (only
 its geometry is implemented), and no performance superiority of F2 or of the

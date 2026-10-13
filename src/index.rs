@@ -67,6 +67,156 @@ pub struct RangeApplyStats {
     pub bytes: u64,
 }
 
+/// The physical layout of the inode-id spine (Phase 58).
+///
+/// The live, publication-sensitive writer spine is **always**
+/// [`InodeStore::Persistent`] (the Phase-27 path-copying treap). A **sealed
+/// historical** index — a committed root that will never be mutated and is only
+/// ever read — may instead use [`InodeStore::Sealed`], a direct-ordinal array
+/// keyed by inode id. Inode ids are allocated densely and monotonically, so
+/// `slots[id]` is a near-`O(1)` lookup that is far more compact than one treap
+/// node per inode — and it is legal precisely because the role is immutable.
+///
+/// The two forms answer identical `get`/`ids`/`readdir` and compare **equal by
+/// content** ([`PartialEq`] is structural, not representational), so nothing
+/// downstream can observe the difference except memory and speed. A sealed store
+/// that is ever mutated (it never is on the writer spine) **thaws** to the
+/// persistent spine rather than misbehaving.
+#[derive(Clone)]
+enum InodeStore {
+    /// The live writer spine: an immutable, path-copying treap.
+    Persistent(PMap<u64, Arc<Inode>>),
+    /// The sealed historical spine: a direct-ordinal array indexed by inode id.
+    Sealed(Arc<SealedInodes>),
+}
+
+/// A direct-ordinal array of inodes: `slots[id]` is the inode with that id, or
+/// `None` for an absent id. `slots.len()` is `max_id + 1`; because ids start at
+/// [`ROOT_INODE`] and increase by one per allocation, the array has at most a
+/// handful of holes even in a long history (and none in practice).
+struct SealedInodes {
+    slots: Box<[Option<Arc<Inode>>]>,
+    len: usize,
+}
+
+impl InodeStore {
+    fn new() -> InodeStore {
+        InodeStore::Persistent(PMap::new())
+    }
+
+    #[inline]
+    fn get(&self, id: &u64) -> Option<&Arc<Inode>> {
+        match self {
+            InodeStore::Persistent(m) => m.get(id),
+            InodeStore::Sealed(s) => {
+                let i = usize::try_from(*id).ok()?;
+                s.slots.get(i).and_then(|slot| slot.as_ref())
+            }
+        }
+    }
+
+    #[inline]
+    fn contains_key(&self, id: &u64) -> bool {
+        self.get(id).is_some()
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        match self {
+            InodeStore::Persistent(m) => m.len(),
+            InodeStore::Sealed(s) => s.len,
+        }
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Every present id, ascending.
+    fn ids(&self) -> impl Iterator<Item = u64> + '_ {
+        self.iter().map(|(id, _)| id)
+    }
+
+    /// Every `(id, inode)` pair, ascending by id.
+    fn iter(&self) -> Box<dyn Iterator<Item = (u64, &Arc<Inode>)> + '_> {
+        match self {
+            InodeStore::Persistent(m) => Box::new(m.iter().map(|(k, v)| (*k, v))),
+            InodeStore::Sealed(s) => Box::new(
+                s.slots
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, slot)| slot.as_ref().map(|v| (i as u64, v))),
+            ),
+        }
+    }
+
+    /// Return a new store with `id` bound to `value`.
+    ///
+    /// On the persistent spine this is a path copy (`O(log n)`). A sealed store
+    /// is produced only for an immutable historical root and is never mutated on
+    /// the writer spine; if it ever is, it **thaws** to the persistent spine
+    /// (correct, if not compact) rather than silently misbehaving.
+    fn insert(&self, id: u64, value: Arc<Inode>) -> InodeStore {
+        match self {
+            InodeStore::Persistent(m) => InodeStore::Persistent(m.insert(id, value)),
+            InodeStore::Sealed(s) => {
+                let m = PMap::from_pairs(
+                    s.slots
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, v)| v.as_ref().map(|v| (i as u64, v.clone()))),
+                );
+                InodeStore::Persistent(m.insert(id, value))
+            }
+        }
+    }
+
+    /// Estimated structural bytes of the spine alone (no inode payloads, no
+    /// allocator slop), matching the [`PMap::mem_bytes`] convention.
+    fn mem_bytes(&self) -> usize {
+        match self {
+            InodeStore::Persistent(m) => m.mem_bytes(),
+            InodeStore::Sealed(s) => {
+                std::mem::size_of::<Arc<SealedInodes>>()
+                    + std::mem::size_of::<SealedInodes>()
+                    + s.slots.len() * std::mem::size_of::<Option<Arc<Inode>>>()
+            }
+        }
+    }
+
+    fn layout_name(&self) -> &'static str {
+        match self {
+            InodeStore::Persistent(_) => "persistent-treap",
+            InodeStore::Sealed(_) => "sealed-dense-ordinal",
+        }
+    }
+}
+
+/// Structural (content) equality: a sealed dense-ordinal spine equals a
+/// persistent treap spine with the same entries, so the representation is never
+/// observable through `==`.
+impl PartialEq for InodeStore {
+    fn eq(&self, other: &Self) -> bool {
+        if self.len() != other.len() {
+            return false;
+        }
+        self.iter().eq(other.iter())
+    }
+}
+
+impl Eq for InodeStore {}
+
+impl std::fmt::Debug for InodeStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Deliberately non-recursive: a sealed store may hold millions of ids.
+        f.debug_struct("InodeStore")
+            .field("layout", &self.layout_name())
+            .field("len", &self.len())
+            .finish()
+    }
+}
+
 /// The derived namespace index.
 ///
 /// # Structural sharing (Phase 19)
@@ -75,10 +225,12 @@ pub struct RangeApplyStats {
 /// ([`crate::namespace::ReadState`]). To keep publication cheap it is stored so
 /// that a snapshot can share almost all of its memory with the live writer:
 ///
-/// * `inodes` is a [`PMap`] from id to `Arc<Inode>`, so a commit copies only the
-///   `O(log n)` spine nodes on the root-to-key path; every other inode (and the
-///   inode *nodes* themselves — their extent maps, version history and xattrs)
-///   is shared with the prior snapshot.
+/// * `inodes` is an [`InodeStore`] — a [`PMap`] from id to `Arc<Inode>` on the
+///   live writer spine (so a commit copies only the `O(log n)` spine nodes on the
+///   root-to-key path) or, for a **sealed historical** index, a dense
+///   direct-ordinal array (Phase 58). Every other inode (and the inode *nodes*
+///   themselves — their extent maps, version history and xattrs) is shared with
+///   the prior snapshot in both forms.
 /// * `children` is a [`PMap`] from a directory id to that directory's own
 ///   `PMap<name, child>`, so an untouched directory's listing is shared wholesale
 ///   and only the affected directory's entry is path-copied.
@@ -95,7 +247,7 @@ pub struct RangeApplyStats {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Index {
     root: u64,
-    inodes: PMap<u64, Arc<Inode>>,
+    inodes: InodeStore,
     children: PMap<u64, PMap<Vec<u8>, u64>>,
     next_inode_id: u64,
     snapshots: PMap<Vec<u8>, u64>,
@@ -106,7 +258,7 @@ impl Default for Index {
     fn default() -> Self {
         Index {
             root: 0,
-            inodes: PMap::new(),
+            inodes: InodeStore::new(),
             children: PMap::new(),
             next_inode_id: ROOT_INODE,
             snapshots: PMap::new(),
@@ -616,9 +768,69 @@ impl Index {
         self.inodes.get(&id).map(|a| &**a)
     }
 
-    /// Every live inode id (used by physical accounting and manifestation).
+    /// Every live inode id, ascending (used by physical accounting and
+    /// manifestation).
     pub fn inode_ids(&self) -> impl Iterator<Item = u64> + '_ {
-        self.inodes.keys().copied()
+        self.inodes.ids()
+    }
+
+    /// The physical layout of the inode-id spine (Phase 58):
+    /// `"persistent-treap"` for the live/current index, `"sealed-dense-ordinal"`
+    /// for a sealed historical index decoded from an accelerator. Purely
+    /// observational; the two answer identical reads.
+    pub fn inode_layout(&self) -> &'static str {
+        self.inodes.layout_name()
+    }
+
+    /// Estimated structural bytes of the inode-id spine alone (the treap's nodes
+    /// or the sealed array's slots; no inode payloads, no allocator slop). A
+    /// sealed historical spine is far smaller; the live spine is never sealed.
+    pub fn inode_spine_bytes(&self) -> usize {
+        self.inodes.mem_bytes()
+    }
+
+    /// Return a copy of this index with the inode-id spine **sealed** as a dense
+    /// direct-ordinal array (Phase 58).
+    ///
+    /// Intended for an immutable historical root: the result answers identical
+    /// reads and is more compact. It is never used on the live writer spine — a
+    /// sealed spine that is later mutated thaws back to the persistent treap. A
+    /// sparse id domain (which a well-formed history never has) is left as the
+    /// treap.
+    pub fn to_sealed(&self) -> Index {
+        let mut out = self.clone();
+        out.seal_inodes();
+        out
+    }
+
+    /// Re-seal the inode-id spine as a direct-ordinal array (Phase 58).
+    ///
+    /// Called only on a **decoded, immutable historical** index (the `.v2.bin`
+    /// accelerator, the legacy JSON accelerator), never on the live writer spine.
+    /// If the id domain is not dense — which cannot happen for a well-formed
+    /// history but could for a corrupt (yet internally consistent) payload — the
+    /// spine is left as the persistent treap, so a declared sparse domain can
+    /// neither waste memory nor misparse. The public read surface is unchanged.
+    pub(crate) fn seal_inodes(&mut self) {
+        let count = self.inodes.len();
+        if count == 0 {
+            return;
+        }
+        let max_id = self.inodes.ids().max().unwrap_or(0);
+        // Dense iff the id span is close to the live count. A sparse span would
+        // make the array mostly holes (and could be large), so keep the treap.
+        if max_id > (count as u64).saturating_mul(2) + 64 {
+            return;
+        }
+        let n = (max_id + 1) as usize;
+        let mut slots: Vec<Option<Arc<Inode>>> = vec![None; n];
+        for (id, inode) in self.inodes.iter() {
+            slots[id as usize] = Some(inode.clone());
+        }
+        self.inodes = InodeStore::Sealed(Arc::new(SealedInodes {
+            slots: slots.into_boxed_slice(),
+            len: count,
+        }));
     }
 
     /// The latest authoritative record offset for an inode (0 if unknown).
@@ -813,6 +1025,12 @@ impl Index {
     /// inconsistent is rejected with [`OrfsError::Corrupt`] / [`OrfsError::Overflow`]
     /// rather than partially applied. The returned index is still only valid for a
     /// matching committed root; callers confirm that against the log.
+    ///
+    /// The decoded index is a **sealed** one ([`Index::inode_layout`] returns
+    /// `"sealed-dense-ordinal"`): the payload names an immutable historical root,
+    /// so its inode-id spine is stored as a direct-ordinal array rather than a
+    /// treap. That is purely a representation choice — lookups, ranges, readdir,
+    /// the canonical digest, and structural equality are unchanged.
     pub fn decode_packed(bytes: &[u8]) -> Result<Index> {
         packed::decode(bytes)
     }
@@ -935,7 +1153,7 @@ struct SnapshotCheckpoint {
 
 impl Snapshot {
     fn from_index(index: &Index) -> Snapshot {
-        let mut inode_ids: Vec<u64> = index.inodes.keys().copied().collect();
+        let mut inode_ids: Vec<u64> = index.inodes.ids().collect();
         inode_ids.sort_unstable();
         let inodes = inode_ids
             .into_iter()
@@ -1626,6 +1844,9 @@ mod packed {
             let map = index.children.get(p).cloned().unwrap_or_default();
             (*p, map)
         }));
+        // A packed payload names an immutable historical root, so seal the
+        // inode-id spine as a dense direct-ordinal array (Phase 58).
+        index.seal_inodes();
         Ok(index)
     }
 }

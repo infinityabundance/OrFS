@@ -1722,3 +1722,105 @@ counters at paranoid level 2** — precisely because it runs under `--cap-add
 PERFMON`. A court running in the **default** container (e.g. §18, §21) still
 records `perf_counters_available=false`; that is a property of the container
 profile, not the kernel's paranoid level.
+
+## 24. Reviewer task — integrating a non-treap index for the historical role
+
+**The question.** §16 held a layout-competition court and applied the decisive
+rule — *a faster point lookup is insufficient if snapshot publication or
+namespace mutation regresses* — concluding that the production namespace index
+must keep the Phase-27 path-copying treap (a byte-radix and a page tree both
+regress namespace mutation 2.4–4.3×). Its productive finding was that for the
+**sealed, immutable historical** role a **direct-ordinal** layout (an id-indexed
+array; legal because inode ids are dense and monotonic) is near-`O(1)` and far
+more compact. That finding was left as follow-up work. This section closes it: it
+integrates the direct-ordinal layout **where it actually wins and cannot regress
+anything** — the sealed historical role — and proves it.
+
+**What was integrated.** A decoded historical index now stores its inode-id
+spine as a **sealed dense-ordinal** array. The decode of the persisted historical
+accelerator — both the binary container's packed payload
+(`Index::decode_packed`) and the legacy JSON envelope (`historical::decode_historical`)
+— calls `Index::seal_inodes`, so `Index::inode_layout()` returns
+`"sealed-dense-ordinal"` for a loaded historical root. The **live, publication-
+sensitive writer spine is untouched**: `Index::from_log`, `apply_range`,
+`apply_record`, and the commit path never seal, so `Namespace`'s live index is
+always `"persistent-treap"`. The two forms answer identical reads and compare
+**equal by content** — `PartialEq` is structural, not representational — so
+nothing downstream can observe the change except memory and speed. A sealed
+spine that is ever mutated (it never is) **thaws** back to the treap rather than
+misbehaving, and a sparse id domain (which a well-formed history never has, but a
+corrupt-yet-internally-consistent payload could declare) is left as the treap.
+
+**Court.** `tests/historical_index_integration.rs`, run by
+`scripts/container-historical-integrate.sh` (release), writes
+`evidence/performance/historical-index-integrated.json`. Its always-on smoke
+asserts, for the same committed root, that the sealed layout answers **identical**
+point lookups (every present id plus absent ids), ordered id enumeration, `readdir`,
+dentry `lookup`, `parent_of`, `is_live_dir`, and `latest_offset` to the treap, with
+the same canonical digest and structural equality; that the **persisted
+accelerator round-trip** (`persist_historical` → `load_persisted_historical`)
+yields the sealed layout; that it is **more compact**; and that the live spine
+stays the treap through further commits (so live mutation and publication are
+unchanged by construction) while old roots remain readable. The opt-in sweep
+(`ORFS_HIST_INTEG=1`) measures point lookup, spine bytes, publication, and
+re-seal cost per retained scale **10 000 / 100 000 / 1 000 000**.
+
+**Measured (one run; release; 100 000 lookup queries per scale; host under
+external load).**
+
+| retained inodes | layout | lookup p50 / bulk-mean (ns) | spine bytes | `Clone` (ns) | re-seal (ns) |
+|---:|---|---:|---:|---:|---:|
+| 10 000 | treap (live) | 30 / 37 | 560 056 | 60 | — |
+| 10 000 | sealed dense-ordinal | 20 / 0 | **80 048** | 50 | 236 741 |
+| 100 000 | treap (live) | 40 / 85 | 5 600 056 | 60 | — |
+| 100 000 | sealed dense-ordinal | 20 / 0 | **800 048** | 50 | 2 899 866 |
+| 1 000 000 | treap (live) | 60 / 289 | 56 000 056 | 60 | — |
+| 1 000 000 | sealed dense-ordinal | 20 / 1 | **8 000 048** | 50 | 101 003 759 |
+
+**Findings, stated honestly.**
+
+1. **It wins where it is used, and it cannot regress the writer.** The sealed
+   inode-id spine is a flat **7.0×** smaller than the treap at every scale
+   (`spine_sealed_over_treap` = 0.143; 8.0 MB vs 56.0 MB at 1 M — the same shape
+   §16 measured, and smaller than §16's `u64`→`u64` dense form because a slot here
+   is one pointer). Publication is unchanged: an `Index` clone is a handful of
+   `Arc` copies for **both** layouts (measured **50 ns** sealed vs **60 ns** treap,
+   flat in scale). The **live** spine measured at every scale is
+   `"persistent-treap"`, so live namespace mutation and snapshot publication are
+   the pre-existing Phase-27 behaviour *by construction* — the integration adds no
+   code to `from_log`/`apply_record`/commit.
+2. **Point lookup is faster and flat.** Direct indexing gives a constant `p50`
+   **20 ns** (versus the treap's 30 → 40 → 60 ns as it grows) and a bulk mean of
+   0–1 ns at 1 M versus **289 ns** for the treap. As in §16, the p50 is close and
+   host-sensitive; the *shape* — a direct-ordinal array is `O(1)` with no pointer
+   chasing, while the treap walks ~`O(log n)` cache-miss-bound nodes — is the
+   point, and the counters in §23 attribute exactly that treap cost.
+3. **The cost is a one-time re-seal, paid only at decode.** Building the dense
+   array from the treap takes **237 µs / 2.9 ms / 101 ms** at 10 k / 100 k / 1 M —
+   the single pass that walks the decoded spine once. It is paid when an
+   accelerator is decoded (a warm historical-root open or a validated quick open)
+   and never on the live path; it is the honest price of the compactness and the
+   faster lookups.
+4. **Correctness is unchanged, and asserted.** The court's smoke proves the two
+   layouts answer identical lookups, ordered id enumeration, `readdir`, dentry
+   lookups, `parent_of`, `is_live_dir`, and `latest_offset`, share a canonical
+   digest, and compare equal; the existing `historical_fast` adversarial courts
+   (torn/truncated/foreign accelerators, missing/corrupt directories) stay green,
+   so a corrupt accelerator still falls back to the authoritative reconstruction.
+
+**Decision.** `evidence/performance/historical-index-integrated.json` carries a
+machine-computed `decision`: `integrate = true` because the sealed layout is more
+compact **and** not slower on the point lookup **and** the live spine remains the
+treap at every scale. §16's production `inodes` spine is **unchanged** — this
+integration is confined to the sealed historical role, exactly where §16 said a
+non-treap layout belongs.
+
+**Caveats.** Single run, single host, release build; the host was under external
+load, so absolute nanoseconds moved between runs of the same binary (§16 recorded
+the same instability) — the spine-bytes ratio and the shape are the decisive,
+load-independent results. `inode_spine_bytes` is a structural lower bound
+(node/entry capacities, no allocator slop, no inode payloads, which are shared by
+both layouts). The sweep builds files directly under the root so the build stays
+linear; the inode-id spine it measures is independent of the directory shape.
+Hardware cache/TLB counters were not read in this court (it runs in the default
+container); §23 attributes the treap's lookup cost with real counters.

@@ -433,13 +433,16 @@ pub fn decode_historical(bytes: &[u8], uuid: &[u8; 16], expected_root: u64) -> R
             "historical index digest mismatch (tampered or torn)".into(),
         ));
     }
-    let index = Index::decode_snapshot(inner)?;
+    let mut index = Index::decode_snapshot(inner)?;
     if index.root() != expected_root {
         return Err(OrfsError::Corrupt(format!(
             "historical index snapshot root {} does not match {expected_root}",
             index.root()
         )));
     }
+    // The legacy JSON accelerator is also an immutable historical root, so seal
+    // the inode-id spine (Phase 58) exactly as the binary form does.
+    index.seal_inodes();
     Ok(index)
 }
 

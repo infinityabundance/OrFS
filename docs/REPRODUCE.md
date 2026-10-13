@@ -35,6 +35,7 @@ All execution is Docker-only (`scripts/lib.sh`); nothing runs on the host.
 | `evidence/performance/manifestation-catalogue.json` | `tests/manifestation_catalogue.rs` | `sh scripts/container-manifestation-catalogue.sh` |
 | `evidence/performance/history-scaling.json` | `tests/history_scaling.rs` | `sh scripts/container-history-scaling.sh` |
 | `evidence/performance/historical-fast.json` | `tests/historical_fast.rs` | `sh scripts/container-historical-fast.sh` |
+| `evidence/performance/historical-index-integrated.json` | `tests/historical_index_integration.rs` | `sh scripts/container-historical-integrate.sh` |
 | `evidence/performance/group-commit-adaptive.json` | `tests/group_commit_adaptive.rs` | `sh scripts/container-group-commit.sh` |
 | `evidence/performance/f2-concurrency-affine.json` | `tests/f2_concurrency.rs` | `sh scripts/container-fuse-test.sh` |
 | `evidence/performance/backing-uring.json`, `mechanisms.json` | `tests/uring_integration.rs`, `benches/mechanisms.rs` | `sh scripts/container-uring-test.sh` |

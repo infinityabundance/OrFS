@@ -3064,3 +3064,75 @@ available: a court running in the **default** container still records
 `perf_counters_available=false`. The `uring_integration` and equivalence courts stay
 green. Test counts rise to **446** (default) / **456** (`--features failpoints`);
 `fmt`/`clippy` clean; `check-all.sh --fast` PASS (docs-receipts 44/44).
+
+## Phase 58 — Integrating a non-treap index for the sealed historical role
+
+**Complete; integrated — and it cannot regress the writer.** Reviewer item:
+*"Persistent index competition — Phase 48 says treap wins on mutation but nothing
+integrated."* Phase 48's court concluded the production namespace `inodes` spine
+must keep the Phase-27 path-copying treap (a byte-radix and a page tree both
+regress mutation 2.4–4.3×) under the rule *a faster lookup is insufficient if
+publication or mutation regresses*. Its productive finding — a **direct-ordinal**
+layout is near-`O(1)` and far more compact for the **sealed, immutable historical**
+role — was not integrated. This phase integrates it there, and only there.
+
+### Delivered
+
+* **Sealed dense-ordinal inode spine** (`src/index.rs`): `Index`'s `inodes` field
+  becomes an `InodeStore` enum — `Persistent` (the live treap) or `Sealed` (a
+  direct-ordinal `Arc<[Option<Arc<Inode>>]>` indexed by inode id). The sealed form
+  is produced **only** by decoding an immutable historical index
+  (`Index::decode_packed` — the `.v2.bin` packed payload — and
+  `historical::decode_historical` — the legacy JSON envelope), via a new
+  `Index::seal_inodes`; the live writer spine (`Index::from_log`, `apply_range`,
+  `apply_record`, the commit path) is untouched and always `Persistent`. A sealed
+  spine that is ever mutated **thaws** to the treap; a sparse id domain (never
+  produced by a well-formed history) is left as the treap. `Index`'s public read
+  surface is unchanged, and `PartialEq` is now **content**-based
+  (`InodeStore::eq` compares the two forms entry-by-entry), so a sealed index
+  equals the treap of the same committed root. Additive observability:
+  `Index::inode_layout`, `Index::inode_spine_bytes`, `Index::to_sealed`.
+* **Court** (`tests/historical_index_integration.rs` +
+  `scripts/container-historical-integrate.sh`): an always-on smoke asserts the
+  sealed layout answers **identical** lookups (every id + absent ids), ordered id
+  enumeration, `readdir`, dentry `lookup`, `parent_of`, `is_live_dir`,
+  `latest_offset`, the same canonical digest, and structural equality; that the
+  persisted accelerator round-trip yields the sealed layout; that it is more
+  compact; and that the live spine stays the treap through further commits while
+  old roots stay readable. The opt-in sweep (`ORFS_HIST_INTEG=1`) writes
+  `evidence/performance/historical-index-integrated.json`
+  (`orfs.performance.historical-index-integrated.v1`) at scales 10 000 / 100 000 /
+  1 000 000.
+
+### Result (release, one run; 100 000 lookup queries/scale; host under load)
+
+| inodes | layout | lookup p50 / bulk-mean (ns) | spine bytes | `Clone` (ns) | re-seal (ns) |
+|---:|---|---:|---:|---:|---:|
+| 10 000 | treap (live) | 30 / 37 | 560 056 | 60 | — |
+| 10 000 | sealed dense-ordinal | 20 / 0 | **80 048** | 50 | 236 741 |
+| 100 000 | treap (live) | 40 / 85 | 5 600 056 | 60 | — |
+| 100 000 | sealed dense-ordinal | 20 / 0 | **800 048** | 50 | 2 899 866 |
+| 1 000 000 | treap (live) | 60 / 289 | 56 000 056 | 60 | — |
+| 1 000 000 | sealed dense-ordinal | 20 / 1 | **8 000 048** | 50 | 101 003 759 |
+
+The sealed inode-id spine is **7.0×** smaller at every scale (8.0 MB vs 56.0 MB
+at 1 M — the §16 shape, and smaller than §16's `u64`→`u64` dense form because a
+slot is one pointer). Publication is unchanged (an `Index` clone is ~50–60 ns, a
+few `Arc` copies, flat in scale), and the **live** spine is `persistent-treap` at
+every scale, so live mutation and publication are the pre-existing Phase-27
+behaviour by construction. Point lookup is flat **20 ns** (`O(1)`, no pointer
+chasing) versus the treap's 30 → 40 → 60 ns. The cost is a one-time re-seal at
+decode time (**237 µs / 2.9 ms / 101 ms** at 10 k / 100 k / 1 M). Machine-computed
+`decision.integrate = true`.
+
+### Integrity
+
+Correctness is asserted, not assumed: the smoke proves identical reads and
+content equality, and the existing `historical_fast` adversarial courts
+(torn/truncated/foreign accelerators, missing/corrupt directories) stay green, so
+a corrupt accelerator still falls back to the authoritative reconstruction. The
+production `inodes` spine and the snapshot/immutability guarantees are unchanged;
+§16's decision stands. Test counts rise to **449** (default) / **459**
+(`--features failpoints`); `fmt`/`clippy` clean; `check-docs-receipts.sh` PASS.
+Docs: `docs/PERFORMANCE.md` §24, `docs/ORFS-SPEC.md` §4, `README.md`,
+`docs/REPRODUCE.md`.

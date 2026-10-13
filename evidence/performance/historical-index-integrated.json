@@ -1,0 +1,127 @@
+{
+  "claim": "for the sealed, immutable historical role a direct-ordinal (dense) inode-id spine answers identical lookups/ranges/readdir, is more compact, and cannot regress publication or mutation because the live writer spine stays the persistent treap",
+  "decision": {
+    "integrate": true,
+    "live_spine_is_treap": true,
+    "lookup_not_slower_at_every_scale": true,
+    "more_compact_at_every_scale": true,
+    "rule": "integrate only where it wins and cannot regress publication or mutation: the sealed layout must be more compact and not slower on the point lookup, and the live spine must remain the treap"
+  },
+  "design": {
+    "lookup_queries": 100000,
+    "note": "files are created directly under the root so the build is linear; the inode-id spine measured is independent of the directory shape",
+    "scales": [
+      10000,
+      100000,
+      1000000
+    ]
+  },
+  "environment": {
+    "arch": "x86_64",
+    "cpus": 8,
+    "image_digest": "sha256:8116ee721b96b0e99437e90579782878492bef26204c8438d326ad3714ccdcd7",
+    "os": "linux",
+    "profile": "release"
+  },
+  "generated_by": "tests/historical_index_integration.rs",
+  "note": "Single run, single host. Absolute nanoseconds are host/build dependent; the *shape* (a direct-ordinal array vs a pointer-heavy treap) and the spine-bytes ratio are the point. `inode_spine_bytes` is a structural lower bound (node/entry capacities, no allocator slop, no inode payloads, which are shared in both layouts). `seal_rebuild_ns` is the one-time cost of building the dense array from the treap, paid only when an accelerator is decoded. The live column records the writer spine's layout and publication cost: it is the treap, so mutation and publication are the pre-existing Phase-27 behaviour.",
+  "scales": [
+    {
+      "dentry_count": 10000,
+      "equivalence": "identical lookups, ordered id enumeration, readdir, dentry lookup, parent_of, is_live_dir, latest_offset, canonical digest, and structural equality (asserted)",
+      "live": {
+        "clone_ns": 60,
+        "layout": "persistent-treap",
+        "note": "the live writer spine is the treap; this integration adds no code to `from_log`/`apply_record`/commit, so live mutation and publication are unchanged by construction"
+      },
+      "next_inode_id": 10002,
+      "ratios": {
+        "clone_sealed_over_treap": 0.8333333333333334,
+        "lookup_bulk_mean_treap_over_sealed": null,
+        "lookup_p50_treap_over_sealed": 1.5,
+        "spine_sealed_over_treap": 0.1429285642864285
+      },
+      "retained_inodes": 10000,
+      "sealed": {
+        "clone_ns": 50,
+        "inode_spine_bytes": 80048,
+        "layout": "sealed-dense-ordinal",
+        "lookup_bulk_mean_ns": 0,
+        "lookup_p50_ns": 20,
+        "seal_rebuild_ns": 236741
+      },
+      "treap": {
+        "clone_ns": 60,
+        "inode_spine_bytes": 560056,
+        "layout": "persistent-treap",
+        "lookup_bulk_mean_ns": 37,
+        "lookup_p50_ns": 30
+      }
+    },
+    {
+      "dentry_count": 100000,
+      "equivalence": "identical lookups, ordered id enumeration, readdir, dentry lookup, parent_of, is_live_dir, latest_offset, canonical digest, and structural equality (asserted)",
+      "live": {
+        "clone_ns": 60,
+        "layout": "persistent-treap",
+        "note": "the live writer spine is the treap; this integration adds no code to `from_log`/`apply_record`/commit, so live mutation and publication are unchanged by construction"
+      },
+      "next_inode_id": 100002,
+      "ratios": {
+        "clone_sealed_over_treap": 0.8333333333333334,
+        "lookup_bulk_mean_treap_over_sealed": null,
+        "lookup_p50_treap_over_sealed": 2.0,
+        "spine_sealed_over_treap": 0.14286428564285786
+      },
+      "retained_inodes": 100000,
+      "sealed": {
+        "clone_ns": 50,
+        "inode_spine_bytes": 800048,
+        "layout": "sealed-dense-ordinal",
+        "lookup_bulk_mean_ns": 0,
+        "lookup_p50_ns": 20,
+        "seal_rebuild_ns": 2899866
+      },
+      "treap": {
+        "clone_ns": 60,
+        "inode_spine_bytes": 5600056,
+        "layout": "persistent-treap",
+        "lookup_bulk_mean_ns": 85,
+        "lookup_p50_ns": 40
+      }
+    },
+    {
+      "dentry_count": 1000000,
+      "equivalence": "identical lookups, ordered id enumeration, readdir, dentry lookup, parent_of, is_live_dir, latest_offset, canonical digest, and structural equality (asserted)",
+      "live": {
+        "clone_ns": 60,
+        "layout": "persistent-treap",
+        "note": "the live writer spine is the treap; this integration adds no code to `from_log`/`apply_record`/commit, so live mutation and publication are unchanged by construction"
+      },
+      "next_inode_id": 1000002,
+      "ratios": {
+        "clone_sealed_over_treap": 0.8333333333333334,
+        "lookup_bulk_mean_treap_over_sealed": 289.0,
+        "lookup_p50_treap_over_sealed": 3.0,
+        "spine_sealed_over_treap": 0.14285785714214286
+      },
+      "retained_inodes": 1000000,
+      "sealed": {
+        "clone_ns": 50,
+        "inode_spine_bytes": 8000048,
+        "layout": "sealed-dense-ordinal",
+        "lookup_bulk_mean_ns": 1,
+        "lookup_p50_ns": 20,
+        "seal_rebuild_ns": 101003759
+      },
+      "treap": {
+        "clone_ns": 60,
+        "inode_spine_bytes": 56000056,
+        "layout": "persistent-treap",
+        "lookup_bulk_mean_ns": 289,
+        "lookup_p50_ns": 60
+      }
+    }
+  ],
+  "schema": "orfs.performance.historical-index-integrated.v1"
+}

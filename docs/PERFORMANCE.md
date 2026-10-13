@@ -1069,12 +1069,15 @@ the model taken under a shared lock and dropped before sorting. Learning is off 
 steady state (the model is written only on calibration, or out of band through
 `ReadPlanner::record_observation`).
 
-All identity-keyed state is bounded and retired in insertion order (age eviction):
-per-object plans live in the body cache, per-object selection models are bounded by
-`cache_capacity`, and the region-overlay verification/failure ledger is bounded by
-the new `identity_capacity` (default 1024). Retiring an entry only turns a
-*measured* candidate back into an *unmeasured* one, which already falls back — it
-can never cause a wrong selection.
+All **identity-keyed bookkeeping** is bounded and retired in insertion order (age
+eviction): per-object selection models are bounded by `cache_capacity`, and the
+region-overlay verification/failure ledger is bounded by the new
+`identity_capacity` (default 1024). The **volatile caches of re-derivable
+structures** — parsed EKBLOOM bodies and their precompiled plans, region payload
+bodies, and coverage tables — are bounded by the same capacities but admitted
+through the scan-resistant policy of §17 (Phase 49) rather than a plain FIFO.
+Retiring an entry only turns a *measured* candidate back into an *unmeasured*
+one, which already falls back — it can never cause a wrong selection.
 
 **Paired benchmark.** The same bench (`benches/read_path.rs`, public API only) was
 run once on the pre-change tree (label `before`) and once on this tree (label

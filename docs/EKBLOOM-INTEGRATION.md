@@ -189,15 +189,17 @@ Learning is off the steady state: the cost model is written and a ranking sorted
 **only** on a calibration pass, and completed-read observations can be folded in
 through the explicit `ReadPlanner::record_observation` learner seam (out of band).
 
-Every identity-keyed table is explicitly **bounded and retired in insertion order**
-(age eviction): per-object plans live in the body cache (bounded by
-`cache_capacity`); the per-object selection models are bounded by `cache_capacity`;
-and the region-overlay verification/failure ledger and the resolved-region-table
-cache are bounded by `identity_capacity`. Retiring an entry can only turn a
-*measured* candidate back into an *unmeasured* one, which already falls back to the
-authoritative path — it can never cause a wrong selection. `ReadPlanner::resident`
-reports the resident entries so the bound is observable
-(`tests/read_path_planner.rs`).
+The **identity-keyed bookkeeping** is bounded and retired in insertion order (age
+eviction): the per-object selection models are bounded by `cache_capacity`, and
+the region-overlay verification/failure ledger by `identity_capacity`. The
+**volatile caches of re-derivable structures** (parsed EKBLOOM bodies and their
+per-object plans, region payload bodies, and resolved-region tables) are bounded
+by the same capacities but use the scan-resistant admission policy of
+`docs/PERFORMANCE.md` §17 (Phase 49), which protects a hot working set from
+one-off scans. Retiring an entry can only turn a *measured* candidate back into an
+*unmeasured* one, which already falls back to the authoritative path — it can
+never cause a wrong selection. `ReadPlanner::resident` reports the resident
+entries so the bound is observable (`tests/read_path_planner.rs`).
 
 Measured per-path latencies and the resulting selection are recorded in
 `evidence/performance/ekbloom-read-paths.json`.

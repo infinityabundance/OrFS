@@ -20,7 +20,7 @@ future version.
 * `LICENSE-MIT` and `LICENSE-APACHE` are present.
 * The `publish = false` guard has been removed, so the crate is publishable.
 * `exclude = ["/evidence", "/docs", "/scripts", "/research", "/mnt-scratch"]`
-  keeps the package to source; `cargo package --list` yields 84 files
+  keeps the package to source; `cargo package --list` yields 95 files
   (`src/`, `tests/`, `benches/`, `Cargo.toml`, `README.md`, the Dockerfiles,
   the toolchain pin, and the license files).
 * The name `orfs` is **available** on crates.io (checked 2026-10-12).

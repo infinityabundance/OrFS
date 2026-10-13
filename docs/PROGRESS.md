@@ -2748,3 +2748,45 @@ state remains a bounded lookup + execute; an unmeasured candidate is never
 selected). Test counts rise to **429** (default) / **439** (`--features
 failpoints`); `fmt`/`clippy` clean. Allocations and lock-contention counters are
 not separately instrumented (recorded honestly in `docs/PERFORMANCE.md` §17).
+
+## Phase 50 — CPU microarchitecture court (§11)
+
+**Complete.** Reviewer research §11 ("find where the hot paths actually spend
+their time by measurement, not by guessing") with the mitigations it names:
+reduced temporary allocations and fewer contended shared locks.
+
+### Delivered
+
+* `src/manifestation.rs` — the published map now stores
+  `Arc<GenerationManifest>`, with a new `latest_for_shared` (an `Arc` clone, **zero**
+  allocations). This removes the **deep clone of the whole manifest** (six owned
+  `String`s) that the read path performed on every request via `latest_for`.
+* `src/readpath.rs` — the read path uses `latest_for_shared`; the per-path served
+  counter is now a lock-free `[AtomicU64; ReadPathKind::COUNT]` (was an
+  `RwLock<HashMap>` written on every served read); `ReadPathKind::index()`/
+  `COUNT` added.
+* `tests/microarch.rs` + `scripts/container-microarch.sh` — the court: a counting
+  `#[global_allocator]` for hot-path allocator traffic, a manifest-handle probe,
+  concurrent-reader throughput scaling, and a `PMap` working-set lookup curve.
+  Evidence `evidence/performance/microarch.json`.
+
+### Result (release, one run)
+
+Steady-state read allocations fell from **8.0 to 2.0 per read** (the remaining two
+are the result buffer the API returns and one memoization clone kept so the
+authoritative read runs at most once). Mean steady-state read **104.7 ns**. The
+manifest-handle probe confirms it: `latest_for_shared` allocates **0** times per
+call over 200 000 calls, versus 1 200 000 (6/call) for the deep-cloning
+`latest_for`.
+
+### Honest limitations
+
+Hardware performance counters are **unavailable** on this host
+(`perf_event_paranoid=2`; `perf_counters_available=false`), so AMD IBS and
+cache/TLB counts could not be read — the court records that and uses PMU-free
+proxies. Aggregate steady-state read throughput **does not scale with readers**
+(9.63 M → 4.72 M ops/s from 1 to 8 readers): the served-counter lock is gone, but
+the read still takes the body-cache mutex per request, which the court identifies
+as the remaining shared-lock surface (sharding it is the concrete follow-up, not
+done here). Test counts rise to **431** (default) / **441** (`--features
+failpoints`); `fmt`/`clippy` clean.

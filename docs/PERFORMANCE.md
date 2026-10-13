@@ -1320,5 +1320,71 @@ host/load sensitive and is reported as indicative. The FIFO figures are an
 analytic model over the identical key trace, not a run of the pre-Phase-49 binary
 (which does not expose the same counters). Each volatile cache is still behind a
 single mutex; sharding them for multi-reader cache throughput is not attempted
-here (the Phase 43 steady state holds the body-cache lock only for a bounded
-lookup, so contention is not currently the measured bottleneck).
+here, and §18 measures the resulting reader-scaling curve honestly.
+
+## 18. Reviewer task — the CPU microarchitecture court (research §11)
+
+**The question.** §11 asks where the hot paths actually spend their time rather
+than guessing which Rust constructs are slow, names AMD IBS and cache/TLB
+counters, and proposes mitigations: cache-line alignment, compact candidate
+arrays, **reduced temporary allocations**, and fewer contended shared locks.
+
+**PMU availability (recorded honestly).** Hardware performance counters are
+**unavailable** on this host: `perf_event_paranoid=2` and no usable `perf`, so
+`perf_counters_available=false` in the evidence. AMD IBS and cache/TLB event
+counts could not be read. The court therefore uses PMU-free probes that are still
+decisive, and records the limitation rather than inventing counter numbers.
+
+**Court.** `tests/microarch.rs`, run by `scripts/container-microarch.sh`
+(release), writes `evidence/performance/microarch.json`. It uses a counting
+`#[global_allocator]` for allocator traffic, `std::thread::scope` for reader
+scaling, and a working-set sweep of `PMap` point lookups for a cache-hierarchy
+proxy.
+
+**Optimization applied (Phase 50).** The steady-state read was allocating **8.0
+times per read**. A counting-allocator probe located the dominant cost: the read
+path called `ManifestationState::latest_for`, which **deep-cloned the whole
+`GenerationManifest`** (six owned `String`s) on every request. The published map
+now stores `Arc<GenerationManifest>` and the read path uses a new
+`latest_for_shared` (an `Arc` clone, zero allocations); `latest_for` remains for
+callers that want an owned value. A second shared lock was also removed: the
+per-path served counter was an `RwLock<HashMap>` written on every read; it is now
+a lock-free `[AtomicU64; ReadPathKind::COUNT]`.
+
+**Measured (one run; release).**
+
+* **Steady-state read allocations: 2.0 per read, down from 8.0** (the remaining
+  two are the result buffer the API returns and one memoization clone retained so
+  the authoritative read is executed at most once — a correctness guarantee that
+  outweighs the allocation). Mean steady-state read **104.7 ns**.
+* **Manifest-handle probe:** the read path's `latest_for_shared` allocates **0**
+  times per call over 200 000 calls, whereas the deep-cloning `latest_for`
+  allocates 1 200 000 times (6 per call) — the exact cost removed.
+* **Reader scaling** (steady-state reads, aggregate): 1 reader **9.63 M ops/s**,
+  2 → 7.11 M, 4 → 6.82 M, 8 → 4.72 M. Aggregate throughput **does not scale with
+  readers** and falls at 8 readers.
+* **`PMap` lookup curve** (cache-hierarchy proxy, ns/lookup): 1 024 entries →
+  **31.5**, 8 192 → **56.6**, 65 536 → **114.1**, 262 144 → **174.3**.
+
+**Findings, stated honestly.**
+
+1. **The largest single hot-path waste was a per-read manifest deep-clone**, now
+   removed (8.0 → 2.0 allocations/read). This is exactly the kind of cost §11
+   wanted found by measurement rather than inspection.
+2. **The steady-state read still does not scale across cores.** Removing the
+   served-counter write lock was necessary but not sufficient: the read still takes
+   the body-cache mutex once per request (for the plan lookup), and the measured
+   aggregate throughput falls as readers rise. Sharding the body cache (or holding
+   the plan behind an `Arc` resolved without the lock on a hit) is the concrete
+   follow-up; it is **not** done here, and the honest reading of the curve is that
+   this remains the dominant shared-lock surface.
+3. **The `PMap` curve shows the expected monotone cache-pressure growth**
+   (~31 ns working-set-resident to ~174 ns at 262 k entries) but, without PMU
+   counters, whether each step is an L1/L2/L3 or TLB boundary is **not**
+   attributed — the curve is a shape, not a counter attribution.
+
+**Caveats.** Single run, single host, release build; the host is under external
+load and the container is capped, so absolute nanoseconds and the reader-scaling
+aggregate are host/load sensitive. Hardware counters were unavailable, so TLB and
+cache-miss counts are not reported; the allocator counts and the
+`latest_for_shared`/`latest_for` comparison are the deterministic results.

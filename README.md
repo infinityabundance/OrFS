@@ -85,6 +85,7 @@ enable it (see `docs/FUSE_URING.md`).
 | 47 | F2 queue-affine concurrency (recovers F2 to ~88–103% of F0; p99 target unmet) | complete |
 | 48 | Persistent index layout competition (nothing integrated; treap wins on mutation) | complete |
 | 49 | Scan-resistant volatile planner caches (S3-FIFO admission); §10 volatile-cache court | complete |
+| 50 | CPU microarchitecture court; per-read manifest clone removed (8→2 allocs/read); lock-free served counters | complete |
 
 Honest non-claims: the image pixel-surface pyramid is **not materialised** (only
 its geometry is implemented), and no performance superiority of F2 or of the

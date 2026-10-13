@@ -2184,7 +2184,16 @@ pub struct ManifestSummary {
 pub struct ManifestationState {
     store: GenerationStore,
     uuid: [u8; 16],
-    published: RwLock<BTreeMap<u64, GenerationManifest>>,
+    published: RwLock<BTreeMap<u64, Arc<GenerationManifest>>>,
+}
+
+/// Wrap a recovered `inode -> manifest` map in `Arc`s, so a read-path consumer can
+/// share a manifest cheaply (an `Arc` clone) instead of deep-cloning its owned
+/// `String`/`Vec` fields on every request (Phase 50).
+fn share_published(
+    map: BTreeMap<u64, GenerationManifest>,
+) -> BTreeMap<u64, Arc<GenerationManifest>> {
+    map.into_iter().map(|(k, v)| (k, Arc::new(v))).collect()
 }
 
 impl ManifestationState {
@@ -2195,7 +2204,7 @@ impl ManifestationState {
         let state = ManifestationState {
             store,
             uuid,
-            published: RwLock::new(latest.published),
+            published: RwLock::new(share_published(latest.published)),
         };
         Ok(Arc::new(state))
     }
@@ -2212,7 +2221,11 @@ impl ManifestationState {
 
     /// Every currently published generation (newest per inode).
     pub fn published(&self) -> Vec<GenerationManifest> {
-        self.published.read().values().cloned().collect()
+        self.published
+            .read()
+            .values()
+            .map(|m| (**m).clone())
+            .collect()
     }
 
     /// Total published manifested payload bytes.
@@ -2231,7 +2244,14 @@ impl ManifestationState {
 
     /// The newest published generation for an inode, if any.
     pub fn latest_for(&self, inode: u64) -> Option<GenerationManifest> {
-        self.published.read().get(&inode).cloned()
+        self.published.read().get(&inode).map(|m| (**m).clone())
+    }
+
+    /// The newest published generation for an inode as a cheaply-shareable handle.
+    /// The read path uses this so it never deep-clones a manifest's owned fields on
+    /// a request (Phase 50).
+    pub fn latest_for_shared(&self, inode: u64) -> Option<Arc<GenerationManifest>> {
+        self.published.read().get(&inode).map(Arc::clone)
     }
 
     /// A version-qualified summary: `Some` only when a generation exists for
@@ -2262,7 +2282,7 @@ impl ManifestationState {
             None => true,
         };
         if replace {
-            guard.insert(manifest.inode, manifest);
+            guard.insert(manifest.inode, Arc::new(manifest));
         }
     }
 }
@@ -3297,7 +3317,7 @@ impl ManifestationEngine {
         let state = Arc::new(ManifestationState {
             store: store.clone(),
             uuid,
-            published: RwLock::new(latest.published),
+            published: RwLock::new(share_published(latest.published)),
         });
         let next_generation = store.next_generation()?;
         let workers = if cfg.workers == 0 {

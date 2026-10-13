@@ -215,6 +215,16 @@
         {"group": 1, "label": "admission scan_plan_builds", "evidence": "evidence/performance/planner-cache.json", "path": "measured.scan_plan_builds"},
         {"group": 2, "label": "fifo_model scan_plan_builds", "evidence": "evidence/performance/planner-cache.json", "path": "fifo_model.scan_plan_builds"}
       ]
+    },
+    {
+      "id": "perf-s18-microarch-manifest-handle",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§18",
+      "claim": "microarchitecture court: the read path's latest_for_shared allocates nothing per call",
+      "regex": "`latest_for_shared` allocates \\*\\*([0-9]+)\\*\\*\\s+times per call",
+      "fields": [
+        {"group": 1, "label": "latest_for_shared allocs per call", "evidence": "evidence/performance/microarch.json", "path": "manifest_handle_allocations.latest_for_shared_allocs"}
+      ]
     }
   ]
 }

@@ -1,0 +1,88 @@
+{
+  "environment": {
+    "bench": {
+      "cgroup_memory_max": "8589934592",
+      "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "container_image": null,
+      "cores_visible": 8,
+      "cpu_max": "800000 100000",
+      "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+      "fuse_enable_uring": true,
+      "kernel_release": "7.2.9-2-cachyos",
+      "likely_container": true,
+      "machine": "x86_64",
+      "perf_counters_available": false,
+      "perf_event_paranoid": "2",
+      "ram_total_bytes": 134723346432
+    },
+    "profile": "release"
+  },
+  "generated_by": "tests/microarch.rs",
+  "manifest_handle_allocations": {
+    "calls": 200000,
+    "latest_for_allocs": 1200000,
+    "latest_for_shared_allocs": 0,
+    "note": "latest_for_shared (the read path) allocates nothing per call; the deep-cloning latest_for allocates the manifest's owned fields. Before Phase 50 the read path used latest_for: the court measured 8.0 allocs/read, dropping to 2.0 after the change."
+  },
+  "note": "Single-run, single-host, PMU-free microarchitecture probes. Hardware performance counters are unavailable on this host (perf_event_paranoid level and no usable `perf`), so AMD IBS and cache/TLB event counts could not be read; the court records that and uses proxies that need no PMU: a counting global allocator for hot-path allocator traffic, concurrent-reader throughput for the remaining shared-lock surface, and a working-set latency curve as a cache-hierarchy proxy. Absolute nanoseconds are host/load sensitive; the shape and the allocator counts are the point.",
+  "pmap_lookup_curve": [
+    {
+      "entries": 1024,
+      "ns_per_lookup": 31.4686075
+    },
+    {
+      "entries": 8192,
+      "ns_per_lookup": 56.637775
+    },
+    {
+      "entries": 65536,
+      "ns_per_lookup": 114.065315
+    },
+    {
+      "entries": 262144,
+      "ns_per_lookup": 174.2655
+    }
+  ],
+  "pmu": {
+    "hardware_counters_available": false,
+    "note": "IBS / cache / TLB counter attribution is unavailable when false.",
+    "perf_event_paranoid": "2"
+  },
+  "reader_scaling": [
+    {
+      "ns_per_op": 103.871655,
+      "ops_per_s": 9627265.49413312,
+      "readers": 1
+    },
+    {
+      "ns_per_op": 140.59726,
+      "ops_per_s": 7112514.141456242,
+      "readers": 2
+    },
+    {
+      "ns_per_op": 146.528915,
+      "ops_per_s": 6824591.58316978,
+      "readers": 4
+    },
+    {
+      "ns_per_op": 211.857876875,
+      "ops_per_s": 4720145.480311871,
+      "readers": 8
+    }
+  ],
+  "reader_scaling_baseline": {
+    "note": "Phase 50 replaced the per-path served counter (an RwLock<HashMap>) with a lock-free atomic array, removing the last policy write lock from the served-read path."
+  },
+  "rss_kib_end": 19412,
+  "rss_kib_growth": 16952,
+  "schema": "orfs.performance.microarch.v1",
+  "steady_state_read_allocations": {
+    "allocs": 1000000,
+    "allocs_per_read": 2.0,
+    "bytes": 64000000,
+    "bytes_per_read": 128.0,
+    "interpretation": "A steady-state certified read returns one result Vec; the read planner adds no per-read manifest clone (Phase 50 shares the published manifest as an Arc).",
+    "ns_per_read": 104.660966,
+    "reads": 500000
+  }
+}

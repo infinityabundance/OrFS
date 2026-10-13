@@ -246,6 +246,16 @@ impl ReadPathKind {
             ReadPathKind::Overlay => 1 << 5,
         }
     }
+
+    /// The dense index (`0..`[`ReadPathKind::COUNT`]) of this path, derived from
+    /// its bit so the two can never disagree. Used to index the planner's
+    /// lock-free per-path served counters (Phase 50).
+    pub const fn index(self) -> usize {
+        self.bit().trailing_zeros() as usize
+    }
+
+    /// The number of read-path kinds (the length of a per-kind counter array).
+    pub const COUNT: usize = 6;
 }
 
 /// The **full identity** of one manifested generation.
@@ -1809,7 +1819,11 @@ pub struct ReadPlanner {
     cache: Mutex<BodyCache>,
     /// The bounded identity ledger for region-overlay verification/failure state.
     ledger: RwLock<IdentityLedger>,
-    chosen: RwLock<HashMap<ReadPathKind, u64>>,
+    /// The number of reads served by each path since construction. A **lock-free**
+    /// array of atomics (Phase 50): recording a served read is a relaxed
+    /// `fetch_add`, so the hot path takes no policy write lock and the counter's
+    /// cache line is not exclusively bounced between reader cores.
+    chosen: [AtomicU64; ReadPathKind::COUNT],
     /// Resolved region tables for overlay-backed generations (bounded).
     coverage: Mutex<CoverageCache>,
     /// Parsed region payload bodies, shared across generations (bounded).
@@ -1832,7 +1846,7 @@ impl ReadPlanner {
             model: RwLock::new(SelectionModel::new(object_capacity)),
             cache: Mutex::new(cache),
             ledger: RwLock::new(IdentityLedger::new(identity_capacity)),
-            chosen: RwLock::new(HashMap::new()),
+            chosen: std::array::from_fn(|_| AtomicU64::new(0)),
             coverage: Mutex::new(coverage),
             regions: Mutex::new(regions),
             stats: StatsInner::default(),
@@ -1849,10 +1863,22 @@ impl ReadPlanner {
         self.model.read().measurements()
     }
 
-    /// The number of reads served by each path since construction.
+    /// The number of reads served by each path since construction. Paths never
+    /// served are omitted (as the previous map-backed counter did).
     pub fn chosen_counts(&self) -> Vec<(ReadPathKind, u64)> {
-        let mut v: Vec<(ReadPathKind, u64)> =
-            self.chosen.read().iter().map(|(k, c)| (*k, *c)).collect();
+        const KINDS: [ReadPathKind; ReadPathKind::COUNT] = [
+            ReadPathKind::LogicalExtent,
+            ReadPathKind::PathBloom,
+            ReadPathKind::TransitionBloom,
+            ReadPathKind::History,
+            ReadPathKind::Checkpoint,
+            ReadPathKind::Overlay,
+        ];
+        let mut v: Vec<(ReadPathKind, u64)> = KINDS
+            .iter()
+            .map(|&k| (k, self.chosen[k.index()].load(Ordering::Relaxed)))
+            .filter(|(_, c)| *c > 0)
+            .collect();
         v.sort_by_key(|(k, _)| k.priority());
         v
     }
@@ -1926,7 +1952,9 @@ impl ReadPlanner {
     pub fn reset(&self) {
         self.model.write().clear();
         self.ledger.write().clear();
-        self.chosen.write().clear();
+        for c in &self.chosen {
+            c.store(0, Ordering::Relaxed);
+        }
         self.coverage.lock().clear();
         self.region_cache_clear();
         self.stats.plan_builds.store(0, Ordering::Relaxed);
@@ -1956,7 +1984,7 @@ impl ReadPlanner {
         if eff_len == 0 {
             return Ok(Vec::new());
         }
-        let manifest = self.state.latest_for(q.inode).ok_or_else(|| {
+        let manifest = self.state.latest_for_shared(q.inode).ok_or_else(|| {
             OrfsError::InvalidArgument("no manifested generation for the inode".into())
         })?;
         manifest.usable_for(q.inode, q.inode_version, q.root)?;
@@ -2008,7 +2036,7 @@ impl ReadPlanner {
         }
 
         // --- compatibility + version/root qualification on EVERY read ---
-        let manifest = match self.state.latest_for(q.inode) {
+        let manifest = match self.state.latest_for_shared(q.inode) {
             Some(m) => m,
             None => {
                 return Ok(PlannedRead::fallback_static(
@@ -2344,7 +2372,7 @@ impl ReadPlanner {
         F: FnMut(u64, u64) -> Result<Vec<u8>>,
     {
         let eff_len = q.logical_len.saturating_sub(q.offset).min(q.length);
-        let manifest = self.state.latest_for(q.inode).ok_or_else(|| {
+        let manifest = self.state.latest_for_shared(q.inode).ok_or_else(|| {
             OrfsError::InvalidArgument("no manifested generation for the inode".into())
         })?;
         manifest.usable_for(q.inode, q.inode_version, q.root)?;
@@ -2386,7 +2414,7 @@ impl ReadPlanner {
         certified: bool,
         reason: Option<Cow<'static, str>>,
     ) -> PlannedRead {
-        *self.chosen.write().entry(path).or_insert(0) += 1;
+        self.chosen[path.index()].fetch_add(1, Ordering::Relaxed);
         if path == ReadPathKind::LogicalExtent {
             // The authoritative path was used. When `reason` is set, one or more
             // manifested candidates failed first (a fallback); otherwise the model
@@ -2498,11 +2526,7 @@ impl ReadPlanner {
             }
             self.ledger.write().overlay_verified.insert(identity);
         }
-        *self
-            .chosen
-            .write()
-            .entry(ReadPathKind::Overlay)
-            .or_insert(0) += 1;
+        self.chosen[ReadPathKind::Overlay.index()].fetch_add(1, Ordering::Relaxed);
         Ok(PlannedRead {
             bytes,
             path: ReadPathKind::Overlay,

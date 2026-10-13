@@ -1462,3 +1462,58 @@ keys).**
 host/load sensitive. The corpus is deterministic, so the file counts and byte counts
 are exact. The directory is currently in-memory (derived and rebuildable), not a
 persisted plane; persisting it under the trigram store is future work.
+
+## 20. External baseline comparators (Phase 53)
+
+**Why this exists.** Every other number in this document is OrFS measured against
+OrFS. Without an external floor, "5×" means nothing. This court runs the **identical**
+`src/bench.rs` workloads on the filesystems that surround a containerised Linux
+deployment and on raw memory.
+
+**Court.** `tests/baselines.rs`, run by `scripts/container-baseline.sh` (release),
+writes `evidence/performance/baselines.json`. Backends, each with the filesystem
+type read from `/proc/mounts`:
+
+| backend | filesystem | what it is |
+|---|---|---|
+| `tmpfs` | tmpfs | in-memory upper bound (`/dev/shm`) |
+| `container-overlay` | overlay | the container's own writable layer (`/tmp`) |
+| `host-fs` | **ext4** | the host disk, via the bind-mounted project |
+| raw memory | — | a `Vec<u8>` scan: the absolute floor for "read bytes" |
+
+Measurements are **page-cache warm** (dropping the page cache needs
+`CAP_SYS_ADMIN`, which the sandbox does not grant), so absolute MB/s is an upper
+bound on the storage stack; the point is the ordering across backends under one
+workload and the read-latency floor.
+
+**Measured (one run; release; 32 MiB sequential file, 20 000 random ops).**
+
+| backend | seq append (MB/s) | seq read (MB/s) | rand 4 KiB p50 / p99 (ns) | rand 1 B p50 / p99 (ns) |
+|---|---:|---:|---:|---:|
+| tmpfs | 6 725 | 16 995 | 201 / 441 | 130 / 310 |
+| container-overlay | 8 546 | 20 647 | 261 / 491 | 151 / 331 |
+| **host-fs (ext4)** | 6 289 | 25 973 | **230 / 471** | **130 / 281** |
+| raw memory scan | — | 9 957 | — | — |
+
+**How this reads against OrFS (honestly).**
+
+1. **A warm `pread` of 4 KiB on real ext4 is ~230 ns p50 / ~471 ns p99; a 1-byte
+   read is ~130 ns p50.** These are the numbers any OrFS read path must be compared
+   against, and they are *not* exceeded by OrFS's daemon path: the phase-21 court
+   records a **daemon-served** 256 KiB read at **438.7 µs** p50 versus a
+   kernel-served **passthrough** read at **17.8 µs** and a plain cached file read at
+   **3.5 µs** (`evidence/performance/passthrough.json`).
+2. **OrFS's ordinary read paths are not faster than a conventional filesystem for
+   ordinary reads**, and this document says so plainly. Its measured advantages are
+   *internal and structural* (a manifested structure versus the authoritative path;
+   kernel passthrough versus the daemon; indexed search versus a scan) — they are
+   not a claim of ext4/tmpfs superiority, and the baselines here are what make that
+   distinction checkable.
+3. **F2 is "implemented, not superior".** §4.6–4.7 and `docs/FUSE_URING.md` show F2
+   reaching 88–103 % of F0 throughput but with the **p99 target unmet**; until p99 is
+   met, F2 is not claimed to beat the conventional path.
+
+**Caveats.** Single run, single host, page-cache warm; `perf_event_paranoid=2` so no
+counter attribution. A FUSE-passthrough baseline is produced separately by the
+phase-21 court because it needs a real mount. The `host-fs` scratch lives under
+`target/` (gitignored) and is removed by the court.

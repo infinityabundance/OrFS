@@ -1,0 +1,245 @@
+{
+  "backends": [
+    {
+      "dir": "/dev/shm/orfs-baseline-106",
+      "fs_type": "tmpfs",
+      "name": "tmpfs"
+    },
+    {
+      "dir": "/tmp/orfs-baseline-106",
+      "fs_type": "overlay",
+      "name": "container-overlay"
+    },
+    {
+      "dir": "/mnt/1tb_kingston/OrFS/target/baseline-scratch",
+      "fs_type": "ext4",
+      "name": "host-fs"
+    }
+  ],
+  "environment": {
+    "bench": {
+      "cgroup_memory_max": "8589934592",
+      "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "container_image": null,
+      "cores_visible": 8,
+      "cpu_max": "800000 100000",
+      "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+      "fuse_enable_uring": true,
+      "kernel_release": "7.2.9-2-cachyos",
+      "likely_container": true,
+      "machine": "x86_64",
+      "perf_counters_available": false,
+      "perf_event_paranoid": "2",
+      "ram_total_bytes": 134723346432
+    },
+    "profile": "release"
+  },
+  "generated_by": "tests/baselines.rs",
+  "how_to_read": [
+    "tmpfs is the in-memory upper bound; host-fs is the real disk; raw_memory_read",
+    "is the absolute floor for 'read bytes' with no storage stack at all.",
+    "A FUSE-passthrough baseline is produced separately by the Phase-21 court",
+    "(evidence/performance/passthrough.json) because it needs a real mount."
+  ],
+  "note": "External baseline comparators: the identical src/bench.rs workloads run on the filesystems around a containerised deployment. This is the comparison that makes OrFS's speedups meaningful — otherwise every ratio is OrFS against OrFS. Measurements are PAGE-CACHE WARM (dropping the page cache needs CAP_SYS_ADMIN, not granted here), so they are an upper bound on the storage stack; the point is the ordering across backends under one workload, not the absolute MB/s.",
+  "page_cache": "warm (not dropped; CAP_SYS_ADMIN unavailable)",
+  "params": {
+    "data_bytes": 33554432,
+    "iterations": 20000,
+    "region_bytes": 4096
+  },
+  "raw_memory_read": {
+    "bytes": 33554432,
+    "mb_per_s": 9957.444372114674,
+    "seconds": 0.003213676
+  },
+  "results": [
+    {
+      "backend": "tmpfs",
+      "measurement": {
+        "bytes": 33554432,
+        "mb_per_s": 6725.409248731711,
+        "ops": 8192,
+        "ops_per_s": 1641945.6173661405,
+        "seconds": 0.004989203
+      },
+      "workload": "sequential-append"
+    },
+    {
+      "backend": "tmpfs",
+      "measurement": {
+        "bytes": 33554432,
+        "mb_per_s": 16994.58524254477,
+        "ops": 8192,
+        "ops_per_s": 4149068.662730657,
+        "seconds": 0.001974419
+      },
+      "workload": "sequential-read"
+    },
+    {
+      "backend": "tmpfs",
+      "measurement": {
+        "bytes": 81920000,
+        "latency": {
+          "max_ns": 1953,
+          "mean_ns": 230.8303,
+          "min_ns": 130,
+          "p50_ns": 201,
+          "p95_ns": 371,
+          "p99_ns": 441,
+          "samples": 20000
+        },
+        "mb_per_s": 16120.63397856538,
+        "ops": 20000,
+        "ops_per_s": 3935701.6549231885,
+        "seconds": 0.005081686
+      },
+      "workload": "random-read-4k"
+    },
+    {
+      "backend": "tmpfs",
+      "measurement": {
+        "bytes": 20000,
+        "latency": {
+          "max_ns": 1713,
+          "mean_ns": 145.9407,
+          "min_ns": 110,
+          "p50_ns": 130,
+          "p95_ns": 220,
+          "p99_ns": 310,
+          "samples": 20000
+        },
+        "mb_per_s": 5.911858330591709,
+        "ops": 20000,
+        "ops_per_s": 5911858.330591709,
+        "seconds": 0.003383031
+      },
+      "workload": "random-read-1"
+    },
+    {
+      "backend": "container-overlay",
+      "measurement": {
+        "bytes": 33554432,
+        "mb_per_s": 8545.945261727347,
+        "ops": 8192,
+        "ops_per_s": 2086412.417413903,
+        "seconds": 0.003926357
+      },
+      "workload": "sequential-append"
+    },
+    {
+      "backend": "container-overlay",
+      "measurement": {
+        "bytes": 33554432,
+        "mb_per_s": 20646.8991284529,
+        "ops": 8192,
+        "ops_per_s": 5040746.857532446,
+        "seconds": 0.001625156
+      },
+      "workload": "sequential-read"
+    },
+    {
+      "backend": "container-overlay",
+      "measurement": {
+        "bytes": 81920000,
+        "latency": {
+          "max_ns": 3126,
+          "mean_ns": 271.3564,
+          "min_ns": 160,
+          "p50_ns": 261,
+          "p95_ns": 420,
+          "p99_ns": 491,
+          "samples": 20000
+        },
+        "mb_per_s": 13906.649914857418,
+        "ops": 20000,
+        "ops_per_s": 3395178.201869487,
+        "seconds": 0.005890707
+      },
+      "workload": "random-read-4k"
+    },
+    {
+      "backend": "container-overlay",
+      "measurement": {
+        "bytes": 20000,
+        "latency": {
+          "max_ns": 1974,
+          "mean_ns": 175.00295,
+          "min_ns": 130,
+          "p50_ns": 151,
+          "p95_ns": 241,
+          "p99_ns": 331,
+          "samples": 20000
+        },
+        "mb_per_s": 5.045374312536216,
+        "ops": 20000,
+        "ops_per_s": 5045374.312536216,
+        "seconds": 0.003964027
+      },
+      "workload": "random-read-1"
+    },
+    {
+      "backend": "host-fs",
+      "measurement": {
+        "bytes": 33554432,
+        "mb_per_s": 6288.960068972626,
+        "ops": 8192,
+        "ops_per_s": 1535390.64183902,
+        "seconds": 0.00533545
+      },
+      "workload": "sequential-append"
+    },
+    {
+      "backend": "host-fs",
+      "measurement": {
+        "bytes": 33554432,
+        "mb_per_s": 25973.0535167746,
+        "ops": 8192,
+        "ops_per_s": 6341077.518743798,
+        "seconds": 0.001291894
+      },
+      "workload": "sequential-read"
+    },
+    {
+      "backend": "host-fs",
+      "measurement": {
+        "bytes": 81920000,
+        "latency": {
+          "max_ns": 5881,
+          "mean_ns": 240.2604,
+          "min_ns": 130,
+          "p50_ns": 230,
+          "p95_ns": 400,
+          "p99_ns": 471,
+          "samples": 20000
+        },
+        "mb_per_s": 15549.917951024972,
+        "ops": 20000,
+        "ops_per_s": 3796366.6872619563,
+        "seconds": 0.005268195
+      },
+      "workload": "random-read-4k"
+    },
+    {
+      "backend": "host-fs",
+      "measurement": {
+        "bytes": 20000,
+        "latency": {
+          "max_ns": 21711,
+          "mean_ns": 151.47595,
+          "min_ns": 110,
+          "p50_ns": 130,
+          "p95_ns": 220,
+          "p99_ns": 281,
+          "samples": 20000
+        },
+        "mb_per_s": 5.721671574907266,
+        "ops": 20000,
+        "ops_per_s": 5721671.574907267,
+        "seconds": 0.003495482
+      },
+      "workload": "random-read-1"
+    }
+  ],
+  "schema": "orfs.performance.baselines.v1"
+}

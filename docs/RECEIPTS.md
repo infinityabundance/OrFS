@@ -177,6 +177,11 @@ numbers were not curated in this first pass:
   the `p50 ≈ 53 µs / ≈ 60 µs` commit-latency figures (`publish-cost.json`).
 * `docs/SNAPSHOTS.md`, `docs/QUERY.md`, `docs/FUSE_PASSTHROUGH.md` — no numbers
   from these were curated in this first pass.
+* `docs/PERFORMANCE.md` §18–§20 — the microarchitecture, global-search-directory
+  and external-baseline figures. §18's deterministic `latest_for_shared` count and
+  §19's rare-pattern file/byte counts are curated; the host-sensitive latency
+  figures (ns/read, reader scaling, the ext4/tmpfs/overlay latencies) are
+  deliberately left uncovered because they move between runs.
 * `docs/PROGRESS.md`, `README.md` — out of scope by construction (this check
   governs docs against receipts, not the reverse index of phases).
 

@@ -2864,3 +2864,37 @@ can only remove files that provably cannot match. It is currently in-memory
 (derived, rebuildable) and used only for whole-tree queries; persisting it and
 supporting sub-directory queries are stated follow-ups. Test counts rise to **436**
 (default) / **446** (`--features failpoints`); `fmt`/`clippy` clean.
+
+## Phase 53 — External baseline comparators
+
+**Complete.** The reviewer's sharpest point: *without an external floor, every
+speedup is OrFS against OrFS.*
+
+### Delivered
+
+* `tests/baselines.rs` + `scripts/container-baseline.sh` — the **identical**
+  `src/bench.rs` workloads (sequential append, sequential read, random 4 KiB read,
+  random 1-byte read) run on the filesystems that surround a containerised Linux
+  deployment, each labelled with its type read from `/proc/mounts`:
+  **tmpfs** (`/dev/shm`), **overlay** (the container layer), and the **host disk
+  (`ext4`)** via the bind-mounted project, plus a **raw `Vec<u8>` scan** as the
+  absolute read floor. Evidence `evidence/performance/baselines.json`.
+
+### Result (release, one run; 32 MiB file, 20 000 random ops; page-cache warm)
+
+| backend | seq read (MB/s) | rand 4 KiB p50 / p99 | rand 1 B p50 / p99 |
+|---|---:|---:|---:|
+| tmpfs | 16 995 | 201 / 441 ns | 130 / 310 ns |
+| container-overlay | 20 647 | 261 / 491 ns | 151 / 331 ns |
+| **host-fs (ext4)** | 25 973 | **230 / 471 ns** | **130 / 281 ns** |
+
+### What this says, honestly
+
+A warm `pread` of 4 KiB on real ext4 is ~**230 ns** p50; a 1-byte read ~**130 ns**
+p50. OrFS's daemon-served 256 KiB read is **438.7 µs** p50 (phase-21 receipt), with
+kernel **passthrough** at **17.8 µs** and a plain cached file read at **3.5 µs**. So
+OrFS's read paths are **not faster than a conventional filesystem for ordinary
+reads**, and this phase makes that checkable instead of implicit. Its advantages
+remain internal and structural, and F2 stays "implemented, not superior" until the
+p99 target is met. Test counts rise to **438** (default) / **448** (`--features
+failpoints`); `fmt`/`clippy` clean.

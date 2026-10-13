@@ -88,6 +88,7 @@ enable it (see `docs/FUSE_URING.md`).
 | 50 | CPU microarchitecture court; per-read manifest clone removed (8→2 allocs/read); lock-free served counters | complete |
 | 51 | Documentation refresh (cache/eviction descriptions); publish `orfs` v0.2.0 to crates.io | complete |
 | 52 | Global search directory (§9): version-qualified trigram→object directory with density-adaptive posting sets | complete |
+| 53 | External baseline comparators (ext4 / tmpfs / overlay / raw memory) — the floor every speedup is measured against | complete |
 
 Honest non-claims: the image pixel-surface pyramid is **not materialised** (only
 its geometry is implemented), and no performance superiority of F2 or of the

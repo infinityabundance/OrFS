@@ -95,6 +95,7 @@ enable it (see `docs/FUSE_URING.md`).
 | 57 | Real PMU hardware counters + flamegraph; the "no counters" claim corrected (`perf_event_paranoid` was a myth — the container seccomp profile was the gate) | complete |
 | 58 | Integrate a sealed dense-ordinal inode-id spine for the immutable historical role (7× smaller, flat `O(1)` lookup); the live writer spine stays the treap | complete |
 | 59 | Native fsx/fsstress-equivalent fault-injection court (external xfstests not runnable) | complete |
+| 60 | Acceptance-audit re-run at HEAD with a two-run diff vs the phase-41 audit | complete |
 
 Honest non-claims: the image pixel-surface pyramid is **not materialised** (only
 its geometry is implemented), and no performance superiority of F2 or of the

@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–59)
+## 4. The ordered build phases (0–60)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -145,10 +145,11 @@ per-phase record.
 | 57 | Real PMU hardware counters + flamegraph; the "no counters" claim corrected (the container seccomp profile was the gate, not `perf_event_paranoid`) | **complete** |
 | 58 | Integrate a sealed dense-ordinal inode-id spine for the immutable historical role (7× smaller, flat `O(1)` lookup); the live writer spine stays the treap | **complete** |
 | 59 | Native fsx/fsstress-equivalent fault-injection court (external xfstests not runnable) | **complete** |
+| 60 | Acceptance-audit re-run at HEAD with a two-run diff vs the phase-41 audit | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–59 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–60 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
 v0.1.0 was the first release.
@@ -210,6 +211,7 @@ Normative implementation documents to be produced. Status is marked honestly.
 | `docs/SECURITY.md` | Permission model, hostile-backing-data handling, threat model | **exists** (Phase 11) |
 | `docs/THREAT-MODEL.md` | Who can mount, what the security model prevents and does not | **exists** (Phase 54) |
 | `docs/GATES.md` | Acceptance gates A–N: definitions, commands, acceptance criteria | **exists** (Phase 54) |
+| `docs/ACCEPTANCE-AUDIT-HEAD.md` | Acceptance-audit re-run at HEAD: current-HEAD gate table and the two-run diff vs the phase-41 audit | **exists** (Phase 60) |
 | `docs/REPRODUCE.md` | Reproducibility index: doc claim → receipt → command | **exists** (Phase 54) |
 | `docs/PERFORMANCE.md` | Benchmark methodology, metrics, reproducibility rules | **exists** (Phase 12) |
 | `docs/PMU.md` | Real hardware performance counters and the flamegraph; the container-flag requirement | **exists** (Phase 57) |

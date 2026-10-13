@@ -16,6 +16,11 @@
         "reason": "An independent acceptance audit is a point-in-time record at the commit that was audited. It is historical by nature and must never be rewritten to a newer commit (doing so would fabricate coverage)."
       },
       {
+        "receipt": "acceptance-audit-v4.json",
+        "field": "audited_head_commit",
+        "reason": "An independent acceptance audit re-run is a point-in-time record at the commit that was audited (the second run of the two-run tag/HEAD diff). It is historical by nature and must never be rewritten to a newer commit; like the v3 receipt, it records the exact HEAD it was run at."
+      },
+      {
         "receipt": "source-commit.json",
         "field": "orfs_git_commit",
         "reason": "A provenance receipt captured at the moment evidence was generated. It is regenerated on demand and its recorded commit is the ancestor the evidence was produced at, not a claim of current-tree coverage; the commit it names need not be HEAD."

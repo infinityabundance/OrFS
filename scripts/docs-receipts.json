@@ -261,6 +261,17 @@
       "fields": [
         {"group": 1, "label": "steady-state plan_builds_delta", "evidence": "evidence/performance/reader-scaling-64.json", "path": "steady_state_counters.plan_builds_delta"}
       ]
+    },
+    {
+      "id": "recovery-s9-fault-verify-recover-rows",
+      "doc": "docs/RECOVERY.md",
+      "section": "§9",
+      "claim": "fault-injection verify/recover court: the always-on matrix and the opt-in sweep row counts",
+      "regex": "always-on matrix has \\*\\*([0-9]+)\\*\\*\\s+rows; `ORFS_FAULT_SWEEP=1` adds a \\*\\*([0-9]+)\\*\\*-row sweep",
+      "fields": [
+        {"group": 1, "label": "default matrix row_count", "evidence": "evidence/recovery/fault-injection-verify-recover.json", "path": "runs.default.row_count"},
+        {"group": 2, "label": "sweep matrix row_count", "evidence": "evidence/recovery/fault-injection-verify-recover.json", "path": "runs.sweep.row_count"}
+      ]
     }
   ]
 }

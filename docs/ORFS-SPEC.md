@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–61)
+## 4. The ordered build phases (0–62)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -147,16 +147,17 @@ per-phase record.
 | 59 | Native fsx/fsstress-equivalent fault-injection court (external xfstests not runnable) | **complete** |
 | 60 | Acceptance-audit re-run at HEAD with a two-run diff vs the phase-41 audit | **complete** |
 | 61 | Fix the native-FUSE `JobQueue` lost-wakeup race the HEAD audit recorded (mutex-guarded predicate + notify); regression tests | **complete** |
+| 62 | Device-fault evidence: `verify --deep` + `recover` after injected mid-log faults (the `dm-flaky`/`dm-error` probe is `ran:false`) | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–61 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–62 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
 v0.1.0 was the first release.
 
-- The `orfs` crate builds, its **454** tests (default) pass, and
-  `cargo test --features failpoints` adds the crash-injection court (464 tests in
+- The `orfs` crate builds, its **456** tests (default) pass, and
+  `cargo test --features failpoints` adds the crash-injection court (466 tests in
   total); `cargo fmt -p orfs --check` / `clippy --all-targets -- -D warnings` are
   clean **inside the pinned container** (`scripts/container-*.sh`).
 - `src/capabilities.rs` + `orfs doctor` perform a **real** kernel/container

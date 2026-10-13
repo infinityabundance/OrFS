@@ -3303,3 +3303,59 @@ Default suite **454 passed / 0 failed** (45 binaries); `--features failpoints`
 * The diagnosis was verified, not assumed: restoring the pre-fix `JobQueue` makes
   the new white-box test fail with `close() must acquire the lane mutex before
   notifying waiters`; the fixed code passes it.
+
+## Phase 62 — Device-fault evidence: `verify --deep` + `recover` after injected mid-log faults
+
+**Complete.** Closes the reviewer's residual item: the ENOSPC/device-error path
+(Phase 23) had `tests/power_loss.rs`, but no court drove the **real `orfs`
+binary** (`orfs verify --deep`, `orfs recover`) on a damaged volume to show it
+detects the fault and recovers to a valid committed boundary. Real device-mapper
+fault targets (`dm-flaky` / `dm-error`) are **not usable** in this sandbox — that
+is probed and recorded, never faked.
+
+### Delivered
+
+* **`tests/verify_recover_faults.rs`** — a fault matrix that builds a real
+  `Namespace` volume, injects a fault (direct segment-byte damage or the
+  simulated device), then runs the **real CLI** `orfs verify --deep` and
+  `orfs recover`. It asserts verify surfaces the damage and never repairs it
+  (the tree is byte-identical afterwards), recover reports a valid committed
+  boundary, and the committed prefix is byte-intact on disk. Always-on small;
+  `ORFS_FAULT_SWEEP=1` adds a heavier sweep.
+* **`scripts/container-fault-verify.sh`** + **`docker_run_dm_probe`**
+  (`scripts/lib.sh`) — an elevated (root + `SYS_ADMIN` + `MKNOD` +
+  `/dev/loop-control` / `/dev/mapper/control`) device-mapper probe, then the
+  court (default + sweep).
+* **Evidence** — `evidence/recovery/fault-injection-verify-recover.json`, schema
+  `orfs.recovery.fault-injection-verify-recover.v1` (the fault matrix with
+  per-row `verify_deep`, `recover`, `reopen`, `data_intact`, plus the `dm_probe`
+  result).
+* **Docs** — `docs/RECOVERY.md` §9 (and the `docs-receipts.json` citation
+  `recovery-s9-fault-verify-recover-rows`), `docs/REPRODUCE.md`,
+  `docs/RECEIPTS.md`.
+
+### Results (evidence-backed)
+
+* **Device-mapper probe — `ran: false`.** `dmsetup` is absent from the pinned
+  image (`dmsetup: not found`, exit 127); the default container exposes neither
+  `/dev/loop-control` nor `/dev/mapper/control`; and even in the elevated
+  container `losetup --find --show <file>` fails `ENOENT` (no `/dev/loop0`
+  node). No `dm-*` result is fabricated.
+* **Fault matrix** (default **9** rows, sweep **24** rows, all `ok`): every
+  tail-producing fault is detected by `verify --deep` and recovered by
+  `orfs recover` to the correct boundary with the committed prefix byte-intact;
+  an atomic write error (ENOSPC/EIO) and a benign reorder are cleanly recovered
+  (nothing to detect, because the device refused atomically / lost nothing); a
+  torn durable tail and a contract-violating reordered durable image are refused.
+* Tests: **456** default (was 454; +2), **466** with `--features failpoints`
+  (was 464; +2).
+
+### Residual (recorded, not hidden)
+
+A tail that begins **inside** the committed segment is retained in place, not
+truncated (`tests/log_model.rs` pins this). After recovery continues in a fresh
+segment, a later fresh open refuses the retained bytes
+(`torn record in non-final segment …`). The CLI still reports the correct
+boundary and no committed byte is lost, rewritten or withdrawn; the court
+records this as an explicit `residual` field. A tail that occupies a whole
+trailing segment recovers and reopens cleanly. See `docs/RECOVERY.md` §9.1.

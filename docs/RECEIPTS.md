@@ -136,6 +136,7 @@ so it is not expected to name HEAD.
 | `perf-s19-search-directory-rare` | `docs/PERFORMANCE.md` §19 | global search directory: a rare pattern's files examined and content bytes read → `search-directory.json` `directory_path[pattern_hex=7a7a71].{files_considered,content_bytes_read}` |
 | `perf-s21-uring-sq-pressure` | `docs/PERFORMANCE.md` §21 | io_uring depth sweep: SQ-full events at the smallest ring depth → `uring-depth.json` `rows[requested_depth=1].read.stats.sq_full_events` |
 | `perf-s22-reader-scale64-noreplan` | `docs/PERFORMANCE.md` §22 | 64-thread reader scaling: the shared planner rebuilt no plan during the steady-state phase → `reader-scaling-64.json` `steady_state_counters.plan_builds_delta` |
+| `recovery-s9-fault-verify-recover-rows` | `docs/RECOVERY.md` §9 | fault-injection verify/recover court: the always-on matrix and the opt-in sweep row counts → `fault-injection-verify-recover.json` `runs.default.row_count` / `runs.sweep.row_count` |
 
 ### `docs/ACCEPTANCE-AUDIT.md` is exempt from live comparison
 
@@ -191,6 +192,13 @@ numbers were not curated in this first pass:
   and hosts), and the flamegraph are deliberately uncovered.
   `evidence/correctness/posix-extras.json` is likewise not curated: it is
   qualitative (`all_ok: true` plus per-check PASS/errno strings), not numeric.
+* `evidence/recovery/fault-injection-verify-recover.json` (Phase 62) is mostly
+  **qualitative** (a per-row matrix of `verify --deep` verdicts, `recover`
+  outcomes, `data_intact` booleans and the `dm_probe` `ran:false` result); only
+  its two row counts are curated (citation
+  `recovery-s9-fault-verify-recover-rows`). Its `dm_probe` block records
+  `ran: false` with the exact failing `losetup`/`dmsetup` commands — no `dm-*`
+  result is fabricated.
 * `docs/PROGRESS.md`, `README.md` — out of scope by construction (this check
   governs docs against receipts, not the reverse index of phases).
 

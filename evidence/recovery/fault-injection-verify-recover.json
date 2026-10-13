@@ -1,0 +1,2598 @@
+{
+  "all_ok": true,
+  "cli": "the real `orfs` binary: `orfs verify --deep` and `orfs recover`",
+  "device_model": "the project's deterministic simulated device (src/powerloss.rs) and direct segment-byte injection",
+  "dm_probe": {
+    "attempts": [
+      {
+        "command": "command -v losetup",
+        "exit": 0,
+        "observed": "/usr/sbin/losetup",
+        "what": "locate the loop helper"
+      },
+      {
+        "command": "command -v dmsetup",
+        "exit": 127,
+        "observed": "<absent: the dmsetup package is not installed>",
+        "what": "locate the device-mapper helper"
+      },
+      {
+        "command": "ls -l /dev/loop-control /dev/mapper/control",
+        "exit": 0,
+        "observed": "crw-rw---- 1 root  995 10, 237 Oct 13 16:19 /dev/loop-control\ncrw------- 1 root root 10, 236 Oct 13 16:19 /dev/mapper/control",
+        "what": "device nodes"
+      },
+      {
+        "command": "losetup --find --show /tmp/orfs-dmprobe.img",
+        "exit": 1,
+        "observed": "losetup: /tmp/orfs-dmprobe.img: failed to set up loop device: No such file or directory",
+        "what": "attach a loop device over a backing file"
+      },
+      {
+        "command": "dmsetup version",
+        "exit": 127,
+        "observed": "sh: 1: dmsetup: not found",
+        "what": "query device-mapper"
+      }
+    ],
+    "blocker": "the device-mapper userspace tool `dmsetup` is not installed in the pinned image; `losetup --find --show <file>` failed: losetup: /tmp/orfs-dmprobe.img: failed to set up loop device: No such file or directory",
+    "blockers": [
+      "the device-mapper userspace tool `dmsetup` is not installed in the pinned image",
+      "`losetup --find --show <file>` failed: losetup: /tmp/orfs-dmprobe.img: failed to set up loop device: No such file or directory"
+    ],
+    "conclusion": "Real device-mapper fault targets (dm-flaky / dm-error) are NOT usable here; the fault matrix below uses the project's deterministic simulated device and direct segment-byte injection instead. No dm-* result is fabricated.",
+    "probe_mode": "elevated-container",
+    "ran": false,
+    "status": "not-runnable-in-this-environment"
+  },
+  "generator": "tests/verify_recover_faults.rs",
+  "runs": {
+    "default": {
+      "all_ok": true,
+      "matrix": [
+        {
+          "class": "a_torn_record_mid_log",
+          "data_intact": true,
+          "failures": [],
+          "fault": "a torn (half-written) record in a fresh trailing segment (a torn write that rolled over and never committed)",
+          "id": "torn_record_segment_rollover",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 13855,
+            "expected_tail_kind": "TornRecord",
+            "prefault_committed_root": 13855,
+            "segment_count": 7
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 109,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": true,
+            "recovered_root": 13855,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": 74,
+            "tail_kind": "torn_record"
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 13855
+          },
+          "residual": null,
+          "topology": "segment_rollover",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": true,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": 74,
+            "tail_kind": "TornRecord"
+          }
+        },
+        {
+          "class": "a_torn_record_mid_log",
+          "data_intact": true,
+          "failures": [],
+          "fault": "a torn (half-written) record appended to the last committed segment (an intra-segment tear, retained in place)",
+          "id": "torn_record_mid_segment",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 6976,
+            "expected_tail_kind": "TornRecord",
+            "prefault_committed_root": 6976,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 55,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": true,
+            "recovered_root": 6976,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": 74,
+            "tail_kind": "torn_record"
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": "corrupt committed state: torn record in non-final segment 0 at physical offset 6976",
+            "ok": false,
+            "root": null
+          },
+          "residual": "a fresh read-only open refuses the tail retained in place inside the committed segment (quarantined, not truncated, by design): corrupt committed state: torn record in non-final segment 0 at physical offset 6976",
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": true,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": 74,
+            "tail_kind": "TornRecord"
+          }
+        },
+        {
+          "class": "b_partially_persisted_commit_tail",
+          "data_intact": true,
+          "failures": [],
+          "fault": "a stray well-framed committed record in a fresh trailing segment (a partially-persisted commit/tail)",
+          "id": "partial_commit_tail",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 13855,
+            "expected_tail_kind": "Uncommitted",
+            "prefault_committed_root": 13855,
+            "segment_count": 7
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 109,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": true,
+            "recovered_root": 13855,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": 120,
+            "tail_kind": "uncommitted"
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 13855
+          },
+          "residual": null,
+          "topology": "segment_rollover",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": true,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": 120,
+            "tail_kind": "Uncommitted"
+          }
+        },
+        {
+          "class": "c_reordered_duplicated_write",
+          "data_intact": true,
+          "failures": [],
+          "fault": "a full duplicate of the last committed record in a fresh trailing segment (a duplicated write)",
+          "id": "duplicated_write_tail",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 13855,
+            "expected_tail_kind": "Uncommitted",
+            "prefault_committed_root": 13855,
+            "segment_count": 7
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 109,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": true,
+            "recovered_root": 13855,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": 148,
+            "tail_kind": "uncommitted"
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 13855
+          },
+          "residual": null,
+          "topology": "segment_rollover",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": true,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": 148,
+            "tail_kind": "Uncommitted"
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [],
+            "failure_errno": 28,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 4,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 494,
+                  "durable_len": 2392,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 494,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #4 with NoSpace",
+          "id": "write_error_enospc_record_boundary",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 2392,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 19,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 2392,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 2392
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [],
+            "failure_errno": 5,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 4,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 494,
+                  "durable_len": 2392,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 494,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #4 with IoError",
+          "id": "write_error_eio_record_boundary",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 2392,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 19,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 2392,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 2392
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "c_reordered_duplicated_write",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [
+              3034,
+              3538,
+              4180,
+              4684,
+              5326,
+              5830,
+              6472,
+              6976
+            ],
+            "failure_errno": null,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "reordered",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 0,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 6976,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 0,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "reordered",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device honours the barrier but applies durable writes out of order (nothing lost)",
+          "id": "reordered_write_no_loss",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 6976,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 55,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 6976,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 6976
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "b_partially_persisted_commit_tail",
+          "data_intact": false,
+          "device": {
+            "acknowledged_roots": [
+              3034,
+              3538,
+              4180,
+              4684,
+              5326,
+              5830,
+              6472,
+              6976
+            ],
+            "failure_errno": null,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "tear_tail",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 0,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 6656,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 320
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 0,
+              "total_torn_durable_bytes": 320
+            },
+            "sim_config": {
+              "durable_loss": "tear_tail",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device tears the trailing sector of every flushed file at power failure",
+          "id": "torn_durable_tail",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 6976,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": false,
+            "committed_records": null,
+            "error": "orfs: corrupt committed state: commit watermark certifies a committed root of 6976 but only 6472 byte(s) of committed history survive (segment 0 valid length 6976): a trailing committed segment is missing or truncated",
+            "exit_code": 1,
+            "quarantined": null,
+            "recovered_root": null,
+            "refused": true,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": "corrupt committed state: commit watermark certifies a committed root of 6976 but only 6472 byte(s) of committed history survive (segment 0 valid length 6976): a trailing committed segment is missing or truncated",
+            "ok": false,
+            "root": null
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": false,
+            "detected": true,
+            "error": "orfs: corrupt committed state: commit watermark certifies a committed root of 6976 but only 6472 byte(s) of committed history survive (segment 0 valid length 6976): a trailing committed segment is missing or truncated",
+            "exit_code": 1,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": false,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "c_reordered_duplicated_write",
+          "data_intact": false,
+          "device": {
+            "acknowledged_roots": [
+              3034,
+              3538,
+              4180,
+              4684,
+              5326,
+              5830,
+              6472,
+              6976
+            ],
+            "failure_errno": null,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "reorder_durable",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 0,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 6976,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 0,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "reorder_durable",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device drops durable sector-aligned blocks at power failure",
+          "id": "reordered_durable_blocks",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 6976,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": false,
+            "committed_records": null,
+            "error": "orfs: corrupt committed state: commit watermark certifies a committed root of 6976 but only 100 byte(s) of committed history survive (segment 0 valid length 6976): a trailing committed segment is missing or truncated",
+            "exit_code": 1,
+            "quarantined": null,
+            "recovered_root": null,
+            "refused": true,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": "corrupt committed state: commit watermark certifies a committed root of 6976 but only 100 byte(s) of committed history survive (segment 0 valid length 6976): a trailing committed segment is missing or truncated",
+            "ok": false,
+            "root": null
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": false,
+            "detected": true,
+            "error": "orfs: corrupt committed state: commit watermark certifies a committed root of 6976 but only 100 byte(s) of committed history survive (segment 0 valid length 6976): a trailing committed segment is missing or truncated",
+            "exit_code": 1,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": false,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        }
+      ],
+      "row_count": 9
+    },
+    "sweep": {
+      "all_ok": true,
+      "matrix": [
+        {
+          "class": "a_torn_record_mid_log",
+          "data_intact": true,
+          "failures": [],
+          "fault": "a torn (half-written) record in a fresh trailing segment (a torn write that rolled over and never committed)",
+          "id": "sweep_torn_trailing_deep",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 20737,
+            "expected_tail_kind": "TornRecord",
+            "prefault_committed_root": 20737,
+            "segment_count": 11
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 163,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": true,
+            "recovered_root": 20737,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": 74,
+            "tail_kind": "torn_record"
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 20737
+          },
+          "residual": null,
+          "topology": "segment_rollover",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": true,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": 74,
+            "tail_kind": "TornRecord"
+          }
+        },
+        {
+          "class": "a_torn_record_mid_log",
+          "data_intact": true,
+          "failures": [],
+          "fault": "a torn (half-written) record appended to the last committed segment (an intra-segment tear, retained in place)",
+          "id": "sweep_torn_intra_deep",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 20737,
+            "expected_tail_kind": "TornRecord",
+            "prefault_committed_root": 20737,
+            "segment_count": 11
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 163,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": true,
+            "recovered_root": 20737,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": 74,
+            "tail_kind": "torn_record"
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": "corrupt committed state: torn record in non-final segment 20085 at physical offset 652",
+            "ok": false,
+            "root": null
+          },
+          "residual": "a fresh read-only open refuses the tail retained in place inside the committed segment (quarantined, not truncated, by design): corrupt committed state: torn record in non-final segment 20085 at physical offset 652",
+          "topology": "segment_rollover",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": true,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": 74,
+            "tail_kind": "TornRecord"
+          }
+        },
+        {
+          "class": "b_partially_persisted_commit_tail",
+          "data_intact": true,
+          "failures": [],
+          "fault": "a stray well-framed committed record in a fresh trailing segment (a partially-persisted commit/tail)",
+          "id": "sweep_stray_deep",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 20737,
+            "expected_tail_kind": "Uncommitted",
+            "prefault_committed_root": 20737,
+            "segment_count": 11
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 163,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": true,
+            "recovered_root": 20737,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": 120,
+            "tail_kind": "uncommitted"
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 20737
+          },
+          "residual": null,
+          "topology": "segment_rollover",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": true,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": 120,
+            "tail_kind": "Uncommitted"
+          }
+        },
+        {
+          "class": "c_reordered_duplicated_write",
+          "data_intact": true,
+          "failures": [],
+          "fault": "a full duplicate of the last committed record in a fresh trailing segment (a duplicated write)",
+          "id": "sweep_duplicate_deep",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 20737,
+            "expected_tail_kind": "Uncommitted",
+            "prefault_committed_root": 20737,
+            "segment_count": 11
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 163,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": true,
+            "recovered_root": 20737,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": 148,
+            "tail_kind": "uncommitted"
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 20737
+          },
+          "residual": null,
+          "topology": "segment_rollover",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": true,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": 148,
+            "tail_kind": "Uncommitted"
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [],
+            "failure_errno": 28,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 0,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 2392,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 0,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #0 with NoSpace",
+          "id": "sweep_write_error_nospc_skip0",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 2392,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 19,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 2392,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 2392
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [],
+            "failure_errno": 28,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 1,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 104,
+                  "durable_len": 2392,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 104,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #1 with NoSpace",
+          "id": "sweep_write_error_nospc_skip1",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 2392,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 19,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 2392,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 2392
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [],
+            "failure_errno": 28,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 2,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 268,
+                  "durable_len": 2392,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 268,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #2 with NoSpace",
+          "id": "sweep_write_error_nospc_skip2",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 2392,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 19,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 2392,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 2392
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [],
+            "failure_errno": 28,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 3,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 374,
+                  "durable_len": 2392,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 374,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #3 with NoSpace",
+          "id": "sweep_write_error_nospc_skip3",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 2392,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 19,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 2392,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 2392
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [],
+            "failure_errno": 28,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 4,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 494,
+                  "durable_len": 2392,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 494,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #4 with NoSpace",
+          "id": "sweep_write_error_nospc_skip4",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 2392,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 19,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 2392,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 2392
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [
+              3034
+            ],
+            "failure_errno": 28,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 0,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 3034,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 0,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #5 with NoSpace",
+          "id": "sweep_write_error_nospc_skip5",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 3034,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 24,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 3034,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 3034
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [
+              3034
+            ],
+            "failure_errno": 28,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 1,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 104,
+                  "durable_len": 3034,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 104,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #6 with NoSpace",
+          "id": "sweep_write_error_nospc_skip6",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 3034,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 24,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 3034,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 3034
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [
+              3034
+            ],
+            "failure_errno": 28,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 2,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 236,
+                  "durable_len": 3034,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 236,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #7 with NoSpace",
+          "id": "sweep_write_error_nospc_skip7",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 3034,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 24,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 3034,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 3034
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [],
+            "failure_errno": 5,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 0,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 2392,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 0,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #0 with IoError",
+          "id": "sweep_write_error_eio_skip0",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 2392,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 19,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 2392,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 2392
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [],
+            "failure_errno": 5,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 1,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 104,
+                  "durable_len": 2392,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 104,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #1 with IoError",
+          "id": "sweep_write_error_eio_skip1",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 2392,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 19,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 2392,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 2392
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [],
+            "failure_errno": 5,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 2,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 268,
+                  "durable_len": 2392,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 268,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #2 with IoError",
+          "id": "sweep_write_error_eio_skip2",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 2392,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 19,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 2392,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 2392
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [],
+            "failure_errno": 5,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 3,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 374,
+                  "durable_len": 2392,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 374,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #3 with IoError",
+          "id": "sweep_write_error_eio_skip3",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 2392,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 19,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 2392,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 2392
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [],
+            "failure_errno": 5,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 4,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 494,
+                  "durable_len": 2392,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 494,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #4 with IoError",
+          "id": "sweep_write_error_eio_skip4",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 2392,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 19,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 2392,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 2392
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [
+              3034
+            ],
+            "failure_errno": 5,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 0,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 3034,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 0,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #5 with IoError",
+          "id": "sweep_write_error_eio_skip5",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 3034,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 24,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 3034,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 3034
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [
+              3034
+            ],
+            "failure_errno": 5,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 1,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 104,
+                  "durable_len": 3034,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 104,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #6 with IoError",
+          "id": "sweep_write_error_eio_skip6",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 3034,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 24,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 3034,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 3034
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "d_write_error_at_record_boundary",
+          "data_intact": true,
+          "device": {
+            "acknowledged_roots": [
+              3034
+            ],
+            "failure_errno": 5,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "none",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 7
+              },
+              "dropped_writes": 2,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 236,
+                  "durable_len": 3034,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 236,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "none",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 7
+            }
+          },
+          "failures": [],
+          "fault": "simulated device rejects write #7 with IoError",
+          "id": "sweep_write_error_eio_skip7",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 3034,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": true,
+            "committed_records": 24,
+            "error": null,
+            "exit_code": 0,
+            "quarantined": false,
+            "recovered_root": 3034,
+            "refused": false,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": null,
+            "ok": true,
+            "root": 3034
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": true,
+            "detected": false,
+            "error": null,
+            "exit_code": 0,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": true,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "c_reordered_duplicated_write",
+          "data_intact": false,
+          "device": {
+            "acknowledged_roots": [
+              3034,
+              3538,
+              4180,
+              4684,
+              5326,
+              5830,
+              6472,
+              6976,
+              7618,
+              8122,
+              8764,
+              9268
+            ],
+            "failure_errno": null,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "tear_tail",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 3
+              },
+              "dropped_writes": 0,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 9216,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 52
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 0,
+              "total_torn_durable_bytes": 52
+            },
+            "sim_config": {
+              "durable_loss": "tear_tail",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 3
+            }
+          },
+          "failures": [],
+          "fault": "simulated device durable-loss profile for sweep_tear_3",
+          "id": "sweep_tear_3",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 9268,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": false,
+            "committed_records": null,
+            "error": "orfs: corrupt committed state: commit watermark certifies a committed root of 9268 but only 8764 byte(s) of committed history survive (segment 0 valid length 9268): a trailing committed segment is missing or truncated",
+            "exit_code": 1,
+            "quarantined": null,
+            "recovered_root": null,
+            "refused": true,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": "corrupt committed state: commit watermark certifies a committed root of 9268 but only 8764 byte(s) of committed history survive (segment 0 valid length 9268): a trailing committed segment is missing or truncated",
+            "ok": false,
+            "root": null
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": false,
+            "detected": true,
+            "error": "orfs: corrupt committed state: commit watermark certifies a committed root of 9268 but only 8764 byte(s) of committed history survive (segment 0 valid length 9268): a trailing committed segment is missing or truncated",
+            "exit_code": 1,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": false,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "c_reordered_duplicated_write",
+          "data_intact": false,
+          "device": {
+            "acknowledged_roots": [
+              3034,
+              3538,
+              4180,
+              4684,
+              5326,
+              5830,
+              6472,
+              6976,
+              7618,
+              8122,
+              8764,
+              9268
+            ],
+            "failure_errno": null,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "tear_tail",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 21
+              },
+              "dropped_writes": 0,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 9216,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 52
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 0,
+              "total_torn_durable_bytes": 52
+            },
+            "sim_config": {
+              "durable_loss": "tear_tail",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 21
+            }
+          },
+          "failures": [],
+          "fault": "simulated device durable-loss profile for sweep_tear_21",
+          "id": "sweep_tear_21",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 9268,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": false,
+            "committed_records": null,
+            "error": "orfs: corrupt committed state: commit watermark certifies a committed root of 9268 but only 8764 byte(s) of committed history survive (segment 0 valid length 9268): a trailing committed segment is missing or truncated",
+            "exit_code": 1,
+            "quarantined": null,
+            "recovered_root": null,
+            "refused": true,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": "corrupt committed state: commit watermark certifies a committed root of 9268 but only 8764 byte(s) of committed history survive (segment 0 valid length 9268): a trailing committed segment is missing or truncated",
+            "ok": false,
+            "root": null
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": false,
+            "detected": true,
+            "error": "orfs: corrupt committed state: commit watermark certifies a committed root of 9268 but only 8764 byte(s) of committed history survive (segment 0 valid length 9268): a trailing committed segment is missing or truncated",
+            "exit_code": 1,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": false,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "c_reordered_duplicated_write",
+          "data_intact": false,
+          "device": {
+            "acknowledged_roots": [
+              3034,
+              3538,
+              4180,
+              4684,
+              5326,
+              5830,
+              6472,
+              6976,
+              7618,
+              8122,
+              8764,
+              9268
+            ],
+            "failure_errno": null,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "reorder_durable",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 3
+              },
+              "dropped_writes": 0,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 9216,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 52
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 0,
+              "total_torn_durable_bytes": 52
+            },
+            "sim_config": {
+              "durable_loss": "reorder_durable",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 3
+            }
+          },
+          "failures": [],
+          "fault": "simulated device durable-loss profile for sweep_reorder_durable_3",
+          "id": "sweep_reorder_durable_3",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 9268,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": false,
+            "committed_records": null,
+            "error": "orfs: corrupt committed state: commit watermark certifies a committed root of 9268 but only 0 byte(s) of committed history survive (segment 0 valid length 9268): a trailing committed segment is missing or truncated",
+            "exit_code": 1,
+            "quarantined": null,
+            "recovered_root": null,
+            "refused": true,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": "corrupt committed state: commit watermark certifies a committed root of 9268 but only 0 byte(s) of committed history survive (segment 0 valid length 9268): a trailing committed segment is missing or truncated",
+            "ok": false,
+            "root": null
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": false,
+            "detected": true,
+            "error": "orfs: corrupt committed state: commit watermark certifies a committed root of 9268 but only 0 byte(s) of committed history survive (segment 0 valid length 9268): a trailing committed segment is missing or truncated",
+            "exit_code": 1,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": false,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        },
+        {
+          "class": "c_reordered_duplicated_write",
+          "data_intact": false,
+          "device": {
+            "acknowledged_roots": [
+              3034,
+              3538,
+              4180,
+              4684,
+              5326,
+              5830,
+              6472,
+              6976,
+              7618,
+              8122,
+              8764,
+              9268
+            ],
+            "failure_errno": null,
+            "power_fail_report": {
+              "config": {
+                "durable_loss": "reorder_durable",
+                "flush": "barrier",
+                "sector": 512,
+                "seed": 21
+              },
+              "dropped_writes": 0,
+              "files": [
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 9268,
+                  "name": "0000000000000000.seg",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                },
+                {
+                  "dropped_volatile_bytes": 0,
+                  "durable_len": 36,
+                  "name": "commit.watermark",
+                  "present": true,
+                  "torn_durable_bytes": 0
+                }
+              ],
+              "total_dropped_volatile_bytes": 0,
+              "total_torn_durable_bytes": 0
+            },
+            "sim_config": {
+              "durable_loss": "reorder_durable",
+              "flush": "barrier",
+              "sector": 512,
+              "seed": 21
+            }
+          },
+          "failures": [],
+          "fault": "simulated device durable-loss profile for sweep_reorder_durable_21",
+          "id": "sweep_reorder_durable_21",
+          "ok": true,
+          "prefault": {
+            "baseline_root": 2392,
+            "expected_recovered_root": 9268,
+            "expected_tail_kind": null,
+            "prefault_committed_root": 2392,
+            "segment_count": 1
+          },
+          "recover": {
+            "cli_ok": false,
+            "committed_records": null,
+            "error": "orfs: corrupt committed state: commit watermark certifies a committed root of 9268 but only 100 byte(s) of committed history survive (segment 0 valid length 9268): a trailing committed segment is missing or truncated",
+            "exit_code": 1,
+            "quarantined": null,
+            "recovered_root": null,
+            "refused": true,
+            "scan_error": null,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          },
+          "refused_untouched": true,
+          "reopen": {
+            "error": "corrupt committed state: commit watermark certifies a committed root of 9268 but only 100 byte(s) of committed history survive (segment 0 valid length 9268): a trailing committed segment is missing or truncated",
+            "ok": false,
+            "root": null
+          },
+          "residual": null,
+          "topology": "mid_segment",
+          "verify_deep": {
+            "cli_ok": false,
+            "detected": true,
+            "error": "orfs: corrupt committed state: commit watermark certifies a committed root of 9268 but only 100 byte(s) of committed history survive (segment 0 valid length 9268): a trailing committed segment is missing or truncated",
+            "exit_code": 1,
+            "failing_checks": [],
+            "repaired": false,
+            "report_ok": false,
+            "tail_abandoned_bytes": null,
+            "tail_kind": null
+          }
+        }
+      ],
+      "row_count": 24
+    }
+  },
+  "schema": "orfs.recovery.fault-injection-verify-recover.v1"
+}

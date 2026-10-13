@@ -285,3 +285,41 @@ docker_run_kmount_root() {
         -e ORFS_IMAGE_DIGEST="$(_orfs_image_digest "$ORFS_KMOUNT_IMAGE")" \
         "$ORFS_KMOUNT_IMAGE" "$@"
 }
+
+# docker_run_dm_probe: for the Phase 62 device-mapper fault-target probe. Runs as
+# **root** (Docker only retains an added capability for the root user) with the
+# device access and capabilities a `losetup` / `dmsetup` attempt needs. Never used
+# by default. The `/dev/loop-control` and `/dev/mapper/control` device nodes are
+# forwarded only when the host has them, so the call still runs — and honestly
+# records the failure — on a host that lacks them. Does not `exec`, so a caller
+# can run the elevated probe and then an ordinary court, one container at a time.
+docker_run_dm_probe() {
+    _dm_dev_loop=""
+    _dm_dev_mapper=""
+    [ -e /dev/loop-control ] && _dm_dev_loop="--device /dev/loop-control"
+    [ -e /dev/mapper/control ] && _dm_dev_mapper="--device /dev/mapper/control"
+    # shellcheck disable=SC2086  # intentional word-splitting of the optional flags
+    docker run --rm \
+        --memory="$ORFS_MEM_LIMIT" \
+        --memory-swap="$ORFS_MEMSWAP_LIMIT" \
+        --cpus="$ORFS_CPUS" \
+        --pids-limit="$ORFS_PIDS" \
+        --cap-add SYS_ADMIN \
+        --cap-add MKNOD \
+        --security-opt apparmor=unconfined \
+        --security-opt seccomp=unconfined \
+        --ulimit core=0 \
+        $_dm_dev_loop $_dm_dev_mapper \
+        -v "$ORFS_PARENT_DIR":"$ORFS_PARENT_DIR" \
+        -w "$ORFS_PROJECT_DIR" \
+        -u 0:0 \
+        -e HOME=/tmp \
+        -e TMPDIR="$ORFS_TMP_DIR" \
+        -e CARGO_HOME="$ORFS_CARGO_HOME" \
+        -e RUSTUP_HOME=/usr/local/rustup \
+        -e CARGO_TARGET_DIR="$ORFS_TARGET_DIR" \
+        -e CARGO_TERM_COLOR=never \
+        -e RUSTUP_TOOLCHAIN=1.99.0 \
+        -e ORFS_IMAGE_DIGEST="$(_orfs_image_digest "$ORFS_IMAGE")" \
+        "$ORFS_IMAGE" "$@"
+}

@@ -332,3 +332,67 @@ Evidence: `evidence/performance/historical-fast.json` (measured at an 8 000-op
 history: directory-assisted mount vs. the pre-Phase-43 scan, a validated quick
 open vs. the audited mount, and binary vs. legacy accelerator load, with an honest
 note about what is and is not improved).
+
+---
+
+## 9. Device-fault evidence: `verify --deep` + `recover` after injected faults (Phase 62)
+
+Section 7 injects ENOSPC/EIO and asserts the §35 invariants *in-process*. Phase 62
+closes the reviewer's residual item by injecting a fault and then driving the
+**real `orfs` binary** — `orfs verify --deep` and `orfs recover` — on the damaged
+volume. Court: `tests/verify_recover_faults.rs` (run by
+`scripts/container-fault-verify.sh`); receipt
+`evidence/recovery/fault-injection-verify-recover.json`, schema
+`orfs.recovery.fault-injection-verify-recover.v1`. The always-on matrix has **9**
+rows; `ORFS_FAULT_SWEEP=1` adds a **24**-row sweep.
+
+The workload is a real `Namespace` (semantically-valid typed records, so the
+deep `namespace_index_rebuild` check succeeds on the committed prefix). For each
+fault the court asserts:
+
+* `verify --deep` **surfaces** the damage (a failed check, or a `tail` check that
+  names a non-empty tail) and — because it opens read-only — does **not** repair
+  it (the whole tree is byte-identical afterwards);
+* `orfs recover` reports a **valid committed boundary** and the committed prefix
+  `[0, R)` is byte-identical on disk (checked directly, not via a reopen), so no
+  committed byte is rewritten, withdrawn, or invented;
+* a **refusal** (e.g. a torn durable tail whose commit watermark certifies more
+  history than survives) leaves the tree untouched.
+
+| Injected fault | `verify --deep` | `orfs recover` | reopen | data intact |
+|---|---|---|---|---|
+| torn trailing segment (rolled over) | detects `TornRecord` | quarantine, `R` unchanged | clean | yes |
+| torn record **inside** the committed segment | detects `TornRecord` | quarantine, `R` unchanged | **refused** (see residual) | yes |
+| partially-persisted commit/tail (stray record) | detects `Uncommitted` | quarantine, `R` unchanged | clean | yes |
+| duplicated write (trailing segment) | detects `Uncommitted` | quarantine, `R` unchanged | clean | yes |
+| write error at a record boundary (ENOSPC/EIO) | clean (atomic refusal) | recovers to the last ack | clean | yes |
+| reordered write (honoured barrier) | clean (nothing lost) | recovers to the last ack | clean | yes |
+| torn durable tail / reordered durable blocks | detects | **refuses** | refused | n/a |
+
+### 9.1 Residual: an intra-segment tail is retained in place
+
+OrFS recovery is defined for a tail that occupies a **whole trailing segment**
+(a torn/uncommitted write that rolled over): the segment is moved to
+`quarantine/` and the volume reopens cleanly. A tail that begins **inside** the
+committed segment is deliberately **retained in place and not truncated**
+(`tests/log_model.rs::torn_tail_is_quarantined_not_truncated` pins this). After
+recovery continues in a fresh segment, the retained bytes are no longer in the
+final segment, so a *later fresh open* refuses them with
+`corrupt committed state: torn record in non-final segment …`. The CLI itself
+still reports the correct committed boundary and **no committed byte is lost,
+rewritten or withdrawn**; the court records this as an explicit `residual` field
+rather than hiding it. This is the one honest limitation of the recovery path
+exercised here.
+
+### 9.2 Device-mapper probe (`dm-flaky` / `dm-error`): not usable here
+
+The court attempts to build a real device-mapper fault target over a loop device
+(`losetup` + `dmsetup`) and records the outcome. In this sandbox `ran: false`:
+`dmsetup` is not installed in the pinned image (`dmsetup: not found`, exit 127),
+the default container exposes neither `/dev/loop-control` nor
+`/dev/mapper/control`, and even in the elevated container (`--cap-add SYS_ADMIN
+--cap-add MKNOD --device /dev/loop-control --device /dev/mapper/control`, as root)
+`losetup --find --show <file>` fails with `ENOENT` (the container has no
+`/dev/loop0` node). No `dm-*` result is fabricated; the fault matrix above uses
+the project's deterministic simulated device (`src/powerloss.rs`) and direct
+segment-byte injection instead.

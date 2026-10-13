@@ -1517,3 +1517,68 @@ workload and the read-latency floor.
 counter attribution. A FUSE-passthrough baseline is produced separately by the
 phase-21 court because it needs a real mount. The `host-fs` scratch lives under
 `target/` (gitignored) and is removed by the court.
+
+## 21. Reviewer task — io_uring depth sweep (CQ/SQ)
+
+**Why this exists.** Every earlier `io_uring` court measured *time* (sync vs
+`io_uring`, batched vs unbatched). This one measures the **mechanism** as the
+ring depth changes: how many SQEs are pushed, how often the submission queue
+actually fills (SQ backpressure), how long the completion queue ever gets in a
+single drain pass (CQ-overflow pressure), and how many batched submit rounds a
+workload takes.
+
+**Court.** `tests/uring_depth.rs`, run by `scripts/container-uring-depth.sh`
+(release) under `docker_run_uring` (the seccomp profile that permits
+`io_uring_setup`; see §1 and `scripts/container-uring-test.sh`). It sweeps ring
+depths `{1, 2, 4, 8, 16, 32, 64, 128}` over a **batched positional write**
+followed by a **batched positional read** of the same bytes on a real file in a
+temp dir, and asserts the read-back bytes are byte-exact at every depth. It
+writes `evidence/performance/uring-depth.json` (schema
+`orfs.performance.uring-depth.v1`).
+
+The engine's counters (`UringStats`) are extended with `sq_pushes`,
+`sq_full_events`, `cq_max_len`, and `batch_chunks`. The behaviour change is that
+SQ backpressure is now **observable and non-fatal**: when the submission queue
+fills mid-batch, `run_entries` counts the event, submits what is queued, reaps
+completions to make room, and keeps pushing — the contract (submit every entry,
+collect every requested completion) is unchanged. `write_batch` still caps each
+chunk at the ring depth so its SQ never saturates; `read_batch` does not cap, so
+at small depths a 128-record read batch genuinely overflows the SQ.
+
+**Measured (one run; release; 32 rounds of 128 × 4 KiB records per depth).**
+Read latency is per 512 KiB round; MB/s and ops/s are per depth. `sq_full` = read
+SQ-full events; `cq_max` = largest CQ length drained in one pass.
+
+| ring depth | read ops/s | read MB/s | read p50 / p99 (µs) | read sq_full | read cq_max | read chunks | write MB/s | write p50 / p99 (µs) | write sq_full | write chunks |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2 (requested 1) | 1 620 168 | 6 636 | 60.3 / 132.7 | 2016 | 2 | 32 | 2021 | 243.8 / 520.0 | 0 | 2048 |
+| 2 | 1 643 808 | 6 733 | 55.0 / 176.5 | 2016 | 2 | 32 | 2075 | 235.8 / 428.6 | 0 | 2048 |
+| 4 | 2 129 571 | 8 723 | 61.6 / 79.6 | 992 | 4 | 32 | 2547 | 188.6 / 455.0 | 0 | 1024 |
+| 8 | 2 287 915 | 9 371 | 57.2 / 63.0 | 480 | 8 | 32 | 2523 | 178.8 / 872.0 | 0 | 512 |
+| 16 | 2 271 933 | 9 306 | 56.8 / 67.3 | 224 | 16 | 32 | 3393 | 149.3 / 202.9 | 0 | 256 |
+| 32 | 2 271 656 | 9 305 | 53.8 / 88.3 | 96 | 32 | 32 | 2976 | 141.2 / 698.1 | 0 | 128 |
+| 64 | 2 112 809 | 8 654 | 60.6 / 77.8 | 32 | 64 | 32 | 3629 | 138.8 / 191.7 | 0 | 64 |
+| 128 | 2 567 937 | 10 518 | 49.8 / 66.3 | 0 | 128 | 32 | 3913 | 124.4 / 193.0 | 0 | 32 |
+
+`orphan_completions == 0` and `completions == submits` at every depth (both
+asserted); `short_reads == short_writes == 0`. At every depth `cq_max_len`
+equals the ring depth: the completion queue fills to its capacity in the batched
+workload, which is exactly the CQ-pressure signal the old time-only courts could
+not see. `read_batch` shows steadily fewer SQ-full events as the depth
+grows (2016 at ring depth 2, halving roughly with each doubling down to 32 at
+depth 64), and none at all at depth 128 — because a 128-record batch
+exactly equals a 128-entry ring, so no push ever fails. `write_batch` shows
+`sq_full == 0` at every depth, the intended consequence of its depth cap;
+`write_chunks` falls as `128 / depth`, i.e. the cap serializes the write into
+more, smaller submission rounds, which is why write throughput climbs from
+~2.0 GB/s at depth 2 to ~3.9 GB/s at depth 128.
+
+**Honesty caveats.** Single run, single host, page-cache warm; absolute
+nanoseconds are load-sensitive. **Hardware performance counters are unavailable
+on this host** (`perf_event_paranoid=2`, `perf_counters_available=false`), so
+there are no flamegraphs or PMU attribution here — the SQ/CQ counters above are
+the mechanism evidence. `UringEngine::try_new` rounds a requested depth up to a
+power of two with a floor of 2, so the `requested 1` row runs on a ring of depth
+2 and is not a distinct configuration. This is a syscall/submission
+micro-benchmark (warm page cache, `tmpfs`-backed temp dir), not a device
+durability benchmark.

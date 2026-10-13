@@ -236,6 +236,16 @@
         {"group": 1, "label": "rare pattern files_considered", "evidence": "evidence/performance/search-directory.json", "path": "directory_path[pattern_hex=7a7a71].files_considered"},
         {"group": 2, "label": "rare pattern content_bytes_read", "evidence": "evidence/performance/search-directory.json", "path": "directory_path[pattern_hex=7a7a71].content_bytes_read"}
       ]
+    },
+    {
+      "id": "perf-s21-uring-sq-pressure",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§21",
+      "claim": "io_uring depth sweep: SQ-full events for a 128-record read batch at the smallest ring depth",
+      "regex": "\\(([0-9][0-9 ]*?) at ring depth 2,",
+      "fields": [
+        {"group": 1, "label": "read sq_full_events at requested depth 1", "evidence": "evidence/performance/uring-depth.json", "path": "rows[requested_depth=1].read.stats.sq_full_events"}
+      ]
     }
   ]
 }

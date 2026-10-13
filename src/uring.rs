@@ -156,6 +156,19 @@ pub struct UringStats {
     pub submits: u64,
     /// CQEs drained.
     pub completions: u64,
+    /// Successful SQEs pushed into the submission queue.
+    pub sq_pushes: u64,
+    /// Times the submission queue was found full before every entry of a batch
+    /// had been pushed (SQ backpressure). Non-fatal: the engine submits what is
+    /// queued and reaps completions to make room, then keeps pushing.
+    pub sq_full_events: u64,
+    /// The largest number of CQEs drained in a single pass. A value at the ring's
+    /// CQ capacity in a batched workload is direct evidence of CQ-overflow
+    /// pressure (the kernel had more completions ready than the ring could hold).
+    pub cq_max_len: u64,
+    /// Batched submit rounds: one per `run_entries` call made by
+    /// [`UringEngine::read_batch`] / [`UringEngine::write_batch`].
+    pub batch_chunks: u64,
     /// Positive-but-short writes observed and retried.
     pub short_writes: u64,
     /// Positive-but-short reads observed and retried.
@@ -259,6 +272,10 @@ struct EngineState {
     next_user_data: u64,
     submits: u64,
     completions: u64,
+    sq_pushes: u64,
+    sq_full_events: u64,
+    cq_max_len: u64,
+    batch_chunks: u64,
     short_writes: u64,
     short_reads: u64,
     orphan_completions: u64,
@@ -455,6 +472,10 @@ impl UringEngine {
             depth: self.depth,
             submits: self.state.submits,
             completions: self.state.completions,
+            sq_pushes: self.state.sq_pushes,
+            sq_full_events: self.state.sq_full_events,
+            cq_max_len: self.state.cq_max_len,
+            batch_chunks: self.state.batch_chunks,
             short_writes: self.state.short_writes,
             short_reads: self.state.short_reads,
             orphan_completions: self.state.orphan_completions,
@@ -594,6 +615,7 @@ impl UringEngine {
             if entries.is_empty() {
                 return Ok(());
             }
+            self.state.batch_chunks += 1;
             let order = run_entries(&mut self.ring, &mut self.state, entries, mapping.len())?;
             for (ud, res) in order {
                 let Some(&(_, j)) = mapping.iter().find(|(u, _)| *u == ud) else {
@@ -641,6 +663,7 @@ impl UringEngine {
             if entries.is_empty() {
                 return Ok(());
             }
+            self.state.batch_chunks += 1;
             let order = run_entries(&mut self.ring, &mut self.state, entries, mapping.len())?;
             for (ud, res) in order {
                 let Some(&(_, j)) = mapping.iter().find(|(u, _)| *u == ud) else {
@@ -819,6 +842,7 @@ impl UringEngine {
             }
             cq.sync();
             self.state.completions += drained;
+            self.state.cq_max_len = self.state.cq_max_len.max(drained);
             if let Some(r) = found {
                 return Ok(r);
             }
@@ -849,6 +873,7 @@ impl UringEngine {
             }
             cq.sync();
             self.state.completions += drained;
+            self.state.cq_max_len = self.state.cq_max_len.max(drained);
         }
         Ok(())
     }
@@ -894,6 +919,13 @@ impl Drop for UringEngine {
 ///
 /// Every completion carries its operation's `user_data`. Completions for
 /// operations that are not part of this batch are stashed as orphans.
+///
+/// Submission-queue backpressure is **observable and non-fatal**: when the SQ
+/// fills before every entry has been pushed, the event is counted
+/// ([`UringStats::sq_full_events`]), the already-pushed SQEs are submitted, and
+/// available completions are reaped to free SQ slots before pushing continues.
+/// The contract is unchanged — every entry is still submitted and every
+/// requested completion is still collected before this returns.
 fn run_entries(
     ring: &mut IoUring,
     state: &mut EngineState,
@@ -903,49 +935,81 @@ fn run_entries(
     if want == 0 {
         return Ok(Vec::new());
     }
-    {
-        let mut sq = ring.submission();
-        for e in &entries {
-            // SAFETY: the caller guarantees every buffer referenced by `e` stays
-            // valid until this function returns, and this function collects every
-            // requested completion before returning.
-            if unsafe { sq.push(e) }.is_err() {
-                return Err(OrfsError::Io(io::Error::new(
-                    io::ErrorKind::WouldBlock,
-                    "io_uring submission queue full",
-                )));
-            }
-        }
-    }
     let expected: HashSet<u64> = entries.iter().map(|e| e.get_user_data()).collect();
     let mut got: HashSet<u64> = HashSet::new();
     let mut order: Vec<(u64, i32)> = Vec::with_capacity(want);
+
+    let mut idx = 0usize;
+    while idx < entries.len() {
+        {
+            let mut sq = ring.submission();
+            while idx < entries.len() {
+                // SAFETY: the caller guarantees every buffer referenced by
+                // `entries[idx]` stays valid until this function returns, and this
+                // function collects every requested completion before returning.
+                if unsafe { sq.push(&entries[idx]) }.is_err() {
+                    break;
+                }
+                state.sq_pushes += 1;
+                idx += 1;
+            }
+        }
+        if idx >= entries.len() {
+            break;
+        }
+        // The submission queue filled before every entry was pushed. This is
+        // backpressure, not an error: submit the queued SQEs and reap at least
+        // one completion so the kernel frees SQ slots, then keep pushing.
+        state.sq_full_events += 1;
+        match ring.submit_and_wait(1) {
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(OrfsError::Io(e)),
+        }
+        reap_completions(ring, state, &expected, &mut got, &mut order);
+    }
+
     while got.len() < want {
         match ring.submit_and_wait(want - got.len()) {
             Ok(_) => {}
             Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
             Err(e) => return Err(OrfsError::Io(e)),
         }
-        let mut cq = ring.completion();
-        let mut drained = 0u64;
-        for cqe in &mut cq {
-            let ud = cqe.user_data();
-            let res = cqe.result();
-            drained += 1;
-            order.push((ud, res));
-            state.nowait_outstanding.remove(&ud);
-            if expected.contains(&ud) {
-                got.insert(ud);
-            } else {
-                state.orphans.insert(ud, res);
-                state.orphan_completions += 1;
-            }
-        }
-        cq.sync();
-        state.completions += drained;
+        reap_completions(ring, state, &expected, &mut got, &mut order);
     }
     state.submits += entries.len() as u64;
     Ok(order)
+}
+
+/// Drain every completion currently available into `order` (in arrival order),
+/// recording which of the `expected` operations have now arrived and stashing
+/// the rest as orphans. Updates the drained-CQE counters and the peak CQ length
+/// observed in a single pass.
+fn reap_completions(
+    ring: &mut IoUring,
+    state: &mut EngineState,
+    expected: &HashSet<u64>,
+    got: &mut HashSet<u64>,
+    order: &mut Vec<(u64, i32)>,
+) {
+    let mut cq = ring.completion();
+    let mut drained = 0u64;
+    for cqe in &mut cq {
+        let ud = cqe.user_data();
+        let res = cqe.result();
+        drained += 1;
+        order.push((ud, res));
+        state.nowait_outstanding.remove(&ud);
+        if expected.contains(&ud) {
+            got.insert(ud);
+        } else {
+            state.orphans.insert(ud, res);
+            state.orphan_completions += 1;
+        }
+    }
+    cq.sync();
+    state.completions += drained;
+    state.cq_max_len = state.cq_max_len.max(drained);
 }
 
 fn take_result(order: &[(u64, i32)], ud: u64) -> Result<i32> {

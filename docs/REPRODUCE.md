@@ -38,6 +38,7 @@ All execution is Docker-only (`scripts/lib.sh`); nothing runs on the host.
 | `evidence/performance/group-commit-adaptive.json` | `tests/group_commit_adaptive.rs` | `sh scripts/container-group-commit.sh` |
 | `evidence/performance/f2-concurrency-affine.json` | `tests/f2_concurrency.rs` | `sh scripts/container-fuse-test.sh` |
 | `evidence/performance/backing-uring.json`, `mechanisms.json` | `tests/uring_integration.rs`, `benches/mechanisms.rs` | `sh scripts/container-uring-test.sh` |
+| `evidence/performance/uring-depth.json` | `tests/uring_depth.rs` | `sh scripts/container-uring-depth.sh` |
 | `evidence/performance/endurance-postcourt.json`, `endurance.json` | `tests/performance_court.rs` | `sh scripts/container-endurance.sh` |
 | `evidence/correctness/pjdfstest.json`, `posix-results.json` | the POSIX court | `sh scripts/container-posix-test.sh` |
 | `evidence/security/valgrind.json` | Valgrind Memcheck targets | `sh scripts/container-valgrind.sh` |

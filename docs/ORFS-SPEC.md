@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–54)
+## 4. The ordered build phases (0–55)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -140,16 +140,17 @@ per-phase record.
 | 52 | Global search directory (§9): version-qualified trigram→object directory with density-adaptive posting sets | **complete** |
 | 53 | External baseline comparators (ext4 / tmpfs / overlay / raw memory) | **complete** |
 | 54 | Serious-filesystem docs: threat model, acceptance-gate definitions (A–N), reproducibility index | **complete** |
+| 55 | io_uring depth sweep with SQ/CQ-pressure counters; on-disk wire-format specification | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–54 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–55 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
 v0.1.0 was the first release.
 
-- The `orfs` crate builds, its **438** tests (default) pass, and
-  `cargo test --features failpoints` adds the crash-injection court (448 tests in
+- The `orfs` crate builds, its **440** tests (default) pass, and
+  `cargo test --features failpoints` adds the crash-injection court (450 tests in
   total); `cargo fmt -p orfs --check` / `clippy --all-targets -- -D warnings` are
   clean **inside the pinned container** (`scripts/container-*.sh`).
 - `src/capabilities.rs` + `orfs doctor` perform a **real** kernel/container
@@ -235,7 +236,7 @@ sibling working tree is required):
 
 ```sh
 scripts/container-build.sh        # cargo build
-scripts/container-test.sh         # cargo test  (438 tests)
+scripts/container-test.sh         # cargo test  (440 tests)
 scripts/container-fuse-test.sh    # real-mount FUSE + performance court
 scripts/container-uring-test.sh   # io_uring integration + backing benchmark
 scripts/container-check.sh        # cargo fmt -p orfs --check + clippy -D warnings

@@ -1,0 +1,451 @@
+{
+  "design": {
+    "backpressure_exercised": "each read batch is 128 records, larger than the ring at small depths, so the SQ fills; each write batch is capped at the ring depth, so the SQ never fills",
+    "batch_bytes": 524288,
+    "batch_records": 128,
+    "bytes_per_depth": 16777216,
+    "depths": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64,
+      128
+    ],
+    "record_bytes": 4096,
+    "records_per_depth": 4096,
+    "ring_depth_is_power_of_two_and_min_2": "UringEngine::try_new rounds the requested depth up to a power of two with a floor of 2, so a requested depth of 1 runs on a ring of depth 2",
+    "rounds": 32
+  },
+  "environment": {
+    "cgroup_memory_max": "8589934592",
+    "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "container_image": null,
+    "cores_visible": 8,
+    "cpu_max": "800000 100000",
+    "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+    "fuse_enable_uring": true,
+    "kernel_release": "7.2.9-2-cachyos",
+    "likely_container": true,
+    "machine": "x86_64",
+    "perf_counters_available": false,
+    "perf_event_paranoid": "2",
+    "ram_total_bytes": 134723346432
+  },
+  "generated_by": "tests/uring_depth.rs",
+  "io_uring_available": true,
+  "io_uring_reason": null,
+  "note": "Single-run, single-host io_uring ring-depth sweep. Absolute nanoseconds are host/load sensitive; the mechanism counters are the point: sq_full_events shows real submission-queue backpressure (observed for byte-batched reads at small depths, and deliberately absent for write_batch, which caps each batch at the ring depth), cq_max_len shows the largest completion queue drained in one pass, and batch_chunks counts batched submit rounds.",
+  "orfs_version": "0.2.0",
+  "pmu": {
+    "hardware_counters_available": false,
+    "note": "Hardware performance counters (and thus flamegraphs / PMU attribution) are unavailable on this host; the SQ/CQ counters are the PMU-free mechanism evidence.",
+    "perf_event_paranoid": "2"
+  },
+  "profile": "release",
+  "rows": [
+    {
+      "read": {
+        "bytes": 16777216,
+        "latency_ns": {
+          "p50_per_round": 60262,
+          "p99_per_round": 132735
+        },
+        "mb_per_s": 6636.207826091428,
+        "ops": 4096,
+        "ops_per_s": 1620167.9262918525,
+        "seconds": 0.002528133,
+        "stats": {
+          "batch_chunks": 32,
+          "completions": 4096,
+          "cq_max_len": 2,
+          "depth": 2,
+          "orphan_completions": 0,
+          "short_reads": 0,
+          "short_writes": 0,
+          "sq_full_events": 2016,
+          "sq_pushes": 4096,
+          "submits": 4096
+        }
+      },
+      "requested_depth": 1,
+      "ring_depth": 2,
+      "write": {
+        "bytes": 16777216,
+        "latency_ns": {
+          "p50_per_round": 243762,
+          "p99_per_round": 519993
+        },
+        "mb_per_s": 2021.4699344407318,
+        "ops": 4096,
+        "ops_per_s": 493522.9332130693,
+        "seconds": 0.008299513,
+        "stats": {
+          "batch_chunks": 2048,
+          "completions": 4096,
+          "cq_max_len": 2,
+          "depth": 2,
+          "orphan_completions": 0,
+          "short_reads": 0,
+          "short_writes": 0,
+          "sq_full_events": 0,
+          "sq_pushes": 4096,
+          "submits": 4096
+        }
+      }
+    },
+    {
+      "read": {
+        "bytes": 16777216,
+        "latency_ns": {
+          "p50_per_round": 55032,
+          "p99_per_round": 176517
+        },
+        "mb_per_s": 6733.038095333648,
+        "ops": 4096,
+        "ops_per_s": 1643808.1287435663,
+        "seconds": 0.002491775,
+        "stats": {
+          "batch_chunks": 32,
+          "completions": 4096,
+          "cq_max_len": 2,
+          "depth": 2,
+          "orphan_completions": 0,
+          "short_reads": 0,
+          "short_writes": 0,
+          "sq_full_events": 2016,
+          "sq_pushes": 4096,
+          "submits": 4096
+        }
+      },
+      "requested_depth": 2,
+      "ring_depth": 2,
+      "write": {
+        "bytes": 16777216,
+        "latency_ns": {
+          "p50_per_round": 235756,
+          "p99_per_round": 428614
+        },
+        "mb_per_s": 2075.156636624676,
+        "ops": 4096,
+        "ops_per_s": 506630.03823844634,
+        "seconds": 0.008084795,
+        "stats": {
+          "batch_chunks": 2048,
+          "completions": 4096,
+          "cq_max_len": 2,
+          "depth": 2,
+          "orphan_completions": 0,
+          "short_reads": 0,
+          "short_writes": 0,
+          "sq_full_events": 0,
+          "sq_pushes": 4096,
+          "submits": 4096
+        }
+      }
+    },
+    {
+      "read": {
+        "bytes": 16777216,
+        "latency_ns": {
+          "p50_per_round": 61624,
+          "p99_per_round": 79567
+        },
+        "mb_per_s": 8722.72318903271,
+        "ops": 4096,
+        "ops_per_s": 2129571.0910724388,
+        "seconds": 0.001923392,
+        "stats": {
+          "batch_chunks": 32,
+          "completions": 4096,
+          "cq_max_len": 4,
+          "depth": 4,
+          "orphan_completions": 0,
+          "short_reads": 0,
+          "short_writes": 0,
+          "sq_full_events": 992,
+          "sq_pushes": 4096,
+          "submits": 4096
+        }
+      },
+      "requested_depth": 4,
+      "ring_depth": 4,
+      "write": {
+        "bytes": 16777216,
+        "latency_ns": {
+          "p50_per_round": 188589,
+          "p99_per_round": 455043
+        },
+        "mb_per_s": 2546.9647605842956,
+        "ops": 4096,
+        "ops_per_s": 621817.5685020253,
+        "seconds": 0.006587141,
+        "stats": {
+          "batch_chunks": 1024,
+          "completions": 4096,
+          "cq_max_len": 4,
+          "depth": 4,
+          "orphan_completions": 0,
+          "short_reads": 0,
+          "short_writes": 0,
+          "sq_full_events": 0,
+          "sq_pushes": 4096,
+          "submits": 4096
+        }
+      }
+    },
+    {
+      "read": {
+        "bytes": 16777216,
+        "latency_ns": {
+          "p50_per_round": 57186,
+          "p99_per_round": 62977
+        },
+        "mb_per_s": 9371.30140827448,
+        "ops": 4096,
+        "ops_per_s": 2287915.3828795115,
+        "seconds": 0.001790276,
+        "stats": {
+          "batch_chunks": 32,
+          "completions": 4096,
+          "cq_max_len": 8,
+          "depth": 8,
+          "orphan_completions": 0,
+          "short_reads": 0,
+          "short_writes": 0,
+          "sq_full_events": 480,
+          "sq_pushes": 4096,
+          "submits": 4096
+        }
+      },
+      "requested_depth": 8,
+      "ring_depth": 8,
+      "write": {
+        "bytes": 16777216,
+        "latency_ns": {
+          "p50_per_round": 178771,
+          "p99_per_round": 872005
+        },
+        "mb_per_s": 2523.1946839888615,
+        "ops": 4096,
+        "ops_per_s": 616014.3271457182,
+        "seconds": 0.006649196,
+        "stats": {
+          "batch_chunks": 512,
+          "completions": 4096,
+          "cq_max_len": 8,
+          "depth": 8,
+          "orphan_completions": 0,
+          "short_reads": 0,
+          "short_writes": 0,
+          "sq_full_events": 0,
+          "sq_pushes": 4096,
+          "submits": 4096
+        }
+      }
+    },
+    {
+      "read": {
+        "bytes": 16777216,
+        "latency_ns": {
+          "p50_per_round": 56785,
+          "p99_per_round": 67284
+        },
+        "mb_per_s": 9305.83791399269,
+        "ops": 4096,
+        "ops_per_s": 2271933.0844708714,
+        "seconds": 0.00180287,
+        "stats": {
+          "batch_chunks": 32,
+          "completions": 4096,
+          "cq_max_len": 16,
+          "depth": 16,
+          "orphan_completions": 0,
+          "short_reads": 0,
+          "short_writes": 0,
+          "sq_full_events": 224,
+          "sq_pushes": 4096,
+          "submits": 4096
+        }
+      },
+      "requested_depth": 16,
+      "ring_depth": 16,
+      "write": {
+        "bytes": 16777216,
+        "latency_ns": {
+          "p50_per_round": 149316,
+          "p99_per_round": 202935
+        },
+        "mb_per_s": 3393.444347177432,
+        "ops": 4096,
+        "ops_per_s": 828477.6238226152,
+        "seconds": 0.004944008,
+        "stats": {
+          "batch_chunks": 256,
+          "completions": 4096,
+          "cq_max_len": 16,
+          "depth": 16,
+          "orphan_completions": 0,
+          "short_reads": 0,
+          "short_writes": 0,
+          "sq_full_events": 0,
+          "sq_pushes": 4096,
+          "submits": 4096
+        }
+      }
+    },
+    {
+      "read": {
+        "bytes": 16777216,
+        "latency_ns": {
+          "p50_per_round": 53760,
+          "p99_per_round": 88264
+        },
+        "mb_per_s": 9304.702482959809,
+        "ops": 4096,
+        "ops_per_s": 2271655.8796288595,
+        "seconds": 0.00180309,
+        "stats": {
+          "batch_chunks": 32,
+          "completions": 4096,
+          "cq_max_len": 32,
+          "depth": 32,
+          "orphan_completions": 0,
+          "short_reads": 0,
+          "short_writes": 0,
+          "sq_full_events": 96,
+          "sq_pushes": 4096,
+          "submits": 4096
+        }
+      },
+      "requested_depth": 32,
+      "ring_depth": 32,
+      "write": {
+        "bytes": 16777216,
+        "latency_ns": {
+          "p50_per_round": 141152,
+          "p99_per_round": 698133
+        },
+        "mb_per_s": 2975.5156716691886,
+        "ops": 4096,
+        "ops_per_s": 726444.2557786105,
+        "seconds": 0.005638423,
+        "stats": {
+          "batch_chunks": 128,
+          "completions": 4096,
+          "cq_max_len": 32,
+          "depth": 32,
+          "orphan_completions": 0,
+          "short_reads": 0,
+          "short_writes": 0,
+          "sq_full_events": 0,
+          "sq_pushes": 4096,
+          "submits": 4096
+        }
+      }
+    },
+    {
+      "read": {
+        "bytes": 16777216,
+        "latency_ns": {
+          "p50_per_round": 60582,
+          "p99_per_round": 77824
+        },
+        "mb_per_s": 8654.067183830406,
+        "ops": 4096,
+        "ops_per_s": 2112809.3710523453,
+        "seconds": 0.001938651,
+        "stats": {
+          "batch_chunks": 32,
+          "completions": 4096,
+          "cq_max_len": 64,
+          "depth": 64,
+          "orphan_completions": 0,
+          "short_reads": 0,
+          "short_writes": 0,
+          "sq_full_events": 32,
+          "sq_pushes": 4096,
+          "submits": 4096
+        }
+      },
+      "requested_depth": 64,
+      "ring_depth": 64,
+      "write": {
+        "bytes": 16777216,
+        "latency_ns": {
+          "p50_per_round": 138777,
+          "p99_per_round": 191746
+        },
+        "mb_per_s": 3629.0731370929248,
+        "ops": 4096,
+        "ops_per_s": 886004.1838605773,
+        "seconds": 0.004623003,
+        "stats": {
+          "batch_chunks": 64,
+          "completions": 4096,
+          "cq_max_len": 64,
+          "depth": 64,
+          "orphan_completions": 0,
+          "short_reads": 0,
+          "short_writes": 0,
+          "sq_full_events": 0,
+          "sq_pushes": 4096,
+          "submits": 4096
+        }
+      }
+    },
+    {
+      "read": {
+        "bytes": 16777216,
+        "latency_ns": {
+          "p50_per_round": 49832,
+          "p99_per_round": 66343
+        },
+        "mb_per_s": 10518.268022105822,
+        "ops": 4096,
+        "ops_per_s": 2567936.528834429,
+        "seconds": 0.001595055,
+        "stats": {
+          "batch_chunks": 32,
+          "completions": 4096,
+          "cq_max_len": 128,
+          "depth": 128,
+          "orphan_completions": 0,
+          "short_reads": 0,
+          "short_writes": 0,
+          "sq_full_events": 0,
+          "sq_pushes": 4096,
+          "submits": 4096
+        }
+      },
+      "requested_depth": 128,
+      "ring_depth": 128,
+      "write": {
+        "bytes": 16777216,
+        "latency_ns": {
+          "p50_per_round": 124390,
+          "p99_per_round": 192977
+        },
+        "mb_per_s": 3912.89632229331,
+        "ops": 4096,
+        "ops_per_s": 955296.9536848901,
+        "seconds": 0.004287672,
+        "stats": {
+          "batch_chunks": 32,
+          "completions": 4096,
+          "cq_max_len": 128,
+          "depth": 128,
+          "orphan_completions": 0,
+          "short_reads": 0,
+          "short_writes": 0,
+          "sq_full_events": 0,
+          "sq_pushes": 4096,
+          "submits": 4096
+        }
+      }
+    }
+  ],
+  "schema": "orfs.performance.uring-depth.v1"
+}

@@ -2930,3 +2930,45 @@ pointing at artifacts that already exist rather than inventing new claims.
 No code changed; `docs/ORFS-SPEC.md` §5 gains rows for the three new documents. Test
 counts are unchanged at **438** (default) / **448** (`--features failpoints`);
 `check-all.sh --fast` PASS (docs-receipts 42/42).
+
+## Phase 55 — io_uring depth sweep and the on-disk wire-format spec
+
+**Complete.** Two more items from the reviewer list: mechanism evidence for the
+`io_uring` path, and a format another person could implement against.
+
+### Delivered
+
+* **`io_uring` depth sweep with SQ/CQ counters.** `src/uring.rs` extends `UringStats`
+  with `sq_pushes`, `sq_full_events`, `cq_max_len`, `batch_chunks`, and rewrites
+  `run_entries` so submission-queue backpressure is **observable and non-fatal**
+  (count the event, submit what is queued, reap completions to free slots, keep
+  pushing — the submit-every-entry/collect-every-completion contract is unchanged).
+  New `tests/uring_depth.rs` + `scripts/container-uring-depth.sh` sweep ring depths
+  `{1…128}` over batched positional read/write on a real file, assert byte-exact
+  read-back and `orphan_completions == 0` at every depth, and write
+  `evidence/performance/uring-depth.json`. Docs `docs/PERFORMANCE.md` §21.
+* **On-disk wire-format specification.** `docs/ON_DISK.md` gains a byte-exact
+  "Part II": segment/envelope/header/footer layouts with field offsets and
+  endianness, the versioned `RecordType` registry, the manifestation catalogue as an
+  immutable append-only structure (entry layout, `CURRENT` pointer, summary, `HEAD`),
+  and versioning/forward-compatibility rules. It states plainly that there is **no**
+  AUTH field, MAC or signature on the log (CRC32C + BLAKE3 are integrity, not
+  authentication) rather than inventing one, and corrects a stale optional-code range
+  (`0x8000…0xFFFF`, not `0x8001…`).
+
+### Result (release, one run; `io_uring` available under the unconfined profile)
+
+At ring depth 2 a 128-record read batch produced **2 016** SQ-full events, falling
+roughly with each depth doubling (480 at depth 8, 96 at 32, 32 at 64, **0** at 128 —
+a 128-entry ring holds the whole batch); `write_batch` recorded **0** SQ-full events
+at every depth (its intended depth cap). `cq_max_len` equaled the ring depth
+everywhere — the completion queue fills to capacity in a batched workload, which the
+old time-only courts could not see. Read throughput ~1.62 M ops/s at depth 2 rising
+to ~2.57 M at depth 128; write ~2.0 GB/s rising to ~3.9 GB/s.
+
+### Integrity
+
+Hardware perf counters are unavailable (`perf_event_paranoid=2`), so there are no
+flamegraphs — the SQ/CQ counters are the mechanism evidence (recorded honestly). The
+`uring_integration` court (7/7) and the equivalence court stay green. Test counts rise
+to **440** (default) / **450** (`--features failpoints`); `fmt`/`clippy` clean.

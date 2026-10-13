@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–40)
+## 4. The ordered build phases (0–49)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -134,15 +134,16 @@ per-phase record.
 | 46 | Adaptive, bounded group commit; wiring-defect correction (grouping is a ~5× win) | **complete** |
 | 47 | F2 queue-affine concurrency (recovers F2 to ~88–103% of F0; p99 target unmet) | **complete** |
 | 48 | Persistent index layout competition (nothing integrated; treap wins on mutation) | **complete** |
+| 49 | Scan-resistant volatile planner caches (S3-FIFO-style admission); §10 volatile-cache court | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–48 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–49 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.1.0 is published on crates.io (see `docs/PUBLISHING.md`).
 
-- The `orfs` crate builds, its **361** tests (default) pass, and
-  `cargo test --features failpoints` adds the crash-injection court (371 tests in
+- The `orfs` crate builds, its **429** tests (default) pass, and
+  `cargo test --features failpoints` adds the crash-injection court (439 tests in
   total); `cargo fmt -p orfs --check` / `clippy --all-targets -- -D warnings` are
   clean **inside the pinned container** (`scripts/container-*.sh`).
 - `src/capabilities.rs` + `orfs doctor` perform a **real** kernel/container
@@ -225,7 +226,7 @@ sibling working tree is required):
 
 ```sh
 scripts/container-build.sh        # cargo build
-scripts/container-test.sh         # cargo test  (361 tests)
+scripts/container-test.sh         # cargo test  (429 tests)
 scripts/container-fuse-test.sh    # real-mount FUSE + performance court
 scripts/container-uring-test.sh   # io_uring integration + backing benchmark
 scripts/container-check.sh        # cargo fmt -p orfs --check + clippy -D warnings

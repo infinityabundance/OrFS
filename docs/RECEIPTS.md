@@ -131,6 +131,7 @@ so it is not expected to name HEAD.
 | `concurrency-s6-readers` | `docs/CONCURRENCY.md` §6 | the reader sweep covers `1/2/4/8/16` → set of `reader-scaling.json` `results[].readers` |
 | `manifest-s14-5-size-table` | `docs/MANIFESTATION.md` §14.5 | full-build vs 64-byte-change by object size (32/128/512 KiB) → `incremental-manifestation.json` `cost[object_size=…].{full,incremental}_build_ns` |
 | `manifest-s14-5-changed-bytes` | `docs/MANIFESTATION.md` §14.5 | fixed-256 KiB incremental build vs changed bytes (64 B/1 KiB/8 KiB/32 KiB) → `cost_vs_changed_bytes[changed_bytes=…].incremental_build_ns` |
+| `perf-s17-planner-cache-scan` | `docs/PERFORMANCE.md` §17 | volatile-cache court: body-plan rebuilds during a cold scan, admission policy vs the FIFO model → `planner-cache.json` `{measured,fifo_model}.scan_plan_builds` |
 
 ### `docs/ACCEPTANCE-AUDIT.md` is exempt from live comparison
 

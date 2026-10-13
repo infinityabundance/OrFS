@@ -2702,3 +2702,49 @@ non-destructive persistence are asserted by the court; the `namespace_model`
 proptest and `snapshot_model` suite stay green. Cache/TLB counters were
 unavailable (`perf_event_paranoid=2`), recorded as such (page faults used as a
 proxy); the 10⁷ scale is implemented but opt-in and was not run.
+
+## Phase 49 — Scan-resistant volatile planner caches (§10)
+
+**Complete.** Reviewer research §10 ("smarter volatile caching, without confusing
+it with retained manifestations") calls for an S3-FIFO-style admission queue
+protecting resident read plans and parsed EKBLOOM bodies from one-off accesses.
+Implemented that policy for every volatile planner cache and measured its
+observable effect end-to-end.
+
+### Delivered
+
+* `src/readpath.rs` — a new bounded, **scan-resistant** `AdmissionCache<K, V>` (a
+  minimal S3-FIFO analogue: a small probationary segment, a protected `main`
+  segment, and a bounded keys-only `ghost` queue giving an evicted key a second
+  chance). The planner's three volatile caches — `BodyCache` (parsed, verified
+  EKBLOOM bodies + their precompiled `ObjectPlan`s), `RegionCache` (parsed region
+  payload bodies) and `CoverageCache` (resolved region tables) — are rewired onto
+  it. Re-inserting a resident key is now O(1) in place, replacing the old
+  `order.retain(...)` that was O(capacity) on the re-insert path.
+* `AdmissionStats` + `PlannerCacheStats` and `ReadPlanner::cache_stats()` expose
+  per-cache hit/miss/ghost/promotion/eviction counters.
+* `tests/planner_cache.rs` + `scripts/container-planner-cache.sh` — the
+  volatile-cache court: an always-on smoke (scan-resistance invariant + the FIFO
+  model doing strictly worse) and a release sweep writing
+  `evidence/performance/planner-cache.json`.
+* Four `src/readpath.rs` unit courts (scan resistance; ghost second chance;
+  re-insert never disturbs residents; a **one-million-key** bound + RSS court).
+
+### Result (release, one run; capacity 32, hot set 20, scan 512)
+
+During the cold scan the admission policy rebuilt **512** bodies (exactly the cold
+objects) versus **1292** for the analytic FIFO model (**2.52×**): every one of the
+10 240 interleaved hot reads was a body-cache hit. The steady hot-only phase
+(1 280 reads) rebuilt **0** bodies at **178.8 ns/read**, hit rate **1.0**; resident
+bodies held at the bound **32/32**; RSS **3 688 KiB**.
+
+### Integrity
+
+Evicting a volatile cache entry only forgets a cached parse; the committed
+manifestation is untouched (non-withdrawal) and is re-parsed on next use, so the
+policy is correctness-neutral and every court read is asserted byte-exact against
+the authoritative extent read. The Phase 43 guarantees are preserved (the steady
+state remains a bounded lookup + execute; an unmeasured candidate is never
+selected). Test counts rise to **429** (default) / **439** (`--features
+failpoints`); `fmt`/`clippy` clean. Allocations and lock-contention counters are
+not separately instrumented (recorded honestly in `docs/PERFORMANCE.md` §17).

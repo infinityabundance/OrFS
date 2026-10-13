@@ -204,6 +204,17 @@
         {"group": 3, "label": "changed=8 KiB incremental_build_ns (doc µs)", "doc_multiplier": 1000, "evidence": "evidence/performance/incremental-manifestation.json", "path": "cost_vs_changed_bytes[changed_bytes=8192].incremental_build_ns"},
         {"group": 4, "label": "changed=32 KiB incremental_build_ns (doc µs)", "doc_multiplier": 1000, "evidence": "evidence/performance/incremental-manifestation.json", "path": "cost_vs_changed_bytes[changed_bytes=32768].incremental_build_ns"}
       ]
+    },
+    {
+      "id": "perf-s17-planner-cache-scan",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§17",
+      "claim": "volatile-cache court: body-plan rebuilds during a cold scan, scan-resistant admission policy vs the FIFO model",
+      "regex": "rebuilt \\*\\*([0-9][0-9 ]*?)\\*\\* bodies during the scan versus \\*\\*([0-9][0-9 ]*?)\\*\\*",
+      "fields": [
+        {"group": 1, "label": "admission scan_plan_builds", "evidence": "evidence/performance/planner-cache.json", "path": "measured.scan_plan_builds"},
+        {"group": 2, "label": "fifo_model scan_plan_builds", "evidence": "evidence/performance/planner-cache.json", "path": "fifo_model.scan_plan_builds"}
+      ]
     }
   ]
 }

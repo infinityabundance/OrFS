@@ -1243,3 +1243,82 @@ publication is an `Arc` clone; their rebuild column is the counterfactual cost o
 using them as a live spine), and the 10 000 000 scale is opt-in and was not run
 for this record. The radix/pagetree unit tests cross-check every operation
 against `BTreeMap`; the court's smoke asserts cross-candidate equality.
+
+## 17. Reviewer task — the volatile-cache court (research §10)
+
+**The question.** The read planner keeps *volatile* caches of re-derivable
+structures: parsed, verified EKBLOOM bodies (each carrying one precompiled
+`ObjectPlan`), resolved region payload bodies, and coverage tables. Evicting one
+forgets a cached parse only — the committed manifestation it came from is
+untouched (non-withdrawal) and is re-parsed on next use. Research §10 asks for
+"smarter volatile caching" while keeping that distinction, and specifically
+suggests an **S3-FIFO-style admission queue protecting resident read plans and
+parsed bodies from one-off accesses**.
+
+**Why the old policy was wrong.** Until Phase 49 every volatile cache was a plain
+insertion-ordered FIFO. A FIFO is destroyed by a single one-pass **scan** over more
+distinct objects than the cache holds: each scan insert evicts the front, so the
+entire hot working set is gone after one pass. That is a real cost on the read
+path — evicting a body drops its precompiled plan, so the next read re-reads,
+re-parses, and re-verifies the EKBLOOM payload and rebuilds the plan.
+
+**The policy.** `src/readpath.rs` now admits every volatile cache through an
+`AdmissionCache`, a minimal S3-FIFO analogue: a **small** probationary segment
+(≈10 % of capacity); a **main** segment for entries re-referenced while resident;
+a bounded, keys-only **ghost** queue for entries evicted from `small` before their
+first re-reference, giving a later insert of that key a **second chance** straight
+into `main`. Reference counts saturate at 3; promotion needs one re-reference.
+Evictions from `main` are discarded (no ghost), so only genuinely re-referenced
+keys are protected. Every operation is O(1) amortised — re-inserting a resident
+key updates it in place, replacing the previous `order.retain(...)` that was
+O(capacity) on the re-insert path.
+
+**Court.** `tests/planner_cache.rs`, run by `scripts/container-planner-cache.sh`
+(release), writes `evidence/performance/planner-cache.json`. It establishes a hot
+set, then drives a one-pass **cold scan** far larger than the cache, interleaving
+reads of the whole hot set, and finally a steady hot-only phase. Because every
+body-cache miss rebuilds a body plan, the planner's cumulative `plan_builds`
+counter is an exact, policy-neutral observable of scan damage. The same key trace
+is replayed through an **analytic FIFO model** (a model of the pre-Phase-49
+policy over identical keys, not a second filesystem run).
+
+**Measured (one run; release; capacity 32, hot set 20, scan 512).**
+
+* During the cold scan the admission policy rebuilt **512** bodies during the scan versus **1292** for the FIFO model — exactly one rebuild per cold object, i.e. **every** one of the 10 240 interleaved hot reads was a body-cache hit, against 2.52× more rebuilds under the FIFO model.
+* The steady hot-only phase (1 280 reads) rebuilt **0** bodies; body-cache hit
+  rate **1.0**; mean **178.8 ns/read** (release, warm cache).
+* Resident bodies stayed at the bound (**32/32**); process RSS **3 688 KiB**.
+* Body-cache counters over the court: 11 580 hits, 532 misses, 20 promotions
+  (exactly the hot set), 500 evictions — the scan keys were all demoted, never
+  promoted.
+
+**Findings, stated honestly.**
+
+1. **Scan resistance is real and observable end-to-end.** The admission policy
+   turns "a scan destroys the hot set" into "a scan costs only the cold objects"
+   — the measured rebuild ratio is 2.52× at this size, and it grows with the scan
+   length relative to capacity. The always-on smoke asserts the crisp invariant
+   (scan rebuilds == cold count; steady hot rebuilds == 0) and that the FIFO model
+   does strictly worse over the identical trace.
+2. **Correctness is unchanged.** Every read in the court is asserted byte-exact
+   against the authoritative extent read; the policy only chooses which cached
+   representation serves, never the bytes.
+3. **The bound holds and memory does not grow with keys seen.** Resident bodies
+   never exceed the configured capacity, and a unit court drives **one million**
+   distinct keys through an `AdmissionCache` of capacity 8 asserting the bound and
+   <32 MiB of RSS growth.
+4. **Scope, stated plainly.** This court does not separately instrument
+   allocations or lock-contention counters (hardware counters are unavailable at
+   `perf_event_paranoid=2`, and per-lookup allocation counting would be dominated
+   by the harness's own result buffers); it reports the decisive, policy-neutral
+   observable (body-plan rebuilds), the steady-state hit rate, and ns/read. The
+   identity-keyed tables' one-million-identity bound is the separate Phase 43
+   aging court.
+
+**Caveats.** Single run, single host, release build; the ns/read figure is
+host/load sensitive and is reported as indicative. The FIFO figures are an
+analytic model over the identical key trace, not a run of the pre-Phase-49 binary
+(which does not expose the same counters). Each volatile cache is still behind a
+single mutex; sharding them for multi-reader cache throughput is not attempted
+here (the Phase 43 steady state holds the body-cache lock only for a bounded
+lookup, so contention is not currently the measured bottleneck).

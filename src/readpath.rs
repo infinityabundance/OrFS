@@ -141,6 +141,16 @@
 //! never cause a wrong selection. [`ReadPlanner::resident`] reports the resident
 //! entries so the bound is observable (see `tests/read_path_planner.rs`).
 //!
+//! The **volatile** caches of *re-derivable* structures — parsed EKBLOOM bodies,
+//! resolved region payloads, and coverage tables — are bounded by the same
+//! capacities but admitted through a scan-resistant policy ([`AdmissionCache`], an
+//! S3-FIFO analogue) rather than a plain FIFO, so a one-off scan over more objects
+//! than the cache holds cannot evict a hot working set. Evicting a volatile
+//! representation forgets only a cached parse; the committed manifestation it came
+//! from is untouched (non-withdrawal) and is re-parsed on next use.
+//! [`ReadPlanner::cache_stats`] exposes the hit/ghost/promotion counters (see
+//! `tests/planner_cache.rs`).
+//!
 //! The authoritative fallback is deliberately lean: a request's authoritative read
 //! is wrapped so it runs **at most once** (a fallback serves bytes a calibration
 //! pass already produced rather than re-executing the read), and `'static` fallback
@@ -742,23 +752,270 @@ impl ObjectPlan {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Volatile admission cache (scan-resistant)
+// ---------------------------------------------------------------------------
+
+/// How many distinct keys the ghost queue of an [`AdmissionCache`] remembers, as
+/// a multiple of the resident capacity. The ghost set is keys only (no values), so
+/// it is cheap; it exists solely to recognise a re-referenced key and admit it
+/// straight to the protected `main` segment on its second life.
+const GHOST_QUOTA_FACTOR: usize = 1;
+
+/// The minimum reference count at which an entry evicted from the probationary
+/// `small` segment is promoted to the protected `main` segment rather than demoted
+/// to the ghost queue. One means "it was referenced again after admission".
+const PROMOTE_MIN_FREQ: u8 = 1;
+
+/// The reference count of an [`AdmissionCache`] entry is saturating-bumped on every
+/// access up to this cap, bounding the counter's dynamic range.
+const MAX_FREQ: u8 = 3;
+
+/// A single resident entry: its cached value plus the S3-FIFO reference count.
+struct Slot<V> {
+    value: V,
+    /// Reference count, saturating at [`MAX_FREQ`]. Incremented on every access
+    /// (`get` or re-insert) while the entry is resident.
+    freq: u8,
+}
+
+/// Cumulative admission-policy counters, for evidence. Monotonic within a cache
+/// generation and reset by [`AdmissionCache::clear`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AdmissionStats {
+    /// Lookups served from a resident entry.
+    pub hits: u64,
+    /// Lookups for a key that was not resident.
+    pub misses: u64,
+    /// Misses for a key still remembered by the ghost queue (a would-be second
+    /// reference that was evicted too early — the scan-resistance signal).
+    pub ghost_hits: u64,
+    /// Entries promoted from `small` to `main` (including ghost re-admissions).
+    pub promotions: u64,
+    /// Entries discarded altogether (demoted from `small` to ghost, or evicted
+    /// from `main`).
+    pub evictions: u64,
+}
+
+/// The admission statistics of every volatile planner cache (Phase 49), so the
+/// volatility court can report hit rate, ghost re-admissions, and promotion and
+/// eviction counts per cache.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PlannerCacheStats {
+    /// Parsed, verified EKBLOOM bodies (each carrying one [`ObjectPlan`]).
+    pub body: AdmissionStats,
+    /// Parsed region payload bodies (shared across generations).
+    pub region: AdmissionStats,
+    /// Resolved region-coverage tables (one per overlay-backed generation).
+    pub coverage: AdmissionStats,
+}
+
+/// A bounded, **scan-resistant** volatile cache implementing the S3-FIFO admission
+/// idea (Yang et al., "FIFO Queues are All You Need for Cache Eviction", SOSP 2023)
+/// in the minimal form the planner needs.
+///
+/// The planner's volatile caches (parsed EKBLOOM bodies, resolved region tables,
+/// coverage tables) are re-derivable: evicting one forgets a *cached
+/// representation*, and the committed manifestation it was parsed from is
+/// untouched (non-withdrawal), so the next use simply re-parses it. That makes a
+/// plain insertion-ordered FIFO tempting — but a FIFO is destroyed by a single
+/// one-pass scan over more distinct keys than the cache holds, which evicts the
+/// entire hot working set. This cache resists that:
+///
+/// * a new key enters the **small** probationary segment (≈10 % of capacity);
+/// * a key re-referenced while resident is promoted to the **main** segment;
+/// * a key evicted from `small` before its first re-reference goes to a bounded,
+///   keys-only **ghost** queue, and a later insert of that key is admitted
+///   straight to `main` (a second chance);
+/// * a key evicted from `main` is discarded (no ghost), so only genuinely
+///   re-referenced keys are protected.
+///
+/// The consequence is the property the planner needs: a one-off scan cycles
+/// through `small` and `ghost` and leaves the hot `main` set resident, so repeated
+/// reads of a working set keep hitting parsed bodies even while scans run
+/// alongside them. Every operation is O(1) amortised — re-inserting a resident key
+/// updates it in place, with **no** linear `retain` over an order vector and no
+/// recency search.
+struct AdmissionCache<K, V> {
+    entries: HashMap<K, Slot<V>>,
+    small: VecDeque<K>,
+    main: VecDeque<K>,
+    /// Recently evicted keys (a FIFO of `(key, tag)`), used only to recognise a
+    /// re-reference. The tag distinguishes a live ghost record from a stale
+    /// duplicate left behind when a key was re-admitted.
+    ghost: VecDeque<(K, u64)>,
+    ghost_index: HashMap<K, u64>,
+    ghost_next: u64,
+    capacity: usize,
+    small_quota: usize,
+    ghost_quota: usize,
+    stats: AdmissionStats,
+}
+
+impl<K: std::hash::Hash + Eq + Clone, V> AdmissionCache<K, V> {
+    fn new(capacity: usize) -> AdmissionCache<K, V> {
+        let small_quota = (capacity / 10).max(1).min(capacity.max(1));
+        AdmissionCache {
+            entries: HashMap::new(),
+            small: VecDeque::new(),
+            main: VecDeque::new(),
+            ghost: VecDeque::new(),
+            ghost_index: HashMap::new(),
+            ghost_next: 0,
+            capacity,
+            small_quota,
+            ghost_quota: capacity.saturating_mul(GHOST_QUOTA_FACTOR),
+            stats: AdmissionStats::default(),
+        }
+    }
+
+    /// A resident lookup that **records** the reference (bumping the entry's
+    /// reference count) and returns a borrow of the value. A miss for a key still
+    /// in the ghost queue is counted as a ghost hit.
+    fn get(&mut self, key: &K) -> Option<&V> {
+        match self.entries.get_mut(key) {
+            Some(slot) => {
+                slot.freq = (slot.freq + 1).min(MAX_FREQ);
+                self.stats.hits += 1;
+                Some(&slot.value)
+            }
+            None => {
+                if self.ghost_index.contains_key(key) {
+                    self.stats.ghost_hits += 1;
+                }
+                self.stats.misses += 1;
+                None
+            }
+        }
+    }
+
+    fn insert(&mut self, key: K, value: V) {
+        if self.capacity == 0 {
+            return;
+        }
+        if let Some(slot) = self.entries.get_mut(&key) {
+            // Re-inserting a resident key updates it in place (O(1)); it never
+            // reorders an order vector, which is what made the old FIFO's
+            // re-insert path O(capacity).
+            slot.value = value;
+            slot.freq = (slot.freq + 1).min(MAX_FREQ);
+            return;
+        }
+        if self.ghost_index.remove(&key).is_some() {
+            // Second chance: a key evicted from `small` before its first
+            // re-reference is admitted directly to the protected `main` segment.
+            self.entries.insert(key.clone(), Slot { value, freq: 0 });
+            self.main.push_back(key);
+            self.stats.promotions += 1;
+        } else {
+            self.entries.insert(key.clone(), Slot { value, freq: 0 });
+            self.small.push_back(key);
+        }
+        self.evict();
+    }
+
+    /// Restore the invariant `entries.len() <= capacity` by evicting from `small`
+    /// while it exceeds its quota, then from `main`.
+    fn evict(&mut self) {
+        while self.entries.len() > self.capacity {
+            if self.small.len() > self.small_quota {
+                let key = match self.small.pop_front() {
+                    Some(k) => k,
+                    None => break,
+                };
+                let promote = self
+                    .entries
+                    .get(&key)
+                    .map(|s| s.freq >= PROMOTE_MIN_FREQ)
+                    .unwrap_or(false);
+                if promote {
+                    if let Some(slot) = self.entries.get_mut(&key) {
+                        slot.freq = 0;
+                    }
+                    self.main.push_back(key);
+                    self.stats.promotions += 1;
+                } else if self.entries.remove(&key).is_some() {
+                    self.note_ghost(key);
+                    self.stats.evictions += 1;
+                }
+            } else if let Some(key) = self.main.pop_front() {
+                let requeue = self.entries.get(&key).map(|s| s.freq > 0).unwrap_or(false);
+                if requeue {
+                    if let Some(slot) = self.entries.get_mut(&key) {
+                        slot.freq -= 1;
+                    }
+                    self.main.push_back(key);
+                } else if self.entries.remove(&key).is_some() {
+                    self.stats.evictions += 1;
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
+    /// Record a key in the bounded ghost queue (keys only). The queue keeps its
+    /// length under `ghost_quota`, dropping any stale duplicate it passes.
+    fn note_ghost(&mut self, key: K) {
+        if self.ghost_quota == 0 {
+            return;
+        }
+        let tag = self.ghost_next;
+        self.ghost_next = self.ghost_next.wrapping_add(1);
+        self.ghost_index.insert(key.clone(), tag);
+        self.ghost.push_back((key, tag));
+        while self.ghost.len() > self.ghost_quota {
+            if let Some((old, old_tag)) = self.ghost.pop_front() {
+                if self.ghost_index.get(&old) == Some(&old_tag) {
+                    self.ghost_index.remove(&old);
+                }
+            }
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+        self.small.clear();
+        self.main.clear();
+        self.ghost.clear();
+        self.ghost_index.clear();
+        self.ghost_next = 0;
+        self.stats = AdmissionStats::default();
+    }
+
+    fn stats(&self) -> AdmissionStats {
+        self.stats
+    }
+}
+
 struct CacheEntry {
     generation: u64,
     manifest_blake3: [u8; 32],
     body: Arc<LoadedBody>,
 }
 
-/// A bounded, insertion-ordered body cache.
-#[derive(Default)]
+/// A bounded, scan-resistant cache of parsed EKBLOOM bodies keyed by inode (see
+/// [`AdmissionCache`]). Keeps a hot working set resident across one-off scans.
 struct BodyCache {
-    map: HashMap<u64, CacheEntry>,
-    order: VecDeque<u64>,
-    capacity: usize,
+    inner: AdmissionCache<u64, CacheEntry>,
 }
 
 impl BodyCache {
-    fn get(&self, inode: u64, generation: u64, digest: &[u8; 32]) -> Option<Arc<LoadedBody>> {
-        let e = self.map.get(&inode)?;
+    fn new(capacity: usize) -> BodyCache {
+        BodyCache {
+            inner: AdmissionCache::new(capacity),
+        }
+    }
+
+    /// A resident body matching the request identity. An entry present for the
+    /// inode but qualified for a different generation or manifest digest is treated
+    /// as a miss (the caller reloads and replaces it).
+    fn get(&mut self, inode: u64, generation: u64, digest: &[u8; 32]) -> Option<Arc<LoadedBody>> {
+        let e = self.inner.get(&inode)?;
         if e.generation == generation && e.manifest_blake3 == *digest {
             Some(e.body.clone())
         } else {
@@ -766,24 +1023,20 @@ impl BodyCache {
         }
     }
 
-    fn len(&self) -> usize {
-        self.map.len()
+    fn insert(&mut self, inode: u64, entry: CacheEntry) {
+        self.inner.insert(inode, entry);
     }
 
-    fn insert(&mut self, inode: u64, entry: CacheEntry) {
-        if self.capacity == 0 {
-            return;
-        }
-        if self.map.contains_key(&inode) {
-            self.order.retain(|&x| x != inode);
-        }
-        self.map.insert(inode, entry);
-        self.order.push_back(inode);
-        while self.order.len() > self.capacity {
-            if let Some(old) = self.order.pop_front() {
-                self.map.remove(&old);
-            }
-        }
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn clear(&mut self) {
+        self.inner.clear();
+    }
+
+    fn stats(&self) -> AdmissionStats {
+        self.inner.stats()
     }
 }
 
@@ -794,35 +1047,35 @@ struct CoverageEntry {
     table: Arc<Vec<ManifestRegion>>,
 }
 
-/// The bounded cache of parsed region payload bodies, keyed by payload path and
-/// digest (Phase 22). A region payload is shared by every generation that reuses
-/// it, so this cache is deliberately not keyed by the manifest identity.
-#[derive(Default)]
+/// The bounded, scan-resistant cache of parsed region payload bodies, keyed by
+/// payload path and digest (Phase 22). A region payload is shared by every
+/// generation that reuses it, so this cache is deliberately not keyed by the
+/// manifest identity. See [`AdmissionCache`] for the admission policy.
 struct RegionCache {
-    map: HashMap<(String, [u8; 32]), Arc<EkbloomBody>>,
-    order: VecDeque<(String, [u8; 32])>,
-    capacity: usize,
+    inner: AdmissionCache<(String, [u8; 32]), Arc<EkbloomBody>>,
 }
 
 impl RegionCache {
-    fn get(&self, key: &(String, [u8; 32])) -> Option<Arc<EkbloomBody>> {
-        self.map.get(key).cloned()
+    fn new(capacity: usize) -> RegionCache {
+        RegionCache {
+            inner: AdmissionCache::new(capacity),
+        }
+    }
+
+    fn get(&mut self, key: &(String, [u8; 32])) -> Option<Arc<EkbloomBody>> {
+        self.inner.get(key).cloned()
     }
 
     fn insert(&mut self, key: (String, [u8; 32]), body: Arc<EkbloomBody>) {
-        if self.capacity == 0 {
-            return;
-        }
-        if self.map.contains_key(&key) {
-            self.order.retain(|k| k != &key);
-        }
-        self.order.push_back(key.clone());
-        self.map.insert(key, body);
-        while self.order.len() > self.capacity {
-            if let Some(old) = self.order.pop_front() {
-                self.map.remove(&old);
-            }
-        }
+        self.inner.insert(key, body);
+    }
+
+    fn clear(&mut self) {
+        self.inner.clear();
+    }
+
+    fn stats(&self) -> AdmissionStats {
+        self.inner.stats()
     }
 }
 
@@ -902,24 +1155,27 @@ impl IdentityLedger {
     }
 }
 
-/// A bounded, insertion-ordered cache of resolved region tables, one per inode
-/// (Phase 22). Retires least-recently-inserted inodes once full, so a long-lived
-/// planner over many region-backed objects stays bounded.
-#[derive(Default)]
+/// A bounded, scan-resistant cache of resolved region tables, one per inode
+/// (Phase 22). A long-lived planner over many region-backed objects stays bounded
+/// while a hot set survives one-off scans. See [`AdmissionCache`].
 struct CoverageCache {
-    map: HashMap<u64, CoverageEntry>,
-    order: VecDeque<u64>,
-    capacity: usize,
+    inner: AdmissionCache<u64, CoverageEntry>,
 }
 
 impl CoverageCache {
+    fn new(capacity: usize) -> CoverageCache {
+        CoverageCache {
+            inner: AdmissionCache::new(capacity),
+        }
+    }
+
     fn get(
-        &self,
+        &mut self,
         inode: u64,
         generation: u64,
         digest: &[u8; 32],
     ) -> Option<Arc<Vec<ManifestRegion>>> {
-        let e = self.map.get(&inode)?;
+        let e = self.inner.get(&inode)?;
         if e.generation == generation && e.digest == *digest {
             Some(e.table.clone())
         } else {
@@ -928,24 +1184,15 @@ impl CoverageCache {
     }
 
     fn insert(&mut self, inode: u64, entry: CoverageEntry) {
-        if self.capacity == 0 {
-            return;
-        }
-        if self.map.contains_key(&inode) {
-            self.order.retain(|&x| x != inode);
-        }
-        self.map.insert(inode, entry);
-        self.order.push_back(inode);
-        while self.order.len() > self.capacity {
-            if let Some(old) = self.order.pop_front() {
-                self.map.remove(&old);
-            }
-        }
+        self.inner.insert(inode, entry);
     }
 
     fn clear(&mut self) {
-        self.map.clear();
-        self.order.clear();
+        self.inner.clear();
+    }
+
+    fn stats(&self) -> AdmissionStats {
+        self.inner.stats()
     }
 }
 
@@ -1574,18 +1821,9 @@ pub struct ReadPlanner {
 impl ReadPlanner {
     /// Create a planner over a published-generation state.
     pub fn new(state: Arc<ManifestationState>, config: ReadPlannerConfig) -> ReadPlanner {
-        let cache = BodyCache {
-            capacity: config.cache_capacity,
-            ..Default::default()
-        };
-        let regions = RegionCache {
-            capacity: config.cache_capacity.max(1).saturating_mul(4),
-            ..Default::default()
-        };
-        let coverage = CoverageCache {
-            capacity: config.identity_capacity.max(1),
-            ..Default::default()
-        };
+        let cache = BodyCache::new(config.cache_capacity);
+        let regions = RegionCache::new(config.cache_capacity.max(1).saturating_mul(4));
+        let coverage = CoverageCache::new(config.identity_capacity.max(1));
         let object_capacity = config.cache_capacity.max(1);
         let identity_capacity = config.identity_capacity;
         ReadPlanner {
@@ -1647,6 +1885,18 @@ impl ReadPlanner {
         }
     }
 
+    /// The volatile-cache admission statistics of every planner cache (Phase 49),
+    /// for the volatility court. A steady-state certified read is a body-cache
+    /// **hit**; the ghost and promotion counters expose how the admission policy
+    /// resists one-off scans.
+    pub fn cache_stats(&self) -> PlannerCacheStats {
+        PlannerCacheStats {
+            body: self.cache.lock().stats(),
+            region: self.regions.lock().stats(),
+            coverage: self.coverage.lock().stats(),
+        }
+    }
+
     /// Feed one completed read observation for `identity` into the planner's
     /// bounded per-identity policy state. This is the **learner seam**: the
     /// steady-state read path never mutates shared policy, so observations of
@@ -1684,15 +1934,11 @@ impl ReadPlanner {
         self.stats.selection_sorts.store(0, Ordering::Relaxed);
         self.stats.model_write_locks.store(0, Ordering::Relaxed);
         self.stats.hot_reads.store(0, Ordering::Relaxed);
-        let mut cache = self.cache.lock();
-        cache.map.clear();
-        cache.order.clear();
+        self.cache.lock().clear();
     }
 
     fn region_cache_clear(&self) {
-        let mut c = self.regions.lock();
-        c.map.clear();
-        c.order.clear();
+        self.regions.lock().clear();
     }
 
     /// Measure each compatible candidate path for a request, independently of the
@@ -2688,6 +2934,144 @@ mod tests {
         set.insert(b);
         assert_eq!(set.len(), 2);
         assert!(set.contains(&b));
+    }
+
+    /// Phase 49 — the volatile admission cache is scan-resistant: after a hot set
+    /// is established, a one-pass scan over far more distinct keys than the cache
+    /// holds must not evict the hot set. This is the weakness of a plain FIFO that
+    /// the S3-FIFO admission policy removes.
+    #[test]
+    fn admission_cache_resists_a_one_pass_scan() {
+        let capacity = 16;
+        let mut cache: AdmissionCache<u64, u64> = AdmissionCache::new(capacity);
+        let hot: Vec<u64> = (0..8).collect();
+        // Establish the hot set. Each read is a miss-then-load, exactly as the
+        // planner uses the cache; three rounds let the hot keys settle into the
+        // protected segment.
+        for _ in 0..3 {
+            for &k in &hot {
+                let _ = cache.get(&k);
+                cache.insert(k, k);
+            }
+        }
+        assert!(cache.len() <= capacity, "cache exceeded its bound");
+        let _ = cache.stats();
+
+        // One cold pass over a scan far larger than the cache. Each key is read
+        // once (miss, then load) so it is a single-touch entry.
+        for k in 1_000..1_500 {
+            assert!(cache.get(&k).is_none(), "a scan key was already resident");
+            cache.insert(k, k);
+        }
+
+        // Every hot key must still be resident, and the cache must still be
+        // bounded.
+        for &k in &hot {
+            assert_eq!(cache.get(&k), Some(&k), "the scan evicted hot key {k}");
+        }
+        assert!(cache.len() <= capacity, "cache exceeded its bound");
+        // The scan's single-touch keys must all have been demoted to the ghost
+        // queue and never promoted to the protected segment: the only promotions
+        // are the hot keys establishing themselves.
+        assert!(
+            cache.stats().promotions <= hot.len() as u64,
+            "scan keys were promoted into the protected segment: {:?}",
+            cache.stats()
+        );
+        assert!(
+            cache.stats().evictions >= 400,
+            "the scan keys were not demoted: {:?}",
+            cache.stats()
+        );
+    }
+
+    /// A key evicted from the probationary segment before its first re-reference
+    /// goes to the ghost queue, and a later insert of it is a second chance
+    /// admitted straight to the protected segment — not a fresh probationary entry.
+    #[test]
+    fn admission_cache_gives_an_evicted_key_a_second_chance() {
+        let mut cache: AdmissionCache<u64, u64> = AdmissionCache::new(4);
+        cache.insert(1, 10);
+        for k in 2..6 {
+            cache.insert(k, k);
+        }
+        // Key 1 was a single-touch probationary entry and was demoted to ghost.
+        assert!(cache.get(&1).is_none(), "key 1 should have been demoted");
+        let before = cache.stats();
+        assert!(before.ghost_hits >= 1, "ghost should remember key 1");
+        // The second insertion is admitted directly to the protected segment.
+        cache.insert(1, 99);
+        assert_eq!(cache.get(&1), Some(&99), "key 1 must be resident again");
+        assert!(
+            cache.stats().promotions > before.promotions,
+            "a ghost re-admission must count as a promotion"
+        );
+    }
+
+    /// Re-inserting an entry that is already resident updates it in place and
+    /// evicts nothing (the old FIFO's re-insert path did an O(capacity)
+    /// `retain` over its order vector).
+    #[test]
+    fn admission_cache_reinsert_never_disturbs_residents() {
+        let mut cache: AdmissionCache<u64, u64> = AdmissionCache::new(4);
+        for k in 0..4 {
+            cache.insert(k, k);
+        }
+        let before = cache.stats();
+        for _ in 0..32 {
+            cache.insert(0, 100);
+        }
+        assert_eq!(
+            cache.get(&0),
+            Some(&100),
+            "the re-inserted value must be kept"
+        );
+        assert_eq!(
+            cache.stats().evictions,
+            before.evictions,
+            "re-insert evicted a resident"
+        );
+        for k in 1..4 {
+            assert!(cache.get(&k).is_some(), "resident {k} was disturbed");
+        }
+        assert!(cache.len() <= 4);
+    }
+
+    /// The cache is a hard bound, and `clear` forgets everything including its
+    /// counters, so an evidence run can observe a cold cache. A **million**
+    /// distinct keys are driven through it to show the bound holds and memory does
+    /// not grow with the number of keys ever seen (the volatile-cache analogue of
+    /// the Phase 43 one-million-identity aging court).
+    #[test]
+    fn admission_cache_is_bounded_and_clear_resets() {
+        let mut cache: AdmissionCache<u64, u64> = AdmissionCache::new(8);
+        let before = resident_bytes();
+        for k in 0..1_000_000u64 {
+            cache.insert(k, k);
+        }
+        assert!(
+            cache.len() <= 8,
+            "cache exceeded its bound: {}",
+            cache.len()
+        );
+        assert!(cache.stats().evictions > 0);
+        if let (Some(b), Some(a)) = (before, resident_bytes()) {
+            assert!(
+                a.saturating_sub(b) < 32 * 1024 * 1024,
+                "a million distinct keys grew the cache by {} bytes",
+                a.saturating_sub(b)
+            );
+        }
+        cache.clear();
+        assert_eq!(cache.len(), 0);
+        assert_eq!(cache.stats(), AdmissionStats::default());
+    }
+
+    /// The process's resident set size in bytes, on Linux; `None` elsewhere.
+    fn resident_bytes() -> Option<u64> {
+        let statm = std::fs::read_to_string("/proc/self/statm").ok()?;
+        let pages: u64 = statm.split_whitespace().nth(1)?.parse().ok()?;
+        Some(pages.saturating_mul(4096))
     }
 
     fn identity(

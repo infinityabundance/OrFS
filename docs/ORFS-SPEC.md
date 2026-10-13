@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–70)
+## 4. The ordered build phases (0–71)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -156,10 +156,11 @@ per-phase record.
 | 68 | Capacity guard: `orfs doctor --capacity` operator report (retained bytes, live backing free space and mount/device, projected growth, `ok`/`warn`/`exhausted` verdict); a typed `CapacityExhausted` pre-flight refusal before any byte is written; `init` reservation refusal; the read-only transition; `docs/CAPACITY.md` operator runbook | **complete** |
 | 69 | Endurance space-amplification curve (reviewer item 8): a bounded court grows a committed history over many epochs (content-neutral rewrites) and samples `logical` vs `authoritative_physical` vs `manifested` vs `total physical` bytes, the amplification ratio, and the growth counters, in an authoritative and a manifested arm over the same history; rendered as charts. Amplification grows monotonically (authoritative 1.50→10.08; manifested 6.56→88.48) over the bounded run; the multi-day run is the follow-up | **complete** |
 | 70 | Bounded Loom model for the concurrent immutable read views and the group-commit coordinator (reviewer item 11): `src/sync_model.rs` mirrors the read-view publication and the coordinator's admission/fence, compiled against `loom::sync` under `--cfg loom`; `tests/loom_concurrency.rs` proves no deadlock/race after the Phase-19 lock removal (a reader never sees a partial view; a batch never acks before the barrier covering its bytes); `scripts/container-loom.sh` | **complete** |
+| 71 | Documentation decisions (docs-only, no code change): the final index-spine decision (`docs/INDEX.md`) — the live, publication-sensitive writer spine stays the path-copying treap (radix/page-tree regress mutation, Phase 48) while the sealed, immutable historical role uses the dense-ordinal `InodeStore::Sealed` (Phase 58); the Docker-only operator runbook (`docs/OPERATIONS.md`); and the image pixel-surface pyramid moved to `docs/REJECTED.md` and removed from the implemented spec | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–70 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–71 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
 v0.1.0 was the first release.
@@ -193,8 +194,9 @@ Honest non-claims (see the linked documents):
   non-accelerating is not even loaded on the read path (Phase 18). No performance
   superiority is claimed: the manifested frontier falls back to the authoritative
   read (`docs/PERFORMANCE.md`).
-- The **image pixel-surface pyramid** is **not materialised**; only geometry is
-  implemented (`docs/QUERY.md` §9.1, `src/image.rs`).
+- The **image pixel-surface pyramid is rejected** (not merely unimplemented);
+  only descriptive geometry is implemented. See `docs/REJECTED.md`,
+  `docs/QUERY.md` §9.1, and `src/image.rs`.
 
 ---
 
@@ -228,6 +230,9 @@ Normative implementation documents to be produced. Status is marked honestly.
 | `docs/PERFORMANCE.md` | Benchmark methodology, metrics, reproducibility rules | **exists** (Phase 12) |
 | `docs/PMU.md` | Real hardware performance counters and the flamegraph; the container-flag requirement | **exists** (Phase 57) |
 | `docs/LIMITATIONS.md` | Known limits, kernel-dependence, unsupported capabilities | **exists** |
+| `docs/INDEX.md` | The final index-spine decision: which layout backs which role, the decisive criteria, and why the live writer spine stays the treap | **exists** (Phase 71) |
+| `docs/OPERATIONS.md` | The Docker-only operator runbook: `doctor --capacity` monitoring, `recover`, mount latency as history grows, POSIX operational notes, capacity/`ENOSPC` and the read-only transition, and where the security model lives | **exists** (Phase 71) |
+| `docs/REJECTED.md` | Design candidates deliberately rejected (the image pixel-surface pyramid), with reasons and reconsideration conditions | **exists** (Phase 71) |
 | `docs/CAPACITY.md` | The volume capacity policy, `orfs doctor --capacity`, the pre-flight `CapacityExhausted` refusal, and the operator runbook for disk filling and the read-only transition | **exists** (Phase 23; runbook Phase 68) |
 
 Every normative document above exists; there are no planned-only documents.

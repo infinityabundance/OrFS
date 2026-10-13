@@ -272,6 +272,42 @@
         {"group": 1, "label": "default matrix row_count", "evidence": "evidence/recovery/fault-injection-verify-recover.json", "path": "runs.default.row_count"},
         {"group": 2, "label": "sweep matrix row_count", "evidence": "evidence/recovery/fault-injection-verify-recover.json", "path": "runs.sweep.row_count"}
       ]
+    },
+    {
+      "id": "index-spine-sealed-vs-treap-bytes",
+      "doc": "docs/INDEX.md",
+      "section": "§6",
+      "claim": "the sealed historical inode spine at 1 M inodes: 8 000 048 B vs the treap's 56 000 056 B, ratio 0.143 (~7x smaller)",
+      "regex": "Spine size at 1 M inodes\\.\\*\\* sealed \\*\\*([0-9][0-9 ]*?) B\\*\\* vs treap \\*\\*([0-9][0-9 ]*?) B\\*\\* . ratio \\*\\*([0-9.]+)\\*\\*",
+      "fields": [
+        {"group": 1, "label": "sealed inode_spine_bytes @1M", "evidence": "evidence/performance/historical-index-integrated.json", "path": "scales[2].sealed.inode_spine_bytes"},
+        {"group": 2, "label": "treap inode_spine_bytes @1M", "evidence": "evidence/performance/historical-index-integrated.json", "path": "scales[2].treap.inode_spine_bytes"},
+        {"group": 3, "label": "spine_sealed_over_treap @1M", "evidence": "evidence/performance/historical-index-integrated.json", "path": "scales[2].ratios.spine_sealed_over_treap"}
+      ]
+    },
+    {
+      "id": "index-spine-mutation-penalty",
+      "doc": "docs/INDEX.md",
+      "section": "§6",
+      "claim": "the live-prototype mutation penalty at 1 M inodes: the page tree is 2.66x the treap, the radix 2.42x",
+      "regex": "The page tree's namespace mutation is \\*\\*([0-9.]+)×\\*\\* the treap's at 1 M inodes \\(radix \\*\\*([0-9.]+)×\\*\\*\\)",
+      "fields": [
+        {"group": 1, "label": "page_tree mutation_ratio_over_treap @1M", "evidence": "evidence/performance/index-layout.json", "path": "assessment[2].page_tree.mutation_ratio_over_treap"},
+        {"group": 2, "label": "radix mutation_ratio_over_treap @1M", "evidence": "evidence/performance/index-layout.json", "path": "assessment[2].radix.mutation_ratio_over_treap"}
+      ]
+    },
+    {
+      "id": "index-spine-sealed-lookup-p50",
+      "doc": "docs/INDEX.md",
+      "section": "§5",
+      "claim": "the sealed historical lookup p50 is a flat 20 ns vs the treap's 30/40/60 ns at 10k/100k/1M",
+      "regex": "A constant p50 of \\*\\*([0-9]+) ns\\*\\* at every scale, versus the\\s+treap's ([0-9]+) → ([0-9]+) → ([0-9]+) ns",
+      "fields": [
+        {"group": 1, "label": "sealed lookup_p50_ns @1M", "evidence": "evidence/performance/historical-index-integrated.json", "path": "scales[2].sealed.lookup_p50_ns"},
+        {"group": 2, "label": "treap lookup_p50_ns @10k", "evidence": "evidence/performance/historical-index-integrated.json", "path": "scales[0].treap.lookup_p50_ns"},
+        {"group": 3, "label": "treap lookup_p50_ns @100k", "evidence": "evidence/performance/historical-index-integrated.json", "path": "scales[1].treap.lookup_p50_ns"},
+        {"group": 4, "label": "treap lookup_p50_ns @1M", "evidence": "evidence/performance/historical-index-integrated.json", "path": "scales[2].treap.lookup_p50_ns"}
+      ]
     }
   ]
 }

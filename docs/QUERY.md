@@ -234,18 +234,21 @@ those:
 (each dimension floored to half, clamped to 1), from which the ~⅓ extra-pixel
 figure of §11.3 can be measured.
 
-### 9.1 What is *not* implemented, precisely
+### 9.1 The pixel-surface pyramid is rejected, not pending
 
 The **pixel-surface pyramid** — decoded, downsampled image data materialised
-under `.or_bloom/image/` — is deliberately not built, and is never claimed to
-be. Producing real surfaces requires a PNG decoder: a zlib/DEFLATE inflater, PNG
-filter reconstruction, interlace handling, and colour-space conversion. That is
-a real codec dependency (`png`/`image`, or `flate2` + `miniz_oxide`). This build
-is offline and single-crate/minimal-dependency, so such a crate cannot be added
-here; and hand-rolling an unaudited inflater and lifting pass would directly
-threaten the pixel/colour correctness that §11.3 elevates to a correctness
-concern. The geometry reported here is *descriptive*; it is not a set of
-materialised surfaces, and `src/image.rs` documents this at the source.
+under `.or_bloom/image/` — is **rejected** (Phase 71), not merely unimplemented,
+and has been removed from the implemented spec. Its geometry is descriptive and
+provides no user-visible capability, and materialising real surfaces requires a
+PNG decoder (a zlib/DEFLATE inflater, PNG filter reconstruction, interlace
+handling, and colour-space conversion) — a real codec dependency
+(`png`/`image`, or `flate2` + `miniz_oxide`) that this offline,
+single-crate/minimal-dependency build deliberately avoids. The rationale, the
+conditions under which it would be reconsidered, and a possible dependency-free
+(uncompressed-BMP) follow-up are in **`docs/REJECTED.md`** §1. Image
+**recognition**, dimension/colour-semantics parsing, and the descriptive
+`pyramid_levels` geometry remain implemented and tested (`src/image.rs`); only
+the materialised pyramid is rejected.
 
 ## 10. Benchmark honesty (research §12.1)
 

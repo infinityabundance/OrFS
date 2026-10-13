@@ -340,3 +340,17 @@ Two points belong on this limitations list specifically:
 The per-surface hardening, the `unsafe`-block audit, the vulnerability log, and the
 native-FUSE fuzzing/sanitizer results remain in `docs/SECURITY.md`; the acceptance
 gate definitions (including gate A) are published in `docs/GATES.md`.
+
+## 15. The image pixel-surface pyramid is rejected, not merely unimplemented
+
+Earlier phases described a "pixel-surface pyramid" (decoded, downsampled image
+surfaces under `.or_bloom/image/`) as a designed feature that was not
+materialised. Phase 71 resolves that ambiguity: the feature is **rejected**, not
+deferred, and has been removed from the implemented spec (`docs/QUERY.md` §9.1,
+`docs/ORFS-SPEC.md` §4). The reasons — the geometry alone provides no
+user-visible capability, and materialising real surfaces needs a decoder
+dependency this project deliberately avoids, and it is on no critical path —
+along with a possible dependency-free (uncompressed-BMP) reconsideration, are in
+**`docs/REJECTED.md`**. Image **recognition**, dimension and colour-semantics
+parsing, and the descriptive `pyramid_levels` geometry remain implemented and
+tested (`src/image.rs`).

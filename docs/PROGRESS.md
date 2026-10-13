@@ -3922,3 +3922,70 @@ runner row in `docs/REPRODUCE.md`.
   real-thread and mounted courts.
 * Loom explores a **bounded** state space (≤2 preemptions by default). It is
   evidence, not a proof over unbounded histories.
+
+## Phase 71 — Documentation decisions: index-spine, operations runbook, rejected pyramid
+
+**Complete; documentation only — no code, tests, or scripts changed.** Three open
+documentation decisions the reviewer named are resolved, and the phase rows, spec
+index, and progress record are brought into line. No test count changes.
+
+### Delivered
+
+* **`docs/INDEX.md` — the final index-spine decision (reviewer #4).** Records which
+  spine backs which role and why the treap is not replaced: the live,
+  publication-sensitive **writer** index stays the Phase-27 path-copying **treap**
+  (`persistent-treap`), because the byte-radix and the page tree both regress
+  mutation (Phase 48; at 1 M inodes the page tree is **2.66×** and the radix
+  **2.42×** the treap — `evidence/performance/index-layout.json`); the sealed,
+  immutable **historical** role uses the dense-ordinal `InodeStore::Sealed`
+  (Phase 58 — the one-pointer spine is **8 000 048 B** vs the treap's
+  **56 000 056 B** at 1 M, ratio **0.143** ≈ **7×** smaller, flat `O(1)` p50 20 ns,
+  live spine unchanged — `evidence/performance/historical-index-integrated.json`).
+  States the exact decisive criteria and cites both receipts.
+* **`docs/OPERATIONS.md` — the Docker-only operator runbook (reviewer #5).** A
+  task-oriented guide: monitoring `or.log` growth and reading the
+  `orfs doctor --capacity` verdict (`ok`/`warn`/`exhausted`); when to run
+  `orfs recover` and what it quarantines vs. refuses (never silent —
+  `docs/RECOVERY.md` §1/§2/§9); expected mount/open latency as history grows
+  (`docs/PERFORMANCE.md` §9.5 and §13; `historical-fast.json`, `history-scaling.json`);
+  the directory hard-link `EPERM` (Phase 56); supplementary-group enforcement from
+  `/proc` and its over-deny-never-over-grant bound (Phase 33; `docs/LIMITATIONS.md`
+  §13); the remaining POSIX deviations (`docs/LIMITATIONS.md` §12); capacity/`ENOSPC`
+  and the read-only transition (`docs/CAPACITY.md` §10–§13); and where the security
+  model lives (`docs/THREAT-MODEL.md`, `docs/SECURITY.md`).
+* **`docs/REJECTED.md` — the pyramid decision (reviewer #6).** The geometry-only
+  image pixel-surface pyramid is **rejected** (not deferred): the geometry alone
+  provides no user-visible capability, materialising surfaces needs a decoder
+  dependency this build deliberately avoids, and it is on no critical path. It is
+  removed from the implemented spec; `docs/QUERY.md` §9.1 points here, and
+  `README.md` and `docs/LIMITATIONS.md` §15 no longer present it as
+  in-design-but-unimplemented. A *reconsidered* note proposes (does not implement) a
+  dependency-free uncompressed-BMP path as a possible follow-up. Image recognition,
+  dimension/colour parsing, and the descriptive `pyramid_levels` geometry remain
+  implemented.
+
+### Docs
+
+`docs/INDEX.md`, `docs/OPERATIONS.md`, `docs/REJECTED.md` (new); `docs/QUERY.md`
+§9.1; `README.md` (phase row + non-claims); `docs/LIMITATIONS.md` §15;
+`docs/ORFS-SPEC.md` §4 (heading `0–71`, phase row, status) and §5 (three new rows);
+this entry.
+
+### Test counts
+
+**Unchanged: 485 (default) / 495 (`--features failpoints`)** — this phase changes
+documentation only (no `src/`, `tests/`, or scripts).
+
+### Notes, stated honestly
+
+* This is a **documentation-only** phase; it adds no capability and changes no
+  behaviour. The index-spine decision it records was already implemented in Phases 48
+  and 58; this phase makes the decision explicit and discoverable rather than
+  inferred from two performance courts.
+* The pyramid is **rejected**, not erased from history: the Phase 9 record of what
+  Phase 9 did not build stays as a truthful historical statement, now superseded by
+  an explicit rejection in `docs/REJECTED.md`.
+* No numbers were invented: every quoted figure is already committed in
+  `docs/PERFORMANCE.md` §16/§24 and the two receipts; the spine size, ratio, and
+  mutation penalties in `docs/INDEX.md` are machine-checked by
+  `scripts/check-docs-receipts.sh`.

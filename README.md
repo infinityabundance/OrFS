@@ -107,9 +107,11 @@ enable it (see `docs/FUSE_URING.md`).
 | 68 | Capacity guard: `orfs doctor --capacity` operator report (retained bytes, live backing free space, projected growth, `ok`/`warn`/`exhausted` verdict); a typed `CapacityExhausted` pre-flight refusal **before any byte is written**; `init` reservation refusal; `docs/CAPACITY.md` runbook | complete |
 | 69 | Endurance space-amplification curve (reviewer item 8): a bounded court drives a growing retained history over many epochs and samples `logical` vs `authoritative_physical` vs `manifested` vs `total physical` bytes, the amplification ratio, and the growth counters, in an authoritative and a manifested arm over the same history; rendered as charts. Amplification grows monotonically (auth 1.50→10.08; manifested 6.56→88.48) over the bounded run; the multi-day run is the follow-up | complete |
 | 70 | Bounded Loom model for the concurrent immutable read views + the group-commit coordinator (reviewer item 11): proves no deadlock/race after the Phase-19 lock removal — a reader never sees a partial view, and a batch never acks a transaction before the durability barrier covering its bytes | complete |
+| 71 | Documentation decisions (docs-only): the final index-spine decision (`docs/INDEX.md` — the live writer spine stays the path-copying treap; the sealed historical role uses the dense-ordinal `InodeStore::Sealed`), the Docker-only operator runbook (`docs/OPERATIONS.md`), and the rejected image pixel-surface pyramid (`docs/REJECTED.md`) | complete |
 
-Honest non-claims: the image pixel-surface pyramid is **not materialised** (only
-its geometry is implemented), and no performance superiority of F2 or of the
+Honest non-claims: the **image pixel-surface pyramid is rejected, not merely
+unimplemented** — only descriptive geometry is implemented, and the decision and
+rationale are in `docs/REJECTED.md`. No performance superiority of F2 or of the
 manifested read paths is claimed. See `docs/LIMITATIONS.md` and `docs/PERFORMANCE.md`.
 
 ## Development is Docker-only

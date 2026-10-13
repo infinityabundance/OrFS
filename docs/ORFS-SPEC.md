@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–71)
+## 4. The ordered build phases (0–73)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -158,10 +158,11 @@ per-phase record.
 | 70 | Bounded Loom model for the concurrent immutable read views and the group-commit coordinator (reviewer item 11): `src/sync_model.rs` mirrors the read-view publication and the coordinator's admission/fence, compiled against `loom::sync` under `--cfg loom`; `tests/loom_concurrency.rs` proves no deadlock/race after the Phase-19 lock removal (a reader never sees a partial view; a batch never acks before the barrier covering its bytes); `scripts/container-loom.sh` | **complete** |
 | 71 | Documentation decisions (docs-only, no code change): the final index-spine decision (`docs/INDEX.md`) — the live, publication-sensitive writer spine stays the path-copying treap (radix/page-tree regress mutation, Phase 48) while the sealed, immutable historical role uses the dense-ordinal `InodeStore::Sealed` (Phase 58); the Docker-only operator runbook (`docs/OPERATIONS.md`); and the image pixel-surface pyramid moved to `docs/REJECTED.md` and removed from the implemented spec | **complete** |
 | 72 | ENOSPC fault injection at the edge (reviewer item #13): `tests/fault_enospc.rs` drives a volume to ~90/95/99/100% of its usable capacity (the Phase-23 explicit-capacity latch — deterministic, no large files), then a `write + fsync` either commits cleanly or is refused with a typed `CapacityExhausted`/`NoSpace` (ENOSPC) leaving the previous committed root byte-identical and the volume read-only; and a crash at the edge (a real post-fsync `SIGABRT` child and the `orfs::powerloss` simulated device) followed by the real `orfs recover`, proving recovery selects the newest valid committed generation and silently repairs or truncates nothing | **complete** |
+| 73 | One-command continuous verification (reviewer item #12): `scripts/container-verify.sh` is the pre-PR entry point — it runs `check-all`, the default and `--features failpoints` suites, the POSIX / native fault-injection / `io_uring` / Loom courts, and the docs-receipts check again, one container at a time, with a per-stage `PASS`/`FAIL`/`SKIPPED` summary (`--fast` runs the cheap, always-available subset); publishes the volatile-cache court's scan-resistance **hit-rate** comparison (admission 95.2 % vs FIFO 88.0 % vs a faithful LRU 95.2 %) and the steady-state `allocs/read` (8 → 2) in `docs/PERFORMANCE.md` §17/§18 (reviewer item #10) | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–72 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–73 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
 v0.1.0 was the first release.
@@ -266,6 +267,16 @@ scripts/container-test.sh        # cargo test  (493 tests)
 scripts/container-fuse-test.sh    # real-mount FUSE + performance court
 scripts/container-uring-test.sh   # io_uring integration + backing benchmark
 scripts/container-check.sh        # cargo fmt -p orfs --check + clippy -D warnings
+scripts/container-verify.sh       # one-command continuous verification (all courts)
+sh scripts/container-verify.sh --fast   # cheap subset (fmt/clippy, docs-receipts, charts, default suite)
 scripts/receipts-host.sh          # host-side receipts (incl. source-commit.json)
 sh -c '. scripts/lib.sh && docker_run sh scripts/receipts-container.sh'
 ```
+
+`scripts/container-verify.sh` is the pre-PR entry point: it runs the cheap
+`check-all` gate, the default and `--features failpoints` suites, the POSIX /
+fault-injection / `io_uring` / Loom courts, and the docs-receipts check again (in
+that order, one container at a time), printing a per-stage `PASS`/`FAIL`/`SKIPPED`
+summary and exiting non-zero on any failure. `--fast` runs only the cheap,
+always-available parts. A stage that cannot run in the environment is reported
+`SKIPPED (reason)` and is not counted as a pass (see `docs/OPERATIONS.md` §8).

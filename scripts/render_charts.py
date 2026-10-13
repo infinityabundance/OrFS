@@ -417,15 +417,17 @@ def chart_planner_cache():
     d = load("planner-cache.json")
     meas = d["measured"]
     fifo = d["fifo_model"]
+    lru = d["lru_model"]
     groups = ["cold scan rebuilds", "steady hot rebuilds"]
     series = [
         {"name": "AdmissionCache", "values": [meas["scan_plan_builds"], meas["hot_only_plan_builds"]]},
         {"name": "FIFO model", "values": [fifo["scan_plan_builds"], fifo["hot_only_plan_builds"]]},
+        {"name": "LRU model", "values": [lru["scan_plan_builds"], lru["hot_only_plan_builds"]]},
     ]
     cap = [
         "source: evidence/performance/planner-cache.json (capacity 32, scan 512)",
         "body-plan rebuilds over the identical key trace;",
-        "the FIFO row is an analytic model, not a second run",
+        "the FIFO and LRU rows are analytic models, not second runs",
         "regenerate: python3 scripts/render_charts.py --check",
     ]
     return bar_chart(

@@ -8,18 +8,22 @@
 <line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
 <line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
 <text x="26.0" y="201.0" fill="#111111" font-size="12" text-anchor="middle" transform="rotate(-90 26.0 201.0)">body-plan rebuilds</text>
-<rect x="129.6" y="229.8" width="104.3" height="110.2" fill="#1f77b4"/>
-<rect x="260.0" y="62.0" width="104.3" height="278.0" fill="#d62728"/>
+<rect x="125.3" y="229.8" width="69.5" height="110.2" fill="#1f77b4"/>
+<rect x="212.2" y="62.0" width="69.5" height="278.0" fill="#d62728"/>
+<rect x="299.2" y="229.8" width="69.5" height="110.2" fill="#2ca02c"/>
 <text x="247.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">cold scan rebuilds</text>
-<rect x="455.6" y="340.0" width="104.3" height="0.0" fill="#1f77b4"/>
-<rect x="586.0" y="340.0" width="104.3" height="0.0" fill="#d62728"/>
+<rect x="451.3" y="340.0" width="69.5" height="0.0" fill="#1f77b4"/>
+<rect x="538.2" y="340.0" width="69.5" height="0.0" fill="#d62728"/>
+<rect x="625.2" y="340.0" width="69.5" height="0.0" fill="#2ca02c"/>
 <text x="573.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">steady hot rebuilds</text>
 <rect x="84.0" y="35.0" width="10" height="10" fill="#1f77b4"/>
 <text x="99.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">AdmissionCache</text>
 <rect x="217.0" y="35.0" width="10" height="10" fill="#d62728"/>
 <text x="232.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">FIFO model</text>
+<rect x="322.0" y="35.0" width="10" height="10" fill="#2ca02c"/>
+<text x="337.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">LRU model</text>
 <text x="84.0" y="370.0" fill="#555555" font-size="10" text-anchor="start">source: evidence/performance/planner-cache.json (capacity 32, scan 512)</text>
 <text x="84.0" y="386.0" fill="#555555" font-size="10" text-anchor="start">body-plan rebuilds over the identical key trace;</text>
-<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">the FIFO row is an analytic model, not a second run</text>
+<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">the FIFO and LRU rows are analytic models, not second runs</text>
 <text x="84.0" y="418.0" fill="#555555" font-size="10" text-anchor="start">regenerate: python3 scripts/render_charts.py --check</text>
 </svg>

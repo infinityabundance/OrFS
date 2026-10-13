@@ -4062,3 +4062,88 @@ the phase row in `README.md` and `docs/ORFS-SPEC.md`; the receipt row in
   process crash — the OS page cache survives) and the simulated storage device
   (an un-clean power failure, including a torn durable tail). Neither models real
   hardware; `docs/RECOVERY.md` §4 states the boundary.
+
+## Phase 73 — One-command verification + published scan-resistance hit rates (reviewer items #12, #10)
+
+**Complete.** Two reviewer items land together: a single pre-PR entry point that
+runs every court this project checks, and the volatile-cache court's missing
+**hit-rate** comparison, now published in `docs/PERFORMANCE.md` §17/§18.
+
+### Delivered
+
+* **`scripts/container-verify.sh` (item #12) — one-command continuous
+  verification.** The pre-PR entry point runs, in order, **one container at a
+  time**: (1) `check-all --fast` (fmt/clippy + docs-receipts + chart drift),
+  (2) the default test suite, (3) the default suite `--features failpoints`,
+  (4) the POSIX court (`container-posix-test.sh`), (5) the native fsx/fsstress
+  fault-injection court (`container-fault-injection.sh`), (6) the `io_uring` court
+  (`container-uring-test.sh`), (7) the bounded Loom model (`container-loom.sh`),
+  and (8) the docs-receipts check again at the end. It prints a per-stage
+  `PASS`/`FAIL`/`SKIPPED` summary and exits non-zero on any failure; a stage that
+  cannot run in the environment (the POSIX court without `/dev/fuse`, or any
+  container stage without a usable Docker daemon) is reported `SKIPPED (reason)`
+  and is **not** counted as a pass. `--fast` runs only the cheap,
+  always-available parts (fmt/clippy, docs-receipts, chart drift, the default
+  suite) and skips the failpoint suite and every mounted/heavy court.
+* **`tests/planner_cache.rs` (item #10) — the hit-rate comparison and the
+  `allocs/read` figure.** The court now replays the *identical* key trace through
+  **two** analytic baselines — the pre-Phase-49 insertion-ordered **FIFO** model
+  and a new faithful **LRU** model (a hit promotes the key to most-recently-used,
+  a miss evicts the least-recently-used) — and reports the scan-phase **hit
+  rate** and rebuild count for all three policies, plus a steady-state
+  `allocs/read` figure measured by a counting global allocator on the hot-only
+  phase.
+* **`docs/PERFORMANCE.md` §17/§18** publish the explicit table and the
+  before/after allocations; **`scripts/render_charts.py`** adds the LRU series to
+  the planner-cache figure; **`scripts/docs-receipts.json`** adds curated
+  citations for the hit rates and the `allocs/read` (deterministic numbers);
+  **`docs/OPERATIONS.md` §8**, **`docs/REPRODUCE.md`** and **`docs/ORFS-SPEC.md`
+  §6** document `container-verify.sh`.
+
+### Results
+
+`sh scripts/container-planner-cache.sh` (one run; release; capacity 32, hot set
+20, scan 512; 10 752 scan touches):
+
+| Policy | Scan hit rate | Scan rebuilds |
+|---|---|---|
+| Admission (S3-FIFO) | **95.2 %** | **512** |
+| FIFO (pre-Phase 49) | 88.0 % | 1 292 |
+| LRU (faithful) | 95.2 % | 512 |
+
+The admission policy **matches the LRU hit rate** on this interleaved trace (the
+hot set is re-referenced every scan step, protecting it under recency too) while
+remaining a bounded, `O(1)`-amortised approximate cache; it holds exactly the
+unavoidable cold-object rebuilds (**512**) versus the FIFO model's **1 292**
+(2.52×). The steady-state read allocates **2.0 times per read** (2 560 / 1 280),
+the Phase-50 per-read manifest-clone fixed point (**8.0 → 2.0 allocations/read**).
+`sh scripts/container-verify.sh --fast` reports **PASS** (stage 1 check-all, stage
+2 default suite, stage 8 docs-receipts; stages 3–7 `SKIPPED (--fast)`).
+
+### Docs
+
+`scripts/container-verify.sh` (new); `tests/planner_cache.rs`; `docs/PERFORMANCE.md`
+§17/§18; `scripts/render_charts.py` + `docs/charts/planner-cache.svg`;
+`scripts/docs-receipts.json`; `docs/OPERATIONS.md` §8; `docs/REPRODUCE.md`;
+`docs/ORFS-SPEC.md` §4 (heading `0–73`, phase row, status) and §6; `README.md`
+(phase row); this entry. Receipt refreshed: `evidence/performance/planner-cache.json`.
+
+### Test counts
+
+**Unchanged: 493 (default) / 503 (`--features failpoints`)** — this phase adds no
+`#[test]` function (it extends an existing court's measurement and adds a script
+and docs).
+
+### Notes, stated honestly
+
+* The FIFO and LRU figures are **analytic models** over the identical key trace,
+  not second filesystem runs; the admission figures are measured through the
+  planner's public API. The hit rates are deterministic (fixed trace, fixed
+  capacities), which is why they are curated citations; the ns/read figure is
+  host/load sensitive and is reported as indicative, not curated.
+* The LRU model ties the admission policy **on this interleaved trace** — that is
+  the honest, expected result (the hot set is re-referenced every step, which
+  protects it under recency too), not a claim that S3-FIFO beats LRU in general;
+  it is the plain FIFO that a scan destroys.
+* `container-verify.sh` marks an environment-limited stage `SKIPPED` rather than
+  passing it, so a green summary never overstates coverage.

@@ -22,6 +22,25 @@ so a reviewer can re-run any single number instead of trusting the prose.
 
 All execution is Docker-only (`scripts/lib.sh`); nothing runs on the host.
 
+## One-command verification (pre-PR)
+
+`sh scripts/container-verify.sh` is the pre-PR entry point: it runs the cheap
+`check-all` gate (fmt/clippy + docs-receipts + chart drift), then the default suite
+and the default suite `--features failpoints`, then the POSIX, native
+fsx/fsstress fault-injection, `io_uring` and bounded Loom courts, then the
+docs-receipts check again — one container at a time — and prints a per-stage
+`PASS`/`FAIL`/`SKIPPED` summary, exiting non-zero on any failure.
+
+```sh
+sh scripts/container-verify.sh          # full pre-PR court
+sh scripts/container-verify.sh --fast   # fmt/clippy + docs-receipts + charts + default suite
+```
+
+`--fast` runs only the cheap, always-available parts and skips anything that needs
+a mount (`/dev/fuse`) or is heavy. A stage that cannot run in the environment is
+reported `SKIPPED (reason)` and is **not** counted as a pass. See
+`docs/OPERATIONS.md` §8.
+
 ## Dedicated courts (one script, one workload, one receipt)
 
 | Receipt | Written by | Command |

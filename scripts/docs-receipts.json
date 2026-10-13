@@ -222,6 +222,51 @@
       ]
     },
     {
+      "id": "perf-s17-planner-cache-admission-hit",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§17",
+      "claim": "volatile-cache court: scan-phase hit rate and rebuilds for the admission policy (deterministic trace)",
+      "regex": "Admission \\(S3-FIFO\\) \\| \\*\\*([0-9.]+) %\\*\\* \\| \\*\\*([0-9][0-9 ]*)\\*\\*",
+      "fields": [
+        {"group": 1, "label": "admission scan_hit_rate (doc %)", "evidence_multiplier": 100, "evidence": "evidence/performance/planner-cache.json", "path": "policy_comparison[policy=admission-s3-fifo].scan_hit_rate"},
+        {"group": 2, "label": "admission scan_plan_builds", "evidence": "evidence/performance/planner-cache.json", "path": "policy_comparison[policy=admission-s3-fifo].scan_plan_builds"}
+      ]
+    },
+    {
+      "id": "perf-s17-planner-cache-fifo-hit",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§17",
+      "claim": "volatile-cache court: scan-phase hit rate and rebuilds for the FIFO baseline (deterministic trace)",
+      "regex": "FIFO \\(pre-Phase 49\\) \\| ([0-9.]+) % \\| ([0-9][0-9 ]*) \\|",
+      "fields": [
+        {"group": 1, "label": "fifo scan_hit_rate (doc %)", "evidence_multiplier": 100, "evidence": "evidence/performance/planner-cache.json", "path": "policy_comparison[policy=fifo-model].scan_hit_rate"},
+        {"group": 2, "label": "fifo scan_plan_builds", "evidence": "evidence/performance/planner-cache.json", "path": "policy_comparison[policy=fifo-model].scan_plan_builds"}
+      ]
+    },
+    {
+      "id": "perf-s17-planner-cache-lru-hit",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§17",
+      "claim": "volatile-cache court: scan-phase hit rate and rebuilds for the faithful LRU baseline (deterministic trace)",
+      "regex": "\\| LRU \\| ([0-9.]+) % \\| ([0-9][0-9 ]*) \\|",
+      "fields": [
+        {"group": 1, "label": "lru scan_hit_rate (doc %)", "evidence_multiplier": 100, "evidence": "evidence/performance/planner-cache.json", "path": "policy_comparison[policy=lru-model].scan_hit_rate"},
+        {"group": 2, "label": "lru scan_plan_builds", "evidence": "evidence/performance/planner-cache.json", "path": "policy_comparison[policy=lru-model].scan_plan_builds"}
+      ]
+    },
+    {
+      "id": "perf-s17-planner-cache-allocs-per-read",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§17",
+      "claim": "volatile-cache court: steady-state read allocations per read (deterministic)",
+      "regex": "Steady-state read allocations: ([0-9.]+) per read\\*\\* \\(([0-9][0-9 ]*) allocations over ([0-9][0-9 ]*) reads\\)",
+      "fields": [
+        {"group": 1, "label": "steady-state allocs/read", "evidence": "evidence/performance/planner-cache.json", "path": "measured.hot_only_allocs_per_read"},
+        {"group": 2, "label": "steady-state allocations", "evidence": "evidence/performance/planner-cache.json", "path": "measured.hot_only_allocs"},
+        {"group": 3, "label": "steady-state reads", "evidence": "evidence/performance/planner-cache.json", "path": "measured.hot_only_reads"}
+      ]
+    },
+    {
       "id": "perf-s18-microarch-manifest-handle",
       "doc": "docs/PERFORMANCE.md",
       "section": "§18",

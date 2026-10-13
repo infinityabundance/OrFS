@@ -3,8 +3,9 @@
     "admission_scan_builds": 512,
     "admission_vs_fifo_scan_build_ratio": 2.5234375,
     "cold_builds_are_unavoidable": 512,
-    "explanation": "The admission policy rebuilds only the cold objects (one per scan step); the FIFO model rebuilds those plus hot bodies its eviction displaced.",
-    "fifo_scan_builds": 1292
+    "explanation": "The admission policy rebuilds only the cold objects (one per scan step); the FIFO model rebuilds those plus hot bodies its eviction displaced. The LRU model re-references the whole hot set every scan step, so it too keeps the hot set resident on this interleaved trace; the admission policy matches it while staying a bounded, O(1)-amortised approximate cache.",
+    "fifo_scan_builds": 1292,
+    "lru_scan_builds": 512
   },
   "environment": {
     "bench": {
@@ -19,6 +20,7 @@
       "likely_container": true,
       "machine": "x86_64",
       "perf_counters_available": false,
+      "perf_event_open_error": "Operation not permitted (os error 1)",
       "perf_event_paranoid": "2",
       "ram_total_bytes": 134723346432
     },
@@ -27,15 +29,24 @@
   "fifo_model": {
     "hot_only_plan_builds": 0,
     "note": "analytic replay of the pre-Phase-49 insertion-ordered FIFO over the identical key trace",
+    "scan_hit_rate": 0.8798363095238095,
+    "scan_hits": 9460,
     "scan_plan_builds": 1292
   },
   "generated_by": "tests/planner_cache.rs",
+  "lru_model": {
+    "hot_only_plan_builds": 0,
+    "note": "analytic replay of a faithful LRU over the identical key trace",
+    "scan_hit_rate": 0.9523809523809523,
+    "scan_hits": 10240,
+    "scan_plan_builds": 512
+  },
   "measured": {
     "cache_stats_end": {
       "body": {
         "evictions": 500,
         "ghost_hits": 0,
-        "hits": 11580,
+        "hits": 12860,
         "misses": 532,
         "promotions": 20
       },
@@ -54,15 +65,19 @@
         "promotions": 0
       }
     },
+    "hot_only_allocs": 2560,
+    "hot_only_allocs_per_read": 2.0,
     "hot_only_hit_rate": 1.0,
     "hot_only_hits": 1280,
-    "hot_only_ns_per_read": 178.76328125,
+    "hot_only_ns_per_read": 129.0453125,
     "hot_only_plan_builds": 0,
     "hot_only_reads": 1280,
     "hot_reads_during_scan": 10240,
     "resident_body_plans_end": 32,
     "resident_bound": 32,
-    "rss_kib_end": 3688,
+    "rss_kib_end": 3560,
+    "scan_body_hits": 10240,
+    "scan_body_misses": 512,
     "scan_body_stats": {
       "evictions": 500,
       "ghost_hits": 0,
@@ -70,10 +85,12 @@
       "misses": 532,
       "promotions": 20
     },
+    "scan_hit_rate": 0.9523809523809523,
     "scan_object_count": 512,
-    "scan_plan_builds": 512
+    "scan_plan_builds": 512,
+    "scan_touches": 10752
   },
-  "note": "Single-run, single-host measurement. The planner's volatile caches hold re-derivable structures (parsed EKBLOOM bodies + their precompiled read plans, region payload bodies, coverage tables); evicting one forgets only a cached parse, never the committed manifestation. This court measures the *observable* effect of the Phase 49 scan-resistant admission policy through the planner's public API: during a one-pass cold scan far larger than the cache, every interleaved hot read is a body-cache hit, so the only body-plan rebuilds are the cold objects themselves. The 'fifo_model' figures are an analytic replay of the pre-Phase-49 insertion-ordered FIFO over the identical key trace (a model of the old policy, not a second filesystem run).",
+  "note": "Single-run, single-host measurement. The planner's volatile caches hold re-derivable structures (parsed EKBLOOM bodies + their precompiled read plans, region payload bodies, coverage tables); evicting one forgets only a cached parse, never the committed manifestation. This court measures the *observable* effect of the Phase 49 scan-resistant admission policy through the planner's public API: during a one-pass cold scan far larger than the cache, every interleaved hot read is a body-cache hit, so the only body-plan rebuilds are the cold objects themselves. The 'fifo_model' and 'lru_model' figures are analytic replays of two baseline eviction policies (pre-Phase-49 insertion-ordered FIFO, and a faithful LRU) over the identical key trace -- models of the policies, not a second filesystem run -- and 'policy_comparison' states the scan-phase hit rate and rebuild count for all three.",
   "policy": {
     "ghost_queue_capacity_factor": 1,
     "max_reference_count": 3,
@@ -82,6 +99,29 @@
     "promote_min_references": 1,
     "retires_volatile_only": true
   },
+  "policy_comparison": [
+    {
+      "policy": "admission-s3-fifo",
+      "scan_hit_rate": 0.9523809523809523,
+      "scan_hits": 10240,
+      "scan_misses": 512,
+      "scan_plan_builds": 512
+    },
+    {
+      "policy": "fifo-model",
+      "scan_hit_rate": 0.8798363095238095,
+      "scan_hits": 9460,
+      "scan_misses": 1292,
+      "scan_plan_builds": 1292
+    },
+    {
+      "policy": "lru-model",
+      "scan_hit_rate": 0.9523809523809523,
+      "scan_hits": 10240,
+      "scan_misses": 512,
+      "scan_plan_builds": 512
+    }
+  ],
   "schema": "orfs.performance.planner-cache.v1",
   "workload": {
     "capacity": 32,

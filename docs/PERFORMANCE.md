@@ -1306,19 +1306,38 @@ policy over identical keys, not a second filesystem run).
 **Measured (one run; release; capacity 32, hot set 20, scan 512).**
 
 * During the cold scan the admission policy rebuilt **512** bodies during the scan versus **1292** for the FIFO model — exactly one rebuild per cold object, i.e. **every** one of the 10 240 interleaved hot reads was a body-cache hit, against 2.52× more rebuilds under the FIFO model.
+
+**Scan-phase hit rate** — the explicit policy comparison, over the identical key
+ trace (10 752 touches: 512 cold + 10 240 hot):
+
+| Policy | Scan hit rate | Scan rebuilds |
+|---|---|---|
+| Admission (S3-FIFO) | **95.2 %** | **512** |
+| FIFO (pre-Phase 49) | 88.0 % | 1 292 |
+| LRU | 95.2 % | 512 |
+
+The **FIFO** row is the pre-Phase-49 insertion-ordered policy; the **LRU** row is
+a faithful recency-ordered cache (a hit promotes the key to most-recently-used, a
+miss evicts the least-recently-used). Both are analytic replays over the *same*
+key trace, not second filesystem runs. The admission policy **matches the LRU
+hit rate** on this interleaved trace — the hot set is re-referenced every scan
+step, which protects it under recency too — while staying a bounded,
+`O(1)`-amortised approximate cache.
+
 * The steady hot-only phase (1 280 reads) rebuilt **0** bodies; body-cache hit
-  rate **1.0**; mean **178.8 ns/read** (release, warm cache).
-* Resident bodies stayed at the bound (**32/32**); process RSS **3 688 KiB**.
-* Body-cache counters over the court: 11 580 hits, 532 misses, 20 promotions
+  rate **1.0**; mean **129.0 ns/read** (release, warm cache).
+* **Steady-state read allocations: 2.0 per read** (2 560 allocations over 1 280 reads) — the same fixed point §18 measures, i.e. the Phase-50 per-read manifest-clone fix (**8.0 → 2.0 allocations/read**) holds on this path too.
+* Resident bodies stayed at the bound (**32/32**); process RSS **3 560 KiB**.
+* Body-cache counters over the court: 12 860 hits, 532 misses, 20 promotions
   (exactly the hot set), 500 evictions — the scan keys were all demoted, never
   promoted.
 
-![Planner volatile caches: body-plan rebuilds, admission policy vs FIFO model](charts/planner-cache.svg)
+![Planner volatile caches: body-plan rebuilds, admission policy vs FIFO and LRU models](charts/planner-cache.svg)
 
 *Figure 17.1 — body-plan rebuilds over the identical key trace: the admission
-policy rebuilds only the cold objects; the FIFO figure is an analytic model, not
-a second run. Source: `evidence/performance/planner-cache.json`; regenerate with
-`python3 scripts/render_charts.py --check`.*
+policy rebuilds only the cold objects; the FIFO and LRU figures are analytic
+models, not second runs. Source: `evidence/performance/planner-cache.json`;
+regenerate with `python3 scripts/render_charts.py --check`.*
 
 **Findings, stated honestly.**
 
@@ -1335,18 +1354,20 @@ a second run. Source: `evidence/performance/planner-cache.json`; regenerate with
    never exceed the configured capacity, and a unit court drives **one million**
    distinct keys through an `AdmissionCache` of capacity 8 asserting the bound and
    <32 MiB of RSS growth.
-4. **Scope, stated plainly.** This court does not separately instrument
-   allocations or lock-contention counters (hardware counters are denied to the
-   default container by its seccomp profile — `EPERM`, not `perf_event_paranoid=2`
-   — and per-lookup allocation counting would be dominated
-   by the harness's own result buffers); it reports the decisive, policy-neutral
-   observable (body-plan rebuilds), the steady-state hit rate, and ns/read. The
-   identity-keyed tables' one-million-identity bound is the separate Phase 43
-   aging court.
+4. **The comparison is complete and the allocation fixed point holds.** The court
+   now reports an explicit scan-phase hit rate against **two** baselines — the
+   pre-Phase-49 FIFO model (**88.0 %**, 1 292 rebuilds) and a faithful LRU model
+   (**95.2 %**, 512 rebuilds). The admission policy matches the LRU hit rate
+   (**95.2 %**, 512 rebuilds) on this interleaved trace, and a counting global
+   allocator confirms the steady-state read's **2.0 allocations/read** (the
+   Phase-50 fixed point, 8.0 → 2.0). It does not instrument lock-contention
+   counters (hardware counters are denied to the default container by its seccomp
+   profile — `EPERM`, not `perf_event_paranoid=2`). The identity-keyed tables'
+   one-million-identity bound is the separate Phase 43 aging court.
 
 **Caveats.** Single run, single host, release build; the ns/read figure is
-host/load sensitive and is reported as indicative. The FIFO figures are an
-analytic model over the identical key trace, not a run of the pre-Phase-49 binary
+host/load sensitive and is reported as indicative. The FIFO and LRU figures are
+analytic models over the identical key trace, not runs of the pre-Phase-49 binary
 (which does not expose the same counters). Each volatile cache is still behind a
 single mutex; sharding them for multi-reader cache throughput is not attempted
 here, and §18 measures the resulting reader-scaling curve honestly.

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="monospace"><rect x="0" y="0" width="760" height="440" fill="#ffffff"/><text x="380.0" y="22.0" fill="#111111" font-size="14" text-anchor="middle" font-weight="bold">expansion controller: aggregate read time vs manifested-space budget</text>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="344.0" fill="#111111" font-size="11" text-anchor="end">0</text>
+<line x1="84.0" y1="283.6" x2="736.0" y2="283.6" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="287.6" fill="#111111" font-size="11" text-anchor="end">1M</text>
+<line x1="84.0" y1="227.2" x2="736.0" y2="227.2" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="231.2" fill="#111111" font-size="11" text-anchor="end">2M</text>
+<line x1="84.0" y1="170.9" x2="736.0" y2="170.9" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="174.9" fill="#111111" font-size="11" text-anchor="end">3M</text>
+<line x1="84.0" y1="114.5" x2="736.0" y2="114.5" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="118.5" fill="#111111" font-size="11" text-anchor="end">4M</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<text x="26.0" y="201.0" fill="#111111" font-size="12" text-anchor="middle" transform="rotate(-90 26.0 201.0)">aggregate read time (ns)</text>
+<rect x="97.0" y="62.0" width="46.4" height="278.0" fill="#1f77b4"/>
+<text x="120.2" y="358.0" fill="#111111" font-size="11" text-anchor="middle">none</text>
+<rect x="169.5" y="70.4" width="46.4" height="269.6" fill="#1f77b4"/>
+<text x="192.7" y="358.0" fill="#111111" font-size="11" text-anchor="middle">B=0</text>
+<rect x="241.9" y="97.9" width="46.4" height="242.1" fill="#1f77b4"/>
+<text x="265.1" y="358.0" fill="#111111" font-size="11" text-anchor="middle">B=250k</text>
+<rect x="314.4" y="104.5" width="46.4" height="235.5" fill="#1f77b4"/>
+<text x="337.6" y="358.0" fill="#111111" font-size="11" text-anchor="middle">B=470k</text>
+<rect x="386.8" y="153.6" width="46.4" height="186.4" fill="#1f77b4"/>
+<text x="410.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">B=940k</text>
+<rect x="459.3" y="185.2" width="46.4" height="154.8" fill="#1f77b4"/>
+<text x="482.4" y="358.0" fill="#111111" font-size="11" text-anchor="middle">B=1.4M</text>
+<rect x="531.7" y="250.3" width="46.4" height="89.7" fill="#1f77b4"/>
+<text x="554.9" y="358.0" fill="#111111" font-size="11" text-anchor="middle">B=2.1M</text>
+<rect x="604.2" y="316.6" width="46.4" height="23.4" fill="#1f77b4"/>
+<text x="627.3" y="358.0" fill="#111111" font-size="11" text-anchor="middle">unbounded</text>
+<rect x="676.6" y="317.2" width="46.4" height="22.8" fill="#1f77b4"/>
+<text x="699.8" y="358.0" fill="#111111" font-size="11" text-anchor="middle">all</text>
+<rect x="84.0" y="35.0" width="10" height="10" fill="#1f77b4"/>
+<text x="99.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">aggregate read time (ns)</text>
+<text x="84.0" y="370.0" fill="#555555" font-size="10" text-anchor="start">source: evidence/performance/expansion-controller.json (8 fragmented objects, release)</text>
+<text x="84.0" y="386.0" fill="#555555" font-size="10" text-anchor="start">fixed mixed-size workload; 'none' manifests nothing, 'all' manifests everything</text>
+<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">the controller's curve is monotone non-increasing in B; authority is retained</text>
+<text x="84.0" y="418.0" fill="#555555" font-size="10" text-anchor="start">regenerate: python3 scripts/render_charts.py --check</text>
+</svg>

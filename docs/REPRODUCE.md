@@ -29,6 +29,7 @@ All execution is Docker-only (`scripts/lib.sh`); nothing runs on the host.
 | `evidence/performance/baselines.json` | `tests/baselines.rs` | `sh scripts/container-baseline.sh` |
 | `evidence/performance/search-directory.json` | `tests/search_directory.rs` | `sh scripts/container-search-directory.sh` |
 | `evidence/performance/direct-page-atlas.json` | `tests/direct_page_atlas.rs` | `sh scripts/container-direct-page-atlas.sh` |
+| `evidence/performance/expansion-controller.json` | `tests/expansion_controller.rs` | `sh scripts/container-expansion-controller.sh` |
 | `evidence/performance/microarch.json` | `tests/microarch.rs` | `sh scripts/container-microarch.sh` |
 | `evidence/performance/planner-cache.json` | `tests/planner_cache.rs` | `sh scripts/container-planner-cache.sh` |
 | `evidence/performance/read-planner.json` | `benches/read_path.rs` | `sh scripts/container-read-planner.sh` |
@@ -94,6 +95,7 @@ image → receipt → command mapping:
 | `reader-scaling-64-tail.svg` | `PERFORMANCE.md` §22 | `evidence/performance/reader-scaling-64.json` | `sh scripts/container-reader-scale64.sh` |
 | `pmu.svg` | `PERFORMANCE.md` §23 | `evidence/performance/pmu.json` | `sh scripts/container-pmu.sh` |
 | `direct-page-atlas.svg` | `PERFORMANCE.md` §27 | `evidence/performance/direct-page-atlas.json` | `sh scripts/container-direct-page-atlas.sh` |
+| `expansion-controller.svg` | `PERFORMANCE.md` §28 | `evidence/performance/expansion-controller.json` | `sh scripts/container-expansion-controller.sh` |
 
 The **chart command** is the same for every row: `python3 scripts/render_charts.py`
 (generate) or `python3 scripts/render_charts.py --check` (drift check). The

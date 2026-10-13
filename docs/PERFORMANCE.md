@@ -2099,3 +2099,131 @@ candidate first (coldest); its byte-class sample can therefore be pessimistic,
 which is why the atlas is *selected* at 1 B even where its latency is marginal or
 slightly worse. That is a property of the existing single-sample calibration and
 is unchanged by this phase.
+
+## 28. Reviewer task — autonomous concealed-expansion controller (research §12)
+
+**The question.** §5 records that the manifested read paths win for some request
+shapes and lose for others, and §27 gives one different physical form (a
+contiguous atlas). Research §12 asks the largest remaining question: rather than
+manifesting structures by a fixed policy, can OrFS **observe** a workload,
+**predict** which additional structure would most reduce work, **construct** it,
+**verify** it, and **publish a read decision** — while never becoming
+authoritative? Formally:
+
+```text
+  min_M   Σ_q w_q · T(q, M)      subject to   PhysicalBytes(M) ≤ B
+  Read(q, M) = Read_authority(q)              (and the root invariants)
+```
+
+**The controller.** `src/expansion.rs` is a **bounded, honest first version**. It
+decides, per object and under a manifested-space budget `B`, between **no
+manifestation** and the **direct-page atlas** (Phase 64) — which today must ride
+an EKBLOOM generation, so the chosen *atlas program* also constructs that
+prerequisite generation, and the budget counts both. The decision rule is a
+greedy knapsack:
+
+* each object's **predicted benefit** is
+  `Σ_c count_c · max(0, estimate(LogicalExtent, c) − estimate(DirectImage, c))`,
+  where `estimate` is a **recorded** planner measurement when one exists (folded
+  in from `ReadPlanner::measurements`, e.g. a calibration pilot), and otherwise
+  the planner's own documented prior (`readpath::prior_cost_ns`);
+* each object's **weight** is the estimated manifested bytes: a **measured**
+  per-logical-byte generation ratio times the logical length, plus the atlas's
+  exact `align + logical` payload;
+* objects are ranked by **benefit per manifested byte** (descending, ties by
+  inode) and taken while the cumulative predicted bytes fit `B`; a non-positive
+  predicted benefit is never chosen.
+
+Three separations keep it safe by construction. The prediction is **pure** (no
+I/O, no history access) and **never authoritative**: a wrong prediction can only
+waste bytes. Construction runs in a deliberate planning phase, **never** on a
+read's critical path. And **selection stays the planner's and stays measured**:
+an unmeasured candidate is never selected, every manifested read is verified
+byte-identical to the authoritative read, and a structure that is absent, stale,
+tampered, or simply measured slower is ignored — the read falls back to the
+authoritative extent path.
+
+**Court.** `tests/expansion_controller.rs`, run by
+`scripts/container-expansion-controller.sh` (smoke + release sweep), writes
+`evidence/performance/expansion-controller.json` (schema
+`orfs.performance.expansion-controller.v1`). It builds a **fixed deterministic
+committed history** of 8 objects — mixed sizes (four 64 KiB, four 128 KiB), every
+object **heavily fragmented** (1024-byte interleaved writes) — and a **fixed
+workload** that reads each object repeatedly at mixed sizes (1 B / 2 KiB / 16 KiB
+/ the whole object). A dedicated, equally fragmented **calibration pilot**,
+kept out of the workload, supplies the measured generation ratio and per-class
+costs. The always-on smoke asserts the safety properties deterministically; the
+`ORFS_EXPANSION=1` release sweep writes the evidence.
+
+**Measured (one run; release; 960 timed reads per row; warmed 3 passes).**
+
+| budget `B` (bytes) | chosen objects | actual manifested bytes | aggregate read time (ns) |
+|---:|---:|---:|---:|
+| 0 | 0 | 0 | 4 781 077 |
+| 250 000 | 1 | 234 256 | 4 293 742 |
+| 470 000 | 1 | 463 632 | 4 177 129 |
+| 940 000 | 2 | 927 264 | 3 305 441 |
+| 1 400 000 | 3 | 1 390 896 | 2 745 524 |
+| 2 100 000 | 5 | 2 088 784 | 1 590 876 |
+| unbounded | 8 | 2 791 552 | **414 921** |
+| *heuristic: none* | 0 | 0 | 4 930 662 |
+| *heuristic: all* | 8 | 2 791 552 | **404 231** |
+
+At the unbounded budget every size class is served by the atlas (`byte`:
+`direct-image` 30 + certified `path-bloom` 210; `small`/`medium`/`large`:
+`direct-image` throughout) and every read was asserted **byte-identical to the
+authoritative extent read**. The controller's predicted bytes never exceeded `B`,
+and the chosen set was monotone non-decreasing in `B`.
+
+![Expansion controller: aggregate read time vs manifested-space budget](charts/expansion-controller.svg)
+
+*Figure 28.1 — aggregate read time of the fixed workload versus the
+manifested-space budget, with the `none` (manifest nothing) and `all` (manifest
+everything) heuristics. Source: `evidence/performance/expansion-controller.json`;
+regenerate with `python3 scripts/render_charts.py --check`.*
+
+**Findings, stated honestly.**
+
+1. **The answer-time improves monotonically as `B` grows, and authority is
+   retained.** The run's curve is strictly non-increasing (`monotonic = true`,
+   `strictly_improved = true`): 4.78 ms at `B = 0` down to 0.41 ms unbounded. The
+   direct comparison that matters — the **no-manifestation** baseline (4.93 ms)
+   versus the **manifest-everything** heuristic (0.40 ms) — is a **~12.2×**
+   reduction in aggregate foreground read time, and the controller reaches the
+   same result at its largest budget. This is the honest shape the reviewer asked
+   about, and this run shows the affirmative answer for this workload.
+2. **The controller's curve is coarse because the generation prerequisite
+   dominates the weight.** One atlas program costs ≈ **3.5×** its logical size
+   (≈2.5× for the EKBLOOM generation plus ≈1.0× for the atlas), so a few hundred
+   KiB of budget buys exactly one 64 KiB object. The curve steps, it does not
+   glide; between steps the gain is smaller than the run-to-run noise. The
+   *exact* byte counts are deterministic, but the aggregate-time figures are
+   single-run and host/load-sensitive.
+3. **The prediction is only as good as its measurements.** Benefit is estimated
+   per `(path, size class)`; fragmentation is *not* a dimension of that model, so
+   the estimate is blind to it. The court therefore seeds the costs from a
+   **fragmented** calibration pilot, so they reflect the workload's regime — an
+   unfragmented pilot made the controller under-value the fragmented objects and
+   produced a flatter, noisier curve. This is an honest limitation, not a tuning
+   claim: a selective, per-range cost model is future work.
+
+**Recovery from a bad decision.** `expansion_bad_decision_is_ignored` forces the
+controller to manifest an object and then **tampers its published atlas payload**
+(same length, different bytes) after publication. Because the payload is verified
+against its committed BLAKE3 digest at load
+(`DirectPageState::load_payload`), the planner **drops the `direct-image`
+candidate**; every subsequent read returns byte-exact authoritative bytes and the
+tampered atlas is never selected. The bad decision costs only the wasted
+manifested bytes and the construction time — **never a wrong byte**. (A structure
+a read merely finds *slower* is handled the same way by the measured planner: it
+is ranked lower and not selected.)
+
+**Caveats.** Single run, single host, release build; absolute nanoseconds are
+host/load-sensitive (the two zero-budget rows and the `none` heuristic differ by
+~5 % for identical work, which bounds the noise). The court is **in-process** (no
+FUSE transport) and the workload is synthetic but fixed and deterministic; the
+controller sees only `(inode, version, logical size, read count, size class)`,
+never content. The generation-prerequisite weight is a property of *today's*
+planner (an atlas is only considered alongside an EKBLOOM generation); a
+selective atlas and a layout chosen per request class are §27/§12 follow-up, as
+is making the predictor aware of fragmentation.

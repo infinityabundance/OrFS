@@ -1,0 +1,367 @@
+{
+  "budget_unit": "manifested physical bytes (EKBLOOM generation + direct-page atlas)",
+  "controller_sweep": [
+    {
+      "actual_manifested_bytes": 0,
+      "aggregate_read_ns": 4781077,
+      "atlas_bytes": 0,
+      "budget_bytes": 0,
+      "chosen_count": 0,
+      "chosen_inodes": [],
+      "generation_bytes": 0,
+      "outcome_verified": true,
+      "per_read_mean_ns": 4980.288541666667,
+      "policy": "controller",
+      "predicted_bytes": 0,
+      "reads": 960,
+      "selected_paths_by_class": {
+        "byte": {
+          "logical-extent": 240
+        },
+        "large(>64K)": {
+          "logical-extent": 120
+        },
+        "medium(<=64K)": {
+          "logical-extent": 360
+        },
+        "small(<=4K)": {
+          "logical-extent": 240
+        }
+      }
+    },
+    {
+      "actual_manifested_bytes": 234256,
+      "aggregate_read_ns": 4293742,
+      "atlas_bytes": 69632,
+      "budget_bytes": 250000,
+      "chosen_count": 1,
+      "chosen_inodes": [
+        2
+      ],
+      "generation_bytes": 164624,
+      "outcome_verified": true,
+      "per_read_mean_ns": 4472.647916666667,
+      "policy": "controller",
+      "predicted_bytes": 233864,
+      "reads": 960,
+      "selected_paths_by_class": {
+        "byte": {
+          "direct-image": 30,
+          "logical-extent": 210
+        },
+        "large(>64K)": {
+          "logical-extent": 120
+        },
+        "medium(<=64K)": {
+          "direct-image": 60,
+          "logical-extent": 300
+        },
+        "small(<=4K)": {
+          "direct-image": 30,
+          "logical-extent": 210
+        }
+      }
+    },
+    {
+      "actual_manifested_bytes": 463632,
+      "aggregate_read_ns": 4177129,
+      "atlas_bytes": 135168,
+      "budget_bytes": 470000,
+      "chosen_count": 1,
+      "chosen_inodes": [
+        6
+      ],
+      "generation_bytes": 328464,
+      "outcome_verified": true,
+      "per_read_mean_ns": 4351.176041666667,
+      "policy": "controller",
+      "predicted_bytes": 463632,
+      "reads": 960,
+      "selected_paths_by_class": {
+        "byte": {
+          "direct-image": 30,
+          "logical-extent": 210
+        },
+        "large(>64K)": {
+          "direct-image": 30,
+          "logical-extent": 90
+        },
+        "medium(<=64K)": {
+          "direct-image": 30,
+          "logical-extent": 330
+        },
+        "small(<=4K)": {
+          "direct-image": 30,
+          "logical-extent": 210
+        }
+      }
+    },
+    {
+      "actual_manifested_bytes": 927264,
+      "aggregate_read_ns": 3305441,
+      "atlas_bytes": 270336,
+      "budget_bytes": 940000,
+      "chosen_count": 2,
+      "chosen_inodes": [
+        6,
+        7
+      ],
+      "generation_bytes": 656928,
+      "outcome_verified": true,
+      "per_read_mean_ns": 3443.1677083333334,
+      "policy": "controller",
+      "predicted_bytes": 927264,
+      "reads": 960,
+      "selected_paths_by_class": {
+        "byte": {
+          "direct-image": 30,
+          "logical-extent": 180,
+          "path-bloom": 30
+        },
+        "large(>64K)": {
+          "direct-image": 60,
+          "logical-extent": 60
+        },
+        "medium(<=64K)": {
+          "direct-image": 60,
+          "logical-extent": 300
+        },
+        "small(<=4K)": {
+          "direct-image": 60,
+          "logical-extent": 180
+        }
+      }
+    },
+    {
+      "actual_manifested_bytes": 1390896,
+      "aggregate_read_ns": 2745524,
+      "atlas_bytes": 405504,
+      "budget_bytes": 1400000,
+      "chosen_count": 3,
+      "chosen_inodes": [
+        6,
+        7,
+        8
+      ],
+      "generation_bytes": 985392,
+      "outcome_verified": true,
+      "per_read_mean_ns": 2859.920833333333,
+      "policy": "controller",
+      "predicted_bytes": 1390896,
+      "reads": 960,
+      "selected_paths_by_class": {
+        "byte": {
+          "direct-image": 60,
+          "logical-extent": 150,
+          "path-bloom": 30
+        },
+        "large(>64K)": {
+          "direct-image": 90,
+          "logical-extent": 30
+        },
+        "medium(<=64K)": {
+          "direct-image": 90,
+          "logical-extent": 270
+        },
+        "small(<=4K)": {
+          "direct-image": 90,
+          "logical-extent": 150
+        }
+      }
+    },
+    {
+      "actual_manifested_bytes": 2088784,
+      "aggregate_read_ns": 1590876,
+      "atlas_bytes": 610304,
+      "budget_bytes": 2100000,
+      "chosen_count": 5,
+      "chosen_inodes": [
+        2,
+        6,
+        7,
+        8,
+        9
+      ],
+      "generation_bytes": 1478480,
+      "outcome_verified": true,
+      "per_read_mean_ns": 1657.1625,
+      "policy": "controller",
+      "predicted_bytes": 2088392,
+      "reads": 960,
+      "selected_paths_by_class": {
+        "byte": {
+          "logical-extent": 90,
+          "path-bloom": 150
+        },
+        "large(>64K)": {
+          "direct-image": 120
+        },
+        "medium(<=64K)": {
+          "direct-image": 180,
+          "logical-extent": 180
+        },
+        "small(<=4K)": {
+          "direct-image": 150,
+          "logical-extent": 90
+        }
+      }
+    },
+    {
+      "actual_manifested_bytes": 2791552,
+      "aggregate_read_ns": 414921,
+      "atlas_bytes": 819200,
+      "budget_bytes": 18446744073709551615,
+      "chosen_count": 8,
+      "chosen_inodes": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "generation_bytes": 1972352,
+      "outcome_verified": true,
+      "per_read_mean_ns": 432.209375,
+      "policy": "controller",
+      "predicted_bytes": 2789984,
+      "reads": 960,
+      "selected_paths_by_class": {
+        "byte": {
+          "direct-image": 30,
+          "path-bloom": 210
+        },
+        "large(>64K)": {
+          "direct-image": 120
+        },
+        "medium(<=64K)": {
+          "direct-image": 360
+        },
+        "small(<=4K)": {
+          "direct-image": 240
+        }
+      }
+    }
+  ],
+  "environment": {
+    "bench": {
+      "cgroup_memory_max": "8589934592",
+      "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "container_image": null,
+      "cores_visible": 8,
+      "cpu_max": "800000 100000",
+      "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+      "fuse_enable_uring": true,
+      "kernel_release": "7.2.9-2-cachyos",
+      "likely_container": true,
+      "machine": "x86_64",
+      "perf_counters_available": false,
+      "perf_event_open_error": "Operation not permitted (os error 1)",
+      "perf_event_paranoid": "2",
+      "ram_total_bytes": 134723346432
+    },
+    "profile": "release"
+  },
+  "generated_by": "tests/expansion_controller.rs",
+  "heuristics": {
+    "all": {
+      "actual_manifested_bytes": 2791552,
+      "aggregate_read_ns": 404231,
+      "budget_bytes": null,
+      "chosen_count": 8,
+      "reads": 960
+    },
+    "none": {
+      "actual_manifested_bytes": 0,
+      "aggregate_read_ns": 4930662,
+      "budget_bytes": 0,
+      "reads": 960
+    }
+  },
+  "note": "Single-run, single-host measurement of the autonomous concealed-expansion controller (research §12): a pure predictor decides, per object and under a manifested-space budget B, between no manifestation and the direct-page atlas (which also constructs its EKBLOOM generation prerequisite). It measures a fixed committed history (8 heavily fragmented objects, mixed sizes) with a fixed mixed-size workload, sweeping B and comparing against no manifestation and a manifest-everything heuristic. Every planner read is asserted byte-identical to the authoritative extent read at every budget; the controller's predicted bytes never exceed B; and the chosen set is monotone non-decreasing in B.",
+  "objects": [
+    {
+      "extents": 64,
+      "fragmented": true,
+      "inode": 2,
+      "logical_len": 65536,
+      "name": "obj0"
+    },
+    {
+      "extents": 64,
+      "fragmented": true,
+      "inode": 3,
+      "logical_len": 65536,
+      "name": "obj1"
+    },
+    {
+      "extents": 64,
+      "fragmented": true,
+      "inode": 4,
+      "logical_len": 65536,
+      "name": "obj2"
+    },
+    {
+      "extents": 64,
+      "fragmented": true,
+      "inode": 5,
+      "logical_len": 65536,
+      "name": "obj3"
+    },
+    {
+      "extents": 128,
+      "fragmented": true,
+      "inode": 6,
+      "logical_len": 131072,
+      "name": "obj4"
+    },
+    {
+      "extents": 128,
+      "fragmented": true,
+      "inode": 7,
+      "logical_len": 131072,
+      "name": "obj5"
+    },
+    {
+      "extents": 128,
+      "fragmented": true,
+      "inode": 8,
+      "logical_len": 131072,
+      "name": "obj6"
+    },
+    {
+      "extents": 128,
+      "fragmented": true,
+      "inode": 9,
+      "logical_len": 131072,
+      "name": "obj7"
+    }
+  ],
+  "profile": "path(8)",
+  "result": {
+    "authority_retained": true,
+    "controller_bytes": [
+      0,
+      234256,
+      463632,
+      927264,
+      1390896,
+      2088784,
+      2791552
+    ],
+    "controller_read_ns": [
+      4781077,
+      4293742,
+      4177129,
+      3305441,
+      2745524,
+      1590876,
+      414921
+    ],
+    "monotonic_non_increasing": true,
+    "strictly_improved_over_budget": true
+  },
+  "schema": "orfs.performance.expansion-controller.v1"
+}

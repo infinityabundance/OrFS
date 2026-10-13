@@ -355,6 +355,17 @@ impl SizeClass {
     }
 }
 
+/// The planner's documented prior latency estimate (nanoseconds) for one
+/// `(path, size class)`. It is the same prior the measured cost model starts
+/// from, exposed so the expansion controller (research §12) can *estimate* the
+/// benefit of a structure before it is built. It is never a measurement and is
+/// never used for selection: the planner selects only a candidate it has actually
+/// timed (`ReadPlannerConfig`), so a structure built on a pessimistic estimate
+/// can waste bytes but can never change the bytes a read returns.
+pub fn prior_cost_ns(kind: ReadPathKind, class: SizeClass) -> f64 {
+    CostModel::prior_ns(kind, class)
+}
+
 /// Classify an effective read length.
 pub fn classify_length(len: u64) -> SizeClass {
     match len {

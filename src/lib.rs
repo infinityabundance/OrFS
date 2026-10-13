@@ -34,6 +34,7 @@ pub mod commit;
 pub mod directory;
 pub mod directpage;
 pub mod error;
+pub mod expansion;
 pub mod extent;
 pub mod failpoints;
 pub mod fuse;

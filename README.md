@@ -100,6 +100,7 @@ enable it (see `docs/FUSE_URING.md`).
 | 62 | Device-fault evidence: `verify --deep` + `recover` after injected mid-log faults (the `dm-flaky`/`dm-error` probe is `ran:false`) | complete |
 | 63 | Evidence charts: inline-styled SVG figures for the performance courts + an image→receipt→command reproducibility index | complete |
 | 64 | Direct-page manifestations (research §5): a manifested, page-aligned contiguous atlas of a selected object's bytes, wired in as a measured `direct-image` planner candidate | complete |
+| 65 | Autonomous concealed-expansion controller (research §12): a pure predictor chooses no-manifestation vs the direct-page atlas under a manifested-space budget `B`; best-effort construction + byte-identity verification; measured monotone answer-time improvement with authority retained | complete |
 
 Honest non-claims: the image pixel-surface pyramid is **not materialised** (only
 its geometry is implemented), and no performance superiority of F2 or of the

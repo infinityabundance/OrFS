@@ -203,6 +203,15 @@ numbers were not curated in this first pass:
   between runs. The committed figure `direct-page-atlas.svg` is nonetheless gated:
   `scripts/check-all.sh` now runs `python3 scripts/render_charts.py --check`, so a
   chart cannot silently diverge from this receipt.
+* `docs/PERFORMANCE.md` §28 (Phase 65) — the autonomous concealed-expansion
+  controller court. Its honest content is a **curve** (aggregate read time versus
+  the manifested-space budget `B`) plus the chosen structures and the per-class
+  selected path; the deterministic facts in the receipt are the chosen inode sets,
+  the predicted/actual manifested bytes, the monotonicity flags, and the fact that
+  every planner read is asserted byte-identical. The aggregate-time figures are
+  host/load-sensitive single-run values and are deliberately left uncurated. The
+  committed figure `expansion-controller.svg` is nonetheless gated by
+  `python3 scripts/render_charts.py --check`.
 * `evidence/recovery/fault-injection-verify-recover.json` (Phase 62) is mostly
   **qualitative** (a per-row matrix of `verify --deep` verdicts, `recover`
   outcomes, `data_intact` booleans and the `dm_probe` `ran:false` result); only

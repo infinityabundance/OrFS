@@ -625,6 +625,34 @@ def chart_direct_page_atlas():
         xlog=True, ylog=True, xticks=sizes)
 
 
+def chart_expansion_controller():
+    d = load("expansion-controller.json")
+    labels = ["none"]
+    values = [d["heuristics"]["none"]["aggregate_read_ns"]]
+    for r in d["controller_sweep"]:
+        b = r["budget_bytes"]
+        if b >= 2 ** 63:
+            lab = "unbounded"
+        elif b == 0:
+            lab = "B=0"
+        else:
+            lab = "B={}".format(compact(b))
+        labels.append(lab)
+        values.append(r["aggregate_read_ns"])
+    labels.append("all")
+    values.append(d["heuristics"]["all"]["aggregate_read_ns"])
+    cap = [
+        "source: evidence/performance/expansion-controller.json (8 fragmented objects, release)",
+        "fixed mixed-size workload; 'none' manifests nothing, 'all' manifests everything",
+        "the controller's curve is monotone non-increasing in B; authority is retained",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return bar_chart(
+        "expansion controller: aggregate read time vs manifested-space budget",
+        cap, "aggregate read time (ns)", labels,
+        [{"name": "aggregate read time (ns)", "values": values}])
+
+
 # --------------------------------------------------------------------------
 # registry: file name -> (builder, source receipt, generating command)
 # --------------------------------------------------------------------------
@@ -658,6 +686,8 @@ CHARTS = (
      "evidence/performance/pmu.json", "sh scripts/container-pmu.sh"),
     ("direct-page-atlas.svg", chart_direct_page_atlas,
      "evidence/performance/direct-page-atlas.json", "sh scripts/container-direct-page-atlas.sh"),
+    ("expansion-controller.svg", chart_expansion_controller,
+     "evidence/performance/expansion-controller.json", "sh scripts/container-expansion-controller.sh"),
 )
 
 

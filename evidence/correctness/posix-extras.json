@@ -1,0 +1,286 @@
+{
+  "all_ok": true,
+  "description": "POSIX-extras primitives exercised through the library/namespace API (no FUSE mount): xattrs, symlinks, hard links, supplementary groups, and durability (fsync vs fdatasync).",
+  "generated_by": "tests/posix_extras.rs",
+  "primitives": [
+    {
+      "checks": [
+        {
+          "errno": null,
+          "errno_name": null,
+          "expected": "the value round-trips as 42",
+          "notes": "",
+          "observed": "value = \"42\"",
+          "result": "PASS",
+          "what": "set(user.*, XATTR_CREATE) then get"
+        },
+        {
+          "errno": null,
+          "errno_name": null,
+          "expected": "contains the stored name and the derived user.orfs.* set",
+          "notes": "derived attributes are computed, never stored (docs/NAMESPACE.md §2.2)",
+          "observed": "7 names; user.answer=true, user.orfs.version=true",
+          "result": "PASS",
+          "what": "listxattr"
+        },
+        {
+          "errno": null,
+          "errno_name": null,
+          "expected": "a non-empty version string",
+          "notes": "",
+          "observed": "\"3\"",
+          "result": "PASS",
+          "what": "get(derived user.orfs.version)"
+        },
+        {
+          "errno": 17,
+          "errno_name": "EEXIST",
+          "expected": "EEXIST",
+          "notes": "",
+          "observed": "EEXIST",
+          "result": "PASS",
+          "what": "set(existing, XATTR_CREATE)"
+        },
+        {
+          "errno": null,
+          "errno_name": null,
+          "expected": "replaces the value",
+          "notes": "",
+          "observed": "value = 43",
+          "result": "PASS",
+          "what": "set(existing) without XATTR_CREATE"
+        },
+        {
+          "errno": 61,
+          "errno_name": "ENODATA",
+          "expected": "ENODATA",
+          "notes": "",
+          "observed": "ENODATA",
+          "result": "PASS",
+          "what": "get(absent)"
+        },
+        {
+          "errno": 61,
+          "errno_name": "ENODATA",
+          "expected": "remove succeeds; a later get or remove returns ENODATA",
+          "notes": "",
+          "observed": "ENODATA",
+          "result": "PASS",
+          "what": "remove then get/remove(absent)"
+        },
+        {
+          "errno": 22,
+          "errno_name": "EINVAL",
+          "expected": "empty and >255-byte names rejected with EINVAL",
+          "notes": "",
+          "observed": "EINVAL",
+          "result": "PASS",
+          "what": "name bounds"
+        },
+        {
+          "errno": 13,
+          "errno_name": "EACCES",
+          "expected": "read allowed (getxattr/listxattr); write denied (setxattr/removexattr) -> EACCES",
+          "notes": "src/fuse.rs applies this mask via has_permission_grouped before setxattr/removexattr",
+          "observed": "read = true, write = false",
+          "result": "PASS",
+          "what": "access rule: non-owner on mode 0444"
+        },
+        {
+          "errno": null,
+          "errno_name": null,
+          "expected": "names are opaque; no namespace-specific privilege or CAP_SYS_ADMIN override",
+          "notes": "docs/LIMITATIONS.md §8: one uniform rule, independent of namespace",
+          "observed": "both stored and returned; the write mask is identical for either prefix",
+          "result": "PASS",
+          "what": "user.* vs trusted.* names"
+        }
+      ],
+      "name": "xattrs",
+      "notes": "set/get/list/remove, XATTR_CREATE, the derived user.orfs.* set, name bounds, and the uniform access rule.",
+      "result": "PASS"
+    },
+    {
+      "checks": [
+        {
+          "errno": null,
+          "errno_name": null,
+          "expected": "the new inode is of kind symlink",
+          "notes": "",
+          "observed": "kind = symlink",
+          "result": "PASS",
+          "what": "symlink creation + getattr"
+        },
+        {
+          "errno": null,
+          "errno_name": null,
+          "expected": "returns the authoritative target bytes",
+          "notes": "",
+          "observed": "\"sym-target\"",
+          "result": "PASS",
+          "what": "readlink"
+        },
+        {
+          "errno": null,
+          "errno_name": null,
+          "expected": "lookup(target) yields the target inode and its bytes",
+          "notes": "single-component relative target; multi-component walks are the kernel's",
+          "observed": "resolved inode == target inode; content = hello",
+          "result": "PASS",
+          "what": "resolve through the link"
+        },
+        {
+          "errno": 22,
+          "errno_name": "EINVAL",
+          "expected": "EINVAL (not a symlink)",
+          "notes": "",
+          "observed": "EINVAL",
+          "result": "PASS",
+          "what": "readlink on a regular file"
+        },
+        {
+          "errno": null,
+          "errno_name": null,
+          "expected": "the link inode replaces the destination; identity and target preserved; the old file is unlinked",
+          "notes": "",
+          "observed": "victim resolves to the link inode; target still sym-target; old file nlink = 0",
+          "result": "PASS",
+          "what": "rename replace (Ordinary)"
+        },
+        {
+          "errno": 17,
+          "errno_name": "EEXIST",
+          "expected": "EEXIST",
+          "notes": "",
+          "observed": "EEXIST",
+          "result": "PASS",
+          "what": "rename RENAME_NOREPLACE onto an existing name"
+        }
+      ],
+      "name": "symlinks",
+      "notes": "create/readlink/resolve and rename-replace identity preservation.",
+      "result": "PASS"
+    },
+    {
+      "checks": [
+        {
+          "errno": null,
+          "errno_name": null,
+          "expected": "a second name raises nlink 1 -> 2 and both names resolve to one inode",
+          "notes": "",
+          "observed": "nlink = 2; lookup(a) == lookup(b) == inode",
+          "result": "PASS",
+          "what": "link + nlink"
+        },
+        {
+          "errno": null,
+          "errno_name": null,
+          "expected": "identical bytes read through either name",
+          "notes": "",
+          "observed": "data",
+          "result": "PASS",
+          "what": "data via both names"
+        },
+        {
+          "errno": 2,
+          "errno_name": "ENOENT",
+          "expected": "nlink 2 -> 1; the remaining name still reads the data; the removed name is ENOENT",
+          "notes": "",
+          "observed": "nlink = 1; removed name ENOENT; data retained",
+          "result": "PASS",
+          "what": "unlink one name"
+        },
+        {
+          "errno": null,
+          "errno_name": null,
+          "expected": "nlink reaches 0; the inode and its data remain readable by id (append-only tombstone)",
+          "notes": "docs/NAMESPACE.md §4.2: a tombstone removes a name; the inode/bytes are never withdrawn",
+          "observed": "nlink = 0; lookup ENOENT; read_at(inode) still returns data",
+          "result": "PASS",
+          "what": "unlink the last name"
+        },
+        {
+          "errno": 1,
+          "errno_name": "EPERM",
+          "expected": "rejected with EPERM (as Linux does)",
+          "notes": "docs/NAMESPACE.md §4.2: directories cannot be hard-linked (EPERM)",
+          "observed": "rejected with EPERM",
+          "result": "PASS",
+          "what": "link on a directory"
+        }
+      ],
+      "name": "hard_links",
+      "notes": "second link, nlink accounting, shared inode identity, and removal semantics.",
+      "result": "PASS"
+    },
+    {
+      "checks": [
+        {
+          "errno": 13,
+          "errno_name": "EACCES",
+          "expected": "owner rw; a supplementary group grants the group read class only; a primary-group match grants it; a stranger is denied; root bypasses",
+          "notes": "the Linux in_group_p rule; the FUSE transports read Groups: from /proc/<pid>/status",
+          "observed": "owner(rw)=true,true supp(rw)=true,false primary_read=true other(rw)=false,false root=true",
+          "result": "PASS",
+          "what": "has_permission_grouped allowed/denied"
+        },
+        {
+          "errno": 13,
+          "errno_name": "EACCES",
+          "expected": "a supplementary group admits the read; without it the read is denied",
+          "notes": "src/query.rs shares has_permission_grouped with the transports",
+          "observed": "grouped = Ok, ungrouped = Err",
+          "result": "PASS",
+          "what": "typed query API parity"
+        }
+      ],
+      "name": "supplementary_groups",
+      "notes": "the grouped permission rule for a supplementary (non-primary) group, allowed and denied.",
+      "result": "PASS"
+    },
+    {
+      "checks": [
+        {
+          "errno": null,
+          "errno_name": null,
+          "expected": "a successful commit is acknowledged only at TxState::Durable (durable = true)",
+          "notes": "docs/FUSE-SEMANTICS.md §8.1: fsync/fsyncdir call the engine sync()",
+          "observed": "state = durable, durable = true",
+          "result": "PASS",
+          "what": "fsync-before-ack (DurabilityMode::Sync)"
+        },
+        {
+          "errno": null,
+          "errno_name": null,
+          "expected": "ordered commits ack at Published; flush() makes the outstanding batch durable and is idempotent",
+          "notes": "docs/FUSE-SEMANTICS.md §8.1: fsync calls sync(); flush() is the durability barrier",
+          "observed": "commit = published/durable=false; flush transactions = 1; second flush = 0",
+          "result": "PASS",
+          "what": "fsync barrier (flush)"
+        },
+        {
+          "errno": null,
+          "errno_name": null,
+          "expected": "sync() is the single durability entry point; data survives an independent reopen",
+          "notes": "",
+          "observed": "reopened read-only; content = durable",
+          "result": "PASS",
+          "what": "Namespace::sync() durability hook"
+        },
+        {
+          "errno": null,
+          "errno_name": null,
+          "expected": "no distinct primitive; served by the same full sync() (strictly stronger)",
+          "notes": "no errno: the operation is never rejected, so a reply is never a weaker (wrong) success",
+          "observed": "the kernel delivers fdatasync(2) as fsync with the datasync hint; src/fuse.rs maps both to core.sync()",
+          "result": "PASS",
+          "what": "fdatasync as a distinct primitive"
+        }
+      ],
+      "name": "durability",
+      "notes": "fsync is the durability barrier (ack state Durable vs Published); fdatasync has no distinct primitive and is covered by the same full sync().",
+      "result": "PASS"
+    }
+  ],
+  "schema": "orfs.correctness.posix-extras.v1"
+}

@@ -1,0 +1,163 @@
+{
+  "bytes_exact": true,
+  "caveat": "The container is CFS-capped at ORFS_CPUS CPUs (8) and the host is under external load, so reader counts above the effective core count contend rather than add parallelism. The curve is reported as measured, not smoothed.",
+  "environment": {
+    "bench": {
+      "cgroup_memory_max": "8589934592",
+      "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "container_image": null,
+      "cores_visible": 8,
+      "cpu_max": "800000 100000",
+      "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+      "fuse_enable_uring": true,
+      "kernel_release": "7.2.9-2-cachyos",
+      "likely_container": true,
+      "machine": "x86_64",
+      "perf_counters_available": false,
+      "perf_event_paranoid": "2",
+      "ram_total_bytes": 134723346432
+    },
+    "profile": "release"
+  },
+  "generated_by": "tests/reader_scale_64.rs",
+  "note": "Single-run, single-host, single-container measurements. One manifested object (profile max-speed) is served by one shared ReadPlanner and read by 1/2/4/8/16/32/64 concurrent threads; every read is asserted byte-exact against the authoritative extent read, and the steady-state counters prove no thread re-plans. Latency percentiles are over the pooled per-op samples of all readers for that row.",
+  "planner_residency": {
+    "body_capacity": 64,
+    "body_plans": 1,
+    "identity_capacity": 1024,
+    "object_capacity": 64,
+    "object_models": 1,
+    "overlay_failed": 0,
+    "overlay_verified": 0,
+    "total": 2
+  },
+  "results": [
+    {
+      "ns_per_op": 297.135625,
+      "ops_per_s": 3365466.5272802613,
+      "p50_ns": 181,
+      "p95_ns": 200,
+      "p999_ns": 300,
+      "p99_ns": 201,
+      "readers": 1,
+      "reads": 24000
+    },
+    {
+      "ns_per_op": 196.99325,
+      "ops_per_s": 5076316.066667259,
+      "p50_ns": 241,
+      "p95_ns": 311,
+      "p999_ns": 551,
+      "p99_ns": 421,
+      "readers": 2,
+      "reads": 24000
+    },
+    {
+      "ns_per_op": 125.09933333333333,
+      "ops_per_s": 7993647.714616119,
+      "p50_ns": 321,
+      "p95_ns": 662,
+      "p999_ns": 1452,
+      "p99_ns": 841,
+      "readers": 4,
+      "reads": 24000
+    },
+    {
+      "ns_per_op": 176.50633333333334,
+      "ops_per_s": 5665519.084301036,
+      "p50_ns": 531,
+      "p95_ns": 4538,
+      "p999_ns": 20849,
+      "p99_ns": 9367,
+      "readers": 8,
+      "reads": 24000
+    },
+    {
+      "ns_per_op": 356.48204166666665,
+      "ops_per_s": 2805190.3970384668,
+      "p50_ns": 1453,
+      "p95_ns": 19606,
+      "p999_ns": 50154,
+      "p99_ns": 31458,
+      "readers": 16,
+      "reads": 24000
+    },
+    {
+      "ns_per_op": 349.13,
+      "ops_per_s": 2864262.595594764,
+      "p50_ns": 1483,
+      "p95_ns": 39864,
+      "p999_ns": 109053,
+      "p99_ns": 65692,
+      "readers": 32,
+      "reads": 24000
+    },
+    {
+      "ns_per_op": 352.60775,
+      "ops_per_s": 2836012.5380114308,
+      "p50_ns": 1593,
+      "p95_ns": 81832,
+      "p999_ns": 201476,
+      "p99_ns": 132927,
+      "readers": 64,
+      "reads": 24000
+    }
+  ],
+  "schema": "orfs.performance.reader-scaling-64.v1",
+  "served_paths": [
+    {
+      "path": "logical-extent",
+      "reads": 170160
+    }
+  ],
+  "steady_state_counters": {
+    "after": {
+      "calibrations": 1,
+      "hot_reads": 170159,
+      "model_write_locks": 1,
+      "plan_builds": 1,
+      "selection_sorts": 1
+    },
+    "before": {
+      "calibrations": 1,
+      "hot_reads": 127,
+      "model_write_locks": 1,
+      "plan_builds": 1,
+      "selection_sorts": 1
+    },
+    "calibrations_delta": 0,
+    "model_write_locks_delta": 0,
+    "plan_builds_delta": 0,
+    "selection_sorts_delta": 0
+  },
+  "workload": {
+    "logical_bytes": 65536,
+    "object": {
+      "inode": 7,
+      "inode_version": 1,
+      "root": 100
+    },
+    "offsets": [
+      0,
+      7680,
+      15360,
+      23040,
+      30720,
+      38400,
+      46080,
+      53760,
+      61440
+    ],
+    "profile": "max-speed",
+    "read_bytes": 4096,
+    "reader_counts": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64
+    ]
+  }
+}

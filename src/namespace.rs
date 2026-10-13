@@ -1438,7 +1438,9 @@ impl Namespace {
     pub fn link(&mut self, inode: u64, new_parent: u64, new_name: &[u8]) -> Result<()> {
         let ino = self.index.inode(inode).ok_or(OrfsError::NotFound)?;
         if ino.is_dir() {
-            return Err(OrfsError::PermissionDenied);
+            // Linux returns EPERM (not EACCES) when asked to hard-link a
+            // directory; `docs/NAMESPACE.md` §4.2 states the same.
+            return Err(OrfsError::NotPermitted);
         }
         validate_name(new_name)?;
         self.require_live_dir(new_parent)?;

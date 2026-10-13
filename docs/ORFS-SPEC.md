@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–53)
+## 4. The ordered build phases (0–54)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -139,10 +139,11 @@ per-phase record.
 | 51 | Documentation refresh (cache/eviction descriptions); publish `orfs` v0.2.0 to crates.io | **complete** |
 | 52 | Global search directory (§9): version-qualified trigram→object directory with density-adaptive posting sets | **complete** |
 | 53 | External baseline comparators (ext4 / tmpfs / overlay / raw memory) | **complete** |
+| 54 | Serious-filesystem docs: threat model, acceptance-gate definitions (A–N), reproducibility index | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–53 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–54 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
 v0.1.0 was the first release.
@@ -202,6 +203,9 @@ Normative implementation documents to be produced. Status is marked honestly.
 | `docs/FUSE_URING.md` | FUSE-over-`io_uring` transport, capability negotiation, safe fallback | **exists** (Phase 10) |
 | `docs/RECOVERY.md` | Crash/torn-write recovery, rebuildable indexes, no silent repair | **exists** (Phase 11) |
 | `docs/SECURITY.md` | Permission model, hostile-backing-data handling, threat model | **exists** (Phase 11) |
+| `docs/THREAT-MODEL.md` | Who can mount, what the security model prevents and does not | **exists** (Phase 54) |
+| `docs/GATES.md` | Acceptance gates A–N: definitions, commands, acceptance criteria | **exists** (Phase 54) |
+| `docs/REPRODUCE.md` | Reproducibility index: doc claim → receipt → command | **exists** (Phase 54) |
 | `docs/PERFORMANCE.md` | Benchmark methodology, metrics, reproducibility rules | **exists** (Phase 12) |
 | `docs/LIMITATIONS.md` | Known limits, kernel-dependence, unsupported capabilities | **exists** |
 

@@ -2898,3 +2898,35 @@ reads**, and this phase makes that checkable instead of implicit. Its advantages
 remain internal and structural, and F2 stays "implemented, not superior" until the
 p99 target is met. Test counts rise to **438** (default) / **448** (`--features
 failpoints`); `fmt`/`clippy` clean.
+
+## Phase 54 — Serious-filesystem documentation
+
+**Complete.** Three documentation gaps the reviewer named as non-negotiable, all
+pointing at artifacts that already exist rather than inventing new claims.
+
+### Delivered
+
+* `docs/THREAT-MODEL.md` — a standalone **security model and threat model**: who can
+  mount and with what privilege (the mount is the boundary; `CAP_SYS_ADMIN` +
+  `/dev/fuse`; no setuid path), what the model prevents (hostile backing data, hostile
+  FUSE clients, tampered derived structures, permission bypass, traversal), and what
+  it **does not** (privileged/raw-device attackers, confidentiality, host-level DoS).
+  It states plainly that CRC32C/BLAKE3 are **integrity, not authentication** (no MAC,
+  no signature, no encryption) and that non-withdrawal is a **design law, not a
+  cryptographic guarantee**. `docs/LIMITATIONS.md` §14 now lists it.
+* `docs/GATES.md` — the **acceptance gate definitions A–N**: for each gate, what it
+  means, the exact container command, and the acceptance criterion that makes it
+  PASS, plus the scope caveats stated with the verdict.
+  `docs/ACCEPTANCE-AUDIT.md` keeps the point-in-time verdicts; this file is the
+  runnable definition.
+* `docs/REPRODUCE.md` — the **reproducibility index**: every receipt mapped to its
+  generating script/test and the exact command, how to reproduce a receipt at its
+  recorded revision, and an explicit note that these docs contain **no committed
+  images** (the "every png" concern resolves to prose tables that cite their
+  receipts).
+
+### Integrity
+
+No code changed; `docs/ORFS-SPEC.md` §5 gains rows for the three new documents. Test
+counts are unchanged at **438** (default) / **448** (`--features failpoints`);
+`check-all.sh --fast` PASS (docs-receipts 42/42).

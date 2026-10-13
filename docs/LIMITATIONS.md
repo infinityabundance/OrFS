@@ -311,9 +311,29 @@ integrity explicit. The honest costs and residual bounds are:
   once per mounted version, not per read. It is a deliberate correctness cost,
   not a per-read cost.
 * **The read-planner calibration budget bounds candidates, not wall-clock.**
-  The budget is checked **before** each candidate, so it bounds how many
+  budget is checked **before** each candidate, so it bounds how many
   candidates a single foreground read will attempt to time, but a single slow
   candidate can still exceed the budget. The guarantee the planner actually
   makes is stronger and simpler: **an unmeasured candidate is never selected** —
   with no calibrated candidate, or with a zero budget, the read is served by the
   authoritative path.
+
+## 14. Security model and threat model
+
+OrFS's security model is stated in full in **`docs/THREAT-MODEL.md`**: who can mount
+and with what privilege; what the model prevents (hostile backing data, hostile FUSE
+clients, tampered derived structures, permission bypass, traversal); and what it
+**does not** (raw-device/privileged attackers, confidentiality, host-level DoS).
+Two points belong on this limitations list specifically:
+
+* **The on-disk checks are integrity, not authentication.** CRC32C framing and
+  BLAKE3 digests detect accidental corruption and casual tampering; they are not a
+  MAC and there is no signature or encryption. An attacker with write access to the
+  backing directory can rewrite history and recompute the digests.
+* **Non-withdrawal is a design law, not a cryptographic guarantee.** Law I constrains
+  OrFS's own behaviour and is verified by the model courts (gate A); it is not a
+  defence against a privileged attacker.
+
+The per-surface hardening, the `unsafe`-block audit, the vulnerability log, and the
+native-FUSE fuzzing/sanitizer results remain in `docs/SECURITY.md`; the acceptance
+gate definitions (including gate A) are published in `docs/GATES.md`.

@@ -1983,3 +1983,119 @@ verbatim through `ORFS_FSSTRESS_P` / `ORFS_FSSTRESS_N` if a larger run is
 desired. As with every court here, the numbers are a **single run on one host
 under external load**; the decisive, load-independent result is **0 mismatches
 and a clean reconciliation**, not the wall time.
+
+## 27. Reviewer task — direct-page manifestations (research §5)
+
+**The question.** §5 records that EKBLOOM wins for tiny random reads but **not**
+for 4–64 KiB reads: a certified `path` bloom costs one `symbol_at` per byte while
+the authoritative extent read is already `O(1)` when the object is unfragmented.
+§5 names the missing piece: *physical forms that serve different request shapes
+well* — specifically a **page-aligned, contiguous image of an object's logical
+bytes** (a "direct-page atlas"), possibly selective, plus multiple layouts chosen
+per request class.
+
+**The structure.** `src/directpage.rs` implements the manifested direct-page
+atlas: a copy of the object's committed logical content as a page-aligned (4 KiB)
+contiguous payload — a small self-describing header padded to a 4 KiB content
+offset, then the logical bytes verbatim — published as a self-validating manifest
+plus payload with a BLAKE3 digest in an append-only catalogue. It mirrors the
+trigram / global-search-directory plane's store + manifest + digest pattern (a new
+`ORCA` catalogue family), so no new on-disk scheme is invented. Construction is
+`Namespace::manifest_direct_page_atlas(inode)` — opt-in per hot object, built from
+the authoritative extent read at the current committed root, and qualified by
+exactly the identity the planner already checks: `(volume, inode,
+inode_version, root, logical length)`.
+
+**The candidate.** `ReadPathKind::DirectImage` is wired through
+`Candidate`/`Structure`/`build_inventory`/`candidates`/`execute` **exactly like
+the existing kinds**, so it is timed and ranked by the same measurement machinery.
+It is **certified** once the payload digest is verified against the sealed
+manifest at load (the same posture as an EKBLOOM structure after core
+verification), so a steady-state read slices the in-memory image directly — one
+bounded copy, no EKBLOOM decode. It is only ever an *added* candidate: an
+unmeasured atlas is never selected, every planner read is asserted byte-identical
+to the authoritative read, and an absent, stale, or corrupt atlas simply leaves
+reads on the authoritative path. The atlas rides the same planner as the
+manifested generations, so (today) the object must also be EKBLOOM-manifested for
+the planner to consider any candidate.
+
+**Court.** `tests/direct_page_atlas.rs`, run by
+`scripts/container-direct-page-atlas.sh` (smoke + release sweep), writes
+`evidence/performance/direct-page-atlas.json` (schema
+`orfs.performance.direct-page-atlas.v1`). Two 1 MiB objects with identical logical
+content are EKBLOOM-manifested (profile `path(4)`) **and** atlas-backed at the
+same committed root: one **unfragmented** (1 extent) and one **heavily fragmented**
+(1024 extents). Read sizes 1 B / 64 B / 512 B / 4 KiB / 16 KiB / 64 KiB / 1 MiB
+are swept; every planner read is asserted byte-exact against the authoritative
+extent read, and the raw authoritative read is measured alongside as an honest
+baseline.
+
+**Measured (one run; release; 40 timed reads per row; mean ns).** The atlas
+physical payload is **1 052 672 bytes** (4 KiB header + 1 MiB content) per object.
+
+*Fragmented object (1024 extents).*
+
+| read | selected path | planner (selected) | authoritative | ratio |
+|---:|---|---:|---:|---:|
+| 1 B | `path-bloom` | 125 | 174 | 1.39× (EKBLOOM wins the byte) |
+| 64 B | `direct-image` | 130 | 319 | **2.45×** |
+| 512 B | `direct-image` | 131 | 369 | **2.82×** |
+| 4 KiB | `direct-image` | 156 | 739 | **4.73×** |
+| 16 KiB | `direct-image` | 234 | 2 805 | **12.0×** |
+| 64 KiB | `direct-image` | 634 | 11 172 | **17.6×** |
+| 1 MiB | `direct-image` | 14 321 | 190 263 | **13.3×** |
+
+*Unfragmented object (1 extent).*
+
+| read | selected path | planner (selected) | authoritative | ratio |
+|---:|---|---:|---:|---:|
+| 1 B | `direct-image` | 131 | 170 | 1.30× |
+| 64 B | `direct-image` | 130 | 163 | 1.25× |
+| 512 B | `direct-image` | 131 | 179 | 1.37× |
+| 4 KiB | `direct-image` | 158 | 259 | 1.64× |
+| 16 KiB | `direct-image` | 199 | 398 | 2.00× |
+| 64 KiB | `direct-image` | 674 | 1 137 | 1.69× |
+| 1 MiB | `direct-image` | 14 132 | 20 452 | 1.45× |
+
+![Direct-page atlas: read latency vs request size](charts/direct-page-atlas.svg)
+
+*Figure 27.1 — read latency vs request size for the fragmented and unfragmented
+objects (atlas-selected path vs the authoritative extent read). Source:
+`evidence/performance/direct-page-atlas.json`; regenerate with
+`python3 scripts/render_charts.py --check`.*
+
+**Findings, stated honestly.**
+
+1. **The atlas wins medium/large reads, and the win grows with fragmentation.**
+   At 1 MiB the fragmented authoritative read is **190 µs** versus the atlas's
+   **14.3 µs** (**13.3×**); the unfragmented authoritative read is 20.5 µs
+   (1.45×). Fragmentation costs the authoritative path **9.3×** at 1 MiB (the
+   extent scan plus many small reads), while the atlas is **flat in
+   fragmentation** — one contiguous copy — which is exactly the different request
+   shape §5 asked for.
+2. **The atlas does *not* win the 1-byte read.** On the fragmented object the
+   certified EKBLOOM `path` bloom is selected (125 ns) ahead of the atlas
+   (~130 ns); on the unfragmented object the atlas edges the authoritative path
+   (131 vs 170 ns) in a near-tie. The honest reading: **at 1 B every class is
+   within ~1.4× and an atlas is not the reason to build one** — EKBLOOM and the
+   authoritative path are as good or better. The expected shape ("loses on 1 B")
+   holds on the fragmented object, where EKBLOOM wins the byte; on the
+   unfragmented object the atlas is a *marginal* (~1.3×) winner because even the
+   unfragmented authoritative read allocates a read plan and copies, while the
+   atlas is a single slice.
+3. **The cost is space.** The atlas spends **1 052 672 bytes** for a 1 MiB object
+   — ≈**1.004×** the logical bytes (the 4 KiB alignment header). It is opt-in per
+   object; nothing is built automatically.
+
+**Caveats.** Single run, single host, release build, page-cache warm; absolute
+nanoseconds are host/load-sensitive. The court is **in-process** (no FUSE
+transport), so the atlas's margin over the authoritative path is not diluted by
+transport as the EKBLOOM byte-read win is in §5.4. The atlas today is a
+**complete** image (the whole file); a *selective* atlas (only frequently
+accessed ranges) and choosing a layout per request class are future work, as is
+automatic construction and eligibility policy. The calibrator measures each
+candidate once on the first read of an identity+class, and times the authoritative
+candidate first (coldest); its byte-class sample can therefore be pessimistic,
+which is why the atlas is *selected* at 1 B even where its latency is marginal or
+slightly worse. That is a property of the existing single-sample calibration and
+is unchanged by this phase.

@@ -595,6 +595,36 @@ def chart_pmu():
         cap, "per-op count", groups, series)
 
 
+def chart_direct_page_atlas():
+    d = load("direct-page-atlas.json")
+    rows = d["rows"]
+
+    def series_for(obj, key):
+        return [(r["size"], r[key]) for r in rows if r["object"] == obj]
+
+    series = [
+        {"name": "fragmented: atlas path",
+         "points": series_for("fragmented", "planner_mean_ns")},
+        {"name": "fragmented: authoritative",
+         "points": series_for("fragmented", "authoritative_mean_ns")},
+        {"name": "unfragmented: atlas path",
+         "points": series_for("unfragmented", "planner_mean_ns")},
+        {"name": "unfragmented: authoritative",
+         "points": series_for("unfragmented", "authoritative_mean_ns")},
+    ]
+    sizes = sorted({r["size"] for r in rows})
+    cap = [
+        "source: evidence/performance/direct-page-atlas.json (1 MiB objects, release)",
+        "latency vs request size; the atlas serves one contiguous copy while the",
+        "fragmented authoritative read (1024 extents) diverges with size",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return line_chart(
+        "direct-page atlas: read latency vs request size",
+        cap, "request size (bytes, log)", "latency (ns, log)", series,
+        xlog=True, ylog=True, xticks=sizes)
+
+
 # --------------------------------------------------------------------------
 # registry: file name -> (builder, source receipt, generating command)
 # --------------------------------------------------------------------------
@@ -626,6 +656,8 @@ CHARTS = (
      "evidence/performance/reader-scaling-64.json", "sh scripts/container-reader-scale64.sh"),
     ("pmu.svg", chart_pmu,
      "evidence/performance/pmu.json", "sh scripts/container-pmu.sh"),
+    ("direct-page-atlas.svg", chart_direct_page_atlas,
+     "evidence/performance/direct-page-atlas.json", "sh scripts/container-direct-page-atlas.sh"),
 )
 
 

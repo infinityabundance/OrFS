@@ -67,12 +67,15 @@ Exit codes:
 deterministic gates in order:
 
 ```sh
-sh scripts/check-all.sh          # fmt/lint (container) + this check + full test suite (container)
-sh scripts/check-all.sh --fast   # fmt/lint (container) + this check only
+sh scripts/check-all.sh          # fmt/lint (container) + this check + chart drift + full test suite (container)
+sh scripts/check-all.sh --fast   # fmt/lint (container) + this check + chart drift only
 ```
 
 It calls `scripts/container-check.sh` (fmt + clippy in the pinned container),
-then `check-docs-receipts.sh` (host), then `scripts/container-test.sh`. The
+then `check-docs-receipts.sh` (host), then `python3 scripts/render_charts.py
+--check` (host; Phase 64 — a committed `docs/charts/*.svg` that no longer matches
+its receipt fails the gate exactly like a citation), then
+`scripts/container-test.sh`. The
 mounted FUSE / `io_uring` / POSIX courts are deliberately excluded because they
 need `/dev/fuse`, `CAP_SYS_ADMIN` and an unconfined seccomp profile, which a
 hosted CI runner generally cannot grant; run them explicitly. A CI job can call
@@ -192,6 +195,14 @@ numbers were not curated in this first pass:
   and hosts), and the flamegraph are deliberately uncovered.
   `evidence/correctness/posix-extras.json` is likewise not curated: it is
   qualitative (`all_ok: true` plus per-check PASS/errno strings), not numeric.
+* `docs/PERFORMANCE.md` §27 (Phase 64) — the direct-page-atlas court. Its honest
+  content is a **selection** (which path the planner measured cheapest per size)
+  plus host-sensitive latency; the deterministic facts in the receipt are the
+  per-object extent counts, the atlas payload bytes, and `parity.all_byte_exact`.
+  The latency/ratio figures are deliberately left uncurated because they move
+  between runs. The committed figure `direct-page-atlas.svg` is nonetheless gated:
+  `scripts/check-all.sh` now runs `python3 scripts/render_charts.py --check`, so a
+  chart cannot silently diverge from this receipt.
 * `evidence/recovery/fault-injection-verify-recover.json` (Phase 62) is mostly
   **qualitative** (a per-row matrix of `verify --deep` verdicts, `recover`
   outcomes, `data_intact` booleans and the `dm_probe` `ran:false` result); only

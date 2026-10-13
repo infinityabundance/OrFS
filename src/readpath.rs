@@ -178,6 +178,7 @@ use ekbloom::bloom_region::RegionTable;
 use ekbloom::checkpoint::CheckpointSet;
 use ekbloom::{machine_by_id, EkbloomBody, Snapshot as EkSnapshot, VerificationReport};
 
+use crate::directpage::{DirectPageManifest, DirectPageState};
 use crate::error::{OrfsError, Result};
 use crate::manifestation::{
     resolve_coverage, GenerationManifest, ManifestRegion, ManifestationState, EKBLOOM_VERSION,
@@ -207,6 +208,10 @@ pub enum ReadPathKind {
     /// unchanged regions reused from committed base generations, changed regions
     /// from the overlay's own payloads.
     Overlay,
+    /// A manifested **direct-page atlas** (Phase 64, research §5): a page-aligned,
+    /// contiguous image of the object's committed logical bytes, served by direct
+    /// slicing (one bounded copy, no EKBLOOM decode).
+    DirectImage,
 }
 
 impl ReadPathKind {
@@ -219,6 +224,7 @@ impl ReadPathKind {
             ReadPathKind::History => "history",
             ReadPathKind::Checkpoint => "checkpoint",
             ReadPathKind::Overlay => "overlay",
+            ReadPathKind::DirectImage => "direct-image",
         }
     }
 
@@ -231,6 +237,7 @@ impl ReadPathKind {
             ReadPathKind::Checkpoint => 3,
             ReadPathKind::TransitionBloom => 4,
             ReadPathKind::LogicalExtent => 5,
+            ReadPathKind::DirectImage => 6,
         }
     }
 
@@ -244,6 +251,7 @@ impl ReadPathKind {
             ReadPathKind::History => 1 << 3,
             ReadPathKind::Checkpoint => 1 << 4,
             ReadPathKind::Overlay => 1 << 5,
+            ReadPathKind::DirectImage => 1 << 6,
         }
     }
 
@@ -255,7 +263,7 @@ impl ReadPathKind {
     }
 
     /// The number of read-path kinds (the length of a per-kind counter array).
-    pub const COUNT: usize = 6;
+    pub const COUNT: usize = 7;
 }
 
 /// The **full identity** of one manifested generation.
@@ -517,6 +525,9 @@ impl CostModel {
             ReadPathKind::History => (45.0, 7.0),
             ReadPathKind::Checkpoint => (70.0, 9.0),
             ReadPathKind::Overlay => (80.0, 10.0),
+            // A direct slice copy of an in-memory contiguous image: low fixed
+            // overhead, near-memcpy per byte.
+            ReadPathKind::DirectImage => (50.0, 1.0),
         };
         fixed + per_byte * class.representative_len() as f64
     }
@@ -696,11 +707,24 @@ struct LoadedBody {
     inode_version: u64,
     root: u64,
     logical_len: u64,
+    /// The version-qualified direct-page atlas for this identity, when one is
+    /// published and digest-verified (Phase 64). `None` simply leaves the
+    /// `DirectImage` candidate out of the plan. Held with the body so a cached
+    /// body carries its atlas, and the body-cache key includes the atlas digest
+    /// so a replaced atlas reloads the body.
+    atlas: Option<AtlasImage>,
     /// The precompiled read plan published with this body (Phase 43): the
     /// request-independent structure inventory plus the per-class selection
     /// rankings the steady-state read looks up. Bounded by the body cache's
     /// capacity, since a retired body retires its plan with it.
     plan: ObjectPlan,
+}
+
+/// A digest-verified direct-page atlas held with a loaded body (Phase 64). The
+/// payload is the whole aligned image; a read slices the content region directly.
+struct AtlasImage {
+    manifest: DirectPageManifest,
+    bytes: Arc<Vec<u8>>,
 }
 
 /// The precompiled, per-object read plan.
@@ -1005,6 +1029,9 @@ impl<K: std::hash::Hash + Eq + Clone, V> AdmissionCache<K, V> {
 struct CacheEntry {
     generation: u64,
     manifest_blake3: [u8; 32],
+    /// The atlas digest that was resolved into this body, when any (Phase 64),
+    /// so a body is replaced when the object's atlas is republished.
+    atlas_blake3: Option<[u8; 32]>,
     body: Arc<LoadedBody>,
 }
 
@@ -1024,9 +1051,18 @@ impl BodyCache {
     /// A resident body matching the request identity. An entry present for the
     /// inode but qualified for a different generation or manifest digest is treated
     /// as a miss (the caller reloads and replaces it).
-    fn get(&mut self, inode: u64, generation: u64, digest: &[u8; 32]) -> Option<Arc<LoadedBody>> {
+    fn get(
+        &mut self,
+        inode: u64,
+        generation: u64,
+        digest: &[u8; 32],
+        atlas_digest: Option<&[u8; 32]>,
+    ) -> Option<Arc<LoadedBody>> {
         let e = self.inner.get(&inode)?;
-        if e.generation == generation && e.manifest_blake3 == *digest {
+        if e.generation == generation
+            && e.manifest_blake3 == *digest
+            && e.atlas_blake3.as_ref() == atlas_digest
+        {
             Some(e.body.clone())
         } else {
             None
@@ -1266,11 +1302,21 @@ impl PlannerResidency {
 #[derive(Debug, Clone, Copy)]
 enum Structure {
     Extent,
-    Path { bloom_index: usize },
+    Path {
+        bloom_index: usize,
+    },
     History,
-    Checkpoint { set_index: usize },
-    Global { bloom_index: usize },
-    Regional { bloom_index: usize },
+    Checkpoint {
+        set_index: usize,
+    },
+    Global {
+        bloom_index: usize,
+    },
+    Regional {
+        bloom_index: usize,
+    },
+    /// The page-aligned contiguous image (Phase 64).
+    DirectImage,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1417,6 +1463,19 @@ fn candidates(lb: &LoadedBody, q: &ReadQuery, eff_len: u64) -> Vec<Candidate> {
         }
     }
 
+    // (6) the manifested direct-page atlas (Phase 64): a contiguous image of the
+    // logical bytes, served by direct slicing. It covers the whole object, so it
+    // is request-independent; the coverage check still guards the slice.
+    if let Some(a) = &lb.atlas {
+        if a.manifest.covers(offset, end) {
+            out.push(Candidate {
+                kind: ReadPathKind::DirectImage,
+                structure: Structure::DirectImage,
+                certified: true,
+            });
+        }
+    }
+
     // (5) the ordinary logical extent read (the authoritative path).
     out.push(Candidate {
         kind: ReadPathKind::LogicalExtent,
@@ -1438,6 +1497,7 @@ fn build_inventory(
     path_blooms: &[Option<PathBloom>],
     global_blooms: &[Option<GlobalBloom>],
     region_tables: &[Option<RegionTable>],
+    direct_image: bool,
 ) -> Vec<Candidate> {
     let mut out = Vec::new();
 
@@ -1508,6 +1568,16 @@ fn build_inventory(
         }
     }
 
+    // The manifested direct-page atlas (Phase 64), when one is resolved for this
+    // identity. It covers the whole object, so it is request-independent.
+    if direct_image {
+        out.push(Candidate {
+            kind: ReadPathKind::DirectImage,
+            structure: Structure::DirectImage,
+            certified: true,
+        });
+    }
+
     out
 }
 
@@ -1532,6 +1602,10 @@ fn step_available(lb: &LoadedBody, q: &ReadQuery, eff_len: u64, structure: Struc
             });
             covers && has_bounded_state_source(lb, q.offset)
         }
+        Structure::DirectImage => lb
+            .atlas
+            .as_ref()
+            .is_some_and(|a| a.manifest.covers(q.offset, end)),
     }
 }
 
@@ -1734,6 +1808,18 @@ fn direct_bytes(
         Structure::Checkpoint { set_index } => read_checkpoint(lb, set_index, q.offset, eff_len),
         Structure::Global { bloom_index } => read_global(lb, bloom_index, q.offset, end),
         Structure::Regional { bloom_index } => read_regional(lb, bloom_index, q.offset, end),
+        Structure::DirectImage => {
+            let a = lb
+                .atlas
+                .as_ref()
+                .ok_or_else(|| OrfsError::Corrupt("direct-image atlas is unavailable".into()))?;
+            let (s, e) = a.manifest.payload_range(q.offset, end).ok_or_else(|| {
+                OrfsError::Corrupt("direct-image atlas does not cover the request".into())
+            })?;
+            a.bytes.get(s..e).map(|sl| sl.to_vec()).ok_or_else(|| {
+                OrfsError::Corrupt("direct-image atlas slice is out of range".into())
+            })
+        }
         Structure::Extent => Err(OrfsError::InvalidArgument(
             "the ordinary extent path is served by the caller, not a structure".into(),
         )),
@@ -1814,6 +1900,10 @@ where
 /// per-object [`ObjectPlan`] only.
 pub struct ReadPlanner {
     state: Arc<ManifestationState>,
+    /// The published direct-page atlas plane (Phase 64), when attached. Fixed at
+    /// construction: the planner is rebuilt when the atlas plane is (re)attached,
+    /// so the read path never locks to look it up.
+    atlas: Option<Arc<DirectPageState>>,
     config: ReadPlannerConfig,
     model: RwLock<SelectionModel>,
     cache: Mutex<BodyCache>,
@@ -1835,6 +1925,17 @@ pub struct ReadPlanner {
 impl ReadPlanner {
     /// Create a planner over a published-generation state.
     pub fn new(state: Arc<ManifestationState>, config: ReadPlannerConfig) -> ReadPlanner {
+        ReadPlanner::with_direct_atlas(state, None, config)
+    }
+
+    /// Create a planner that also considers the manifested direct-page atlas plane
+    /// (Phase 64). The atlas only ever *adds* a measured candidate; a missing,
+    /// stale, or corrupt atlas leaves reads on the authoritative path.
+    pub fn with_direct_atlas(
+        state: Arc<ManifestationState>,
+        atlas: Option<Arc<DirectPageState>>,
+        config: ReadPlannerConfig,
+    ) -> ReadPlanner {
         let cache = BodyCache::new(config.cache_capacity);
         let regions = RegionCache::new(config.cache_capacity.max(1).saturating_mul(4));
         let coverage = CoverageCache::new(config.identity_capacity.max(1));
@@ -1842,6 +1943,7 @@ impl ReadPlanner {
         let identity_capacity = config.identity_capacity;
         ReadPlanner {
             state,
+            atlas,
             config,
             model: RwLock::new(SelectionModel::new(object_capacity)),
             cache: Mutex::new(cache),
@@ -1873,6 +1975,7 @@ impl ReadPlanner {
             ReadPathKind::History,
             ReadPathKind::Checkpoint,
             ReadPathKind::Overlay,
+            ReadPathKind::DirectImage,
         ];
         let mut v: Vec<(ReadPathKind, u64)> = KINDS
             .iter()
@@ -2655,28 +2758,48 @@ impl ReadPlanner {
         Ok(body)
     }
 
+    /// The version-qualified atlas manifest for a generation's identity, when the
+    /// atlas plane is attached and one is published (Phase 64).
+    fn resolve_atlas(&self, manifest: &GenerationManifest) -> Option<DirectPageManifest> {
+        let state = self.atlas.as_ref()?;
+        state.usable_for(
+            manifest.inode,
+            manifest.inode_version,
+            manifest.root,
+            manifest.logical_len(),
+        )
+    }
+
     /// Load, validate, and fully verify a manifested body, with caching.
     fn load_body(&self, manifest: &GenerationManifest) -> Result<Arc<LoadedBody>> {
+        let atlas = self.resolve_atlas(manifest);
+        let atlas_digest = atlas.as_ref().map(|m| m.manifest_blake3);
         if let Some(hit) = self.cache.lock().get(
             manifest.inode,
             manifest.generation,
             &manifest.manifest_blake3,
+            atlas_digest.as_ref(),
         ) {
             return Ok(hit);
         }
-        let loaded = Arc::new(self.build_loaded_body(manifest)?);
+        let loaded = Arc::new(self.build_loaded_body(manifest, atlas)?);
         self.cache.lock().insert(
             manifest.inode,
             CacheEntry {
                 generation: manifest.generation,
                 manifest_blake3: manifest.manifest_blake3,
+                atlas_blake3: atlas_digest,
                 body: loaded.clone(),
             },
         );
         Ok(loaded)
     }
 
-    fn build_loaded_body(&self, manifest: &GenerationManifest) -> Result<LoadedBody> {
+    fn build_loaded_body(
+        &self,
+        manifest: &GenerationManifest,
+        atlas: Option<DirectPageManifest>,
+    ) -> Result<LoadedBody> {
         let path = self
             .state
             .store()
@@ -2766,12 +2889,27 @@ impl ReadPlanner {
             })
             .collect();
         // Publish the precompiled, request-independent read plan with the body.
+        // The direct-page atlas is resolved here and held with the body; a failure
+        // to load it (or an atlas beyond the payload bound) simply omits the
+        // `DirectImage` candidate (Phase 64).
+        let atlas = match atlas {
+            Some(m) if m.payload_bytes <= self.config.max_payload_bytes => self
+                .atlas
+                .as_ref()
+                .and_then(|s| s.load_payload(&m).ok())
+                .map(|bytes| AtlasImage {
+                    manifest: m,
+                    bytes: Arc::new(bytes),
+                }),
+            _ => None,
+        };
         let plan = ObjectPlan::new(build_inventory(
             &body,
             &report,
             &path_blooms,
             &global_blooms,
             &region_tables,
+            atlas.is_some(),
         ));
         self.stats.plan_builds.fetch_add(1, Ordering::Relaxed);
         Ok(LoadedBody {
@@ -2785,6 +2923,7 @@ impl ReadPlanner {
             inode_version: manifest.inode_version,
             root: manifest.root,
             logical_len: manifest.logical_len(),
+            atlas,
             plan,
         })
     }

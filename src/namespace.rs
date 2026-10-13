@@ -30,6 +30,10 @@ use crate::directory::{
     check_name_len, validate_name, DentryAddPayload, DentryRemovePayload, DentryRenamePayload,
     RenameFlags, DENTRY_ADD_MAGIC, DENTRY_REMOVE_MAGIC, HARDLINK_ADD_MAGIC, HARDLINK_REMOVE_MAGIC,
 };
+use crate::directpage::{
+    build_atlas_payload, DirectAtlasOutcome, DirectPageManifest, DirectPageState, DirectPageStore,
+    ATLAS_ALIGN, ATLAS_SCHEMA,
+};
 use crate::error::{OrfsError, Result};
 use crate::extent::{
     DataExtentPayload, DataZeroRangePayload, ExtentKind, FileResizePayload, ReadPiece,
@@ -286,6 +290,10 @@ pub struct Namespace {
     trigram: Option<Arc<TrigramState>>,
     /// The background trigram build engine, when the query plane is on.
     trigram_engine: Option<Arc<TrigramEngine>>,
+    /// The published direct-page atlas state (Phase 64), when the atlas plane is
+    /// attached. Opt-in per hot object; rides the same read planner as a measured
+    /// `direct-image` candidate.
+    direct_atlas: Option<Arc<DirectPageState>>,
     /// The published immutable read view (Phase 19).
     ///
     /// Readers clone the `Arc<dyn CoreRead>` out of this cell (under a short
@@ -389,6 +397,7 @@ impl Namespace {
             read_planner: None,
             trigram: None,
             trigram_engine: None,
+            direct_atlas: None,
             read_pub: Arc::new(parking_lot::RwLock::new(initial)),
             historical,
         })
@@ -530,8 +539,11 @@ impl Namespace {
             ManifestationEngine::start(store, self.volume.meta.uuid, builder, cfg)?;
         // Phase 8: a certified read planner over the published generations. It
         // never changes what a read returns; it only selects a measured path.
-        let planner = Arc::new(ReadPlanner::new(
+        // Phase 64: if the direct-page atlas plane is already attached, the planner
+        // also considers its `direct-image` candidate.
+        let planner = Arc::new(ReadPlanner::with_direct_atlas(
             engine.state(),
+            self.direct_atlas.clone(),
             ReadPlannerConfig::default(),
         ));
         self.manifestation = Some(engine.state());
@@ -602,6 +614,102 @@ impl Namespace {
     /// The background trigram build engine, when enabled.
     pub fn trigram_engine(&self) -> Option<Arc<TrigramEngine>> {
         self.trigram_engine.clone()
+    }
+
+    // -- manifested direct-page atlas (research §5; Phase 64) ----------------
+
+    /// Attach (recover) the manifested **direct-page atlas** plane and make it
+    /// available to the read planner. Returns the number of published atlases
+    /// recovered. Deriving/consuming the atlas never alters the logical view.
+    pub fn attach_direct_atlas(&mut self) -> Result<u64> {
+        let store = DirectPageStore::new(&self.volume.root_dir);
+        let state = DirectPageState::recover(store, self.volume.meta.uuid)?;
+        let count = state.generation_count();
+        self.direct_atlas = Some(state);
+        // Rebuild the read planner so the `direct-image` candidate is considered,
+        // preserving the manifested-generation state it selects over.
+        if let Some(m) = self.manifestation.clone() {
+            self.read_planner = Some(Arc::new(ReadPlanner::with_direct_atlas(
+                m,
+                self.direct_atlas.clone(),
+                ReadPlannerConfig::default(),
+            )));
+            self.publish_read_state();
+        }
+        Ok(count)
+    }
+
+    /// The published direct-page atlas state, when the plane is attached.
+    pub fn direct_atlas_state(&self) -> Option<Arc<DirectPageState>> {
+        self.direct_atlas.clone()
+    }
+
+    /// Whether the direct-page atlas plane is attached.
+    pub fn direct_atlas_enabled(&self) -> bool {
+        self.direct_atlas.is_some()
+    }
+
+    /// Build and publish a manifested **direct-page atlas** for one inode at the
+    /// current committed root (research §5; Phase 64). Opt-in per hot object.
+    ///
+    /// The atlas is a page-aligned, contiguous copy of the object's committed
+    /// logical content, constructed from the authoritative extent read and
+    /// published as a self-validating manifest plus payload with a BLAKE3 digest.
+    /// It is derived and never authoritative: the read planner only ever adds it
+    /// as a measured candidate, so a missing or stale atlas cannot change a read.
+    pub fn manifest_direct_page_atlas(&self, inode: u64) -> Result<DirectAtlasOutcome> {
+        let state = self.direct_atlas.clone().ok_or_else(|| {
+            OrfsError::InvalidArgument("the direct-page atlas plane is not attached".into())
+        })?;
+        let root = self.index.root();
+        let ino = self.index.inode(inode).ok_or(OrfsError::NotFound)?;
+        if !ino.is_file() {
+            return Err(OrfsError::InvalidArgument(
+                "direct-page atlas is only defined for regular files".into(),
+            ));
+        }
+        let version = ino.current_version();
+        let logical_len = ino.size;
+        let source = self.read_extent(inode, root, 0, logical_len)?;
+        if source.len() as u64 != logical_len {
+            return Err(OrfsError::Corrupt(
+                "authoritative read did not return the committed logical length".into(),
+            ));
+        }
+        let (payload, content_offset) = build_atlas_payload(&source, 0);
+        let generation = state.store().next_generation()?;
+        let manifest = DirectPageManifest {
+            schema: ATLAS_SCHEMA,
+            generation,
+            volume_uuid: self.volume.meta.uuid,
+            inode,
+            inode_version: version,
+            root,
+            logical_len,
+            logical_start: 0,
+            align: ATLAS_ALIGN,
+            content_offset,
+            payload_rel_path: state
+                .store()
+                .payload_rel_path(generation, inode, version, root),
+            payload_blake3: *blake3::hash(&payload).as_bytes(),
+            payload_bytes: payload.len() as u64,
+            manifest_blake3: [0u8; 32],
+        }
+        .sealed();
+        state.publish(&manifest, &payload)?;
+        Ok(DirectAtlasOutcome {
+            inode,
+            inode_version: version,
+            root,
+            generation,
+            logical_len,
+            payload_bytes: payload.len() as u64,
+            content_offset,
+            align: ATLAS_ALIGN,
+            published: true,
+            detail: "published".to_string(),
+        })
     }
 
     /// Manifest the eligible object(s) at the current committed root.
@@ -736,6 +844,15 @@ impl Namespace {
     pub fn read_extent(&self, inode: u64, root: u64, offset: u64, length: u64) -> Result<Vec<u8>> {
         let view = self.view(root)?;
         read_extent_from(&view, &self.volume.log, inode, offset, length)
+    }
+
+    /// The committed `(logical size, current version)` of an inode. Exposed so a
+    /// caller (a court or diagnostic) can construct an exact [`ReadQuery`] — the
+    /// identity every manifested structure is qualified against — without reaching
+    /// into the index. Read-only.
+    pub fn inode_identity(&self, inode: u64) -> Result<(u64, u64)> {
+        let ino = self.index.inode(inode).ok_or(OrfsError::NotFound)?;
+        Ok((ino.size, ino.current_version()))
     }
 
     /// The authoritative read with a measured per-request phase breakdown

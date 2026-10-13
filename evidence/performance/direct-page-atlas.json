@@ -1,0 +1,210 @@
+{
+  "environment": {
+    "bench": {
+      "cgroup_memory_max": "8589934592",
+      "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "container_image": null,
+      "cores_visible": 8,
+      "cpu_max": "800000 100000",
+      "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+      "fuse_enable_uring": true,
+      "kernel_release": "7.2.9-2-cachyos",
+      "likely_container": true,
+      "machine": "x86_64",
+      "perf_counters_available": false,
+      "perf_event_open_error": "Operation not permitted (os error 1)",
+      "perf_event_paranoid": "2",
+      "ram_total_bytes": 134723346432
+    },
+    "profile": "release"
+  },
+  "generated_by": "tests/direct_page_atlas.rs",
+  "note": "Single-run, single-host measurement of the manifested direct-page atlas (research §5): a page-aligned, contiguous copy of an object's committed logical bytes, served by direct slicing through the OrFS read planner. Both objects are EKBLOOM-manifested (profile path(4)) and atlas-backed at the same committed root; every planner read is asserted byte-identical to the authoritative extent read. The atlas is only ever an added, measured candidate, so it is selected only where it measured cheaper.",
+  "objects": [
+    {
+      "atlas_bytes": 1052672,
+      "extents": 1,
+      "fragmented": false,
+      "inode": 2,
+      "logical_len": 1048576,
+      "name": "unfragmented"
+    },
+    {
+      "atlas_bytes": 1052672,
+      "extents": 1024,
+      "fragmented": true,
+      "inode": 3,
+      "logical_len": 1048576,
+      "name": "fragmented"
+    }
+  ],
+  "parity": {
+    "all_byte_exact": true
+  },
+  "read_sizes": [
+    1,
+    64,
+    512,
+    4096,
+    16384,
+    65536,
+    1048576
+  ],
+  "rows": [
+    {
+      "atlas_bytes": 1052672,
+      "authoritative_mean_ns": 170.025,
+      "authoritative_min_ns": 141,
+      "object": "unfragmented",
+      "planner_mean_ns": 131.025,
+      "planner_min_ns": 120,
+      "rounds": 40,
+      "selected_path": "direct-image",
+      "size": 1
+    },
+    {
+      "atlas_bytes": 1052672,
+      "authoritative_mean_ns": 162.55,
+      "authoritative_min_ns": 150,
+      "object": "unfragmented",
+      "planner_mean_ns": 130.25,
+      "planner_min_ns": 120,
+      "rounds": 40,
+      "selected_path": "direct-image",
+      "size": 64
+    },
+    {
+      "atlas_bytes": 1052672,
+      "authoritative_mean_ns": 179.1,
+      "authoritative_min_ns": 160,
+      "object": "unfragmented",
+      "planner_mean_ns": 130.75,
+      "planner_min_ns": 120,
+      "rounds": 40,
+      "selected_path": "direct-image",
+      "size": 512
+    },
+    {
+      "atlas_bytes": 1052672,
+      "authoritative_mean_ns": 258.725,
+      "authoritative_min_ns": 230,
+      "object": "unfragmented",
+      "planner_mean_ns": 158.05,
+      "planner_min_ns": 150,
+      "rounds": 40,
+      "selected_path": "direct-image",
+      "size": 4096
+    },
+    {
+      "atlas_bytes": 1052672,
+      "authoritative_mean_ns": 398.325,
+      "authoritative_min_ns": 360,
+      "object": "unfragmented",
+      "planner_mean_ns": 199.325,
+      "planner_min_ns": 190,
+      "rounds": 40,
+      "selected_path": "direct-image",
+      "size": 16384
+    },
+    {
+      "atlas_bytes": 1052672,
+      "authoritative_mean_ns": 1136.875,
+      "authoritative_min_ns": 1052,
+      "object": "unfragmented",
+      "planner_mean_ns": 674.475,
+      "planner_min_ns": 581,
+      "rounds": 40,
+      "selected_path": "direct-image",
+      "size": 65536
+    },
+    {
+      "atlas_bytes": 1052672,
+      "authoritative_mean_ns": 20451.55,
+      "authoritative_min_ns": 19767,
+      "object": "unfragmented",
+      "planner_mean_ns": 14132.075,
+      "planner_min_ns": 13696,
+      "rounds": 40,
+      "selected_path": "direct-image",
+      "size": 1048576
+    },
+    {
+      "atlas_bytes": 1052672,
+      "authoritative_mean_ns": 174.05,
+      "authoritative_min_ns": 150,
+      "object": "fragmented",
+      "planner_mean_ns": 125.425,
+      "planner_min_ns": 120,
+      "rounds": 40,
+      "selected_path": "path-bloom",
+      "size": 1
+    },
+    {
+      "atlas_bytes": 1052672,
+      "authoritative_mean_ns": 319.1,
+      "authoritative_min_ns": 300,
+      "object": "fragmented",
+      "planner_mean_ns": 130.025,
+      "planner_min_ns": 120,
+      "rounds": 40,
+      "selected_path": "direct-image",
+      "size": 64
+    },
+    {
+      "atlas_bytes": 1052672,
+      "authoritative_mean_ns": 368.9,
+      "authoritative_min_ns": 330,
+      "object": "fragmented",
+      "planner_mean_ns": 130.775,
+      "planner_min_ns": 120,
+      "rounds": 40,
+      "selected_path": "direct-image",
+      "size": 512
+    },
+    {
+      "atlas_bytes": 1052672,
+      "authoritative_mean_ns": 739.125,
+      "authoritative_min_ns": 681,
+      "object": "fragmented",
+      "planner_mean_ns": 156.275,
+      "planner_min_ns": 150,
+      "rounds": 40,
+      "selected_path": "direct-image",
+      "size": 4096
+    },
+    {
+      "atlas_bytes": 1052672,
+      "authoritative_mean_ns": 2805.45,
+      "authoritative_min_ns": 2685,
+      "object": "fragmented",
+      "planner_mean_ns": 233.625,
+      "planner_min_ns": 220,
+      "rounds": 40,
+      "selected_path": "direct-image",
+      "size": 16384
+    },
+    {
+      "atlas_bytes": 1052672,
+      "authoritative_mean_ns": 11171.6,
+      "authoritative_min_ns": 10811,
+      "object": "fragmented",
+      "planner_mean_ns": 633.95,
+      "planner_min_ns": 551,
+      "rounds": 40,
+      "selected_path": "direct-image",
+      "size": 65536
+    },
+    {
+      "atlas_bytes": 1052672,
+      "authoritative_mean_ns": 190263.15,
+      "authoritative_min_ns": 186338,
+      "object": "fragmented",
+      "planner_mean_ns": 14321.225,
+      "planner_min_ns": 14106,
+      "rounds": 40,
+      "selected_path": "direct-image",
+      "size": 1048576
+    }
+  ],
+  "schema": "orfs.performance.direct-page-atlas.v1"
+}

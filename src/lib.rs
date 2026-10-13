@@ -32,6 +32,7 @@ pub mod capacity;
 pub mod checkpoint;
 pub mod commit;
 pub mod directory;
+pub mod directpage;
 pub mod error;
 pub mod extent;
 pub mod failpoints;

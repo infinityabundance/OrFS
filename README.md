@@ -99,6 +99,7 @@ enable it (see `docs/FUSE_URING.md`).
 | 61 | Fix the native-FUSE `JobQueue` lost-wakeup race the HEAD audit recorded (mutex-guarded predicate + notify); regression tests | complete |
 | 62 | Device-fault evidence: `verify --deep` + `recover` after injected mid-log faults (the `dm-flaky`/`dm-error` probe is `ran:false`) | complete |
 | 63 | Evidence charts: inline-styled SVG figures for the performance courts + an image→receipt→command reproducibility index | complete |
+| 64 | Direct-page manifestations (research §5): a manifested, page-aligned contiguous atlas of a selected object's bytes, wired in as a measured `direct-image` planner candidate | complete |
 
 Honest non-claims: the image pixel-surface pyramid is **not materialised** (only
 its geometry is implemented), and no performance superiority of F2 or of the

@@ -955,6 +955,9 @@ const CAT_FAMILY_MANIFEST: u32 = 0x4F52_434D;
 /// Family tag for a trigram-manifest catalogue (`"ORCT"`), so the two concealed
 /// families can never confuse one another's records.
 pub(crate) const CAT_FAMILY_TRIGRAM: u32 = 0x4F52_4354;
+/// Family tag for a direct-page-atlas catalogue (`"ORCA"`), so the concealed
+/// families can never confuse one another's records.
+pub(crate) const CAT_FAMILY_ATLAS: u32 = 0x4F52_4341;
 /// Record/pointer schema.
 const CAT_SCHEMA: u32 = 1;
 const CAT_POINTER_MAGIC: u32 = 0x4F52_4350; // "ORCP"

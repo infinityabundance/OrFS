@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="monospace"><rect x="0" y="0" width="760" height="440" fill="#ffffff"/><text x="380.0" y="22.0" fill="#111111" font-size="14" text-anchor="middle" font-weight="bold">direct-page atlas: read latency vs request size</text>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="344.0" fill="#111111" font-size="11" text-anchor="end">100</text>
+<line x1="84.0" y1="270.5" x2="736.0" y2="270.5" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="274.5" fill="#111111" font-size="11" text-anchor="end">1k</text>
+<line x1="84.0" y1="201.0" x2="736.0" y2="201.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="205.0" fill="#111111" font-size="11" text-anchor="end">10k</text>
+<line x1="84.0" y1="131.5" x2="736.0" y2="131.5" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="135.5" fill="#111111" font-size="11" text-anchor="end">100k</text>
+<line x1="84.0" y1="62.0" x2="736.0" y2="62.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="66.0" fill="#111111" font-size="11" text-anchor="end">1M</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="84.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">1</text>
+<line x1="252.2" y1="62.0" x2="252.2" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="252.2" y="358.0" fill="#111111" font-size="11" text-anchor="middle">64</text>
+<line x1="336.3" y1="62.0" x2="336.3" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="336.3" y="358.0" fill="#111111" font-size="11" text-anchor="middle">512</text>
+<line x1="420.5" y1="62.0" x2="420.5" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="420.5" y="358.0" fill="#111111" font-size="11" text-anchor="middle">4.096k</text>
+<line x1="476.5" y1="62.0" x2="476.5" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="476.5" y="358.0" fill="#111111" font-size="11" text-anchor="middle">16.384k</text>
+<line x1="532.6" y1="62.0" x2="532.6" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="532.6" y="358.0" fill="#111111" font-size="11" text-anchor="middle">65.536k</text>
+<line x1="644.8" y1="62.0" x2="644.8" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="644.8" y="358.0" fill="#111111" font-size="11" text-anchor="middle">1.04858M</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<text x="410.0" y="382.0" fill="#111111" font-size="12" text-anchor="middle">request size (bytes, log)</text>
+<text x="26.0" y="201.0" fill="#111111" font-size="12" text-anchor="middle" transform="rotate(-90 26.0 201.0)">latency (ns, log)</text>
+<polyline points="84.0,333.2 252.2,332.1 336.3,331.9 420.5,326.5 476.5,314.4 532.6,284.3 644.8,190.2" fill="none" stroke="#1f77b4" stroke-width="2"/>
+<circle cx="84.0" cy="333.2" r="3" fill="#1f77b4"/>
+<circle cx="252.2" cy="332.1" r="3" fill="#1f77b4"/>
+<circle cx="336.3" cy="331.9" r="3" fill="#1f77b4"/>
+<circle cx="420.5" cy="326.5" r="3" fill="#1f77b4"/>
+<circle cx="476.5" cy="314.4" r="3" fill="#1f77b4"/>
+<circle cx="532.6" cy="284.3" r="3" fill="#1f77b4"/>
+<circle cx="644.8" cy="190.2" r="3" fill="#1f77b4"/>
+<polyline points="84.0,323.3 252.2,305.0 336.3,300.6 420.5,279.6 476.5,239.4 532.6,197.7 644.8,112.1" fill="none" stroke="#d62728" stroke-width="2"/>
+<circle cx="84.0" cy="323.3" r="3" fill="#d62728"/>
+<circle cx="252.2" cy="305.0" r="3" fill="#d62728"/>
+<circle cx="336.3" cy="300.6" r="3" fill="#d62728"/>
+<circle cx="420.5" cy="279.6" r="3" fill="#d62728"/>
+<circle cx="476.5" cy="239.4" r="3" fill="#d62728"/>
+<circle cx="532.6" cy="197.7" r="3" fill="#d62728"/>
+<circle cx="644.8" cy="112.1" r="3" fill="#d62728"/>
+<polyline points="84.0,331.8 252.2,332.0 336.3,331.9 420.5,326.2 476.5,319.2 532.6,282.4 644.8,190.6" fill="none" stroke="#2ca02c" stroke-width="2"/>
+<circle cx="84.0" cy="331.8" r="3" fill="#2ca02c"/>
+<circle cx="252.2" cy="332.0" r="3" fill="#2ca02c"/>
+<circle cx="336.3" cy="331.9" r="3" fill="#2ca02c"/>
+<circle cx="420.5" cy="326.2" r="3" fill="#2ca02c"/>
+<circle cx="476.5" cy="319.2" r="3" fill="#2ca02c"/>
+<circle cx="532.6" cy="282.4" r="3" fill="#2ca02c"/>
+<circle cx="644.8" cy="190.6" r="3" fill="#2ca02c"/>
+<polyline points="84.0,324.0 252.2,325.3 336.3,322.4 420.5,311.3 476.5,298.3 532.6,266.6 644.8,179.4" fill="none" stroke="#ff7f0e" stroke-width="2"/>
+<circle cx="84.0" cy="324.0" r="3" fill="#ff7f0e"/>
+<circle cx="252.2" cy="325.3" r="3" fill="#ff7f0e"/>
+<circle cx="336.3" cy="322.4" r="3" fill="#ff7f0e"/>
+<circle cx="420.5" cy="311.3" r="3" fill="#ff7f0e"/>
+<circle cx="476.5" cy="298.3" r="3" fill="#ff7f0e"/>
+<circle cx="532.6" cy="266.6" r="3" fill="#ff7f0e"/>
+<circle cx="644.8" cy="179.4" r="3" fill="#ff7f0e"/>
+<rect x="84.0" y="35.0" width="10" height="10" fill="#1f77b4"/>
+<text x="99.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">fragmented: atlas path</text>
+<rect x="273.0" y="35.0" width="10" height="10" fill="#d62728"/>
+<text x="288.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">fragmented: authoritative</text>
+<rect x="483.0" y="35.0" width="10" height="10" fill="#2ca02c"/>
+<text x="498.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">unfragmented: atlas path</text>
+<rect x="686.0" y="35.0" width="10" height="10" fill="#ff7f0e"/>
+<text x="701.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">unfragmented: authoritative</text>
+<text x="84.0" y="370.0" fill="#555555" font-size="10" text-anchor="start">source: evidence/performance/direct-page-atlas.json (1 MiB objects, release)</text>
+<text x="84.0" y="386.0" fill="#555555" font-size="10" text-anchor="start">latency vs request size; the atlas serves one contiguous copy while the</text>
+<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">fragmented authoritative read (1024 extents) diverges with size</text>
+<text x="84.0" y="418.0" fill="#555555" font-size="10" text-anchor="start">regenerate: python3 scripts/render_charts.py --check</text>
+</svg>

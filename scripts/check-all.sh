@@ -8,7 +8,10 @@
 #      inside the pinned container (`container-check.sh`).
 #   2. The docs <-> evidence receipts check (`check-docs-receipts.sh`, host-side;
 #      it needs only POSIX `sh`, `git`, and `python3`).
-#   3. The full test suite inside the pinned container (`container-test.sh`) —
+#   3. The docs charts drift check (`render_charts.py --check`, host-side): every
+#      committed `docs/charts/*.svg` must equal what the receipts regenerate, so
+#      chart drift fails the gate exactly like citation drift (Phase 64).
+#   4. The full test suite inside the pinned container (`container-test.sh`) -
 #      skipped with `--fast`.
 #
 # The mounted FUSE and io_uring courts (`container-fuse-test.sh`,
@@ -32,6 +35,9 @@ sh "$DIR/container-check.sh"
 
 hdr "docs <-> evidence receipts (host)"
 sh "$DIR/check-docs-receipts.sh"
+
+hdr "docs charts drift (host)"
+python3 "$DIR/render_charts.py" --check
 
 if [ "${1:-}" = "--fast" ]; then
     hdr "OK (fast: full test suite skipped)"

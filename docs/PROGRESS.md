@@ -3402,3 +3402,77 @@ charts"). No Rust changed, so the test counts are unchanged (**456** default,
 * **Validation.** `python3 scripts/render_charts.py` then `--check` (13/13 match);
   all 13 SVGs parse as well-formed XML; `sh scripts/check-docs-receipts.sh` →
   **PASS** (46/46, unchanged).
+
+## Phase 64 — Direct-page manifestations: the manifested atlas + planner candidate + court (research §5)
+
+**Complete.** Closes the §5 gap directly: EKBLOOM wins tiny random reads but not
+4–64 KiB reads, and §5 asks for a **physical form that serves a different request
+shape**. This phase adds a page-aligned, contiguous image of an object's logical
+bytes (a *direct-page atlas*), a planner candidate that serves a read by direct
+slicing it, and the court that measures the honest win/lose shape. The default
+suite is now **458** tests (+2); `--features failpoints` is **468** (+2).
+
+### Delivered
+
+* **`src/directpage.rs`** — the manifested direct-page atlas: a 4 KiB-aligned
+  contiguous payload (a self-describing header padded to the 4 KiB content offset,
+  then the logical bytes verbatim), a self-validating manifest with a BLAKE3
+  digest, and an append-only catalogue (`ORCA` family). It mirrors the trigram /
+  global-search-directory store + manifest + digest pattern exactly, so no new
+  on-disk scheme is introduced. `DirectPageManifest::usable_for` refuses any
+  identity mismatch, and `DirectPageState::load_payload` never returns bytes that
+  do not match the committed digest.
+* **`Namespace::manifest_direct_page_atlas(inode)`** (`src/namespace.rs`) — builds
+  and publishes an atlas for one selected (hot) object from the authoritative
+  extent read at the committed root, plus `attach_direct_atlas` /
+  `direct_atlas_state` and `inode_identity` (so a court can construct the exact
+  `ReadQuery`). The atlas is derived and never authoritative.
+* **`ReadPathKind::DirectImage`** (`src/readpath.rs`) — wired through
+  `Candidate`/`Structure`/`build_inventory`/`candidates`/`execute`/`step_available`/
+  `direct_bytes` and the ranking exactly like the existing kinds. It resolves the
+  identity-qualified atlas into the cached `LoadedBody` (the body-cache key now
+  includes the atlas digest), is **certified** after the payload digest is
+  verified at load, and is only ever an *added* candidate: unmeasured ⇒ never
+  selected; the steady-state read stays a bounded lookup + execute.
+* **`tests/direct_page_atlas.rs`** — an always-on smoke and an `ORFS_ATLAS=1`
+  release sweep over an unfragmented and a heavily fragmented 1 MiB object across
+  read sizes 1 B … 1 MiB, asserting byte-exactness of every planner read against
+  the authoritative read and reporting the selected path + measured latency.
+* **`scripts/container-direct-page-atlas.sh`** — the smoke + release runner.
+* **`evidence/performance/direct-page-atlas.json`** — schema
+  `orfs.performance.direct-page-atlas.v1`.
+* **`docs/PERFORMANCE.md` §27** — the court's question, structure, table and chart
+  (§27.1 `docs/charts/direct-page-atlas.svg`).
+* **`scripts/render_charts.py`** — a new `direct-page-atlas.svg` figure, and
+  **`scripts/check-all.sh`** now runs `python3 scripts/render_charts.py --check`
+  so chart drift fails the gate exactly like citation drift.
+* **`docs/REPRODUCE.md`, `docs/RECEIPTS.md`, `README.md`, `docs/ORFS-SPEC.md`** —
+  the receipt/chart index, coverage note, and the Phase-64 row + test counts.
+
+### Findings (measured, not claimed)
+
+* The atlas **wins medium/large reads, and the win grows with fragmentation**: at
+  1 MiB the fragmented authoritative read is **190 µs** versus the atlas's
+  **14.3 µs** (**13.3×**); fragmentation costs the authoritative path **9.3×**
+  while the atlas is flat in fragmentation (one contiguous copy).
+* The atlas **does not win the 1-byte read**: on the fragmented object EKBLOOM's
+  certified `path` bloom is selected (125 ns vs the atlas's ~130 ns); on the
+  unfragmented object the atlas edges the authoritative path in a near-tie
+  (131 vs 170 ns). At 1 B every class is within ~1.4×.
+* The cost is space: **1 052 672 bytes** for a 1 MiB object (≈1.004× the logical
+  bytes, the 4 KiB alignment header).
+
+### Notes, stated honestly
+
+* The court is in-process (no FUSE transport); the atlas is opt-in per object; a
+  *selective* atlas (only frequently accessed ranges) and a per-request-class
+  layout choice are future work.
+* The calibrator measures each candidate once on the first read of an
+  identity+class and times the authoritative candidate first (coldest), so its
+  byte-class sample can be pessimistic — which is why the atlas is *selected* at
+  1 B even where its latency is marginal. This is a property of the existing
+  single-sample calibration and is unchanged here.
+* No existing planner guarantee changed: the Phase-43 steady state remains a
+  bounded lookup + execute, an unmeasured candidate is never selected, every
+  manifested read is byte-identical to the authoritative read, and nothing here
+  weakens non-withdrawal.

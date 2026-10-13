@@ -209,6 +209,13 @@ fn hardware_attr(config: u64) -> PerfEventAttr {
 }
 
 fn syscall_open(attr: &mut PerfEventAttr, group_fd: RawFd) -> Result<RawFd, String> {
+    syscall_open_pid(attr, group_fd, 0)
+}
+
+/// `perf_event_open` for an explicit `pid` (`0` = the calling thread, `tid` = a
+/// specific thread of this process). `cpu = -1` keeps it a per-task event, which
+/// is the unprivileged-permitted form at `perf_event_paranoid=2`.
+fn syscall_open_pid(attr: &mut PerfEventAttr, group_fd: RawFd, pid: i32) -> Result<RawFd, String> {
     // SAFETY: `attr` is a valid, fully initialised ABI struct for the duration of
     // the call; `syscall` is invoked with the exact `perf_event_open(2)` layout
     // and the return value is checked before use.
@@ -217,7 +224,7 @@ fn syscall_open(attr: &mut PerfEventAttr, group_fd: RawFd) -> Result<RawFd, Stri
         libc::syscall(
             libc::SYS_perf_event_open,
             attr_ptr,
-            0,  // pid 0: the calling thread
+            pid as libc::pid_t,
             -1, // cpu -1: no CPU-wide event (the unprivileged-permitted form)
             group_fd,
             0, // flags
@@ -252,9 +259,17 @@ impl PmuGroup {
     /// A single unsupported *member* event is skipped, not fatal; only the cycle
     /// leader failing is an error.
     pub fn open() -> Result<PmuGroup, String> {
+        Self::open_pid(0)
+    }
+
+    /// Open the group for an explicit `pid` (`0` = the calling thread; a `tid`
+    /// attaches the counters to another thread of this process — used by the F2
+    /// court to attribute the servicer threads). Same errno-named failures as
+    /// [`Self::open`]; `EPERM`/`EACCES` when the caller may not attach.
+    pub fn open_pid(pid: i32) -> Result<PmuGroup, String> {
         let leader = {
             let mut attr = hardware_attr(Counter::Cycles.config());
-            syscall_open(&mut attr, -1)?
+            syscall_open_pid(&mut attr, -1, pid)?
         };
         let mut events = vec![(Counter::Cycles, leader)];
         let mut missing = Vec::new();
@@ -263,7 +278,7 @@ impl PmuGroup {
                 continue;
             }
             let mut attr = hardware_attr(counter.config());
-            match syscall_open(&mut attr, leader) {
+            match syscall_open_pid(&mut attr, leader, pid) {
                 Ok(fd) => events.push((counter, fd)),
                 // E.g. a virtualised CPU without generic cache/branch counters.
                 Err(_) => missing.push(counter),

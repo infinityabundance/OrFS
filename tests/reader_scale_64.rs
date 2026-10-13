@@ -253,6 +253,7 @@ struct Row {
     p95_ns: u64,
     p99_ns: u64,
     p999_ns: u64,
+    p9999_ns: u64,
 }
 
 impl Row {
@@ -266,6 +267,7 @@ impl Row {
             "p95_ns": self.p95_ns,
             "p99_ns": self.p99_ns,
             "p999_ns": self.p999_ns,
+            "p9999_ns": self.p9999_ns,
         })
     }
 }
@@ -363,6 +365,7 @@ fn measure_row(
         p95_ns: percentile(&samples, 95.0),
         p99_ns: percentile(&samples, 99.0),
         p999_ns: percentile(&samples, 99.9),
+        p9999_ns: percentile(&samples, 99.99),
     }
 }
 
@@ -388,8 +391,14 @@ fn run_sweep(counts: &[usize], total_reads: u64) -> Sweep {
     for &readers in counts {
         let row = measure_row(&planner, &source, &offsets, READ_LEN, readers, total_reads);
         eprintln!(
-            "reader-scale64: readers={:>2} ops/s={:>10.0} p50={:>6}ns p95={:>6}ns p99={:>6}ns p99.9={:>7}ns",
-            row.readers, row.ops_per_s, row.p50_ns, row.p95_ns, row.p99_ns, row.p999_ns,
+            "reader-scale64: readers={:>2} ops/s={:>10.0} p50={:>6}ns p95={:>6}ns p99={:>6}ns p99.9={:>7}ns p99.99={:>8}ns",
+            row.readers,
+            row.ops_per_s,
+            row.p50_ns,
+            row.p95_ns,
+            row.p99_ns,
+            row.p999_ns,
+            row.p9999_ns,
         );
         rows.push(row);
     }

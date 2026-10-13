@@ -27,38 +27,46 @@
 <line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
 <text x="410.0" y="382.0" fill="#111111" font-size="12" text-anchor="middle">concurrent readers (log)</text>
 <text x="26.0" y="201.0" fill="#111111" font-size="12" text-anchor="middle" transform="rotate(-90 26.0 201.0)">latency (ns, log)</text>
-<polyline points="84.0,322.1 182.1,313.4 280.3,304.8 378.4,289.6 476.5,259.2 574.7,258.6 672.8,256.4" fill="none" stroke="#1f77b4" stroke-width="2"/>
-<circle cx="84.0" cy="322.1" r="3" fill="#1f77b4"/>
+<polyline points="84.0,320.6 182.1,313.4 280.3,301.3 378.4,293.2 476.5,263.9 574.7,257.0 672.8,258.0" fill="none" stroke="#1f77b4" stroke-width="2"/>
+<circle cx="84.0" cy="320.6" r="3" fill="#1f77b4"/>
 <circle cx="182.1" cy="313.4" r="3" fill="#1f77b4"/>
-<circle cx="280.3" cy="304.8" r="3" fill="#1f77b4"/>
-<circle cx="378.4" cy="289.6" r="3" fill="#1f77b4"/>
-<circle cx="476.5" cy="259.2" r="3" fill="#1f77b4"/>
-<circle cx="574.7" cy="258.6" r="3" fill="#1f77b4"/>
-<circle cx="672.8" cy="256.4" r="3" fill="#1f77b4"/>
-<polyline points="84.0,319.1 182.1,305.8 280.3,283.0 378.4,224.8 476.5,180.7 574.7,159.3 672.8,137.6" fill="none" stroke="#d62728" stroke-width="2"/>
+<circle cx="280.3" cy="301.3" r="3" fill="#1f77b4"/>
+<circle cx="378.4" cy="293.2" r="3" fill="#1f77b4"/>
+<circle cx="476.5" cy="263.9" r="3" fill="#1f77b4"/>
+<circle cx="574.7" cy="257.0" r="3" fill="#1f77b4"/>
+<circle cx="672.8" cy="258.0" r="3" fill="#1f77b4"/>
+<polyline points="84.0,319.1 182.1,307.8 280.3,281.2 378.4,231.4 476.5,183.5 574.7,158.2 672.8,137.7" fill="none" stroke="#d62728" stroke-width="2"/>
 <circle cx="84.0" cy="319.1" r="3" fill="#d62728"/>
-<circle cx="182.1" cy="305.8" r="3" fill="#d62728"/>
-<circle cx="280.3" cy="283.0" r="3" fill="#d62728"/>
-<circle cx="378.4" cy="224.8" r="3" fill="#d62728"/>
-<circle cx="476.5" cy="180.7" r="3" fill="#d62728"/>
-<circle cx="574.7" cy="159.3" r="3" fill="#d62728"/>
-<circle cx="672.8" cy="137.6" r="3" fill="#d62728"/>
-<polyline points="84.0,318.9 182.1,296.6 280.3,275.7 378.4,203.0 476.5,166.4 574.7,144.2 672.8,122.9" fill="none" stroke="#2ca02c" stroke-width="2"/>
-<circle cx="84.0" cy="318.9" r="3" fill="#2ca02c"/>
+<circle cx="182.1" cy="307.8" r="3" fill="#d62728"/>
+<circle cx="280.3" cy="281.2" r="3" fill="#d62728"/>
+<circle cx="378.4" cy="231.4" r="3" fill="#d62728"/>
+<circle cx="476.5" cy="183.5" r="3" fill="#d62728"/>
+<circle cx="574.7" cy="158.2" r="3" fill="#d62728"/>
+<circle cx="672.8" cy="137.7" r="3" fill="#d62728"/>
+<polyline points="84.0,317.6 182.1,296.6 280.3,275.7 378.4,199.3 476.5,168.8 574.7,142.2 672.8,123.5" fill="none" stroke="#2ca02c" stroke-width="2"/>
+<circle cx="84.0" cy="317.6" r="3" fill="#2ca02c"/>
 <circle cx="182.1" cy="296.6" r="3" fill="#2ca02c"/>
 <circle cx="280.3" cy="275.7" r="3" fill="#2ca02c"/>
-<circle cx="378.4" cy="203.0" r="3" fill="#2ca02c"/>
-<circle cx="476.5" cy="166.4" r="3" fill="#2ca02c"/>
-<circle cx="574.7" cy="144.2" r="3" fill="#2ca02c"/>
-<circle cx="672.8" cy="122.9" r="3" fill="#2ca02c"/>
-<polyline points="84.0,306.8 182.1,288.5 280.3,259.2 378.4,178.8 476.5,152.3 574.7,128.9 672.8,110.4" fill="none" stroke="#ff7f0e" stroke-width="2"/>
-<circle cx="84.0" cy="306.8" r="3" fill="#ff7f0e"/>
-<circle cx="182.1" cy="288.5" r="3" fill="#ff7f0e"/>
-<circle cx="280.3" cy="259.2" r="3" fill="#ff7f0e"/>
-<circle cx="378.4" cy="178.8" r="3" fill="#ff7f0e"/>
-<circle cx="476.5" cy="152.3" r="3" fill="#ff7f0e"/>
-<circle cx="574.7" cy="128.9" r="3" fill="#ff7f0e"/>
-<circle cx="672.8" cy="110.4" r="3" fill="#ff7f0e"/>
+<circle cx="378.4" cy="199.3" r="3" fill="#2ca02c"/>
+<circle cx="476.5" cy="168.8" r="3" fill="#2ca02c"/>
+<circle cx="574.7" cy="142.2" r="3" fill="#2ca02c"/>
+<circle cx="672.8" cy="123.5" r="3" fill="#2ca02c"/>
+<polyline points="84.0,307.8 182.1,285.3 280.3,264.0 378.4,172.4 476.5,156.2 574.7,111.9 672.8,109.1" fill="none" stroke="#ff7f0e" stroke-width="2"/>
+<circle cx="84.0" cy="307.8" r="3" fill="#ff7f0e"/>
+<circle cx="182.1" cy="285.3" r="3" fill="#ff7f0e"/>
+<circle cx="280.3" cy="264.0" r="3" fill="#ff7f0e"/>
+<circle cx="378.4" cy="172.4" r="3" fill="#ff7f0e"/>
+<circle cx="476.5" cy="156.2" r="3" fill="#ff7f0e"/>
+<circle cx="574.7" cy="111.9" r="3" fill="#ff7f0e"/>
+<circle cx="672.8" cy="109.1" r="3" fill="#ff7f0e"/>
+<polyline points="84.0,213.4 182.1,210.0 280.3,217.7 378.4,158.6 476.5,133.5 574.7,102.7 672.8,95.7" fill="none" stroke="#9467bd" stroke-width="2"/>
+<circle cx="84.0" cy="213.4" r="3" fill="#9467bd"/>
+<circle cx="182.1" cy="210.0" r="3" fill="#9467bd"/>
+<circle cx="280.3" cy="217.7" r="3" fill="#9467bd"/>
+<circle cx="378.4" cy="158.6" r="3" fill="#9467bd"/>
+<circle cx="476.5" cy="133.5" r="3" fill="#9467bd"/>
+<circle cx="574.7" cy="102.7" r="3" fill="#9467bd"/>
+<circle cx="672.8" cy="95.7" r="3" fill="#9467bd"/>
 <rect x="84.0" y="35.0" width="10" height="10" fill="#1f77b4"/>
 <text x="99.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">p50</text>
 <rect x="140.0" y="35.0" width="10" height="10" fill="#d62728"/>
@@ -67,8 +75,10 @@
 <text x="211.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">p99</text>
 <rect x="252.0" y="35.0" width="10" height="10" fill="#ff7f0e"/>
 <text x="267.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">p99.9</text>
+<rect x="322.0" y="35.0" width="10" height="10" fill="#9467bd"/>
+<text x="337.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">p99.99</text>
 <text x="84.0" y="370.0" fill="#555555" font-size="10" text-anchor="start">source: evidence/performance/reader-scaling-64.json (pooled per-op samples)</text>
-<text x="84.0" y="386.0" fill="#555555" font-size="10" text-anchor="start">the tail (p99.9 300 ns -&gt; 201 us) is where the shared-lock wait shows;</text>
-<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">p50 rises only 181 -&gt; 1593 ns across 1..64 readers</text>
+<text x="84.0" y="386.0" fill="#555555" font-size="10" text-anchor="start">the tail (p99.9 291 ns -&gt; 210 us, p99.99 6.6 us -&gt; 328 us) is where the shared-lock wait shows;</text>
+<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">p50 rises only 190 -&gt; 1513 ns across 1..64 readers</text>
 <text x="84.0" y="418.0" fill="#555555" font-size="10" text-anchor="start">regenerate: python3 scripts/render_charts.py --check</text>
 </svg>

@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="monospace"><rect x="0" y="0" width="760" height="440" fill="#ffffff"/><text x="380.0" y="22.0" fill="#111111" font-size="14" text-anchor="middle" font-weight="bold">F2 decision: p50/p99 latency vs concurrent readers</text>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="344.0" fill="#111111" font-size="11" text-anchor="end">10</text>
+<line x1="84.0" y1="247.3" x2="736.0" y2="247.3" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="251.3" fill="#111111" font-size="11" text-anchor="end">100</text>
+<line x1="84.0" y1="154.7" x2="736.0" y2="154.7" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="158.7" fill="#111111" font-size="11" text-anchor="end">1k</text>
+<line x1="84.0" y1="62.0" x2="736.0" y2="62.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="66.0" fill="#111111" font-size="11" text-anchor="end">10k</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="84.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">1</text>
+<line x1="182.1" y1="62.0" x2="182.1" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="182.1" y="358.0" fill="#111111" font-size="11" text-anchor="middle">2</text>
+<line x1="280.3" y1="62.0" x2="280.3" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="280.3" y="358.0" fill="#111111" font-size="11" text-anchor="middle">4</text>
+<line x1="378.4" y1="62.0" x2="378.4" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="378.4" y="358.0" fill="#111111" font-size="11" text-anchor="middle">8</text>
+<line x1="476.5" y1="62.0" x2="476.5" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="476.5" y="358.0" fill="#111111" font-size="11" text-anchor="middle">16</text>
+<line x1="574.7" y1="62.0" x2="574.7" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="574.7" y="358.0" fill="#111111" font-size="11" text-anchor="middle">32</text>
+<line x1="672.8" y1="62.0" x2="672.8" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="672.8" y="358.0" fill="#111111" font-size="11" text-anchor="middle">64</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<text x="410.0" y="382.0" fill="#111111" font-size="12" text-anchor="middle">concurrent readers (log)</text>
+<text x="26.0" y="201.0" fill="#111111" font-size="12" text-anchor="middle" transform="rotate(-90 26.0 201.0)">per-op latency (us, log)</text>
+<polyline points="84.0,317.7 182.1,317.9 280.3,318.2 378.4,304.8 476.5,290.4 574.7,260.7 672.8,223.1" fill="none" stroke="#1f77b4" stroke-width="2"/>
+<circle cx="84.0" cy="317.7" r="3" fill="#1f77b4"/>
+<circle cx="182.1" cy="317.9" r="3" fill="#1f77b4"/>
+<circle cx="280.3" cy="318.2" r="3" fill="#1f77b4"/>
+<circle cx="378.4" cy="304.8" r="3" fill="#1f77b4"/>
+<circle cx="476.5" cy="290.4" r="3" fill="#1f77b4"/>
+<circle cx="574.7" cy="260.7" r="3" fill="#1f77b4"/>
+<circle cx="672.8" cy="223.1" r="3" fill="#1f77b4"/>
+<polyline points="84.0,277.0 182.1,282.6 280.3,290.5 378.4,276.6 476.5,227.7 574.7,163.6 672.8,134.3" fill="none" stroke="#d62728" stroke-width="2"/>
+<circle cx="84.0" cy="277.0" r="3" fill="#d62728"/>
+<circle cx="182.1" cy="282.6" r="3" fill="#d62728"/>
+<circle cx="280.3" cy="290.5" r="3" fill="#d62728"/>
+<circle cx="378.4" cy="276.6" r="3" fill="#d62728"/>
+<circle cx="476.5" cy="227.7" r="3" fill="#d62728"/>
+<circle cx="574.7" cy="163.6" r="3" fill="#d62728"/>
+<circle cx="672.8" cy="134.3" r="3" fill="#d62728"/>
+<polyline points="84.0,318.5 182.1,319.4 280.3,317.8 378.4,299.8 476.5,284.1 574.7,265.2 672.8,240.9" fill="none" stroke="#2ca02c" stroke-width="2"/>
+<circle cx="84.0" cy="318.5" r="3" fill="#2ca02c"/>
+<circle cx="182.1" cy="319.4" r="3" fill="#2ca02c"/>
+<circle cx="280.3" cy="317.8" r="3" fill="#2ca02c"/>
+<circle cx="378.4" cy="299.8" r="3" fill="#2ca02c"/>
+<circle cx="476.5" cy="284.1" r="3" fill="#2ca02c"/>
+<circle cx="574.7" cy="265.2" r="3" fill="#2ca02c"/>
+<circle cx="672.8" cy="240.9" r="3" fill="#2ca02c"/>
+<polyline points="84.0,278.8 182.1,282.3 280.3,275.1 378.4,257.0 476.5,206.4 574.7,160.7 672.8,130.1" fill="none" stroke="#ff7f0e" stroke-width="2"/>
+<circle cx="84.0" cy="278.8" r="3" fill="#ff7f0e"/>
+<circle cx="182.1" cy="282.3" r="3" fill="#ff7f0e"/>
+<circle cx="280.3" cy="275.1" r="3" fill="#ff7f0e"/>
+<circle cx="378.4" cy="257.0" r="3" fill="#ff7f0e"/>
+<circle cx="476.5" cy="206.4" r="3" fill="#ff7f0e"/>
+<circle cx="574.7" cy="160.7" r="3" fill="#ff7f0e"/>
+<circle cx="672.8" cy="130.1" r="3" fill="#ff7f0e"/>
+<rect x="84.0" y="35.0" width="10" height="10" fill="#1f77b4"/>
+<text x="99.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">F0 p50</text>
+<rect x="161.0" y="35.0" width="10" height="10" fill="#d62728"/>
+<text x="176.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">F0 p99</text>
+<rect x="238.0" y="35.0" width="10" height="10" fill="#2ca02c"/>
+<text x="253.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">F2-affine p50</text>
+<rect x="364.0" y="35.0" width="10" height="10" fill="#ff7f0e"/>
+<text x="379.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">F2-affine p99</text>
+<text x="84.0" y="370.0" fill="#555555" font-size="10" text-anchor="start">source: evidence/performance/f2-concurrency-affine.json (4 KiB direct reads, 5 paired reps)</text>
+<text x="84.0" y="386.0" fill="#555555" font-size="10" text-anchor="start">F2 queue-affine tracks F0 at p50 but trails it at p99 from 2-64 readers;</text>
+<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">decision: use F0 for latency-sensitive reads (see PERFORMANCE.md 31)</text>
+<text x="84.0" y="418.0" fill="#555555" font-size="10" text-anchor="start">regenerate: python3 scripts/render_charts.py --check</text>
+</svg>

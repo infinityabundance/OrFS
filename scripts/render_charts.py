@@ -607,12 +607,13 @@ def chart_reader_scaling_64_tail():
         {"name": "p95", "points": [(r["readers"], r["p95_ns"]) for r in res]},
         {"name": "p99", "points": [(r["readers"], r["p99_ns"]) for r in res]},
         {"name": "p99.9", "points": [(r["readers"], r["p999_ns"]) for r in res]},
+        {"name": "p99.99", "points": [(r["readers"], r["p9999_ns"]) for r in res]},
     ]
     readers = [r["readers"] for r in res]
     cap = [
         "source: evidence/performance/reader-scaling-64.json (pooled per-op samples)",
-        "the tail (p99.9 300 ns -> 201 us) is where the shared-lock wait shows;",
-        "p50 rises only 181 -> 1593 ns across 1..64 readers",
+        "the tail (p99.9 291 ns -> 210 us, p99.99 6.6 us -> 328 us) is where the shared-lock wait shows;",
+        "p50 rises only 190 -> 1513 ns across 1..64 readers",
         "regenerate: python3 scripts/render_charts.py --check",
     ]
     return line_chart(
@@ -729,6 +730,120 @@ def chart_f2_concurrency_64_tail():
         xlog=True, ylog=True, xticks=levels)
 
 
+def chart_f2_decision_tail():
+    d = load("f2-concurrency-affine.json")
+    res = d["results"]
+    levels = d["levels"]
+    series = []
+    for key, name in (("F0", "F0"), ("F2-affine", "F2-affine")):
+        for pct, field in (("p50", "p50_us"), ("p99", "p99_us")):
+            pts = []
+            for r in levels:
+                row = res.get("{}_{}".format(key, r))
+                if row is not None:
+                    pts.append((r, row[field]))
+            series.append({"name": "{} {}".format(name, pct), "points": pts})
+    cap = [
+        "source: evidence/performance/f2-concurrency-affine.json (4 KiB direct reads, 5 paired reps)",
+        "F2 queue-affine tracks F0 at p50 but trails it at p99 from 2-64 readers;",
+        "decision: use F0 for latency-sensitive reads (see PERFORMANCE.md 31)",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return line_chart(
+        "F2 decision: p50/p99 latency vs concurrent readers",
+        cap, "concurrent readers (log)", "per-op latency (us, log)", series,
+        xlog=True, ylog=True, xticks=levels)
+
+
+def chart_f2_decision_throughput():
+    d = load("f2-concurrency-affine.json")
+    res = d["results"]
+    levels = d["levels"]
+    series = []
+    for key, name in (("F0", "F0"), ("F2-single", "F2-single"),
+                      ("F2-affine", "F2-affine")):
+        pts = []
+        for r in levels:
+            row = res.get("{}_{}".format(key, r))
+            if row is not None:
+                pts.append((r, row["ops_per_sec_mean"]))
+        series.append({"name": name, "points": pts})
+    cap = [
+        "source: evidence/performance/f2-concurrency-affine.json (mean of 5 paired reps)",
+        "queue-affine tracks F0 within 86-107%; F2-single stays pinned near 70k ops/s",
+        "decision: F2-affine wins throughput at high reader counts (see PERFORMANCE.md 31)",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return line_chart(
+        "F2 decision: throughput vs concurrent readers",
+        cap, "concurrent readers (log)", "throughput (ops/s, log)", series,
+        xlog=True, ylog=True, xticks=levels)
+
+
+def chart_external_comparison():
+    ext = load("external-comparison.json")["orfs"]
+    base = load("baselines.json")
+
+    def base_lat(backend, workload, key):
+        for r in base["results"]:
+            if r["backend"] == backend and r["workload"] == workload:
+                return r["measurement"]["latency"][key]
+        return None
+
+    def orfs_lat(arm, key):
+        m = ext.get(arm, {}).get("random-read-4k")
+        return None if m is None else m["latency"][key]
+
+    series = [
+        {"name": "OrFS F0", "values": [orfs_lat("F0", "p50_ns"), orfs_lat("F0", "p99_ns")]},
+        {"name": "OrFS F2", "values": [orfs_lat("F2", "p50_ns"), orfs_lat("F2", "p99_ns")]},
+        {"name": "ext4", "values": [base_lat("host-fs", "random-read-4k", "p50_ns"),
+                                    base_lat("host-fs", "random-read-4k", "p99_ns")]},
+        {"name": "tmpfs", "values": [base_lat("tmpfs", "random-read-4k", "p50_ns"),
+                                     base_lat("tmpfs", "random-read-4k", "p99_ns")]},
+    ]
+    cap = [
+        "sources: evidence/performance/external-comparison.json (OrFS, mounted) +",
+        "baselines.json (ext4/tmpfs, same harness, page-cache warm); OrFS's daemon path loses",
+        "badly on warm 4 KiB latencies -- the honest loss, not hidden",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return bar_chart(
+        "external comparison: random 4 KiB latency (OrFS vs ext4 vs tmpfs)",
+        cap, "latency (ns)", ["4K p50", "4K p99"], series)
+
+
+def chart_external_comparison_throughput():
+    ext = load("external-comparison.json")["orfs"]
+    base = load("baselines.json")
+
+    def base_mb(backend):
+        for r in base["results"]:
+            if r["backend"] == backend and r["workload"] == "sequential-read":
+                return r["measurement"].get("mb_per_s")
+        return None
+
+    def orfs_mb(arm):
+        m = ext.get(arm, {}).get("sequential-read")
+        return None if m is None else m.get("mb_per_s")
+
+    series = [
+        {"name": "OrFS F0", "values": [orfs_mb("F0")]},
+        {"name": "OrFS F2", "values": [orfs_mb("F2")]},
+        {"name": "ext4", "values": [base_mb("host-fs")]},
+        {"name": "tmpfs", "values": [base_mb("tmpfs")]},
+    ]
+    cap = [
+        "sources: evidence/performance/external-comparison.json (OrFS, mounted) +",
+        "baselines.json (ext4/tmpfs, same harness, page-cache warm 32 MiB file)",
+        "the daemon round-trip dominates; OrFS is far below the conventional filesystems",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return bar_chart(
+        "external comparison: sequential read throughput (OrFS vs ext4 vs tmpfs)",
+        cap, "throughput (MB/s)", ["sequential read"], series)
+
+
 def chart_baseline_passthrough():
     d = load("baseline-passthrough.json")
     rows = d["workloads"]
@@ -823,6 +938,14 @@ CHARTS = (
      "evidence/performance/expansion-controller.json", "sh scripts/container-expansion-controller.sh"),
     ("f2-concurrency-64-tail.svg", chart_f2_concurrency_64_tail,
      "evidence/performance/f2-concurrency-affine.json", "sh scripts/container-fuse-test.sh"),
+    ("f2-decision-tail.svg", chart_f2_decision_tail,
+     "evidence/performance/f2-concurrency-affine.json", "sh scripts/container-fuse-test.sh"),
+    ("f2-decision-throughput.svg", chart_f2_decision_throughput,
+     "evidence/performance/f2-concurrency-affine.json", "sh scripts/container-fuse-test.sh"),
+    ("external-comparison.svg", chart_external_comparison,
+     "evidence/performance/external-comparison.json", "sh scripts/container-fuse-test.sh"),
+    ("external-comparison-throughput.svg", chart_external_comparison_throughput,
+     "evidence/performance/external-comparison.json", "sh scripts/container-fuse-test.sh"),
     ("baseline-passthrough.svg", chart_baseline_passthrough,
      "evidence/performance/baseline-passthrough.json", "sh scripts/container-baseline-passthrough.sh"),
     ("planner-mounted-paired.svg", chart_planner_mounted_paired,

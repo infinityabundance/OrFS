@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–73)
+## 4. The ordered build phases (0–74)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -159,16 +159,17 @@ per-phase record.
 | 71 | Documentation decisions (docs-only, no code change): the final index-spine decision (`docs/INDEX.md`) — the live, publication-sensitive writer spine stays the path-copying treap (radix/page-tree regress mutation, Phase 48) while the sealed, immutable historical role uses the dense-ordinal `InodeStore::Sealed` (Phase 58); the Docker-only operator runbook (`docs/OPERATIONS.md`); and the image pixel-surface pyramid moved to `docs/REJECTED.md` and removed from the implemented spec | **complete** |
 | 72 | ENOSPC fault injection at the edge (reviewer item #13): `tests/fault_enospc.rs` drives a volume to ~90/95/99/100% of its usable capacity (the Phase-23 explicit-capacity latch — deterministic, no large files), then a `write + fsync` either commits cleanly or is refused with a typed `CapacityExhausted`/`NoSpace` (ENOSPC) leaving the previous committed root byte-identical and the volume read-only; and a crash at the edge (a real post-fsync `SIGABRT` child and the `orfs::powerloss` simulated device) followed by the real `orfs recover`, proving recovery selects the newest valid committed generation and silently repairs or truncates nothing | **complete** |
 | 73 | One-command continuous verification (reviewer item #12): `scripts/container-verify.sh` is the pre-PR entry point — it runs `check-all`, the default and `--features failpoints` suites, the POSIX / native fault-injection / `io_uring` / Loom courts, and the docs-receipts check again, one container at a time, with a per-stage `PASS`/`FAIL`/`SKIPPED` summary (`--fast` runs the cheap, always-available subset); publishes the volatile-cache court's scan-resistance **hit-rate** comparison (admission 95.2 % vs FIFO 88.0 % vs a faithful LRU 95.2 %) and the steady-state `allocs/read` (8 → 2) in `docs/PERFORMANCE.md` §17/§18 (reviewer item #10) | **complete** |
+| 74 | F2 honest p99 **decision** and external comparison (reviewer items #3, #9): `tests/f2_concurrency.rs` records **p99.99** per transport across 1–64 readers plus the F2 FUSE ring's **SQ/CQ counters** (`sq_full_events`, `cq_max_len`), and a **PMU** pass (`tests/support/pmu.rs::open_pid`) attributes the **`orfs-f2*` servicer threads** (~54 k cycles / ~220 k instructions per 4 KiB read); `tests/external_comparison.rs` runs the identical `src/bench.rs` workloads through mounted OrFS **F0** and **F2 queue-affine** beside the committed ext4/tmpfs baselines. `docs/PERFORMANCE.md` §31 publishes the decision — F2 queue-affine matches F0's p50 and 93–110 % of its throughput (winning at 64 readers) but **loses p99 from 4 readers up**, so **use F0 for latency, `ORFS_F2_RINGS=8` for throughput-bound bulk reads** — and the head-to-head with the honest losses (rand 4 KiB p99 ~70–118× worse; seq read ~17–40× lower). Adds p99.99 to the 64-thread scaling (§22) | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–73 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–74 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
 v0.1.0 was the first release.
 
-- The `orfs` crate builds, its **493** tests (default) pass, and
-  `cargo test --features failpoints` adds the crash-injection court (503 tests in
+- The `orfs` crate builds, its **494** tests (default) pass, and
+  `cargo test --features failpoints` adds the crash-injection court (504 tests in
   total); `cargo fmt -p orfs --check` / `clippy --all-targets -- -D warnings` are
   clean **inside the pinned container** (`scripts/container-*.sh`).
 - `src/capabilities.rs` + `orfs doctor` perform a **real** kernel/container
@@ -263,7 +264,7 @@ sibling working tree is required):
 
 ```sh
 scripts/container-build.sh        # cargo build
-scripts/container-test.sh        # cargo test  (493 tests)
+scripts/container-test.sh        # cargo test  (494 tests)
 scripts/container-fuse-test.sh    # real-mount FUSE + performance court
 scripts/container-uring-test.sh   # io_uring integration + backing benchmark
 scripts/container-check.sh        # cargo fmt -p orfs --check + clippy -D warnings

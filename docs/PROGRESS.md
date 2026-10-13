@@ -4134,6 +4134,76 @@ the Phase-50 per-read manifest-clone fixed point (**8.0 → 2.0 allocations/read
 `#[test]` function (it extends an existing court's measurement and adds a script
 and docs).
 
+## Phase 74 — F2 honest p99 decision + OrFS-vs-ext4-vs-tmpfs comparison (reviewer items #3, #9)
+
+**Complete.** Two reviewer items land as **decisions with numbers**, not
+non-claims: the F2 transport's p99 story becomes an explicit call (§31.1), and the
+external baselines become a real OrFS-vs-ext4-vs-tmpfs head-to-head (§31.2) with
+the PMU attributed to the F2 daemon threads (§31.3).
+
+### Delivered
+
+* **F2 decision table (item #3).** `tests/f2_concurrency.rs` now records **p99.99**
+  (alongside p50/p95/p99/p99.9) per transport across 1–64 readers, plus the F2
+  ring's **SQ/CQ-pressure counters** (`sq_full_events`, `cq_max_len`) from
+  `NativeStats`/`RingStats`. A new `docs/PERFORMANCE.md` §31.1 publishes the
+  throughput table, the F0-vs-F2-affine percentile table, the all-transport tail
+  table, the SQ/CQ counters, and an explicit **decision**: F2 queue-affine matches
+  F0's p50 and 93–110% of its throughput (winning at 64 readers), but **loses p99
+  from 4 readers up (1.5–1.7× at 8–16)** — **use F0 for latency, `ORFS_F2_RINGS=8`
+  for throughput-bound bulk reads; no p99 target is claimed as met.**
+* **External comparison (item #9).** New `tests/external_comparison.rs` mounts OrFS
+  **F0** and **F2 queue-affine** with the default (page-cache-warm) options and runs
+  the identical `src/bench.rs` `SequentialRead`/`RandomRead4k` workloads;
+  `docs/PERFORMANCE.md` §31.2 puts the mounted OrFS arms beside **ext4** and
+  **tmpfs** from `baselines.json`, showing the honest losses (rand 4 KiB p99 ~70×
+  worse for F0, ~118× for F2; seq read ~17×/~40× lower).
+* **p99.99 in the 64-thread scaling.** `tests/reader_scale_64.rs` now records
+  p99.99; `docs/PERFORMANCE.md` §22's table and chart carry it (6.6 µs → 328 µs
+  across 1→64 readers).
+* **PMU on the F2 path (item #9, "phase 57 for F2").** `tests/support/pmu.rs` gains
+  `PmuGroup::open_pid`; the F2 court attaches per-thread groups to the `orfs-f2*`
+  servicer threads and reports cycles/instructions/cache-misses/branch-misses per
+  request. The F2 daemon is **~54 k cycles / ~220 k instructions per 4 KiB read**
+  with ~150–200 cache misses; F2-affine's higher miss rate corroborates the
+  shared-adaptor contention `docs/CONCURRENCY.md` §9.4 inferred. F0's daemon runs on
+  unnamed `fuser` threads, so **no F0 servicer number is claimed** (recorded
+  `ran:false`).
+* **Charts.** `scripts/render_charts.py` adds `f2-decision-tail.svg`,
+  `f2-decision-throughput.svg`, `external-comparison.svg`,
+  `external-comparison-throughput.svg`, and a p99.99 series to
+  `reader-scaling-64-tail.svg`; `--check` passes (24 charts).
+
+### Results
+
+Throughput (ops/s, mean of 5 paired reps) and the F2/F0 ratio — F2-affine tracks F0
+within 93–101% up to 32 readers and reaches **110% at 64 readers** (185 902 vs
+168 989 ops/s; the previous run was 94%, so it is tie-to-win). Per-op p99 (µs):
+F0 wins from 4 readers up — 8: 48.3 vs 78.6, 16: 162.7 vs 276.2, 32: 801.3 vs
+860.4, 64: 1 660.3 vs 1 842.8. F2 ring counters: `sq_full_events = 0`, `cq_max_len`
+14 (single-loop) / 8 (affine), `handoffs = 0`. PMU (per 4 KiB read, user-space): F2
+daemon ~54 095 (single) / 54 713 (affine) cycles, ~221 k/220 k instructions,
+150/199 cache misses, 62/58 branch misses; client ~600 cycles for both F0 and F2.
+External (page-cache warm): ext4 rand-4K p50/p99 **230/471 ns**, seq **25 973 MB/s**;
+tmpfs **201/441 ns**, **16 995 MB/s**; OrFS F0 **411/33 653 ns**, **1 559 MB/s**; OrFS
+F2 **411/55 644 ns**, **643 MB/s**.
+
+### Docs
+
+`tests/f2_concurrency.rs`, `tests/external_comparison.rs` (new),
+`tests/reader_scale_64.rs`, `tests/support/pmu.rs`, `src/fuse_uring.rs`,
+`src/fuse_native.rs`; `docs/PERFORMANCE.md` §22/§31 (new §31); `docs/FUSE_URING.md`
+§6.6/§10; `docs/CONCURRENCY.md` §9.5; `docs/REPRODUCE.md`;
+`scripts/render_charts.py` + 5 chart files; `scripts/container-fuse-test.sh`;
+`docs/ORFS-SPEC.md` §4 (heading `0–74`, phase row, status) and §6; `README.md`
+(phase row); this entry. Receipts refreshed: `f2-concurrency-affine.json`,
+`reader-scaling-64.json`, `external-comparison.json` (new).
+
+### Test counts
+
+**494 (default) / 504 (`--features failpoints`)** — +1 each for the new
+`external_comparison` court; `fmt`/`clippy` clean.
+
 ### Notes, stated honestly
 
 * The FIFO and LRU figures are **analytic models** over the identical key trace,

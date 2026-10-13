@@ -60,6 +60,7 @@ reported `SKIPPED (reason)` and is **not** counted as a pass. See
 | `evidence/performance/historical-index-integrated.json` | `tests/historical_index_integration.rs` | `sh scripts/container-historical-integrate.sh` |
 | `evidence/performance/group-commit-adaptive.json` | `tests/group_commit_adaptive.rs` | `sh scripts/container-group-commit.sh` |
 | `evidence/performance/f2-concurrency-affine.json` | `tests/f2_concurrency.rs` | `sh scripts/container-fuse-test.sh` |
+| `evidence/performance/external-comparison.json` | `tests/external_comparison.rs` | `sh scripts/container-fuse-test.sh` |
 | `evidence/performance/baseline-passthrough.json` | `tests/baseline_passthrough.rs` | `sh scripts/container-baseline-passthrough.sh` |
 | `evidence/performance/planner-mounted-paired.json` | `tests/planner_mounted.rs` | `sh scripts/container-planner-mounted.sh` |
 | `evidence/performance/backing-uring.json`, `mechanisms.json` | `tests/uring_integration.rs`, `benches/mechanisms.rs` | `sh scripts/container-uring-test.sh` |
@@ -102,7 +103,7 @@ that contains the writing test:
 |---|---|---|
 | default suite | `sh scripts/container-test.sh` | `performance/{ekbloom-e2e,ekbloom-frontier,ekbloom-read-paths,historical-index,incremental-manifestation,latency-anatomy,manifestation-accounting,mechanisms,mount-replay,passthrough,reader-scaling,search-latency}.json`; `correctness/{ekbloom-read-equivalence,inode-semantics,namespace-rebuild,query-parity,snapshot-equivalence,uring-equivalence}.json`; `security/{fuzz-decode,hostile-input-results,unsafe-audit,concurrency-stress}.json` |
 | failpoints | `sh scripts/container-test.sh --features failpoints` | `recovery/{torn-write,commit-interruption,segment-rollover,power-loss,enospc,device-error,capacity,manifested-generation}.json` |
-| FUSE mount | `sh scripts/container-fuse-test.sh` | `performance/{fuse-baseline,fuse-uring,f2-concurrency,group-commit-e2e,group-commit-e2e-writes,mount-replay-snapshot,baseline-passthrough,planner-mounted-paired}.json`; `correctness/{fuse-passthrough,fuse-uring-equivalence,fuse-uring-f2-engagement,fuse-uring-ring}.json`; `security/native-fuse-fuzz.json` |
+| FUSE mount | `sh scripts/container-fuse-test.sh` | `performance/{fuse-baseline,fuse-uring,f2-concurrency,f2-concurrency-affine,group-commit-e2e,group-commit-e2e-writes,mount-replay-snapshot,baseline-passthrough,planner-mounted-paired,external-comparison}.json`; `correctness/{fuse-passthrough,fuse-uring-equivalence,fuse-uring-f2-engagement,fuse-uring-ring}.json`; `security/native-fuse-fuzz.json` |
 | `io_uring` | `sh scripts/container-uring-test.sh` | `performance/{backing-uring,mechanisms,f2-concurrency}.json` |
 
 ## Images and charts
@@ -140,6 +141,10 @@ image → receipt → command mapping:
 | `direct-page-atlas.svg` | `PERFORMANCE.md` §27 | `evidence/performance/direct-page-atlas.json` | `sh scripts/container-direct-page-atlas.sh` |
 | `expansion-controller.svg` | `PERFORMANCE.md` §28 | `evidence/performance/expansion-controller.json` | `sh scripts/container-expansion-controller.sh` |
 | `f2-concurrency-64-tail.svg` | `PERFORMANCE.md` §29 | `evidence/performance/f2-concurrency-affine.json` | `sh scripts/container-fuse-test.sh` |
+| `f2-decision-tail.svg` | `PERFORMANCE.md` §31 | `evidence/performance/f2-concurrency-affine.json` | `sh scripts/container-fuse-test.sh` |
+| `f2-decision-throughput.svg` | `PERFORMANCE.md` §31 | `evidence/performance/f2-concurrency-affine.json` | `sh scripts/container-fuse-test.sh` |
+| `external-comparison.svg` | `PERFORMANCE.md` §31 | `evidence/performance/external-comparison.json` | `sh scripts/container-fuse-test.sh` |
+| `external-comparison-throughput.svg` | `PERFORMANCE.md` §31 | `evidence/performance/external-comparison.json` | `sh scripts/container-fuse-test.sh` |
 | `baseline-passthrough.svg` | `PERFORMANCE.md` §29 | `evidence/performance/baseline-passthrough.json` | `sh scripts/container-baseline-passthrough.sh` |
 | `planner-mounted-paired.svg` | `PERFORMANCE.md` §29 | `evidence/performance/planner-mounted-paired.json` | `sh scripts/container-planner-mounted.sh` |
 

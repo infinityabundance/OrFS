@@ -33,6 +33,14 @@ use orfs::fuse_uring::TransportProfile;
 use orfs::log::DEFAULT_SEGMENT_SIZE;
 use orfs::namespace::{Namespace, SetAttr};
 
+// The Phase-57 hardware-counter reader, reused here so the F2 court can report
+// real cycles/instructions/cache-misses/branch-misses per request on the F0 and
+// F2 paths (`docs/PERFORMANCE.md` §23, `docs/PMU.md`).
+#[path = "support/pmu.rs"]
+mod pmu;
+
+use pmu::{Counter, PmuGroup};
+
 /// 4 MiB bench file, matching the main F2 court.
 const BENCH_SIZE: u64 = 4 * 1024 * 1024;
 /// Repetitions per (level, profile).
@@ -256,6 +264,169 @@ fn readers(m: &Mounted, threads: usize) -> Result<(Duration, u64, Vec<f64>), Str
     Ok((wall, threads as u64 * OPS_PER_THREAD, latencies))
 }
 
+/// The thread ids of this process whose `comm` starts with `prefix`. For
+/// `"orfs-f2"` this matches the single-loop session, the affine `orfs-f2-qN`
+/// groups, and the classical reader — the F2 servicer threads.
+fn servicer_tids(prefix: &str) -> Vec<i32> {
+    let mut out = Vec::new();
+    if let Ok(rd) = fs::read_dir("/proc/self/task") {
+        for e in rd.flatten() {
+            let Some(tid) = e.file_name().to_str().and_then(|s| s.parse::<i32>().ok()) else {
+                continue;
+            };
+            let comm =
+                fs::read_to_string(format!("/proc/self/task/{tid}/comm")).unwrap_or_default();
+            if comm.trim_start().starts_with(prefix) {
+                out.push(tid);
+            }
+        }
+    }
+    out.sort_unstable();
+    out
+}
+
+/// Read `ops` 4 KiB blocks from `m.bench` on the **calling** thread, so a
+/// per-thread PMU group attached to this thread attributes exactly this work.
+fn pmu_reads_on_self(m: &Mounted, ops: u64) -> u64 {
+    let f = File::open(&m.bench).expect("open bench for pmu");
+    let mut buf = [0u8; 4096];
+    let mut rng = Lcg(0x5eed_1234_u64);
+    for _ in 0..ops {
+        let off = rng.below(BENCH_SIZE - 4096);
+        f.read_exact_at(&mut buf, off).expect("pmu read");
+    }
+    ops
+}
+
+#[derive(Default, Clone, Copy)]
+struct PmuTotals {
+    cycles: u64,
+    instructions: u64,
+    cache_misses: u64,
+    branch_misses: u64,
+}
+
+fn sum_groups(groups: &[&PmuGroup]) -> PmuTotals {
+    let mut t = PmuTotals::default();
+    for g in groups {
+        for (c, v) in g.read_all() {
+            match c {
+                Counter::Cycles => t.cycles += v,
+                Counter::Instructions => t.instructions += v,
+                Counter::CacheMisses => t.cache_misses += v,
+                Counter::BranchMisses => t.branch_misses += v,
+                _ => {}
+            }
+        }
+    }
+    t
+}
+
+/// Per-op hardware counters for `m`'s read path: a group on the calling
+/// (reader) thread, plus — for F2 — one group per `orfs-f2*` servicer thread,
+/// so the daemon's CPU cost is attributed and not just the client's. Returns
+/// JSON; `ran:false` + `reason` (the exact errno) when `perf_event_open` is
+/// denied — a number is never fabricated.
+fn pmu_profile(m: &Mounted) -> serde_json::Value {
+    const PMU_OPS: u64 = 4000;
+    let mut obj = serde_json::Map::new();
+    let mut client = match PmuGroup::open() {
+        Ok(g) => g,
+        Err(e) => {
+            obj.insert("ran".into(), serde_json::json!(false));
+            obj.insert("reason".into(), serde_json::json!(e));
+            return serde_json::Value::Object(obj);
+        }
+    };
+    // The F2 daemon runs on named `orfs-f2*` threads; the classical transport's
+    // daemon runs on unnamed `fuser` session threads the court cannot pick out,
+    // so no F0 servicer-thread number is claimed.
+    let is_f2 = m.mount.transport_used() == TransportProfile::F2;
+    let tids = if is_f2 {
+        servicer_tids("orfs-f2")
+    } else {
+        Vec::new()
+    };
+    let mut servicer: Vec<(i32, PmuGroup)> = Vec::new();
+    let mut servicer_failed: Vec<i32> = Vec::new();
+    let mut servicer_reason: Option<String> = None;
+    for tid in tids {
+        match PmuGroup::open_pid(tid) {
+            Ok(g) => servicer.push((tid, g)),
+            Err(e) => {
+                servicer_failed.push(tid);
+                if servicer_reason.is_none() {
+                    servicer_reason = Some(e);
+                }
+            }
+        }
+    }
+    // Warm the path with the counters disabled, then measure with them enabled.
+    pmu_reads_on_self(m, 256);
+    let _ = client.reset();
+    for (_, g) in servicer.iter_mut() {
+        let _ = g.reset();
+    }
+    let _ = client.enable();
+    for (_, g) in servicer.iter_mut() {
+        let _ = g.enable();
+    }
+    let ops = pmu_reads_on_self(m, PMU_OPS);
+    let _ = client.disable();
+    for (_, g) in servicer.iter_mut() {
+        let _ = g.disable();
+    }
+    let per = |v: u64| v as f64 / ops.max(1) as f64;
+    let ctot = sum_groups(&[&client]);
+    obj.insert("ran".into(), serde_json::json!(true));
+    obj.insert("ops".into(), serde_json::json!(ops));
+    obj.insert(
+        "client_thread".into(),
+        serde_json::json!({
+            "cycles_per_op": per(ctot.cycles),
+            "instructions_per_op": per(ctot.instructions),
+            "cache_misses_per_op": per(ctot.cache_misses),
+            "branch_misses_per_op": per(ctot.branch_misses),
+            "missing": client.missing().iter().map(|c| c.name()).collect::<Vec<_>>(),
+            "note": "user-space only (exclude_kernel=1): the FUSE syscall's kernel time is not counted",
+        }),
+    );
+    let refs: Vec<&PmuGroup> = servicer.iter().map(|(_, g)| g).collect();
+    let stot = sum_groups(&refs);
+    let per_thread: Vec<serde_json::Value> = servicer
+        .iter()
+        .map(|(tid, g)| {
+            let t = sum_groups(&[g]);
+            serde_json::json!({
+                "tid": tid,
+                "cycles": t.cycles,
+                "instructions": t.instructions,
+                "cache_misses": t.cache_misses,
+                "branch_misses": t.branch_misses,
+            })
+        })
+        .collect();
+    obj.insert(
+        "servicer_threads".into(),
+        serde_json::json!({
+            "ran": is_f2,
+            "attached_tids": servicer.iter().map(|(t, _)| *t).collect::<Vec<_>>(),
+            "failed_tids": servicer_failed,
+            "reason": servicer_reason,
+            "cycles_per_op": per(stot.cycles),
+            "instructions_per_op": per(stot.instructions),
+            "cache_misses_per_op": per(stot.cache_misses),
+            "branch_misses_per_op": per(stot.branch_misses),
+            "per_thread": per_thread,
+            "method_note": "sums every live orfs-f2* thread of the test process, divided by the client's read count; \
+                            the court keeps all F2 mounts alive, so an idle F2 mount's threads contribute ~0 during \
+                            each measured window (their per-thread counters confirm it). The F0 daemon runs on unnamed \
+                            fuser threads and is not attributed.",
+        }),
+    );
+    serde_json::Value::Object(obj)
+}
+
 #[test]
 fn f2_concurrency_readers_1_to_64() {
     let required = fuse_test_required();
@@ -380,6 +551,9 @@ fn f2_concurrency_readers_1_to_64() {
                     "p95_us": percentile(&sorted, 95.0),
                     "p99_us": percentile(&sorted, 99.0),
                     "p999_us": percentile(&sorted, 99.9),
+                    "p9999_us": percentile(&sorted, 99.99),
+                    "mean_us": mean(&sorted),
+                    "max_us": sorted.last().copied().unwrap_or(0.0),
                     "samples": sorted.len(),
                 }),
             );
@@ -390,21 +564,24 @@ fn f2_concurrency_readers_1_to_64() {
     // Percentile table for the two F2 topologies at the levels that matter.
     println!("\n=== F2 per-op latency percentiles (µs) ===");
     println!(
-        "{:>7} {:>13} {:>6} {:>7} {:>7} {:>7} {:>7}",
-        "profile", "readers", "p50", "p95", "p99", "p99.9", "max?"
+        "{:>7} {:>8} {:>6} {:>7} {:>7} {:>7} {:>7} {:>8} {:>8}",
+        "profile", "readers", "p50", "p95", "p99", "p99.9", "p99.99", "mean", "max"
     );
     for label in &labels {
         for &threads in &LEVELS {
             let key = format!("{label}_{threads}");
             if let Some(v) = evidence.get(&key) {
                 println!(
-                    "{:>7} {:>13} {:>6.1} {:>7.1} {:>7.1} {:>7.1}",
+                    "{:>7} {:>8} {:>6.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>8.1}",
                     label,
                     threads,
                     v["p50_us"].as_f64().unwrap_or(0.0),
                     v["p95_us"].as_f64().unwrap_or(0.0),
                     v["p99_us"].as_f64().unwrap_or(0.0),
                     v["p999_us"].as_f64().unwrap_or(0.0),
+                    v["p9999_us"].as_f64().unwrap_or(0.0),
+                    v["mean_us"].as_f64().unwrap_or(0.0),
+                    v["max_us"].as_f64().unwrap_or(0.0),
                 );
             }
         }
@@ -444,6 +621,10 @@ fn f2_concurrency_readers_1_to_64() {
                         "handoffs": s.handoffs,
                         "ring_completions": s.ring_completions,
                         "ring_submits": s.ring_submits,
+                        // SQ/CQ-pressure counters on the F2 FUSE ring (the F2
+                        // analogue of §21's UringEngine counters).
+                        "sq_full_events": s.sq_full_events,
+                        "cq_max_len": s.cq_max_len,
                         "queue_groups": s.queue_groups
                             .iter()
                             .map(|g| serde_json::json!({
@@ -467,6 +648,18 @@ fn f2_concurrency_readers_1_to_64() {
         }
     }
 
+    // ---- PMU: real per-op hardware counters for the F0 and F2 read paths ----
+    // (the Phase-57 helper; `ran:false` + errno when perf_event_open is denied).
+    println!("\n=== PMU: per-op hardware counters on the read path (phase-57 helper) ===");
+    let mut pmu = serde_json::Map::new();
+    for label in ["F0", "F2-single", "F2-affine"] {
+        if let Some(m) = mounts.iter().find(|m| m.label == label) {
+            let p = pmu_profile(m);
+            println!("orfs: PMU {label}: {p}");
+            pmu.insert(label.to_string(), p);
+        }
+    }
+
     // Write the machine-generated evidence.
     let doc = serde_json::json!({
         "schema": "orfs.f2-concurrency-affine.v1",
@@ -484,6 +677,7 @@ fn f2_concurrency_readers_1_to_64() {
             "image_digest": std::env::var("ORFS_IMAGE_DIGEST").unwrap_or_else(|_| "unknown".into()),
             "cpu_count": std::thread::available_parallelism().map(|n| n.get()).unwrap_or(0),
         },
+        "pmu": pmu,
         "results": evidence,
     });
     let path = manifest_dir().join("evidence/performance/f2-concurrency-affine.json");

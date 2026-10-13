@@ -882,6 +882,17 @@ pub struct RingStats {
     pub cancels: u64,
     /// Completions observed for operations not currently awaited.
     pub orphan_completions: u64,
+    /// Times an SQE could not be pushed because the submission queue was full
+    /// (SQ backpressure). This is the F2 analogue of the backing `UringEngine`'s
+    /// `sq_full_events` (`docs/PERFORMANCE.md` §21): the same SQ-pressure signal,
+    /// measured on the FUSE-over-`io_uring` ring instead of the backing ring.
+    /// The servicer submits after every push, so in the shipped topologies this
+    /// is expected to stay 0 — reported as measured, not assumed.
+    pub sq_full_events: u64,
+    /// The largest number of CQEs drained in a single `reap()`. A value at the
+    /// ring's CQ capacity is direct evidence of CQ-overflow pressure (the F2
+    /// analogue of §21's `cq_max_len`).
+    pub cq_max_len: u64,
 }
 
 /// A native FUSE-over-`io_uring` ring bound to a `/dev/fuse` file descriptor.
@@ -998,6 +1009,7 @@ impl FuseUringRing {
         // caller guarantees for the whole operation. This function copies the
         // command into the SQE before returning.
         if unsafe { self.ring.submission().push(&entry) }.is_err() {
+            self.stats.sq_full_events += 1;
             return Err("io_uring submission queue full".into());
         }
         self.stats.submits += 1;
@@ -1028,6 +1040,10 @@ impl FuseUringRing {
         }
         cq.sync();
         self.stats.completions += out.len() as u64;
+        let drained = out.len() as u64;
+        if drained > self.stats.cq_max_len {
+            self.stats.cq_max_len = drained;
+        }
         Ok(out)
     }
 

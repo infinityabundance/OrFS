@@ -1479,6 +1479,18 @@ pub struct NativeStats {
     /// queues each ring-owning thread serviced and how many requests it served.
     /// Empty for every other topology.
     pub queue_groups: Vec<QueueGroupStat>,
+    /// Submission-queue-full events observed on the F2 FUSE ring (SQ
+    /// backpressure), the FUSE-over-`io_uring` analogue of the backing engine's
+    /// `sq_full_events` (`docs/PERFORMANCE.md` §21). For the queue-affine
+    /// topology this is the largest cumulative value observed on any one
+    /// servicer ring. The servicer submits after every push, so it is expected
+    /// to be 0; it is reported as measured.
+    pub sq_full_events: u64,
+    /// The largest completion drain in a single ring reap on any F2 ring
+    /// (CQ-overflow pressure), the F2 analogue of §21's `cq_max_len`. It
+    /// coincides with [`Self::completions_max_per_reap`] for the shipped
+    /// topologies because each `submit_and_wait` returns exactly the reaped CQEs.
+    pub cq_max_len: u64,
 
     // -- FUSE passthrough (Phase 21) ---------------------------------------
     /// The mount requested kernel passthrough (`--passthrough`).
@@ -3051,9 +3063,16 @@ impl<C: OrfsCore + Send + 'static> SessionLoop<C> {
         };
         let n = comps.len() as u64;
         {
+            let rs = self.ring.as_ref().map(|r| r.stats());
             let mut s = self.stats.lock();
             if n > s.completions_max_per_reap {
                 s.completions_max_per_reap = n;
+            }
+            if let Some(rs) = rs {
+                s.sq_full_events = s.sq_full_events.max(rs.sq_full_events);
+                if rs.cq_max_len > s.cq_max_len {
+                    s.cq_max_len = rs.cq_max_len;
+                }
             }
         }
         if comps.is_empty() {
@@ -3461,9 +3480,16 @@ impl<C: OrfsCore + Send + 'static> QueueGroup<C> {
             };
             let n = comps.len() as u64;
             {
+                let rs = self.ring.as_ref().map(|r| r.stats());
                 let mut s = self.stats.lock();
                 if n > s.completions_max_per_reap {
                     s.completions_max_per_reap = n;
+                }
+                if let Some(rs) = rs {
+                    s.sq_full_events = s.sq_full_events.max(rs.sq_full_events);
+                    if rs.cq_max_len > s.cq_max_len {
+                        s.cq_max_len = rs.cq_max_len;
+                    }
                 }
             }
             for c in comps {

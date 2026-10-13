@@ -429,7 +429,10 @@ single-loop < affine ordering was stable.
 Provenance: `tests/f2_concurrency.rs`,
 `evidence/performance/f2-concurrency-affine.json`. Phase 66 extends this court to
 **64 readers** and confirms it: queue-affine stays at 86–107% of F0 throughput, but
-the p99 target is still unmet from 2 to 64 readers (`docs/PERFORMANCE.md` §29.1).
+the p99 target is still unmet from 2 to 64 readers. Phase 74 adds p99.99 and the
+ring's SQ/CQ counters and states the decision explicitly — **F2 queue-affine is a
+throughput transport, not a latency one; use F0 for latency**
+(`docs/PERFORMANCE.md` §31.1).
 
 ---
 

@@ -1,8 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="monospace"><rect x="0" y="0" width="760" height="440" fill="#ffffff"/><text x="380.0" y="22.0" fill="#111111" font-size="14" text-anchor="middle" font-weight="bold">concurrent read scaling: aggregate throughput</text>
-<line x1="84.0" y1="276.0" x2="736.0" y2="276.0" stroke="#e8e8e8" stroke-width="1"/>
-<text x="76.0" y="280.0" fill="#111111" font-size="11" text-anchor="end">4M</text>
-<line x1="84.0" y1="168.8" x2="736.0" y2="168.8" stroke="#e8e8e8" stroke-width="1"/>
-<text x="76.0" y="172.8" fill="#111111" font-size="11" text-anchor="end">6M</text>
+<line x1="84.0" y1="323.2" x2="736.0" y2="323.2" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="327.2" fill="#111111" font-size="11" text-anchor="end">3M</text>
+<line x1="84.0" y1="263.6" x2="736.0" y2="263.6" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="267.6" fill="#111111" font-size="11" text-anchor="end">4M</text>
+<line x1="84.0" y1="204.1" x2="736.0" y2="204.1" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="208.1" fill="#111111" font-size="11" text-anchor="end">5M</text>
+<line x1="84.0" y1="144.5" x2="736.0" y2="144.5" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="148.5" fill="#111111" font-size="11" text-anchor="end">6M</text>
+<line x1="84.0" y1="85.0" x2="736.0" y2="85.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="89.0" fill="#111111" font-size="11" text-anchor="end">7M</text>
 <line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
 <text x="84.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">1</text>
 <line x1="182.1" y1="62.0" x2="182.1" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
@@ -21,14 +27,14 @@
 <line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
 <text x="410.0" y="382.0" fill="#111111" font-size="12" text-anchor="middle">concurrent readers (log)</text>
 <text x="26.0" y="201.0" fill="#111111" font-size="12" text-anchor="middle" transform="rotate(-90 26.0 201.0)">aggregate throughput (ops/s)</text>
-<polyline points="84.0,310.0 182.1,218.3 280.3,62.0 378.4,186.7 476.5,340.0 574.7,336.8 672.8,338.3" fill="none" stroke="#1f77b4" stroke-width="2"/>
-<circle cx="84.0" cy="310.0" r="3" fill="#1f77b4"/>
-<circle cx="182.1" cy="218.3" r="3" fill="#1f77b4"/>
+<polyline points="84.0,301.5 182.1,171.5 280.3,62.0 378.4,97.0 476.5,322.1 574.7,340.0 672.8,335.7" fill="none" stroke="#1f77b4" stroke-width="2"/>
+<circle cx="84.0" cy="301.5" r="3" fill="#1f77b4"/>
+<circle cx="182.1" cy="171.5" r="3" fill="#1f77b4"/>
 <circle cx="280.3" cy="62.0" r="3" fill="#1f77b4"/>
-<circle cx="378.4" cy="186.7" r="3" fill="#1f77b4"/>
-<circle cx="476.5" cy="340.0" r="3" fill="#1f77b4"/>
-<circle cx="574.7" cy="336.8" r="3" fill="#1f77b4"/>
-<circle cx="672.8" cy="338.3" r="3" fill="#1f77b4"/>
+<circle cx="378.4" cy="97.0" r="3" fill="#1f77b4"/>
+<circle cx="476.5" cy="322.1" r="3" fill="#1f77b4"/>
+<circle cx="574.7" cy="340.0" r="3" fill="#1f77b4"/>
+<circle cx="672.8" cy="335.7" r="3" fill="#1f77b4"/>
 <rect x="84.0" y="35.0" width="10" height="10" fill="#1f77b4"/>
 <text x="99.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">aggregate</text>
 <text x="84.0" y="370.0" fill="#555555" font-size="10" text-anchor="start">source: evidence/performance/reader-scaling-64.json (one shared ReadPlanner)</text>

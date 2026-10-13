@@ -321,11 +321,16 @@ Measured (`tests/f2_concurrency.rs`, paired and order-balanced, 8 rings × 2 que
 `K = 4`; full table in `docs/CONCURRENCY.md` §9): the affine topology lifts the
 32-reader 4 KiB figure from ≈27–37% of F0 (single-loop) to ≈88–103%, at p50 parity
 or better for 1/4/32 readers, with a residual p95/p99 gap at 8–16 readers. It does
-**not** meet a strict "F0 throughput and no p99 regression" bar everywhere; that
+does **not** meet a strict "F0 throughput and no p99 regression" bar everywhere; that
 is recorded as found in `evidence/performance/f2-concurrency-affine.json`.
 Phase 66 extends the same court to **64 readers** and confirms the picture: queue
 servicing stays at 86–107% of F0, but the p99 target is still unmet from 2 to 64
-readers (see `docs/PERFORMANCE.md` §29.1).
+readers. **Phase 74 makes the call explicit (a decision, not a non-claim):** the
+court now records p99.99 and the ring's SQ/CQ counters, and the verdict is that F2
+queue-affine is a **throughput** transport, not a **latency** one — it matches F0's
+p50, wins throughput at 64 readers, and **loses p99 from 4 readers up (1.5–1.7× at
+8–16)**. See `docs/PERFORMANCE.md` §31.1 for the tables and the recommendation
+(use F0 for latency, `ORFS_F2_RINGS=8` for throughput-bound bulk reads).
 
 ---
 
@@ -409,4 +414,7 @@ The forward-compatible commands are wired behind a runtime capability check:
   (~27× vs daemon-served) is not a portability claim.
 * No performance superiority over F0/F1 is claimed. The measured results (§6) show
   F2 is roughly latency-neutral single-threaded and slower under reader concurrency
-  on this ABI; that is reported as found.
+  on this ABI; that is reported as found. Phase 74 states the decision explicitly:
+  **use F0 for latency, F2 queue-affine (`ORFS_F2_RINGS=8`) for throughput-bound
+  high-concurrency bulk reads** (`docs/PERFORMANCE.md` §31.1). F2 is not the default
+  transport and no p99 target is claimed as met.

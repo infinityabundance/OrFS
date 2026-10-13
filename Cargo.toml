@@ -88,6 +88,17 @@ blake3 = "1"
 parking_lot = "0.12"
 rustc-hash = "2"
 
+# Bounded Loom concurrency models (Phase 70). `src/sync_model.rs` uses
+# `loom::sync` and `tests/loom_concurrency.rs` calls `loom::model`, but only
+# when the build sets `--cfg loom` (`scripts/container-loom.sh`). The target-cfg
+# gate keeps loom out of every normal build, so `cargo build` / `cargo test` are
+# unaffected and the default test count does not change.
+[target.'cfg(loom)'.dependencies]
+loom = "0.7"
+
+[target.'cfg(loom)'.dev-dependencies]
+loom = "0.7"
+
 [dev-dependencies]
 proptest = "1"
 tempfile = "3"
@@ -124,3 +135,11 @@ codegen-units = 1
 opt-level = 3
 lto = "thin"
 codegen-units = 1
+
+[lints.rust]
+# `loom` is a custom cfg name (Phase 70): it selects the `[target.'cfg(loom)'…]`
+# loom dependency and the `loom::sync` imports in `src/sync_model.rs`, and it is
+# set only by `scripts/container-loom.sh` (`RUSTFLAGS="--cfg loom"`). Register
+# it so the `unexpected_cfgs` lint accepts the cfg-gated model without a
+# blanket allow.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }

@@ -514,6 +514,7 @@ dependencies = [
  "fuser",
  "io-uring",
  "libc",
+ "loom",
  "nix",
  "parking_lot",
  "proptest",

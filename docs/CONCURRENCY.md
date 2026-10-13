@@ -430,3 +430,87 @@ Provenance: `tests/f2_concurrency.rs`,
 `evidence/performance/f2-concurrency-affine.json`. Phase 66 extends this court to
 **64 readers** and confirms it: queue-affine stays at 86–107% of F0 throughput, but
 the p99 target is still unmet from 2 to 64 readers (`docs/PERFORMANCE.md` §29.1).
+
+---
+
+## 10. Bounded Loom models (Phase 70)
+
+Phase 19 removed the global read lock and Phase 46 made group commit a ~5× win.
+This section records a **bounded Loom model** that explores the interleavings of
+the two synchronization protocols those phases rest on, and states precisely
+what it covers and what it does not.
+
+### 10.1 What is modelled — and what is not
+
+The real types cannot be loom-instrumented without a large refactor: `ReadCell`
+is a `parking_lot::RwLock`, the commit sequencer is serialised by Rust
+borrow-checking (`&mut Volume`) rather than by a lock, and both paths perform
+real `pread`/`fsync` I/O — Loom substitutes only `std::sync`-shaped primitives.
+So, as the directive's explicit fallback allows, `src/sync_model.rs` re-expresses
+the **minimal synchronization protocol** — the same lock order and the same
+state machine — with configuration-selected primitives (`loom::sync` under
+`--cfg loom`, `std::sync` otherwise). It is deliberately **not** the production
+types; it **mirrors** them. This is the honest coverage boundary (§10.4), not a
+claim that the models instrument the real code.
+
+* `ReadViewCell` mirrors `ReadCell = Arc<parking_lot::RwLock<Arc<dyn CoreRead>>>`
+  (`src/namespace.rs`): a writer publishes a complete `FrozenView` with one store
+  under the write lock (`publish_read_state`); a reader clones the inner `Arc`
+  under the read lock and drops the guard before any other work
+  (`Namespace::read_view`, the FUSE read handlers), then — and only then — takes
+  the shared segment-handle cache lock (mirroring `ReadState::log`'s
+  `Arc<Mutex<SegmentCache>>`). The declared lock order is *publication lock →
+  (release) → cache lock*, never nested.
+* `GroupCommitModel` mirrors the admission/fence state machine of
+  `src/group_commit.rs`: non-blocking bounded admission (`try_admit`), a worker
+  that drains a batch in submission order, runs the jobs under the core lock,
+  issues **one** shared durability barrier, and only then acknowledges every
+  member. Its lock order is the real one — *core lock → channel/state lock*
+  (`run_loop` holds `inner.core` across `execute_batch`, which sends its replies
+  while the core lock is still held).
+
+### 10.2 The invariants explored
+
+| Model | Invariant |
+|-------|-----------|
+| read views | A reader never observes a torn/partial view: every loaded view is internally consistent (`FrozenView::is_consistent` — `sealed`, and every row equal to the view's `root`), so it can only be a whole committed version. |
+| read views | No deadlock: every thread joins, and the publication lock is never held while the cache lock is taken. |
+| group commit | A member is never acknowledged before a durability barrier covering its bytes completed (`ack_never_precedes_covering_barrier` scans the coordinator's happens-before ledger; this is I7). |
+| group commit | Jobs are written in submission order (`writes_in_submission_order`), and every admitted or refused job is acknowledged exactly once (progress, no loss, no double-ack). |
+| group commit | Refused submissions (a full bounded queue) are served on the direct path with their own barrier — never dropped. |
+
+The real-code counterparts remain the OS-threaded courts: `tests/concurrency_stress.rs`
+(3 spinning readers × 150 concurrent commits, and the reader-not-blocked-by-core-lock
+test) and `tests/reader_scale_64.rs` (64 readers).
+
+### 10.3 The flags and the runner
+
+```sh
+sh scripts/container-loom.sh
+# == RUSTFLAGS="--cfg loom" cargo test --test loom_concurrency
+```
+
+`loom` is a `[target.'cfg(loom)'.(dev-)dependencies]` entry, so **no normal
+build compiles it**, and the court `tests/loom_concurrency.rs` is `#![cfg(loom)]`,
+so it is empty (and adds nothing) in a normal build — the default `cargo test`
+count is unchanged. The models are deliberately tiny (2 reader threads + 1
+writer; 2 submitters + 1 worker) and the search is bounded by a **preemption
+bound of 2** (under which it is exhaustive, completing in ~7 s here) plus a
+generous finite wall-clock cap (`LOOM_MAX_DURATION`-style, 60 s).
+`ORFS_LOOM_FULL=1` lifts the preemption bound and the time cap for a longer,
+unbounded-preemption search, and `ORFS_LOOM_{READERS,PUBLISHES,LOADS,SUBMITTERS,JOBS}`
+override individual model sizes. The runner additionally bounds the whole run
+with a finite timeout (`ORFS_LOOM_TIMEOUT`, default 1800 s).
+
+### 10.4 The honest coverage boundary
+
+* The model is **not** the production code. A regression in `src/namespace.rs`
+  or `src/group_commit.rs` that is not reflected in `src/sync_model.rs` is not
+  caught. What the court proves is that the protocol the real code implements is
+  deadlock- and race-free, and it is the executable specification the real lock
+  order must keep matching.
+* It models no I/O, no linger/timing policy, no `parking_lot` fairness, and no
+  transport topology (`n_threads`/F2). Those stay covered by the real-thread and
+  mounted courts (§6, §9).
+* Loom explores a **bounded** state space (≤2 preemptions by default); it is
+  evidence, not a proof over unbounded histories.

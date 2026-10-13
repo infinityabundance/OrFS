@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–69)
+## 4. The ordered build phases (0–70)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -155,10 +155,11 @@ per-phase record.
 | 67 | Explicit `format_version` in the authoritative log's genesis identity (`0` = legacy, `1` = current); frozen `v0`/`v1` compatibility fixtures + a byte-identity court; the accept-`≤`-current / refuse-higher rule with a typed error; `docs/MIGRATION.md` | **complete** |
 | 68 | Capacity guard: `orfs doctor --capacity` operator report (retained bytes, live backing free space and mount/device, projected growth, `ok`/`warn`/`exhausted` verdict); a typed `CapacityExhausted` pre-flight refusal before any byte is written; `init` reservation refusal; the read-only transition; `docs/CAPACITY.md` operator runbook | **complete** |
 | 69 | Endurance space-amplification curve (reviewer item 8): a bounded court grows a committed history over many epochs (content-neutral rewrites) and samples `logical` vs `authoritative_physical` vs `manifested` vs `total physical` bytes, the amplification ratio, and the growth counters, in an authoritative and a manifested arm over the same history; rendered as charts. Amplification grows monotonically (authoritative 1.50→10.08; manifested 6.56→88.48) over the bounded run; the multi-day run is the follow-up | **complete** |
+| 70 | Bounded Loom model for the concurrent immutable read views and the group-commit coordinator (reviewer item 11): `src/sync_model.rs` mirrors the read-view publication and the coordinator's admission/fence, compiled against `loom::sync` under `--cfg loom`; `tests/loom_concurrency.rs` proves no deadlock/race after the Phase-19 lock removal (a reader never sees a partial view; a batch never acks before the barrier covering its bytes); `scripts/container-loom.sh` | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–69 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–70 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
 v0.1.0 was the first release.

@@ -3860,3 +3860,65 @@ larger still because it stores the concealed bodies *and* a generation manifest 
 published generation (`M_other`); that is the price of the read-time acceleration
 §13 measured. Absolute bytes are host/build dependent; the shape and byte ordering
 are the point.
+
+## Phase 70 — Bounded Loom model for the read views + group commit (reviewer item 11)
+
+**Complete.** Reviewer item #11: Phase 19 removed the global read lock and Phase 46
+made group commit a ~5× win; this phase adds a **Loom model** that explores the
+interleavings of both synchronization protocols and proves they do not deadlock or
+race.
+
+### Delivered
+
+* **`src/sync_model.rs`** — the minimal synchronization protocol of (a) the
+  immutable read-view publication (`ReadViewCell` mirrors
+  `ReadCell = Arc<RwLock<Arc<dyn CoreRead>>>` and its publication lock → cache-lock
+  order) and (b) the group-commit coordinator's admission/fence
+  (`GroupCommitModel` mirrors `try_admit` + `execute_batch`: bounded admission, a
+  submission-ordered batch under the core lock, one shared durability barrier,
+  and acknowledgment only after it). The same source compiles against `loom::sync`
+  under `--cfg loom` and `std::sync` otherwise; a normal production build carries
+  none of it. It **mirrors** the real code — it does not instrument it (stated
+  plainly in `docs/CONCURRENCY.md` §10).
+* **`tests/loom_concurrency.rs`** — two bounded models: readers + writer publishing
+  new roots (no torn view, no deadlock) and the group-commit admission/fence
+  (I7: no ack before the covering barrier; submission order; no loss/refusal
+  handling). Tiny by default (2+1 threads), exhaustive within a preemption bound
+  of 2 (~7 s), with `ORFS_LOOM_FULL=1` for heavier bounds.
+* **`scripts/container-loom.sh`** — the runner
+  (`RUSTFLAGS="--cfg loom" cargo test --test loom_concurrency`), bounded by a
+  finite timeout.
+* **`Cargo.toml`** — `loom` as `[target.'cfg(loom)'.dependencies]` and
+  `[target.'cfg(loom)'.dev-dependencies]`, plus a `[lints.rust] unexpected_cfgs`
+  registration for the custom `loom` cfg. Target-cfg gated, so it is out of every
+  normal build.
+
+### Results
+
+`sh scripts/container-loom.sh`: **2 passed**, both models exhaustive within a
+preemption bound of 2, **6.9 s** wall clock. Invariants checked: a reader always
+sees a whole committed view (never a partial one) with no deadlock; a
+batch never acknowledges a member before the durability barrier that covers its
+bytes completed; batched jobs are written in submission order; every submitted
+job is acknowledged exactly once (refused ones on the direct path).
+
+### Test counts
+
+The Loom tests **do not** run in the default `cargo test`: `tests/loom_concurrency.rs`
+is `#![cfg(loom)]` and `loom` is a target-cfg dependency, so the default count is
+unchanged (**485**) and `--features failpoints` is unchanged (**495**).
+
+### Docs
+
+`docs/CONCURRENCY.md` §10 (what is modelled, the invariants, the flags, the honest
+coverage boundary); the phase row in `README.md` and `docs/ORFS-SPEC.md`; the
+runner row in `docs/REPRODUCE.md`.
+
+### Notes, stated honestly
+
+* The model is **not** the production code. A regression in `src/namespace.rs` or
+  `src/group_commit.rs` that is not mirrored in `src/sync_model.rs` is not caught;
+  the court is the executable specification of the protocol, alongside the
+  real-thread and mounted courts.
+* Loom explores a **bounded** state space (≤2 preemptions by default). It is
+  evidence, not a proof over unbounded histories.

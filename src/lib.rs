@@ -145,6 +145,11 @@ pub mod segment;
 pub mod snapshot;
 pub mod stats;
 pub mod suffix;
+/// Bounded Loom models of the read-view and group-commit protocols (Phase 70).
+/// Compiled only under `--cfg loom` and `cfg(test)`; a normal build carries none
+/// of it. See `docs/CONCURRENCY.md` §10.
+#[cfg(any(loom, test))]
+pub mod sync_model;
 pub mod transaction;
 pub mod trigram;
 pub mod uring;

@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–68)
+## 4. The ordered build phases (0–69)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -154,16 +154,17 @@ per-phase record.
 | 66 | Mounted courts for three reviewer items: F2 concurrency to 64 readers (p99 target unmet, stated plainly), a `baseline_passthrough` three-way comparison, and a paired mounted planner benchmark (manifested vs authoritative-only, same history) | **complete** |
 | 67 | Explicit `format_version` in the authoritative log's genesis identity (`0` = legacy, `1` = current); frozen `v0`/`v1` compatibility fixtures + a byte-identity court; the accept-`≤`-current / refuse-higher rule with a typed error; `docs/MIGRATION.md` | **complete** |
 | 68 | Capacity guard: `orfs doctor --capacity` operator report (retained bytes, live backing free space and mount/device, projected growth, `ok`/`warn`/`exhausted` verdict); a typed `CapacityExhausted` pre-flight refusal before any byte is written; `init` reservation refusal; the read-only transition; `docs/CAPACITY.md` operator runbook | **complete** |
+| 69 | Endurance space-amplification curve (reviewer item 8): a bounded court grows a committed history over many epochs (content-neutral rewrites) and samples `logical` vs `authoritative_physical` vs `manifested` vs `total physical` bytes, the amplification ratio, and the growth counters, in an authoritative and a manifested arm over the same history; rendered as charts. Amplification grows monotonically (authoritative 1.50→10.08; manifested 6.56→88.48) over the bounded run; the multi-day run is the follow-up | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–68 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–69 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
 v0.1.0 was the first release.
 
-- The `orfs` crate builds, its **483** tests (default) pass, and
-  `cargo test --features failpoints` adds the crash-injection court (493 tests in
+- The `orfs` crate builds, its **485** tests (default) pass, and
+  `cargo test --features failpoints` adds the crash-injection court (495 tests in
   total); `cargo fmt -p orfs --check` / `clippy --all-targets -- -D warnings` are
   clean **inside the pinned container** (`scripts/container-*.sh`).
 - `src/capabilities.rs` + `orfs doctor` perform a **real** kernel/container
@@ -254,7 +255,7 @@ sibling working tree is required):
 
 ```sh
 scripts/container-build.sh        # cargo build
-scripts/container-test.sh        # cargo test  (483 tests)
+scripts/container-test.sh        # cargo test  (485 tests)
 scripts/container-fuse-test.sh    # real-mount FUSE + performance court
 scripts/container-uring-test.sh   # io_uring integration + backing benchmark
 scripts/container-check.sh        # cargo fmt -p orfs --check + clippy -D warnings

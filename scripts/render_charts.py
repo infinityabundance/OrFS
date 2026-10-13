@@ -340,6 +340,55 @@ def chart_history_scaling_bytes():
         xlog=False, ylog=True, xticks=ep)
 
 
+def chart_endurance_amplification():
+    d = load("endurance-amplification.json")
+    auth = d["arms"]["authoritative"]["samples"]
+    man = d["arms"]["manifested"]["samples"]
+    ep = [s["epoch"] for s in auth]
+    mib = 1024.0 * 1024.0
+    series = [
+        {"name": "logical (live)",
+         "points": [(s["epoch"], s["logical_bytes"] / mib) for s in auth]},
+        {"name": "auth physical",
+         "points": [(s["epoch"], s["total_physical_bytes"] / mib) for s in auth]},
+        {"name": "manifested physical",
+         "points": [(s["epoch"], s["total_physical_bytes"] / mib) for s in man]},
+    ]
+    cap = [
+        "source: evidence/performance/endurance-amplification.json (epochs %s)" % ",".join(str(e) for e in ep),
+        "logical content is byte-identical at every sample (content-neutral rewrites);",
+        "the physical footprint grows with retained history, so the gap is amplification",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return line_chart(
+        "endurance: logical vs physical bytes vs retained history",
+        cap, "checkpoint epoch", "bytes (MiB, log)", series,
+        xlog=False, ylog=True, xticks=ep)
+
+
+def chart_endurance_amplification_ratio():
+    d = load("endurance-amplification.json")
+    auth = d["arms"]["authoritative"]["samples"]
+    man = d["arms"]["manifested"]["samples"]
+    ep = [s["epoch"] for s in auth]
+    series = [
+        {"name": "authoritative arm",
+         "points": [(s["epoch"], s["amplification_total"]) for s in auth]},
+        {"name": "manifested arm",
+         "points": [(s["epoch"], s["amplification_total"]) for s in man]},
+    ]
+    cap = [
+        "source: evidence/performance/endurance-amplification.json (total physical / live logical)",
+        "the logical denominator is constant, so the ratio rises monotonically and is not",
+        "capped within the bounded run; the manifested arm adds concealed bytes on top",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return line_chart(
+        "endurance: space amplification (physical / logical) vs retained history",
+        cap, "checkpoint epoch", "amplification (x, log)", series,
+        xlog=False, ylog=True, xticks=ep)
+
+
 def chart_manifestation_catalogue():
     d = load("manifestation-catalogue.json")
     cps = d["checkpoints"]
@@ -740,6 +789,10 @@ CHARTS = (
      "evidence/performance/history-scaling.json", "sh scripts/container-history-scaling.sh"),
     ("history-scaling-bytes.svg", chart_history_scaling_bytes,
      "evidence/performance/history-scaling.json", "sh scripts/container-history-scaling.sh"),
+    ("endurance-amplification.svg", chart_endurance_amplification,
+     "evidence/performance/endurance-amplification.json", "sh scripts/container-endurance-amplification.sh"),
+    ("endurance-amplification-ratio.svg", chart_endurance_amplification_ratio,
+     "evidence/performance/endurance-amplification.json", "sh scripts/container-endurance-amplification.sh"),
     ("manifestation-catalogue.svg", chart_manifestation_catalogue,
      "evidence/performance/manifestation-catalogue.json", "sh scripts/container-manifestation-catalogue.sh"),
     ("planner-cache.svg", chart_planner_cache,

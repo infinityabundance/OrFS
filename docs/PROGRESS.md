@@ -3788,3 +3788,75 @@ receipt row in `docs/REPRODUCE.md`.
   backing store; the live guard now predicts this before the write rather than
   relying on the OS `ENOSPC` mid-write, but the OS error remains the ultimate
   backstop.
+
+## Phase 69 — Endurance space-amplification curve (reviewer item 8)
+
+**Complete.** Reviewer item #8: non-withdrawal means committed history is never
+GC'd, so **space amplification grows forever**. The project had endurance (Phase
+27) and a history-scaling court (Phase 40) but no *published amplification curve*.
+Phase 69 adds one: a court that grows a committed history over many epochs and
+samples the time series of `logical_bytes` vs `authoritative_physical_bytes` vs
+`manifested_bytes` vs `total_physical_bytes`, with the amplification ratio and the
+growth counters (segment count, retained committed-root count, manifested
+generation count), and the graph it renders. The default suite is now **485**
+tests (+2); `--features failpoints` is **495** (+2).
+
+### Delivered
+
+* **`tests/endurance_amplification.rs`** — a bounded court with two tests. The
+always-on smoke grows a small content-neutral history in both arms and asserts the
+time series has the expected shape; the opt-in sweep (behind
+`ORFS_ENDURANCE_AMPLIFICATION=1`) writes the receipt. Two arms run over the
+**same deterministic committed history** — authoritative (concealed plane
+disabled) and manifested (plane enabled, profile full, synchronous) — and their
+committed roots are asserted identical, so concealment cannot alter authority.
+* **`scripts/container-endurance-amplification.sh`** — the runner: the smoke
+(default build), then the release sweep, one container at a time.
+* **`evidence/performance/endurance-amplification.json`** (schema
+`orfs.performance.endurance-amplification.v1`) — the time series, the environment,
+the bounded-run scope, and the machine-computed assessment.
+* **`docs/charts/endurance-amplification.svg`** and
+`docs/charts/endurance-amplification-ratio.svg` — rendered by the pure-stdlib
+`scripts/render_charts.py` from the receipt.
+
+### Results (evidence-backed)
+
+A 4-object x 16 KiB history over 24 epochs of 16 B content-neutral misaligned
+rewrites; 7 sample points (epochs `0,4,8,12,16,20,24`). Logical content is
+byte-identical at every sample (65 536 B); the physical footprint grows:
+
+* **Authoritative arm:** ratio **1.50 -> 10.08** (x6.7); total physical
+  98 502 B -> 660 678 B; segments 1 -> 6; retained committed roots 69 -> 1 221.
+* **Manifested arm:** ratio **6.56 -> 88.48**; total physical 429 902 B ->
+  5 798 472 B (concealed bodies 0 -> 2 905 120 B, plus the generation manifests
+  the plane publishes); generations 4 -> 1 180.
+* Both series are monotone non-decreasing (`assessment.*.monotone_non_decreasing`
+  is `true`); the ratio is uncapped within the bounded run because the logical
+denominator is constant.
+
+### Evidence
+
+`evidence/performance/endurance-amplification.json`;
+`docs/PERFORMANCE.md` §30 (the graph, the table, and the honest shape).
+
+### Docs
+
+`docs/PERFORMANCE.md` §30; the phase row and refreshed test counts in `README.md`
+and `docs/ORFS-SPEC.md`; the receipt and both chart rows in `docs/REPRODUCE.md`.
+
+### Notes, stated honestly
+
+* **This is a bounded surrogate, not the multi-day run.** The run is capped in wall
+time (about 7 s release) and retained bytes (about 5.5 MiB at the deepest sample)
+and its volume lives in a temporary directory that is deleted on completion. A
+genuinely multi-day, multi-GiB endurance run is the **follow-up** and is not
+claimed; the receipt states this (`bounded_run_scope.multi_day_run_is_follow_up`).
+* **Constant logical content is deliberate.** Rewriting bytes already present
+(content-neutral) makes the denominator constant, which is the purest form of the
+reviewer's claim: the ratio rises without a ceiling. Appending new logical content
+instead would bound the ratio (`ORFS_AMP_NEW_BYTES` exposes that variant).
+* **The manifested arm's overhead is reported, not hidden.** Its footprint is
+larger still because it stores the concealed bodies *and* a generation manifest per
+published generation (`M_other`); that is the price of the read-time acceleration
+§13 measured. Absolute bytes are host/build dependent; the shape and byte ordering
+are the point.

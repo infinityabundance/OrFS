@@ -2427,3 +2427,97 @@ versus the authoritative extent read, in process, over one history. Source:
 nanoseconds are load-sensitive. The mounted latency is page-cache warm after a
 per-request warm read, so it measures dispatch, not cold storage. The history is
 synthetic but fixed and deterministic.
+
+## 30. Reviewer item 8 — the endurance space-amplification curve
+
+**The claim.** Non-withdrawal — committed authoritative history is never
+overwritten, truncated, reused or GC'd — has an unavoidable cost: **space
+amplification grows with retained history, without bound.** Phase 27 measured
+endurance (RSS, log size, recovery) and §13 measured a *fixed read workload*
+against growing history, but neither published a time series of the amplification
+itself. This section does.
+
+**The court.** `tests/endurance_amplification.rs`, run by
+`sh scripts/container-endurance-amplification.sh`. A deterministic committed
+history is built over 24 **epochs**; each epoch performs small (16 B) misaligned
+rewrites of the bytes already present, so the live logical content is
+**byte-identical at every sample** while the authoritative log genuinely grows and
+the extent maps fragment. At 7 sample points (epochs `0,4,8,12,16,20,24`) the whole
+volume is read back and the time series is recorded for two arms built over the
+**same deterministic history**: **authoritative** (concealed plane disabled) and
+**manifested** (plane enabled, profile full). The two arms' committed roots are
+asserted identical — enabling the concealed plane must not alter authority.
+
+Samples (bytes; `ratio` = `total physical / logical`). The live logical content
+is constant (`65 536` B) at every sample in both arms.
+
+**Authoritative arm** (concealed plane disabled):
+
+| epoch | authoritative physical | total physical | ratio | segments | committed roots |
+|---:|---:|---:|---:|---:|---:|
+| 0  | 98 458  | 98 502  | **1.50** | 1 | 69    |
+| 4  | 192 154 | 192 198 | **2.93** | 2 | 261   |
+| 8  | 285 850 | 285 894 | **4.36** | 3 | 453   |
+| 12 | 379 546 | 379 590 | **5.79** | 3 | 645   |
+| 16 | 473 242 | 473 286 | **7.22** | 4 | 837   |
+| 20 | 566 938 | 566 982 | **8.65** | 5 | 1 029 |
+| 24 | 660 634 | 660 678 | **10.08** | 6 | 1 221 |
+
+`authoritative physical` is the committed segment files + the durable commit
+watermark; `total physical` adds the (here tiny) residual backing bytes.
+
+**Manifested arm** (concealed plane enabled, profile full):
+
+| epoch | manifested bytes (`M_ekbloom`) | generation manifests (`M_other`) | total physical | ratio | generations |
+|---:|---:|---:|---:|---:|---:|
+| 0  | 329 440   | 2 004     | 429 902   | **6.56**  | 4     |
+| 4  | 758 720   | 369 926   | 1 320 800 | **20.15** | 200   |
+| 8  | 1 188 000 | 743 974   | 2 217 824 | **33.84** | 396   |
+| 12 | 1 617 280 | 1 114 710 | 3 111 536 | **47.48** | 592   |
+| 16 | 2 046 560 | 1 487 606 | 4 007 408 | **61.15** | 788   |
+| 20 | 2 475 840 | 1 859 056 | 4 901 834 | **74.80** | 984   |
+| 24 | 2 905 120 | 2 232 718 | 5 798 472 | **88.48** | 1 180 |
+
+The manifested arm shares the authoritative log bytes; its extra footprint is the
+concealed bodies (`M_ekbloom`) plus one generation manifest per published
+generation (`M_other`).
+
+![Endurance space amplification: physical / logical vs retained history](charts/endurance-amplification-ratio.svg)
+
+*Figure 30.1 — space amplification (total physical ÷ live logical) over retained
+history. The logical denominator is constant (content-neutral rewrites), so the
+ratio rises monotonically and is not capped. Both arms. Source:
+`evidence/performance/endurance-amplification.json`; regenerate with
+`python3 scripts/render_charts.py --check`.*
+
+![Endurance: logical vs physical bytes vs retained history](charts/endurance-amplification.svg)
+
+*Figure 30.2 — logical bytes vs the physical footprint of each arm (log scale)
+over retained history. The widening gap is the amplification of Figure 30.1.*
+
+**The honest shape.** Amplification grows monotonically with retained history;
+over this bounded run it is **1.50 → 10.08** in the authoritative arm (×6.7) and
+**6.56 → 88.48** in the manifested arm. Because the logical denominator is
+constant, the increase is monotone and **not** capped by this court. The manifested
+arm is steeper (it stores the concealed bodies *and* a generation manifest per
+published generation), which is the price of the read-time acceleration §13
+measured — concealment trades space for latency, and non-withdrawal guarantees the
+space is never reclaimed.
+
+**Bounded scope (stated, not hidden).** This is a bounded surrogate for the
+multi-day endurance run the reviewer's item ultimately needs. The run is capped in
+wall time (≈7 s release) and retained bytes (≈5.5 MiB at the deepest sample) and
+the whole volume lives in a temporary directory that is deleted on completion.
+A genuinely multi-day, multi-GiB run is the **follow-up** and is not claimed here.
+The receipt records this explicitly (`bounded_run_scope.multi_day_run_is_follow_up`).
+If new logical content were appended each epoch instead of rewriting existing
+bytes, the ratio would rise toward a bounded ceiling (the ratio of rewritten to
+appended bytes); `ORFS_AMP_NEW_BYTES` exposes that variant, and the default is the
+purest form of the claim.
+
+**Caveats.** Single run, single host, release build; absolute bytes and the
+manifested-arm generation-manifest overhead (`M_other`, which depends on the
+manifestation profile) are host/build dependent. The shape — a monotone,
+uncapped amplification ratio — and the byte ordering are the point.
+`evidence/performance/endurance-amplification.json` is the machine-generated
+source of truth.

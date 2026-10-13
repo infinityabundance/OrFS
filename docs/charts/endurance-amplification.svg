@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="monospace"><rect x="0" y="0" width="760" height="440" fill="#ffffff"/><text x="380.0" y="22.0" fill="#111111" font-size="14" text-anchor="middle" font-weight="bold">endurance: logical vs physical bytes vs retained history</text>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="344.0" fill="#111111" font-size="11" text-anchor="end">0.01</text>
+<line x1="84.0" y1="247.3" x2="736.0" y2="247.3" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="251.3" fill="#111111" font-size="11" text-anchor="end">0.10</text>
+<line x1="84.0" y1="154.7" x2="736.0" y2="154.7" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="158.7" fill="#111111" font-size="11" text-anchor="end">1</text>
+<line x1="84.0" y1="62.0" x2="736.0" y2="62.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="66.0" fill="#111111" font-size="11" text-anchor="end">10</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="84.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">0</text>
+<line x1="192.7" y1="62.0" x2="192.7" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="192.7" y="358.0" fill="#111111" font-size="11" text-anchor="middle">4</text>
+<line x1="301.3" y1="62.0" x2="301.3" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="301.3" y="358.0" fill="#111111" font-size="11" text-anchor="middle">8</text>
+<line x1="410.0" y1="62.0" x2="410.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="410.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">12</text>
+<line x1="518.7" y1="62.0" x2="518.7" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="518.7" y="358.0" fill="#111111" font-size="11" text-anchor="middle">16</text>
+<line x1="627.3" y1="62.0" x2="627.3" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="627.3" y="358.0" fill="#111111" font-size="11" text-anchor="middle">20</text>
+<line x1="736.0" y1="62.0" x2="736.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="736.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">24</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<text x="410.0" y="382.0" fill="#111111" font-size="12" text-anchor="middle">checkpoint epoch</text>
+<text x="26.0" y="201.0" fill="#111111" font-size="12" text-anchor="middle" transform="rotate(-90 26.0 201.0)">bytes (MiB, log)</text>
+<polyline points="84.0,266.2 192.7,266.2 301.3,266.2 410.0,266.2 518.7,266.2 627.3,266.2 736.0,266.2" fill="none" stroke="#1f77b4" stroke-width="2"/>
+<circle cx="84.0" cy="266.2" r="3" fill="#1f77b4"/>
+<circle cx="192.7" cy="266.2" r="3" fill="#1f77b4"/>
+<circle cx="301.3" cy="266.2" r="3" fill="#1f77b4"/>
+<circle cx="410.0" cy="266.2" r="3" fill="#1f77b4"/>
+<circle cx="518.7" cy="266.2" r="3" fill="#1f77b4"/>
+<circle cx="627.3" cy="266.2" r="3" fill="#1f77b4"/>
+<circle cx="736.0" cy="266.2" r="3" fill="#1f77b4"/>
+<polyline points="84.0,249.8 192.7,222.9 301.3,207.0 410.0,195.6 518.7,186.7 627.3,179.4 736.0,173.3" fill="none" stroke="#d62728" stroke-width="2"/>
+<circle cx="84.0" cy="249.8" r="3" fill="#d62728"/>
+<circle cx="192.7" cy="222.9" r="3" fill="#d62728"/>
+<circle cx="301.3" cy="207.0" r="3" fill="#d62728"/>
+<circle cx="410.0" cy="195.6" r="3" fill="#d62728"/>
+<circle cx="518.7" cy="186.7" r="3" fill="#d62728"/>
+<circle cx="627.3" cy="179.4" r="3" fill="#d62728"/>
+<circle cx="736.0" cy="173.3" r="3" fill="#d62728"/>
+<polyline points="84.0,190.6 192.7,145.4 301.3,124.5 410.0,110.9 518.7,100.7 627.3,92.6 736.0,85.8" fill="none" stroke="#2ca02c" stroke-width="2"/>
+<circle cx="84.0" cy="190.6" r="3" fill="#2ca02c"/>
+<circle cx="192.7" cy="145.4" r="3" fill="#2ca02c"/>
+<circle cx="301.3" cy="124.5" r="3" fill="#2ca02c"/>
+<circle cx="410.0" cy="110.9" r="3" fill="#2ca02c"/>
+<circle cx="518.7" cy="100.7" r="3" fill="#2ca02c"/>
+<circle cx="627.3" cy="92.6" r="3" fill="#2ca02c"/>
+<circle cx="736.0" cy="85.8" r="3" fill="#2ca02c"/>
+<rect x="84.0" y="35.0" width="10" height="10" fill="#1f77b4"/>
+<text x="99.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">logical (live)</text>
+<rect x="217.0" y="35.0" width="10" height="10" fill="#d62728"/>
+<text x="232.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">auth physical</text>
+<rect x="343.0" y="35.0" width="10" height="10" fill="#2ca02c"/>
+<text x="358.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">manifested physical</text>
+<text x="84.0" y="370.0" fill="#555555" font-size="10" text-anchor="start">source: evidence/performance/endurance-amplification.json (epochs 0,4,8,12,16,20,24)</text>
+<text x="84.0" y="386.0" fill="#555555" font-size="10" text-anchor="start">logical content is byte-identical at every sample (content-neutral rewrites);</text>
+<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">the physical footprint grows with retained history, so the gap is amplification</text>
+<text x="84.0" y="418.0" fill="#555555" font-size="10" text-anchor="start">regenerate: python3 scripts/render_charts.py --check</text>
+</svg>

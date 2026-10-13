@@ -36,6 +36,7 @@ All execution is Docker-only (`scripts/lib.sh`); nothing runs on the host.
 | `evidence/performance/index-layout.json` | `tests/index_layout.rs` | `sh scripts/container-index-layout.sh` |
 | `evidence/performance/manifestation-catalogue.json` | `tests/manifestation_catalogue.rs` | `sh scripts/container-manifestation-catalogue.sh` |
 | `evidence/performance/history-scaling.json` | `tests/history_scaling.rs` | `sh scripts/container-history-scaling.sh` |
+| `evidence/performance/endurance-amplification.json` | `tests/endurance_amplification.rs` | `sh scripts/container-endurance-amplification.sh` |
 | `evidence/performance/historical-fast.json` | `tests/historical_fast.rs` | `sh scripts/container-historical-fast.sh` |
 | `evidence/performance/historical-index-integrated.json` | `tests/historical_index_integration.rs` | `sh scripts/container-historical-integrate.sh` |
 | `evidence/performance/group-commit-adaptive.json` | `tests/group_commit_adaptive.rs` | `sh scripts/container-group-commit.sh` |
@@ -93,6 +94,8 @@ image → receipt → command mapping:
 |---|---|---|---|
 | `history-scaling.svg` | `PERFORMANCE.md` §13 | `evidence/performance/history-scaling.json` | `sh scripts/container-history-scaling.sh` |
 | `history-scaling-bytes.svg` | `PERFORMANCE.md` §13 | `evidence/performance/history-scaling.json` | `sh scripts/container-history-scaling.sh` |
+| `endurance-amplification.svg` | `PERFORMANCE.md` §30 | `evidence/performance/endurance-amplification.json` | `sh scripts/container-endurance-amplification.sh` |
+| `endurance-amplification-ratio.svg` | `PERFORMANCE.md` §30 | `evidence/performance/endurance-amplification.json` | `sh scripts/container-endurance-amplification.sh` |
 | `manifestation-catalogue.svg` | `PERFORMANCE.md` §14 | `evidence/performance/manifestation-catalogue.json` | `sh scripts/container-manifestation-catalogue.sh` |
 | `planner-cache.svg` | `PERFORMANCE.md` §17 | `evidence/performance/planner-cache.json` | `sh scripts/container-planner-cache.sh` |
 | `microarch.svg` | `PERFORMANCE.md` §18 | `evidence/performance/microarch.json` | `sh scripts/container-microarch.sh` |

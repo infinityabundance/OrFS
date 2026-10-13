@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–62)
+## 4. The ordered build phases (0–63)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -148,10 +148,11 @@ per-phase record.
 | 60 | Acceptance-audit re-run at HEAD with a two-run diff vs the phase-41 audit | **complete** |
 | 61 | Fix the native-FUSE `JobQueue` lost-wakeup race the HEAD audit recorded (mutex-guarded predicate + notify); regression tests | **complete** |
 | 62 | Device-fault evidence: `verify --deep` + `recover` after injected mid-log faults (the `dm-flaky`/`dm-error` probe is `ran:false`) | **complete** |
+| 63 | Evidence charts: inline-styled SVG figures for the performance courts + an image→receipt→command reproducibility index | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–62 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–63 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
 v0.1.0 was the first release.
@@ -215,6 +216,7 @@ Normative implementation documents to be produced. Status is marked honestly.
 | `docs/GATES.md` | Acceptance gates A–N: definitions, commands, acceptance criteria | **exists** (Phase 54) |
 | `docs/ACCEPTANCE-AUDIT-HEAD.md` | Acceptance-audit re-run at HEAD: current-HEAD gate table and the two-run diff vs the phase-41 audit | **exists** (Phase 60) |
 | `docs/REPRODUCE.md` | Reproducibility index: doc claim → receipt → command | **exists** (Phase 54) |
+| `docs/charts/*.svg` | Generated evidence figures (inline-styled SVG), each mapped to a committed receipt in `docs/REPRODUCE.md` | **exists** (Phase 63) |
 | `docs/PERFORMANCE.md` | Benchmark methodology, metrics, reproducibility rules | **exists** (Phase 12) |
 | `docs/PMU.md` | Real hardware performance counters and the flamegraph; the container-flag requirement | **exists** (Phase 57) |
 | `docs/LIMITATIONS.md` | Known limits, kernel-dependence, unsupported capabilities | **exists** |

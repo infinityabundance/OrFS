@@ -3359,3 +3359,46 @@ segment, a later fresh open refuses the retained bytes
 boundary and no committed byte is lost, rewritten or withdrawn; the court
 records this as an explicit `residual` field. A tail that occupies a whole
 trailing segment recovers and reopens cleanly. See `docs/RECOVERY.md` §9.1.
+
+## Phase 63 — Evidence charts: inline-styled SVG figures + an image-to-receipt reproducibility index
+
+**Complete.** Closes two reviewer items: the history-scaling court (§13) now has a
+graph, and every committed image under `docs/charts/` maps to a committed
+`evidence/*.json` receipt plus its exact command (`docs/REPRODUCE.md` "Images and
+charts"). No Rust changed, so the test counts are unchanged (**456** default,
+**466** with `--features failpoints`).
+
+### Delivered
+
+* **`scripts/render_charts.py`** — pure Python 3 standard library (no new crates,
+  no third-party Python). Reads the committed receipts and writes small,
+  self-contained, inline-styled SVGs (no external fonts, no JavaScript, no
+  timestamps, so output is deterministic). It draws line charts and grouped bar
+  charts with axis labels and units and a caption naming the source receipt, and
+  supports a `--check` mode (regenerate in memory and diff against the committed
+  files) and a `--list` mode (chart → receipt → command).
+* **`docs/charts/`** — 13 committed figures: `history-scaling.svg`,
+  `history-scaling-bytes.svg`, `manifestation-catalogue.svg`, `planner-cache.svg`,
+  `microarch.svg`, `search-directory.svg`, `baselines.svg`,
+  `baselines-latency.svg`, `uring-depth.svg`, `uring-depth-sq.svg`,
+  `reader-scaling-64.svg`, `reader-scaling-64-tail.svg`, `pmu.svg`.
+* **`docs/PERFORMANCE.md`** — each chart is referenced from its matching section
+  (§13–§23) with a relative path and a footnote giving the exact regeneration
+  command.
+* **`docs/REPRODUCE.md`** — new "Images and charts" section: the full
+  image → receipt → command table; the stale "there are no committed images" bullet
+  is corrected.
+
+### Notes, stated honestly
+
+* **Charts are illustrative, not new measurements.** Every figure renders an
+  already-committed receipt and introduces no number.
+  `python3 scripts/render_charts.py --check` fails on drift, so a chart cannot
+  silently diverge from its receipt.
+* **Skipped.** No chart is drawn for the long-endurance (10⁹-inode) growth curve:
+  that court is explicitly deferred, so `history-scaling-bytes.svg` plots only the
+  measured epochs and says so in its caption. Receipts whose salient content is a
+  caveat rather than a series are represented by their committed counters.
+* **Validation.** `python3 scripts/render_charts.py` then `--check` (13/13 match);
+  all 13 SVGs parse as well-formed XML; `sh scripts/check-docs-receipts.sh` →
+  **PASS** (46/46, unchanged).

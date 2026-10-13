@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="monospace"><rect x="0" y="0" width="760" height="440" fill="#ffffff"/><text x="380.0" y="22.0" fill="#111111" font-size="14" text-anchor="middle" font-weight="bold">history-scaling: read latency vs. growing history</text>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="344.0" fill="#111111" font-size="11" text-anchor="end">100</text>
+<line x1="84.0" y1="247.3" x2="736.0" y2="247.3" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="251.3" fill="#111111" font-size="11" text-anchor="end">1k</text>
+<line x1="84.0" y1="154.7" x2="736.0" y2="154.7" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="158.7" fill="#111111" font-size="11" text-anchor="end">10k</text>
+<line x1="84.0" y1="62.0" x2="736.0" y2="62.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="66.0" fill="#111111" font-size="11" text-anchor="end">100k</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="84.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">0</text>
+<line x1="156.4" y1="62.0" x2="156.4" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="156.4" y="358.0" fill="#111111" font-size="11" text-anchor="middle">4</text>
+<line x1="301.3" y1="62.0" x2="301.3" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="301.3" y="358.0" fill="#111111" font-size="11" text-anchor="middle">12</text>
+<line x1="736.0" y1="62.0" x2="736.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="736.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">36</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<text x="410.0" y="382.0" fill="#111111" font-size="12" text-anchor="middle">checkpoint epoch</text>
+<text x="26.0" y="201.0" fill="#111111" font-size="12" text-anchor="middle" transform="rotate(-90 26.0 201.0)">read latency (ns, log)</text>
+<polyline points="84.0,261.1 156.4,201.6 301.3,167.3 736.0,120.9" fill="none" stroke="#1f77b4" stroke-width="2"/>
+<circle cx="84.0" cy="261.1" r="3" fill="#1f77b4"/>
+<circle cx="156.4" cy="201.6" r="3" fill="#1f77b4"/>
+<circle cx="301.3" cy="167.3" r="3" fill="#1f77b4"/>
+<circle cx="736.0" cy="120.9" r="3" fill="#1f77b4"/>
+<polyline points="84.0,227.4 156.4,181.5 301.3,150.0 736.0,108.6" fill="none" stroke="#d62728" stroke-width="2"/>
+<circle cx="84.0" cy="227.4" r="3" fill="#d62728"/>
+<circle cx="156.4" cy="181.5" r="3" fill="#d62728"/>
+<circle cx="301.3" cy="150.0" r="3" fill="#d62728"/>
+<circle cx="736.0" cy="108.6" r="3" fill="#d62728"/>
+<polyline points="84.0,233.2 156.4,191.9 301.3,144.6 736.0,144.5" fill="none" stroke="#2ca02c" stroke-width="2"/>
+<circle cx="84.0" cy="233.2" r="3" fill="#2ca02c"/>
+<circle cx="156.4" cy="191.9" r="3" fill="#2ca02c"/>
+<circle cx="301.3" cy="144.6" r="3" fill="#2ca02c"/>
+<circle cx="736.0" cy="144.5" r="3" fill="#2ca02c"/>
+<polyline points="84.0,209.6 156.4,144.5 301.3,139.4 736.0,140.6" fill="none" stroke="#ff7f0e" stroke-width="2"/>
+<circle cx="84.0" cy="209.6" r="3" fill="#ff7f0e"/>
+<circle cx="156.4" cy="144.5" r="3" fill="#ff7f0e"/>
+<circle cx="301.3" cy="139.4" r="3" fill="#ff7f0e"/>
+<circle cx="736.0" cy="140.6" r="3" fill="#ff7f0e"/>
+<rect x="84.0" y="35.0" width="10" height="10" fill="#1f77b4"/>
+<text x="99.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">auth p50</text>
+<rect x="175.0" y="35.0" width="10" height="10" fill="#d62728"/>
+<text x="190.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">auth p99</text>
+<rect x="266.0" y="35.0" width="10" height="10" fill="#2ca02c"/>
+<text x="281.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">man p50</text>
+<rect x="350.0" y="35.0" width="10" height="10" fill="#ff7f0e"/>
+<text x="365.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">man p99</text>
+<text x="84.0" y="370.0" fill="#555555" font-size="10" text-anchor="start">source: evidence/performance/history-scaling.json (epochs 0,4,12,36)</text>
+<text x="84.0" y="386.0" fill="#555555" font-size="10" text-anchor="start">same fixed read workload at each checkpoint; log y-axis</text>
+<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">regenerate: python3 scripts/render_charts.py --check</text>
+</svg>

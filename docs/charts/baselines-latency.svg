@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="monospace"><rect x="0" y="0" width="760" height="440" fill="#ffffff"/><text x="380.0" y="22.0" fill="#111111" font-size="14" text-anchor="middle" font-weight="bold">external baselines: warm random-read latency by backend</text>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="344.0" fill="#111111" font-size="11" text-anchor="end">0</text>
+<line x1="84.0" y1="283.4" x2="736.0" y2="283.4" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="287.4" fill="#111111" font-size="11" text-anchor="end">100</text>
+<line x1="84.0" y1="226.8" x2="736.0" y2="226.8" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="230.8" fill="#111111" font-size="11" text-anchor="end">200</text>
+<line x1="84.0" y1="170.1" x2="736.0" y2="170.1" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="174.1" fill="#111111" font-size="11" text-anchor="end">300</text>
+<line x1="84.0" y1="113.5" x2="736.0" y2="113.5" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="117.5" fill="#111111" font-size="11" text-anchor="end">400</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<text x="26.0" y="201.0" fill="#111111" font-size="12" text-anchor="middle" transform="rotate(-90 26.0 201.0)">latency (ns)</text>
+<rect x="110.1" y="226.2" width="34.8" height="113.8" fill="#1f77b4"/>
+<rect x="153.5" y="90.3" width="34.8" height="249.7" fill="#d62728"/>
+<rect x="197.0" y="266.4" width="34.8" height="73.6" fill="#2ca02c"/>
+<rect x="240.5" y="164.5" width="34.8" height="175.5" fill="#ff7f0e"/>
+<text x="192.7" y="358.0" fill="#111111" font-size="11" text-anchor="middle">tmpfs</text>
+<rect x="327.4" y="192.2" width="34.8" height="147.8" fill="#1f77b4"/>
+<rect x="370.9" y="62.0" width="34.8" height="278.0" fill="#d62728"/>
+<rect x="414.3" y="254.5" width="34.8" height="85.5" fill="#2ca02c"/>
+<rect x="457.8" y="152.6" width="34.8" height="187.4" fill="#ff7f0e"/>
+<text x="410.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">container-overlay</text>
+<rect x="544.7" y="209.8" width="34.8" height="130.2" fill="#1f77b4"/>
+<rect x="588.2" y="73.3" width="34.8" height="266.7" fill="#d62728"/>
+<rect x="631.7" y="266.4" width="34.8" height="73.6" fill="#2ca02c"/>
+<rect x="675.1" y="180.9" width="34.8" height="159.1" fill="#ff7f0e"/>
+<text x="627.3" y="358.0" fill="#111111" font-size="11" text-anchor="middle">host-fs</text>
+<rect x="84.0" y="35.0" width="10" height="10" fill="#1f77b4"/>
+<text x="99.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">4K p50</text>
+<rect x="161.0" y="35.0" width="10" height="10" fill="#d62728"/>
+<text x="176.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">4K p99</text>
+<rect x="238.0" y="35.0" width="10" height="10" fill="#2ca02c"/>
+<text x="253.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">1B p50</text>
+<rect x="315.0" y="35.0" width="10" height="10" fill="#ff7f0e"/>
+<text x="330.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">1B p99</text>
+<text x="84.0" y="370.0" fill="#555555" font-size="10" text-anchor="start">source: evidence/performance/baselines.json (20000 random ops, page-cache warm)</text>
+<text x="84.0" y="386.0" fill="#555555" font-size="10" text-anchor="start">warm random-read latency per backend; OrFS's daemon path is not faster</text>
+<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">than these (see PERFORMANCE.md 20)</text>
+<text x="84.0" y="418.0" fill="#555555" font-size="10" text-anchor="start">regenerate: python3 scripts/render_charts.py --check</text>
+</svg>

@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="monospace"><rect x="0" y="0" width="760" height="440" fill="#ffffff"/><text x="380.0" y="22.0" fill="#111111" font-size="14" text-anchor="middle" font-weight="bold">append-only catalogue: publication and recovery vs. generations</text>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="344.0" fill="#111111" font-size="11" text-anchor="end">100</text>
+<line x1="84.0" y1="293.7" x2="736.0" y2="293.7" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="297.7" fill="#111111" font-size="11" text-anchor="end">1k</text>
+<line x1="84.0" y1="247.3" x2="736.0" y2="247.3" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="251.3" fill="#111111" font-size="11" text-anchor="end">10k</text>
+<line x1="84.0" y1="201.0" x2="736.0" y2="201.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="205.0" fill="#111111" font-size="11" text-anchor="end">100k</text>
+<line x1="84.0" y1="154.7" x2="736.0" y2="154.7" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="158.7" fill="#111111" font-size="11" text-anchor="end">1M</text>
+<line x1="84.0" y1="108.3" x2="736.0" y2="108.3" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="112.3" fill="#111111" font-size="11" text-anchor="end">10M</text>
+<line x1="84.0" y1="62.0" x2="736.0" y2="62.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="66.0" fill="#111111" font-size="11" text-anchor="end">100M</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="84.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">1k</text>
+<line x1="301.3" y1="62.0" x2="301.3" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="301.3" y="358.0" fill="#111111" font-size="11" text-anchor="middle">10k</text>
+<line x1="518.7" y1="62.0" x2="518.7" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="518.7" y="358.0" fill="#111111" font-size="11" text-anchor="middle">100k</text>
+<line x1="736.0" y1="62.0" x2="736.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="736.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">1M</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<text x="410.0" y="382.0" fill="#111111" font-size="12" text-anchor="middle">committed generations G (log)</text>
+<text x="26.0" y="201.0" fill="#111111" font-size="12" text-anchor="middle" transform="rotate(-90 26.0 201.0)">time (us, log)</text>
+<polyline points="84.0,276.5 301.3,276.7 518.7,276.5 736.0,276.6" fill="none" stroke="#1f77b4" stroke-width="2"/>
+<circle cx="84.0" cy="276.5" r="3" fill="#1f77b4"/>
+<circle cx="301.3" cy="276.7" r="3" fill="#1f77b4"/>
+<circle cx="518.7" cy="276.5" r="3" fill="#1f77b4"/>
+<circle cx="736.0" cy="276.6" r="3" fill="#1f77b4"/>
+<polyline points="84.0,316.3 301.3,313.6 518.7,310.2 736.0,286.0" fill="none" stroke="#d62728" stroke-width="2"/>
+<circle cx="84.0" cy="316.3" r="3" fill="#d62728"/>
+<circle cx="301.3" cy="313.6" r="3" fill="#d62728"/>
+<circle cx="518.7" cy="310.2" r="3" fill="#d62728"/>
+<circle cx="736.0" cy="286.0" r="3" fill="#d62728"/>
+<polyline points="84.0,258.3 301.3,213.8 518.7,169.3 736.0,86.8" fill="none" stroke="#2ca02c" stroke-width="2"/>
+<circle cx="84.0" cy="258.3" r="3" fill="#2ca02c"/>
+<circle cx="301.3" cy="213.8" r="3" fill="#2ca02c"/>
+<circle cx="518.7" cy="169.3" r="3" fill="#2ca02c"/>
+<circle cx="736.0" cy="86.8" r="3" fill="#2ca02c"/>
+<rect x="84.0" y="35.0" width="10" height="10" fill="#1f77b4"/>
+<text x="99.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">publish p50</text>
+<rect x="196.0" y="35.0" width="10" height="10" fill="#d62728"/>
+<text x="211.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">fast recovery</text>
+<rect x="322.0" y="35.0" width="10" height="10" fill="#2ca02c"/>
+<text x="337.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">full-scan recovery</text>
+<text x="84.0" y="370.0" fill="#555555" font-size="10" text-anchor="start">source: evidence/performance/manifestation-catalogue.json (inodes=64)</text>
+<text x="84.0" y="386.0" fill="#555555" font-size="10" text-anchor="start">publication is flat in G; fast recovery is suffix-proportional;</text>
+<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">full-scan recovery is linear in G and host-load sensitive</text>
+<text x="84.0" y="418.0" fill="#555555" font-size="10" text-anchor="start">regenerate: python3 scripts/render_charts.py --check</text>
+</svg>

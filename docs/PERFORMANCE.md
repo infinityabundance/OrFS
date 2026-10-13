@@ -918,6 +918,10 @@ rebuild; `man` = manifested-plane generation recovery).
 | 12 | 1586 | 7303 / 11221 / 14106   | 556 KiB  | 12834 / 14617 / 268531    | 5.3 MiB | 1536 / 6.0 MiB | 780 | 5129 / 154186 |
 | 36 | 4097 | 23153 / 31388 / 45184  | 1.26 MiB | 12874 / 14177 / 286875    | 23.4 MiB | 2048 / 8.0 MiB | 2320 | 14901 / 1159487 |
 
+![History-scaling: read latency p50/p99 vs epoch, authoritative vs manifested](charts/history-scaling.svg)
+
+*Figure 13.1 — read latency (p50/p99) at each checkpoint, manifested vs authoritative. Source: `evidence/performance/history-scaling.json`; regenerate with `python3 scripts/render_charts.py --check`.*
+
 **Construction.** Building the manifested arm's history took **17.2 s** of epoch
 work vs **23.4 ms** for the authoritative arm (**≈736×**); each checkpoint's
 explicit full generation set cost ~10–12 ms and wrote 657,120 physical bytes (4
@@ -925,6 +929,10 @@ objects × ~164 KiB, ≈5× the 128 KiB of live object bytes). Persistent bytes 
 **6.8×** (authoritative) and **28.8×** (manifested) from genesis to the deepest
 checkpoint. Resident RSS reached **31.6 MiB** (manifested) vs **5.0 MiB**
 (authoritative).
+
+![History-scaling: persistent physical bytes vs epoch, both arms](charts/history-scaling-bytes.svg)
+
+*Figure 13.2 — persistent physical bytes (`m_total`) for both arms. Source: `evidence/performance/history-scaling.json`; regenerate with `python3 scripts/render_charts.py --check`. The long-endurance (10⁹-inode) growth curve is deliberately deferred and is **not** plotted.*
 
 **Reuse.** At the deepest checkpoint the manifested arm's first round cost
 ~49.4 µs/read (cold: load + verify + calibrate) and the remaining rounds ~14.2 µs
@@ -1018,6 +1026,10 @@ A 256-sample publication window need not include a seal, so the measured p50 is
 the steady-state append. The full-scan recovery is I/O-bound and **host-load
 sensitive**: four runs measured 4.84–29.1 s for the same 1 000 256-manifest scan,
 while the catalogue-accelerated path stayed at 1.2–1.5 ms.
+
+![Manifestation catalogue: publication and recovery vs committed generations G](charts/manifestation-catalogue.svg)
+
+*Figure 14.1 — publication p50 (flat in `G`) and recovery (fast vs full scan) vs `G`, log-log. Source: `evidence/performance/manifestation-catalogue.json`; regenerate with `python3 scripts/render_charts.py --check`.*
 
 **Findings, stated honestly.**
 
@@ -1301,6 +1313,13 @@ policy over identical keys, not a second filesystem run).
   (exactly the hot set), 500 evictions — the scan keys were all demoted, never
   promoted.
 
+![Planner volatile caches: body-plan rebuilds, admission policy vs FIFO model](charts/planner-cache.svg)
+
+*Figure 17.1 — body-plan rebuilds over the identical key trace: the admission
+policy rebuilds only the cold objects; the FIFO figure is an analytic model, not
+a second run. Source: `evidence/performance/planner-cache.json`; regenerate with
+`python3 scripts/render_charts.py --check`.*
+
 **Findings, stated honestly.**
 
 1. **Scan resistance is real and observable end-to-end.** The admission policy
@@ -1379,6 +1398,13 @@ a lock-free `[AtomicU64; ReadPathKind::COUNT]`.
 * **`PMap` lookup curve** (cache-hierarchy proxy, ns/lookup): 1 024 entries →
   **31.5**, 8 192 → **56.6**, 65 536 → **114.1**, 262 144 → **174.3**.
 
+![Microarch: PMap point-lookup latency vs working-set size](charts/microarch.svg)
+
+*Figure 18.1 — the `PMap` lookup curve (a cache-hierarchy proxy; a shape, not
+PMU-attributed in this default-container run). Source:
+`evidence/performance/microarch.json`; regenerate with
+`python3 scripts/render_charts.py --check`.*
+
 **Findings, stated honestly.**
 
 1. **The largest single hot-path waste was a per-read manifest deep-clone**, now
@@ -1456,6 +1482,12 @@ keys).**
 * **Parity:** every pattern returned byte-identical matches by all three paths
   (`parity.all_identical = true`).
 
+![Search directory: files considered per query path](charts/search-directory.svg)
+
+*Figure 19.1 — files considered per pattern for the per-object index, the global
+directory, and the full scan. Source: `evidence/performance/search-directory.json`;
+regenerate with `python3 scripts/render_charts.py --check`.*
+
 **Findings, stated honestly.**
 
 1. **The global directory removes the file-enumeration cost entirely for selective
@@ -1508,6 +1540,18 @@ workload and the read-latency floor.
 | container-overlay | 8 546 | 20 647 | 261 / 491 | 151 / 331 |
 | **host-fs (ext4)** | 6 289 | 25 973 | **230 / 471** | **130 / 281** |
 | raw memory scan | — | 9 957 | — | — |
+
+![Baselines: sequential throughput by backend](charts/baselines.svg)
+
+*Figure 20.1 — sequential append/read throughput per backend (the raw-memory
+scan is read-only). Source: `evidence/performance/baselines.json`; regenerate with
+`python3 scripts/render_charts.py --check`.*
+
+![Baselines: warm random-read latency by backend](charts/baselines-latency.svg)
+
+*Figure 20.2 — warm random-read latency (4 KiB and 1 B, p50/p99) per backend.
+Source: `evidence/performance/baselines.json`; regenerate with
+`python3 scripts/render_charts.py --check`.*
 
 **How this reads against OrFS (honestly).**
 
@@ -1588,6 +1632,19 @@ exactly equals a 128-entry ring, so no push ever fails. `write_batch` shows
 more, smaller submission rounds, which is why write throughput climbs from
 ~2.0 GB/s at depth 2 to ~3.9 GB/s at depth 128.
 
+![io_uring depth sweep: batched positional throughput](charts/uring-depth.svg)
+
+*Figure 21.1 — batched positional read/write throughput vs requested ring depth.
+Source: `evidence/performance/uring-depth.json`; regenerate with
+`python3 scripts/render_charts.py --check`.*
+
+![io_uring depth sweep: SQ-full events vs ring depth](charts/uring-depth-sq.svg)
+
+*Figure 21.2 — read `sq_full` events fall to zero once the depth reaches the
+batch size; write `sq_full` is zero at every depth (the write cap). Source:
+`evidence/performance/uring-depth.json`; regenerate with
+`python3 scripts/render_charts.py --check`.*
+
 **Honesty caveats.** Single run, single host, page-cache warm; absolute
 nanoseconds are load-sensitive. **This court ran in the default container**, where
 the seccomp profile denies `perf_event_open` with `EPERM`, so its evidence records
@@ -1627,6 +1684,18 @@ load).** Aggregate `ops/s` is per row; latency is nanoseconds.
 | 16 | 2.81 M | 356.5 | 1 453 | 19 606 | 31 458 | 50 154 |
 | 32 | 2.86 M | 349.1 | 1 483 | 39 864 | 65 692 | 109 053 |
 | 64 | 2.84 M | 352.6 | 1 593 | 81 832 | 132 927 | 201 476 |
+
+![64-thread read scaling: aggregate throughput](charts/reader-scaling-64.svg)
+
+*Figure 22.1 — aggregate read throughput vs concurrent readers. Source:
+`evidence/performance/reader-scaling-64.json`; regenerate with
+`python3 scripts/render_charts.py --check`.*
+
+![64-thread read scaling: latency percentiles](charts/reader-scaling-64-tail.svg)
+
+*Figure 22.2 — latency percentiles (p50/p95/p99/p99.9, log-log) vs concurrent
+readers. Source: `evidence/performance/reader-scaling-64.json`; regenerate with
+`python3 scripts/render_charts.py --check`.*
 
 **Reading the curve, honestly.**
 
@@ -1686,6 +1755,12 @@ measured loop).**
 | EKBLOOM manifested read (via planner) | 20 000 | 284.5 | **1 477** | 5 101.0 | 0.14 | 1.24 | **3.45** | 0.085 |
 | `ReadPlanner` steady-state selection | 500 000 | 170.8 | **890** | 3 547.0 | 0.013 | 1.01 | **3.98** | 0.027 |
 | backing log segment read | 100 000 | 188.2 | **456** | 1 160.0 | 0.03 | 1.01 | **2.54** | 0.005 |
+
+![PMU counters per hot-path component](charts/pmu.svg)
+
+*Figure 23.1 — cycles/op and instructions/op per hot-path component (IPC =
+instructions/cycles). Source: `evidence/performance/pmu.json`; regenerate with
+`python3 scripts/render_charts.py --check`.*
 
 **Reading the counters.**
 

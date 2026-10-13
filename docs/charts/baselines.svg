@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="monospace"><rect x="0" y="0" width="760" height="440" fill="#ffffff"/><text x="380.0" y="22.0" fill="#111111" font-size="14" text-anchor="middle" font-weight="bold">external baselines: sequential throughput by backend</text>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="344.0" fill="#111111" font-size="11" text-anchor="end">0</text>
+<line x1="84.0" y1="233.0" x2="736.0" y2="233.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="237.0" fill="#111111" font-size="11" text-anchor="end">10k</text>
+<line x1="84.0" y1="125.9" x2="736.0" y2="125.9" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="129.9" fill="#111111" font-size="11" text-anchor="end">20k</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<text x="26.0" y="201.0" fill="#111111" font-size="12" text-anchor="middle" transform="rotate(-90 26.0 201.0)">throughput (MB/s)</text>
+<rect x="106.8" y="268.0" width="52.2" height="72.0" fill="#1f77b4"/>
+<rect x="172.0" y="158.1" width="52.2" height="181.9" fill="#d62728"/>
+<text x="165.5" y="358.0" fill="#111111" font-size="11" text-anchor="middle">tmpfs</text>
+<rect x="269.8" y="248.5" width="52.2" height="91.5" fill="#1f77b4"/>
+<rect x="335.0" y="119.0" width="52.2" height="221.0" fill="#d62728"/>
+<text x="328.5" y="358.0" fill="#111111" font-size="11" text-anchor="middle">container-overlay</text>
+<rect x="432.8" y="272.7" width="52.2" height="67.3" fill="#1f77b4"/>
+<rect x="498.0" y="62.0" width="52.2" height="278.0" fill="#d62728"/>
+<text x="491.5" y="358.0" fill="#111111" font-size="11" text-anchor="middle">host-fs</text>
+<rect x="661.0" y="233.4" width="52.2" height="106.6" fill="#d62728"/>
+<text x="654.5" y="358.0" fill="#111111" font-size="11" text-anchor="middle">raw-memory</text>
+<rect x="84.0" y="35.0" width="10" height="10" fill="#1f77b4"/>
+<text x="99.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">seq append MB/s</text>
+<rect x="224.0" y="35.0" width="10" height="10" fill="#d62728"/>
+<text x="239.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">seq read MB/s</text>
+<text x="84.0" y="370.0" fill="#555555" font-size="10" text-anchor="start">source: evidence/performance/baselines.json (32 MiB file, page-cache warm)</text>
+<text x="84.0" y="386.0" fill="#555555" font-size="10" text-anchor="start">raw-memory is a Vec&lt;u8&gt; scan (read only); these are the external floor, not an OrFS win</text>
+<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">regenerate: python3 scripts/render_charts.py --check</text>
+</svg>

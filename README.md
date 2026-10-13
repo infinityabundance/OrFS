@@ -26,7 +26,8 @@ This repository is being built in ordered phases (see `docs/ORFS-SPEC.md` and
 but not yet wired rejects the request with its owning phase rather than
 pretending to work.
 
-Working today: `orfs doctor`, `orfs init`, `orfs inspect [--json]`,
+Working today: `orfs doctor` (and `orfs doctor --capacity --backing <dir>`, a
+capacity report), `orfs init`, `orfs inspect [--json]`,
 `orfs verify [--deep]`, `orfs recover`, and
 `orfs mount <backing> <mnt> --transport <fuse|fuse-uring> --backing-io <sync|uring> ...`
 (plus `orfs unmount`). `--transport fuse-uring` requests FUSE-over-`io_uring`
@@ -103,6 +104,7 @@ enable it (see `docs/FUSE_URING.md`).
 | 65 | Autonomous concealed-expansion controller (research §12): a pure predictor chooses no-manifestation vs the direct-page atlas under a manifested-space budget `B`; best-effort construction + byte-identity verification; measured monotone answer-time improvement with authority retained | complete |
 | 66 | Mounted courts for three reviewer items: F2 concurrency extended to 64 readers (throughput 86–107% of F0; the strict p99 target is **not** met at every count, stated plainly); a `baseline_passthrough` three-way comparison (ext4 vs FUSE passthrough vs ordinary OrFS mount); and a paired mounted planner benchmark (manifested vs authoritative-only over one history) | complete |
 | 67 | Explicit `format_version` in the authoritative log's genesis identity (`0` = legacy, `1` = current; accept any known version `≤` current, refuse a higher one with a typed error); frozen `legacy_v0`/`current_v1` compatibility fixtures + a byte-identity court (`tests/format_compat.rs`); `docs/MIGRATION.md` | complete |
+| 68 | Capacity guard: `orfs doctor --capacity` operator report (retained bytes, live backing free space, projected growth, `ok`/`warn`/`exhausted` verdict); a typed `CapacityExhausted` pre-flight refusal **before any byte is written**; `init` reservation refusal; `docs/CAPACITY.md` runbook | complete |
 
 Honest non-claims: the image pixel-surface pyramid is **not materialised** (only
 its geometry is implemented), and no performance superiority of F2 or of the

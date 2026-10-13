@@ -25,7 +25,10 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use crate::capacity::{CapacityGovernor, CapacityPolicy, CapacityReport};
+use crate::capacity::{
+    backing_available_bytes, backing_space, CapacityGovernor, CapacityPolicy, CapacityReport,
+    CapacityStatus, CapacityVerdict,
+};
 use crate::error::{OrfsError, Result};
 use crate::failpoints::{self, Failpoint};
 use crate::record::{Record, RecordHeader, RecordType, TypeClass, HEADER_LEN, MAX_PAYLOAD_LEN};
@@ -1262,12 +1265,128 @@ impl Log {
         self.capacity.report(used, optional)
     }
 
+    /// A truthful, operator-facing capacity **inspection** for `volume`
+    /// (`orfs doctor --capacity`, Phase 68): the retained authoritative
+    /// footprint, the live backing free space and mount identity, the projected
+    /// per-transaction growth, and a verdict (`ok`/`warn`/`exhausted`) against
+    /// `reserve_override` (falling back to the policy reserve). It never mutates
+    /// the volume.
+    pub fn capacity_status(&self, volume: &Path, reserve_override: Option<u64>) -> CapacityStatus {
+        let policy = self.capacity.policy();
+        let reserve_bytes = reserve_override.unwrap_or(policy.reserve_bytes);
+        let space = backing_space(&self.dir);
+        let free_bytes = space.as_ref().map(|s| s.available_bytes);
+        let headroom_bytes = free_bytes.map(|f| f.saturating_sub(reserve_bytes));
+        let bytes_per_transaction = self.sampled_bytes_per_transaction();
+        let estimated_transactions_remaining = match (headroom_bytes, bytes_per_transaction) {
+            (Some(h), Some(b)) if b > 0 => Some(h / b),
+            _ => None,
+        };
+        let verdict = match free_bytes {
+            Some(f) => CapacityVerdict::classify(f, reserve_bytes, bytes_per_transaction),
+            // An unreadable backing is reported as `warn` (never silently `ok`).
+            None => CapacityVerdict::Warn,
+        };
+        CapacityStatus {
+            volume: volume.display().to_string(),
+            verdict,
+            reserve_bytes,
+            free_bytes,
+            headroom_bytes,
+            physical_bytes: self.physical_authoritative_bytes(),
+            authoritative_bytes: self.authoritative_bytes(),
+            segment_count: self.extents().len(),
+            transaction_count: self.transaction_count(),
+            bytes_per_transaction,
+            estimated_transactions_remaining,
+            mount_point: space.as_ref().and_then(|s| s.mount_point.clone()),
+            device: space.as_ref().and_then(|s| s.device.clone()),
+            filesystem: space.as_ref().and_then(|s| s.filesystem.clone()),
+            degraded: self.is_degraded(),
+            degraded_reason: self.capacity.degraded_reason().map(str::to_string),
+            policy,
+        }
+    }
+
+    /// The retained authoritative physical bytes on disk: the committed segment
+    /// files plus the durable commit watermark.
+    fn physical_authoritative_bytes(&self) -> u64 {
+        let mut total = 0u64;
+        for e in self.extents() {
+            if let Ok(name) = segment_file_name(e.id) {
+                if let Ok(m) = std::fs::metadata(self.dir.join(name)) {
+                    total = total.saturating_add(m.len());
+                }
+            }
+        }
+        if let Ok(m) = std::fs::metadata(watermark::Watermark::path(&self.dir)) {
+            total = total.saturating_add(m.len());
+        }
+        total
+    }
+
+    /// The projected bytes written per committed transaction, **sampled** from
+    /// up to the last 64 committed boundaries (the deltas between consecutive
+    /// published roots). Falls back to the whole-history average, or `None` when
+    /// there is no committed history to sample.
+    fn sampled_bytes_per_transaction(&self) -> Option<u64> {
+        const SAMPLE: usize = 64;
+        let boundaries = self.boundaries();
+        if boundaries.len() >= 2 {
+            let start = boundaries.len().saturating_sub(1 + SAMPLE);
+            let mut total = 0u64;
+            let mut n = 0u64;
+            for w in boundaries[start..].windows(2) {
+                let d = w[1].saturating_sub(w[0]);
+                if d > 0 {
+                    total = total.saturating_add(d);
+                    n += 1;
+                }
+            }
+            if let Some(avg) = total.checked_div(n) {
+                return Some(avg);
+            }
+        }
+        self.authoritative_bytes()
+            .checked_div(self.transaction_count())
+    }
+
     /// Admit `needed` authoritative bytes, or refuse (latching degraded) when the
     /// reserve would be breached or a quota exceeded. This is the single
     /// authoritative-space admission gate.
     pub(crate) fn ensure_capacity(&mut self, needed: u64) -> Result<()> {
         let used = self.authoritative_bytes();
+        // Phase-68 pre-flight backing-space guard: it measures the **live** free
+        // space (not a capacity snapshot taken at open), so a device that shrinks
+        // or fills under other tenants is refused *predictably* before the first
+        // byte rather than discovered mid-commit.
+        self.check_backing_reserve(needed)?;
         self.capacity.check_authoritative(used, needed)
+    }
+
+    /// The live backing-reserve guard (Phase 68). Crossing the reserve but
+    /// leaving positive headroom is a **non-latching** [`OrfsError::CapacityExhausted`]
+    /// (a smaller transaction still fits). Breaching the reserve floor itself
+    /// (`headroom == 0`) latches the volume read-only first, so subsequent
+    /// mutations return `EROFS`. Never writes a byte.
+    fn check_backing_reserve(&mut self, needed: u64) -> Result<()> {
+        let reserve = self.capacity.policy().reserve_bytes;
+        let Some(free) = backing_available_bytes(&self.dir) else {
+            return Ok(());
+        };
+        let headroom = free.saturating_sub(reserve);
+        if needed <= headroom {
+            return Ok(());
+        }
+        if headroom == 0 {
+            self.capacity.degrade(format!(
+                "backing store at or below the reserve: free {free} <= reserve {reserve}"
+            ));
+        }
+        Err(OrfsError::CapacityExhausted {
+            needed,
+            admissible: headroom,
+        })
     }
 
     /// Pin a committed root so its segments cannot be quarantined or rolled over

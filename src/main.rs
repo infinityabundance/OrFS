@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use orfs::bench::{BenchConfig, BenchParams, Workload};
+use orfs::capacity::{CapacityStatus, CapacityVerdict};
 use orfs::commit::DurabilityMode;
 use orfs::fuse::{self, BackingIo, F2Servicing, MountOptions, StatfsMode, Transport};
 use orfs::log::{scan_log, OpenMode, TailInfo, DEFAULT_SEGMENT_SIZE};
@@ -54,6 +55,10 @@ enum Command {
         /// Segment size policy in bytes (default 64 MiB).
         #[arg(long)]
         segment_size: Option<u64>,
+        /// Refuse to create the volume unless the backing filesystem can hold the
+        /// framed genesis record plus this many bytes kept free (Phase 68).
+        #[arg(long, default_value_t = 0)]
+        reserve: u64,
     },
 
     /// Mount a backing volume through FUSE.
@@ -270,7 +275,19 @@ enum Command {
     },
 
     /// Report real kernel and container capabilities.
-    Doctor,
+    Doctor {
+        /// Report the capacity policy, live backing free space, projected growth,
+        /// and a verdict for a volume (requires `--backing`).
+        #[arg(long)]
+        capacity: bool,
+        /// Backing volume directory to inspect (with `--capacity`).
+        #[arg(long, requires = "capacity")]
+        backing: Option<PathBuf>,
+        /// Judge the verdict against this reserve in bytes (default: the policy
+        /// reserve; only meaningful with `--capacity`).
+        #[arg(long, requires = "capacity")]
+        reserve: Option<u64>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -326,11 +343,16 @@ fn main() -> ExitCode {
 
 fn run(cli: &Cli) -> Result<()> {
     match &cli.command {
-        Command::Doctor => doctor(cli.json),
+        Command::Doctor {
+            capacity,
+            backing,
+            reserve,
+        } => doctor(cli.json, *capacity, backing.as_deref(), *reserve),
         Command::Init {
             backing,
             segment_size,
-        } => init(backing, *segment_size, cli.json),
+            reserve,
+        } => init(backing, *segment_size, *reserve, cli.json),
         Command::Mount {
             backing,
             mountpoint,
@@ -1250,9 +1272,9 @@ fn snapshot_mount_cmd(
 // init
 // ---------------------------------------------------------------------------
 
-fn init(backing: &Path, segment_size: Option<u64>, json: bool) -> Result<()> {
+fn init(backing: &Path, segment_size: Option<u64>, reserve: u64, json: bool) -> Result<()> {
     let segment_size = segment_size.unwrap_or(DEFAULT_SEGMENT_SIZE);
-    let vol = Volume::init(backing, segment_size)?;
+    let vol = Volume::init_with_reserve(backing, segment_size, reserve)?;
     if json {
         let out = serde_json::json!({
             "volume": backing.display().to_string(),
@@ -1260,6 +1282,7 @@ fn init(backing: &Path, segment_size: Option<u64>, json: bool) -> Result<()> {
             "format_version": vol.meta.format_version,
             "created_at_unix_secs": vol.meta.created_at_unix_secs,
             "segment_size": vol.meta.segment_size,
+            "reserve_bytes": reserve,
             "genesis_root": vol.log.committed_end_offset(),
         });
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
@@ -1269,6 +1292,7 @@ fn init(backing: &Path, segment_size: Option<u64>, json: bool) -> Result<()> {
     println!("  uuid:           {}", vol.meta.uuid_string());
     println!("  format version: {}", vol.meta.format_version);
     println!("  segment size:   {} bytes", vol.meta.segment_size);
+    println!("  reserve:        {reserve} bytes");
     println!("  genesis root:   {}", vol.log.committed_end_offset());
     Ok(())
 }
@@ -1534,7 +1558,10 @@ fn recover(backing: &Path, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn doctor(json: bool) -> Result<()> {
+fn doctor(json: bool, capacity: bool, backing: Option<&Path>, reserve: Option<u64>) -> Result<()> {
+    if capacity {
+        return doctor_capacity(backing, reserve, json);
+    }
     let caps = orfs::capabilities::probe();
     let uring = orfs::uring::probe_available();
     let f2 = orfs::fuse_uring::discover_report();
@@ -1667,6 +1694,101 @@ fn doctor(json: bool) -> Result<()> {
         uring.as_ref().err().map(|s| s.as_str()).unwrap_or("ok")
     );
     Ok(())
+}
+
+fn doctor_capacity(backing: Option<&Path>, reserve: Option<u64>, json: bool) -> Result<()> {
+    let backing = backing.ok_or_else(|| {
+        OrfsError::InvalidArgument("doctor --capacity requires --backing <dir>".to_string())
+    })?;
+    let vol = Volume::open(backing, OpenMode::ReadOnly)?;
+    let status = vol.capacity_status(reserve);
+    if json {
+        let out = serde_json::json!({
+            "schema": "orfs.capacity.report.v1",
+            "orfs_version": orfs::VERSION,
+            "status": status,
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
+    print_capacity_status(&status);
+    Ok(())
+}
+
+fn verdict_str(v: CapacityVerdict) -> &'static str {
+    match v {
+        CapacityVerdict::Ok => "ok",
+        CapacityVerdict::Warn => "warn",
+        CapacityVerdict::Exhausted => "exhausted",
+    }
+}
+
+fn print_capacity_status(s: &CapacityStatus) {
+    println!("OrFS capacity — {}", s.volume);
+    println!("  verdict:                    {}", verdict_str(s.verdict));
+    println!("  reserve:                    {} bytes", s.reserve_bytes);
+    match s.free_bytes {
+        Some(f) => println!("  backing free:               {f} bytes"),
+        None => println!("  backing free:               unreadable"),
+    }
+    match s.headroom_bytes {
+        Some(h) => println!("  headroom above reserve:     {h} bytes"),
+        None => println!("  headroom above reserve:     unknown"),
+    }
+    println!("  retained physical bytes:    {}", s.physical_bytes);
+    println!(
+        "  authoritative frontier:     {} bytes",
+        s.authoritative_bytes
+    );
+    println!("  log segments:               {}", s.segment_count);
+    println!("  committed transactions:     {}", s.transaction_count);
+    match s.bytes_per_transaction {
+        Some(b) => println!("  bytes per transaction:      {b}"),
+        None => println!("  bytes per transaction:      unknown (no committed history)"),
+    }
+    match s.estimated_transactions_remaining {
+        Some(t) => println!("  est. transactions left:     {t}"),
+        None => println!("  est. transactions left:     unknown"),
+    }
+    println!(
+        "  backing filesystem:         {}",
+        s.filesystem.as_deref().unwrap_or("unknown")
+    );
+    println!(
+        "  backing mount:              {}",
+        s.mount_point.as_deref().unwrap_or("unknown")
+    );
+    println!(
+        "  backing device:             {}",
+        s.device.as_deref().unwrap_or("unknown")
+    );
+    println!("  degraded (read-only):       {}", yesno(s.degraded));
+    if let Some(r) = &s.degraded_reason {
+        println!("  degraded reason:            {r}");
+    }
+    println!("  policy:");
+    println!(
+        "    reserve:                  {} bytes",
+        s.policy.reserve_bytes
+    );
+    match s.policy.authoritative_capacity_bytes {
+        Some(c) => println!("    authoritative capacity:   {c} bytes"),
+        None => println!("    authoritative capacity:   unbounded (device-derived)"),
+    }
+    if let Some(q) = s.policy.soft_quota_bytes {
+        println!("    soft quota:               {q} bytes");
+    }
+    if let Some(q) = s.policy.hard_quota_bytes {
+        println!("    hard quota:               {q} bytes");
+    }
+    let note = match s.verdict {
+        CapacityVerdict::Ok => "comfortable headroom above the reserve",
+        CapacityVerdict::Warn => "thin headroom: plan to grow or relocate the backing store",
+        CapacityVerdict::Exhausted => {
+            "no headroom: commits will be refused (read-only until space is freed)"
+        }
+    };
+    println!("  => {}: {}", verdict_str(s.verdict), note);
 }
 
 fn yesno(b: bool) -> &'static str {

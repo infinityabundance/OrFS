@@ -1,0 +1,42 @@
+{
+  "all_ok": true,
+  "doctor_capacity": {
+    "sane_numbers": {
+      "authoritative_bytes": 17206,
+      "bytes_per_transaction": 1069,
+      "device": "/dev/nvme1n1p1",
+      "free_bytes": 74005274624,
+      "mount_point": "/mnt/1tb_kingston",
+      "physical_bytes": 17242,
+      "segment_count": 1,
+      "transaction_count": 16
+    },
+    "verdict_exhausted_zero_headroom": "exhausted",
+    "verdict_ok_no_reserve": "ok",
+    "verdict_warn_thin_headroom": "warn"
+  },
+  "generator": "tests/capacity_guard.rs",
+  "guard": {
+    "check": "live statvfs free space vs (framed transaction + reserve)",
+    "errno": "ENOSPC",
+    "error": "OrfsError::CapacityExhausted",
+    "latch_condition": "headroom == 0 (free <= reserve) -> read-only (EROFS)",
+    "latching": false,
+    "preserves": "the previous committed root is intact; no committed byte is rewritten",
+    "runs_before_any_byte_is_written": true
+  },
+  "invariants": {
+    "doctor_reports_sane_numbers": true,
+    "init_refuses_when_reservation_cannot_fit": true,
+    "no_authoritative_history_reclaimed": true,
+    "non_withdrawal_preserved": true,
+    "previous_root_intact_after_refusal": true,
+    "refusal_does_not_latch_read_only": true,
+    "reserve_floor_latches_read_only_enospc_then_erofs": true,
+    "smaller_transaction_still_succeeds": true,
+    "transaction_crossing_the_reserve_is_refused": true,
+    "verdict_flips_with_reserve": true
+  },
+  "note": "non-withdrawal means the disk fills forever; the guard adds a predictable refusal, never a silent deletion",
+  "schema": "orfs.recovery.capacity-guard.v1"
+}

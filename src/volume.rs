@@ -20,7 +20,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::capacity::{CapacityPolicy, CapacityReport};
+use crate::capacity::{CapacityPolicy, CapacityReport, CapacityStatus};
 use crate::error::{OrfsError, Result};
 use crate::log::{scan_log, Log, OpenMode};
 use crate::record::{
@@ -278,7 +278,21 @@ impl Volume {
 
     /// Initialize a new volume with a fresh UUID and a genesis record.
     pub fn init(dir: &Path, segment_size: u64) -> Result<Volume> {
-        Self::init_with_uuid(dir, segment_size, random_uuid(), now_unix_secs())
+        Self::init_with_uuid_and_reserve(dir, segment_size, random_uuid(), now_unix_secs(), 0)
+    }
+
+    /// Initialize a new volume with a fresh UUID, refusing (with
+    /// [`OrfsError::CapacityExhausted`], errno `ENOSPC`) when the backing
+    /// filesystem cannot hold the volume's **initial reservation**: the framed
+    /// genesis record plus `reserve_bytes` kept free (Phase 68).
+    pub fn init_with_reserve(dir: &Path, segment_size: u64, reserve_bytes: u64) -> Result<Volume> {
+        Self::init_with_uuid_and_reserve(
+            dir,
+            segment_size,
+            random_uuid(),
+            now_unix_secs(),
+            reserve_bytes,
+        )
     }
 
     /// Initialize a new volume with an explicit identity. Used by tests and
@@ -289,6 +303,18 @@ impl Volume {
         uuid: [u8; 16],
         created_at_unix_secs: u64,
     ) -> Result<Volume> {
+        Self::init_with_uuid_and_reserve(dir, segment_size, uuid, created_at_unix_secs, 0)
+    }
+
+    /// The full initialiser: identity, segment size, and the authoritative
+    /// `reserve_bytes` the volume is created under.
+    pub fn init_with_uuid_and_reserve(
+        dir: &Path,
+        segment_size: u64,
+        uuid: [u8; 16],
+        created_at_unix_secs: u64,
+        reserve_bytes: u64,
+    ) -> Result<Volume> {
         if segment_size == 0 {
             return Err(OrfsError::InvalidArgument(
                 "segment size must be non-zero".to_string(),
@@ -298,6 +324,22 @@ impl Volume {
         if meta_path.exists() {
             return Err(OrfsError::AlreadyExists);
         }
+
+        // Phase 68: refuse *before* creating anything when the backing
+        // filesystem cannot hold the initial reservation (the framed genesis
+        // record plus the declared reserve).
+        let genesis = Record::new(
+            RecordType::VolumeGenesis,
+            0,
+            0,
+            0,
+            0,
+            0,
+            genesis_payload(&uuid, segment_size),
+        )?;
+        let initial_bytes = genesis.encode()?.len() as u64;
+        crate::capacity::check_reservation(dir, initial_bytes, reserve_bytes)?;
+
         let log_dir = Self::log_dir(dir);
         std::fs::create_dir_all(&log_dir)?;
         std::fs::create_dir_all(dir.join("index"))?;
@@ -309,15 +351,10 @@ impl Volume {
         // Authoritative content first: a crash before volume.meta leaves an
         // orphan log that is not a volume, never a volume without a log.
         let mut log = Log::create(&log_dir, segment_size)?;
-        let genesis = Record::new(
-            RecordType::VolumeGenesis,
-            0,
-            0,
-            0,
-            0,
-            0,
-            genesis_payload(&uuid, segment_size),
-        )?;
+        if reserve_bytes > 0 {
+            // Apply the declared reserve so the genesis append is guarded too.
+            log.set_capacity_policy(CapacityPolicy::new().with_reserve(reserve_bytes));
+        }
         log.append(genesis)?;
         log.sync()?;
 
@@ -401,6 +438,14 @@ impl Volume {
     /// A truthful capacity report for this volume.
     pub fn capacity_report(&self) -> CapacityReport {
         self.log.capacity_report()
+    }
+
+    /// A truthful capacity **inspection** for an operator
+    /// (`orfs doctor --capacity`, Phase 68). `reserve_override` replaces the
+    /// policy reserve for the verdict when given. Read-only: it never mutates
+    /// the volume.
+    pub fn capacity_status(&self, reserve_override: Option<u64>) -> CapacityStatus {
+        self.log.capacity_status(&self.root_dir, reserve_override)
     }
 
     /// Whether the volume has latched into degraded/read-only mode.

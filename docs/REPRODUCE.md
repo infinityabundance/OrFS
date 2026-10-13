@@ -51,6 +51,7 @@ All execution is Docker-only (`scripts/lib.sh`); nothing runs on the host.
 | `evidence/correctness/posix-extras.json` | `tests/posix_extras.rs` | `sh -c '. scripts/lib.sh && docker_run cargo test -p orfs --test posix_extras'` |
 | `evidence/security/fault-injection.json` | `tests/fs_fault_injection.rs` | `sh scripts/container-fault-injection.sh` |
 | `evidence/recovery/fault-injection-verify-recover.json` | `tests/verify_recover_faults.rs` | `sh scripts/container-fault-verify.sh` |
+| `evidence/recovery/capacity-guard.json` | `tests/capacity_guard.rs` | `sh -c '. scripts/lib.sh && docker_run cargo test -p orfs --test capacity_guard'` |
 | `evidence/performance/pmu.json`, `flamegraph-microarch.{folded,svg,json}` | `tests/microarch_pmu.rs` | `sh scripts/container-pmu.sh` |
 | `evidence/receipts/acceptance-audit-v4.json` | the acceptance-audit re-run (a manual aggregation, not one test) | the gate set: `sh scripts/container-test.sh` and `sh scripts/container-test.sh --features failpoints`, `sh scripts/container-check.sh`, `sh scripts/container-posix-test.sh`, `sh scripts/container-uring-test.sh`, `sh scripts/container-fuse-test.sh` (see `docs/ACCEPTANCE-AUDIT-HEAD.md` §1) |
 | `tests/fixtures/{legacy_v0,current_v1}/` (frozen bytes; **not** a receipt) | `tests/format_compat.rs` (`generate_fixtures`) | `sh -c '. scripts/lib.sh && docker_run cargo test -p orfs --test format_compat -- --ignored generate_fixtures'` |

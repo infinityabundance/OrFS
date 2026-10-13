@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–67)
+## 4. The ordered build phases (0–68)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -153,16 +153,17 @@ per-phase record.
 | 65 | Autonomous concealed-expansion controller (research §12): a pure predictor chooses no-manifestation vs the direct-page atlas under a manifested-space budget `B`; best-effort construction + byte-identity verification; measured monotone answer-time improvement with authority retained | **complete** |
 | 66 | Mounted courts for three reviewer items: F2 concurrency to 64 readers (p99 target unmet, stated plainly), a `baseline_passthrough` three-way comparison, and a paired mounted planner benchmark (manifested vs authoritative-only, same history) | **complete** |
 | 67 | Explicit `format_version` in the authoritative log's genesis identity (`0` = legacy, `1` = current); frozen `v0`/`v1` compatibility fixtures + a byte-identity court; the accept-`≤`-current / refuse-higher rule with a typed error; `docs/MIGRATION.md` | **complete** |
+| 68 | Capacity guard: `orfs doctor --capacity` operator report (retained bytes, live backing free space and mount/device, projected growth, `ok`/`warn`/`exhausted` verdict); a typed `CapacityExhausted` pre-flight refusal before any byte is written; `init` reservation refusal; the read-only transition; `docs/CAPACITY.md` operator runbook | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–67 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–68 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
 v0.1.0 was the first release.
 
-- The `orfs` crate builds, its **478** tests (default) pass, and
-  `cargo test --features failpoints` adds the crash-injection court (488 tests in
+- The `orfs` crate builds, its **483** tests (default) pass, and
+  `cargo test --features failpoints` adds the crash-injection court (493 tests in
   total); `cargo fmt -p orfs --check` / `clippy --all-targets -- -D warnings` are
   clean **inside the pinned container** (`scripts/container-*.sh`).
 - `src/capabilities.rs` + `orfs doctor` perform a **real** kernel/container
@@ -225,6 +226,7 @@ Normative implementation documents to be produced. Status is marked honestly.
 | `docs/PERFORMANCE.md` | Benchmark methodology, metrics, reproducibility rules | **exists** (Phase 12) |
 | `docs/PMU.md` | Real hardware performance counters and the flamegraph; the container-flag requirement | **exists** (Phase 57) |
 | `docs/LIMITATIONS.md` | Known limits, kernel-dependence, unsupported capabilities | **exists** |
+| `docs/CAPACITY.md` | The volume capacity policy, `orfs doctor --capacity`, the pre-flight `CapacityExhausted` refusal, and the operator runbook for disk filling and the read-only transition | **exists** (Phase 23; runbook Phase 68) |
 
 Every normative document above exists; there are no planned-only documents.
 
@@ -252,7 +254,7 @@ sibling working tree is required):
 
 ```sh
 scripts/container-build.sh        # cargo build
-scripts/container-test.sh        # cargo test  (454 tests)
+scripts/container-test.sh        # cargo test  (483 tests)
 scripts/container-fuse-test.sh    # real-mount FUSE + performance court
 scripts/container-uring-test.sh   # io_uring integration + backing benchmark
 scripts/container-check.sh        # cargo fmt -p orfs --check + clippy -D warnings

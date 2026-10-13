@@ -3704,3 +3704,87 @@ suite is now **478** tests (+9); `--features failpoints` is **488** (+9).
 * The frozen fixtures are deliberately minimal (derived `index/`, `.or_bloom/`
   and `commit.watermark` are omitted — they are rebuildable and not authoritative
   identity); each still passes `verify --deep`'s namespace rebuild.
+
+## Phase 68 — Capacity guard: `doctor --capacity`, typed `CapacityExhausted` pre-flight, capacity policy
+
+**Complete.** Reviewer item #2 (*the operational consequence of non-withdrawal*):
+Phase 23 made capacity an explicit policy, but nothing surfaced it to an operator
+and there was no pre-flight guard, so a full backing store could be hit
+*mid-commit*. Phase 68 adds an operator-facing report and a **predictable
+refusal**. The governing law is unchanged: non-withdrawal means history is never
+GC'd, so the disk fills forever — the guard adds a refusal, **never** a silent
+deletion. The default suite is now **483** tests (+5); `--features failpoints` is
+**493** (+5).
+
+### Delivered
+
+* **`orfs doctor --capacity --backing <dir> [--reserve <bytes>] [--json]`** — a new
+  mode of `doctor` (the capability probe is byte-for-byte unchanged when
+  `--capacity` is absent). In text and JSON it reports: the retained authoritative
+  physical bytes (`physical_bytes`, the committed segment files + the commit
+  watermark) and the log segment count; the **live** backing filesystem free space
+  via `statvfs`, with the mount point / device / filesystem type resolved from
+  `/proc/self/mountinfo`; the projected growth (bytes per committed transaction,
+  **sampled** from up to the last 64 committed boundaries) and the estimated
+  transactions of headroom that remain; and a verdict (`ok`/`warn`/`exhausted`)
+  against the reserve.
+* **A pre-flight guard.** `Log::ensure_capacity` now measures the **live** backing
+  free space (not the capacity snapshot taken at open) and refuses a transaction
+  whose framed size plus the reserve would not fit — **before any byte is
+  written**. The refusal is the new typed
+  `OrfsError::CapacityExhausted { needed, admissible }` (errno `ENOSPC`); it is
+  **non-latching** while positive headroom remains, so a smaller transaction still
+  succeeds and the previous committed root is left intact. When the reserve floor
+  itself is breached (zero headroom) the volume latches **read-only** first, and
+  every later mutation is `EROFS`. The guard runs on the whole framed transaction
+  in `commit.rs` (`publish_one`) and per record in `Log::reserve`.
+* **`init` refuses an impossible reservation.** `Volume::init_with_reserve` (and
+  the `orfs init --reserve <bytes>` flag) measures the backing free space *before
+  creating anything* and returns `CapacityExhausted` when the framed genesis record
+  plus the declared reserve cannot fit.
+* **The read-only transition is preserved.** The explicit capacity / hard-quota
+  path still latches read-only (`NoSpace`); an optional (manifestation) breach is
+  still throttled first and never fails an authoritative commit. The governor's
+  **device-derived** capacity is now used only for optional throttling and
+  reporting — the live guard owns the device.
+
+### Tests (inside the container)
+
+* `tests/capacity_guard.rs` (new, 5 tests, always-on; **no host disk is filled**):
+  `doctor_capacity_reports_sane_numbers_and_a_flipping_verdict`,
+  `a_transaction_crossing_the_reserve_is_refused_and_smaller_still_succeeds`,
+  `breaching_the_reserve_floor_latches_read_only`,
+  `init_refuses_when_the_initial_reservation_cannot_fit`, and
+  `write_capacity_guard_evidence`. The reserve is chosen relative to the
+  `statvfs`-measured free space, so a small backing volume is simulated in a temp
+  directory.
+* `tests/recovery_adversarial.rs` (the Phase-23 capacity court) stays green
+  unchanged.
+* `cargo test`: **483** (default) / **493** (`--features failpoints`);
+  `cargo fmt -p orfs --check` and `clippy --all-targets -- -D warnings` clean.
+
+### Evidence
+
+* `evidence/recovery/capacity-guard.json` (schema
+  `orfs.recovery.capacity-guard.v1`) — the doctor figures/verdicts and the
+  machine-checkable guard verdicts, generated from real runs by
+  `tests/capacity_guard.rs`.
+
+### Docs
+
+`docs/CAPACITY.md` §9–§12 (the operator runbook: what non-withdrawal implies, what
+`doctor --capacity` reports, the pre-flight refusal, growing/relocating the backing
+store, and the read-only transition); the phase row and refreshed test counts in
+`README.md` and `docs/ORFS-SPEC.md` (incl. the `docs/CAPACITY.md` doc-set row); the
+receipt row in `docs/REPRODUCE.md`.
+
+### Notes, stated honestly
+
+* **Non-withdrawal is not weakened.** The guard only ever *refuses* growth; it
+  never truncates, reclaims, or rewrites committed history, so an exhausted volume
+  needs freed space (or a larger device) to become writable again — reopening
+  re-evaluates capacity.
+* **The reserve bounds *this* volume, not the device.** Another tenant can fill the
+  backing store; the live guard now predicts this before the write rather than
+  relying on the OS `ENOSPC` mid-write, but the OS error remains the ultimate
+  backstop.

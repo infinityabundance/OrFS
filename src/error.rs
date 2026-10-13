@@ -76,6 +76,24 @@ pub enum OrfsError {
     #[error("no space on backing store: {0}")]
     NoSpace(String),
 
+    /// The configured **capacity guard** refused a transaction *before any byte
+    /// was written* (Phase 68): the framed transaction plus the configured
+    /// reserve would not fit in the live backing free space (`needed` bytes are
+    /// required, `admissible` are available while keeping the reserve).
+    ///
+    /// This is a **predictable** refusal — the guard runs ahead of the write, so
+    /// the previous committed root is left intact and the transaction is
+    /// aborted cleanly, never half-written. It maps to `ENOSPC`. Unlike
+    /// [`OrfsError::NoSpace`] it does **not** by itself latch the volume
+    /// read-only: a smaller transaction (one that still leaves the reserve
+    /// intact) remains admissible. Only when the reserve floor itself is
+    /// breached (zero admissible headroom) does the log latch degraded, after
+    /// which further mutations return [`OrfsError::ReadOnly`] (`EROFS`).
+    #[error(
+        "capacity guard refusal: {needed} byte(s) needed, {admissible} admissible before the reserve"
+    )]
+    CapacityExhausted { needed: u64, admissible: u64 },
+
     /// Committed state failed an integrity or structural check.
     #[error("corrupt committed state: {0}")]
     Corrupt(String),
@@ -142,6 +160,12 @@ impl OrfsError {
         match self {
             OrfsError::NoSpace(_) => true,
             OrfsError::Io(e) => matches!(e.raw_os_error(), Some(libc::ENOSPC) | Some(libc::EIO)),
+            // The Phase-68 capacity guard's *predictable* refusal is not (by
+            // itself) a store failure: it refuses a too-large transaction before
+            // writing anything, and a smaller transaction may still be admitted.
+            // The guard latches degraded itself only when the reserve floor is
+            // breached (zero headroom).
+            OrfsError::CapacityExhausted { .. } => false,
             _ => false,
         }
     }
@@ -164,6 +188,7 @@ impl OrfsError {
             OrfsError::DirectoryNotEmpty => libc::ENOTEMPTY,
             OrfsError::DirectoryCycle => libc::EINVAL,
             OrfsError::NoSpace(_) => libc::ENOSPC,
+            OrfsError::CapacityExhausted { .. } => libc::ENOSPC,
             OrfsError::Corrupt(_) => libc::EIO,
             OrfsError::Unsupported(_) => libc::EOPNOTSUPP,
             OrfsError::Compatibility(_) => libc::EPROTONOSUPPORT,

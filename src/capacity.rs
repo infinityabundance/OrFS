@@ -115,6 +115,98 @@ pub struct CapacityReport {
     pub degraded_reason: Option<String>,
 }
 
+/// The verdict of a capacity inspection against a reserve: enough headroom
+/// (`ok`), close to the reserve (`warn`), or no headroom left (`exhausted`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CapacityVerdict {
+    /// Comfortably above the reserve.
+    Ok,
+    /// Headroom is below the reserve, or below one projected transaction.
+    Warn,
+    /// No headroom above the reserve: the volume is at (or below) its reserve.
+    Exhausted,
+}
+
+impl CapacityVerdict {
+    /// Classify `free` backing bytes against `reserve` and a projected
+    /// per-transaction growth. `exhausted` means there is no headroom above the
+    /// reserve — the point at which the guard's refusal becomes a read-only
+    /// transition. `warn` means the headroom is thinner than the reserve itself
+    /// (or than a single projected transaction).
+    pub fn classify(free: u64, reserve: u64, bytes_per_transaction: Option<u64>) -> Self {
+        let headroom = free.saturating_sub(reserve);
+        if headroom == 0 {
+            CapacityVerdict::Exhausted
+        } else if headroom < reserve || bytes_per_transaction.is_some_and(|b| headroom < b) {
+            CapacityVerdict::Warn
+        } else {
+            CapacityVerdict::Ok
+        }
+    }
+}
+
+/// The backing filesystem holding a volume's directory, read from `statvfs`
+/// plus the mount identity from `/proc/self/mountinfo` (Phase 68).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BackingSpace {
+    /// Bytes available to an unprivileged writer (`f_bavail * f_frsize`).
+    pub available_bytes: u64,
+    /// Free bytes including the filesystem's root reserve (`f_bfree * f_frsize`).
+    pub free_bytes: u64,
+    /// Total filesystem size (`f_blocks * f_frsize`).
+    pub total_bytes: u64,
+    /// The mount point of the backing filesystem, when it can be identified.
+    pub mount_point: Option<String>,
+    /// The backing device / source, when it can be identified.
+    pub device: Option<String>,
+    /// The backing filesystem type, when it can be identified.
+    pub filesystem: Option<String>,
+}
+
+/// A truthful, machine-readable capacity inspection for an operator
+/// (`orfs doctor --capacity`, Phase 68). It ties together the retained
+/// authoritative footprint, the live backing free space, the projected growth,
+/// and a verdict against the configured reserve.
+#[derive(Debug, Clone, Serialize)]
+pub struct CapacityStatus {
+    /// The volume directory.
+    pub volume: String,
+    /// The verdict against the reserve.
+    pub verdict: CapacityVerdict,
+    /// The reserve in force (the `--reserve` override, else the policy reserve).
+    pub reserve_bytes: u64,
+    /// Live backing free space (to an unprivileged writer), when readable.
+    pub free_bytes: Option<u64>,
+    /// Free bytes above the reserve (`free - reserve`), when readable.
+    pub headroom_bytes: Option<u64>,
+    /// Retained authoritative physical bytes (the committed segment files plus
+    /// the durable commit watermark).
+    pub physical_bytes: u64,
+    /// The authoritative logical frontier (committed end offset).
+    pub authoritative_bytes: u64,
+    /// The number of log segments.
+    pub segment_count: usize,
+    /// Committed transactions, excluding genesis.
+    pub transaction_count: u64,
+    /// Projected bytes written per committed transaction (sampled from history).
+    pub bytes_per_transaction: Option<u64>,
+    /// Estimated committed transactions that still fit above the reserve.
+    pub estimated_transactions_remaining: Option<u64>,
+    /// The backing mount point, when identified.
+    pub mount_point: Option<String>,
+    /// The backing device / source, when identified.
+    pub device: Option<String>,
+    /// The backing filesystem type, when identified.
+    pub filesystem: Option<String>,
+    /// Whether the volume has latched read-only.
+    pub degraded: bool,
+    /// Why the volume degraded, when it has.
+    pub degraded_reason: Option<String>,
+    /// The capacity policy in force.
+    pub policy: CapacityPolicy,
+}
+
 /// The capacity governor: admission control for authoritative growth and a
 /// throttle for optional construction.
 ///
@@ -231,7 +323,14 @@ impl CapacityGovernor {
         let projected = used
             .saturating_add(self.optional_used)
             .saturating_add(needed);
-        if let Some(cap) = self.capacity {
+        // The *explicit* authoritative bound (a declared volume size) is a hard
+        // ceiling: crossing it is an orderly read-only transition. A
+        // device-derived capacity (see [`Self::resolve_from_backing`]) is only a
+        // snapshot used for optional throttling and reporting — the **live**
+        // backing-space guard ([`crate::log::Log::ensure_capacity`]) owns the
+        // device, so a volume near a shrinking/filled device gets a predictable
+        // [`OrfsError::CapacityExhausted`] instead of a spurious latch.
+        if let Some(cap) = self.policy.authoritative_capacity_bytes {
             let limit = cap.saturating_sub(self.policy.reserve_bytes);
             if projected > limit {
                 let msg = format!(
@@ -309,9 +408,8 @@ impl CapacityGovernor {
     }
 }
 
-/// The bytes available to an unprivileged writer on the filesystem holding
-/// `dir` (via `statvfs`), or `None` when it cannot be read.
-pub fn backing_available_bytes(dir: &Path) -> Option<u64> {
+/// Read `statvfs` for `dir`, or `None` when it cannot be read.
+fn statvfs(dir: &Path) -> Option<libc::statvfs> {
     use std::os::unix::ffi::OsStrExt;
     let c = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
     // SAFETY: `c` is a valid NUL-terminated path; `st` is a valid, aligned,
@@ -321,12 +419,113 @@ pub fn backing_available_bytes(dir: &Path) -> Option<u64> {
     if rc != 0 {
         return None;
     }
-    let frsize = if st.f_frsize == 0 {
-        st.f_bsize as u64
+    Some(st)
+}
+
+/// The filesystem fragment size `statvfs` reports (falling back to `f_bsize`).
+fn filesystem_block_size(st: &libc::statvfs) -> u64 {
+    if st.f_frsize == 0 {
+        st.f_bsize
     } else {
-        st.f_frsize as u64
+        st.f_frsize
+    }
+}
+
+/// The bytes available to an unprivileged writer on the filesystem holding
+/// `dir` (via `statvfs`), or `None` when it cannot be read.
+pub fn backing_available_bytes(dir: &Path) -> Option<u64> {
+    let st = statvfs(dir)?;
+    Some(st.f_bavail.saturating_mul(filesystem_block_size(&st)))
+}
+
+/// The bytes available to an unprivileged writer on the filesystem that will
+/// hold `dir`, walking up to the nearest existing ancestor when `dir` does not
+/// exist yet (used by `init` before it creates anything).
+pub fn backing_available_nearest(dir: &Path) -> Option<u64> {
+    if let Some(free) = dir.ancestors().find_map(backing_available_bytes) {
+        return Some(free);
+    }
+    // A relative path whose ancestors are all relative (e.g. `vol`): fall back
+    // to the current directory so `init` still measures the real filesystem.
+    std::env::current_dir()
+        .ok()
+        .and_then(|cwd| cwd.ancestors().find_map(backing_available_bytes))
+}
+
+/// Refuse to create a volume whose **initial reservation** (`initial_bytes`, the
+/// framed genesis record, plus `reserve_bytes`) cannot fit in the backing free
+/// space of the filesystem that will hold `dir` (Phase 68). The nearest existing
+/// ancestor is measured, so the check runs before any directory is created. When
+/// the filesystem cannot be measured the check is skipped — the OS `ENOSPC`
+/// remains the ultimate backstop.
+pub fn check_reservation(dir: &Path, initial_bytes: u64, reserve_bytes: u64) -> Result<()> {
+    if let Some(available) = backing_available_nearest(dir) {
+        let required = initial_bytes.saturating_add(reserve_bytes);
+        if required > available {
+            return Err(OrfsError::CapacityExhausted {
+                needed: required,
+                admissible: available,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The backing filesystem's free space and mount identity for `dir`.
+pub fn backing_space(dir: &Path) -> Option<BackingSpace> {
+    let st = statvfs(dir)?;
+    let frsize = filesystem_block_size(&st);
+    let (mount_point, device, filesystem) = mount_identity(dir);
+    Some(BackingSpace {
+        available_bytes: st.f_bavail.saturating_mul(frsize),
+        free_bytes: st.f_bfree.saturating_mul(frsize),
+        total_bytes: st.f_blocks.saturating_mul(frsize),
+        mount_point,
+        device,
+        filesystem,
+    })
+}
+
+/// The mount point, device, and filesystem type of the filesystem holding
+/// `dir`, resolved from the inode's `st_dev` and `/proc/self/mountinfo`.
+/// Returns `(None, None, None)` when it cannot be identified.
+fn mount_identity(dir: &Path) -> (Option<String>, Option<String>, Option<String>) {
+    use std::os::unix::fs::MetadataExt;
+    let Ok(meta) = std::fs::metadata(dir) else {
+        return (None, None, None);
     };
-    Some((st.f_bavail as u64).saturating_mul(frsize))
+    let majmin = format!("{}:{}", libc::major(meta.dev()), libc::minor(meta.dev()));
+    let Ok(text) = std::fs::read_to_string("/proc/self/mountinfo") else {
+        return (None, None, None);
+    };
+    for line in text.lines() {
+        let fields: Vec<&str> = line.split(' ').collect();
+        // Fields: 0 mount id, 1 parent id, 2 major:minor, 3 root, 4 mount point,
+        // ... optional fields ..., a `-` separator, then fstype and source.
+        if fields.len() < 6 || fields[2] != majmin {
+            continue;
+        }
+        let mount_point = Some(unescape_mountinfo(fields[4]));
+        let sep = fields.iter().position(|f| *f == "-");
+        let (filesystem, device) = match sep {
+            Some(i) => (
+                fields.get(i + 1).map(|s| s.to_string()),
+                fields.get(i + 2).map(|s| unescape_mountinfo(s)),
+            ),
+            None => (None, None),
+        };
+        return (mount_point, device, filesystem);
+    }
+    (None, None, None)
+}
+
+/// Decode the octal escapes `mountinfo` uses for space, tab, newline, and
+/// backslash in a field.
+fn unescape_mountinfo(s: &str) -> String {
+    s.replace("\\040", " ")
+        .replace("\\011", "\t")
+        .replace("\\012", "\n")
+        .replace("\\134", "\\")
 }
 
 #[cfg(test)]

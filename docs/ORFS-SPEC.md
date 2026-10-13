@@ -151,16 +151,17 @@ per-phase record.
 | 63 | Evidence charts: inline-styled SVG figures for the performance courts + an image→receipt→command reproducibility index | **complete** |
 | 64 | Direct-page manifestations (research §5): a manifested, page-aligned contiguous atlas of a selected object's bytes, wired in as a measured `direct-image` planner candidate | **complete** |
 | 65 | Autonomous concealed-expansion controller (research §12): a pure predictor chooses no-manifestation vs the direct-page atlas under a manifested-space budget `B`; best-effort construction + byte-identity verification; measured monotone answer-time improvement with authority retained | **complete** |
+| 66 | Mounted courts for three reviewer items: F2 concurrency to 64 readers (p99 target unmet, stated plainly), a `baseline_passthrough` three-way comparison, and a paired mounted planner benchmark (manifested vs authoritative-only, same history) | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–65 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–66 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
 v0.1.0 was the first release.
 
-- The `orfs` crate builds, its **467** tests (default) pass, and
-  `cargo test --features failpoints` adds the crash-injection court (477 tests in
+- The `orfs` crate builds, its **469** tests (default) pass, and
+  `cargo test --features failpoints` adds the crash-injection court (479 tests in
   total); `cargo fmt -p orfs --check` / `clippy --all-targets -- -D warnings` are
   clean **inside the pinned container** (`scripts/container-*.sh`).
 - `src/capabilities.rs` + `orfs doctor` perform a **real** kernel/container

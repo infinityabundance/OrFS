@@ -427,4 +427,6 @@ vary run to run (F0 32-reader throughput ranged 183 k–349 k across runs) while
 single-loop < affine ordering was stable.
 
 Provenance: `tests/f2_concurrency.rs`,
-`evidence/performance/f2-concurrency-affine.json`.
+`evidence/performance/f2-concurrency-affine.json`. Phase 66 extends this court to
+**64 readers** and confirms it: queue-affine stays at 86–107% of F0 throughput, but
+the p99 target is still unmet from 2 to 64 readers (`docs/PERFORMANCE.md` §29.1).

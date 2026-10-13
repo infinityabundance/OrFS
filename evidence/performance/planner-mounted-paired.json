@@ -1,0 +1,216 @@
+{
+  "calibration": {
+    "calibrations_after_warm": 17,
+    "calibrations_steady_delta": 0,
+    "first_pass_ns": 353206239,
+    "plan_builds_after_warm": 5,
+    "plan_builds_steady_delta": 0
+  },
+  "caveat": "Single run, single host; latency is host/load-sensitive. The mounted latency is page-cache warm after a per-request warm read, so it measures dispatch, not cold storage. The in-process arm reports the planner's own selected path; the mounted arm reports only latency (the daemon does not export per-read path selection). Every in-process manifested read is asserted byte-identical to the authoritative read.",
+  "claim": "the manifested read path (phases 37/43 selection, backed by real mounted manifestation) versus the authoritative-only read path, over one heterogeneous committed history and one identical workload, per size class",
+  "cross_commit_note": "A pre-Phase-43 vs Phase-43 before/after is NOT possible here: it needs a second source tree. The paired comparison available in one tree — manifested vs authoritative-only on the same history — is what this receipt reports.",
+  "environment": {
+    "cgroup_memory_max": "8589934592",
+    "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "container_image": "sha256:a41df86df391732ab467b5bedc8b4a17c0df437fa180b5230417a6a8339d97ac",
+    "cores_visible": 8,
+    "cpu_max": "800000 100000",
+    "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+    "fuse_enable_uring": true,
+    "kernel_release": "7.2.9-2-cachyos",
+    "likely_container": true,
+    "machine": "x86_64",
+    "perf_counters_available": true,
+    "perf_event_open_error": null,
+    "perf_event_paranoid": "2",
+    "ram_total_bytes": 134723346432
+  },
+  "generated_by": "tests/planner_mounted.rs::planner_mounted_paired",
+  "manifestation": {
+    "profile": "max-speed",
+    "published_generations": 5
+  },
+  "memory_residency": {
+    "body_capacity": 64,
+    "body_plans": 5,
+    "identity_capacity": 1024,
+    "object_capacity": 64,
+    "object_models": 5,
+    "overlay_failed": 0,
+    "overlay_verified": 0,
+    "total": 10
+  },
+  "mounts": {
+    "authoritative_transport": "F1",
+    "manifested_transport": "F1"
+  },
+  "ran": true,
+  "schema": "orfs.planner-mounted-paired.v1",
+  "size_classes": [
+    {
+      "in_process": {
+        "authoritative_only": {
+          "mean_ns": 647.6707142857143,
+          "p50_ns": 571,
+          "p95_ns": 1042,
+          "p99_ns": 1393,
+          "samples": 1400
+        },
+        "manifested": {
+          "mean_ns": 939.085,
+          "p50_ns": 941,
+          "p95_ns": 1032,
+          "p99_ns": 1142,
+          "samples": 1400
+        },
+        "selected_paths": {
+          "checkpoint": 400,
+          "path-bloom": 1000
+        }
+      },
+      "mounted": {
+        "authoritative_only": {
+          "mean_ns": 10519.287857142857,
+          "p50_ns": 9668,
+          "p95_ns": 11942,
+          "p99_ns": 15819,
+          "samples": 1400
+        },
+        "manifested": {
+          "mean_ns": 9817.632142857143,
+          "p50_ns": 9507,
+          "p95_ns": 11352,
+          "p99_ns": 15479,
+          "samples": 1400
+        }
+      },
+      "request_bytes": 1,
+      "size_class": "1B"
+    },
+    {
+      "in_process": {
+        "authoritative_only": {
+          "mean_ns": 17783.565,
+          "p50_ns": 9057,
+          "p95_ns": 34374,
+          "p99_ns": 36167,
+          "samples": 1000
+        },
+        "manifested": {
+          "mean_ns": 18226.803,
+          "p50_ns": 9227,
+          "p95_ns": 34164,
+          "p99_ns": 34695,
+          "samples": 1000
+        },
+        "selected_paths": {
+          "logical-extent": 1000
+        }
+      },
+      "mounted": {
+        "authoritative_only": {
+          "mean_ns": 27114.961,
+          "p50_ns": 20950,
+          "p95_ns": 44373,
+          "p99_ns": 46627,
+          "samples": 1000
+        },
+        "manifested": {
+          "mean_ns": 28019.0,
+          "p50_ns": 22362,
+          "p95_ns": 44313,
+          "p99_ns": 51367,
+          "samples": 1000
+        }
+      },
+      "request_bytes": 4096,
+      "size_class": "4KiB"
+    },
+    {
+      "in_process": {
+        "authoritative_only": {
+          "mean_ns": 262813.863,
+          "p50_ns": 125024,
+          "p95_ns": 496380,
+          "p99_ns": 511207,
+          "samples": 1000
+        },
+        "manifested": {
+          "mean_ns": 264763.57,
+          "p50_ns": 181670,
+          "p95_ns": 499795,
+          "p99_ns": 527487,
+          "samples": 1000
+        },
+        "selected_paths": {
+          "logical-extent": 1000
+        }
+      },
+      "mounted": {
+        "authoritative_only": {
+          "mean_ns": 278973.296,
+          "p50_ns": 179356,
+          "p95_ns": 518941,
+          "p99_ns": 543127,
+          "samples": 1000
+        },
+        "manifested": {
+          "mean_ns": 280277.083,
+          "p50_ns": 200044,
+          "p95_ns": 509203,
+          "p99_ns": 512088,
+          "samples": 1000
+        }
+      },
+      "request_bytes": 65536,
+      "size_class": "64KiB"
+    }
+  ],
+  "workload": {
+    "cold_reps_per_size": 100,
+    "hot_reps_per_size": 400,
+    "objects": [
+      {
+        "extents": 1,
+        "hot": true,
+        "inode": 2,
+        "len": 1,
+        "name": "tiny.1b"
+      },
+      {
+        "extents": 1,
+        "hot": true,
+        "inode": 3,
+        "len": 65536,
+        "name": "hot.contig64k"
+      },
+      {
+        "extents": 1024,
+        "hot": true,
+        "inode": 4,
+        "len": 65536,
+        "name": "hot.frag64k"
+      },
+      {
+        "extents": 256,
+        "hot": false,
+        "inode": 5,
+        "len": 65536,
+        "name": "cold.mod64k"
+      },
+      {
+        "extents": 1,
+        "hot": false,
+        "inode": 6,
+        "len": 262144,
+        "name": "cold.contig256k"
+      }
+    ],
+    "request_sizes_bytes": [
+      1,
+      4096,
+      65536
+    ],
+    "requests": 3400
+  }
+}

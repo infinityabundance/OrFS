@@ -1,0 +1,227 @@
+{
+  "caveat": "All three arms are page-cache warm after the first pass; the point is the ordering across mechanisms under one identical workload, not cold-storage throughput. The passthrough arm is a read-only snapshot, so the sequential-append workload has no passthrough row by construction. Single run, single host.",
+  "claim": "the same src/bench.rs file workloads, measured three ways over the same data: a plain host-ext4 scratch file, the OrFS FUSE passthrough snapshot mechanism (kernel-served; the daemon is not invoked), and OrFS's ordinary mounted read path (every read reaches the daemon)",
+  "environment": {
+    "cgroup_memory_max": "8589934592",
+    "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "container_image": "sha256:a41df86df391732ab467b5bedc8b4a17c0df437fa180b5230417a6a8339d97ac",
+    "cores_visible": 8,
+    "cpu_max": "800000 100000",
+    "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+    "fuse_enable_uring": true,
+    "kernel_release": "7.2.9-2-cachyos",
+    "likely_container": true,
+    "machine": "x86_64",
+    "perf_counters_available": true,
+    "perf_event_open_error": null,
+    "perf_event_paranoid": "2",
+    "ram_total_bytes": 134723346432
+  },
+  "generated_by": "tests/baseline_passthrough.rs::baseline_passthrough",
+  "method": "all three arms run the identical deterministic data and access pattern: arms (a) and (c) via orfs::bench::run_fs_workload (which writes and reads its own file), arm (b) via a byte-for-byte replica of the same generator read through the passthrough snapshot with the identical offset generator and sizes. The two FUSE arms use the default (page-cached) open, because kernel passthrough is offered only when the mount is not also requesting direct I/O.",
+  "orfs_mount_metrics": {
+    "byte_reads": 25165824,
+    "byte_writes": 33554432,
+    "create": 4,
+    "fsyncs": 3,
+    "lookups": 3,
+    "opens": 3,
+    "reads": 3489,
+    "releases": 6,
+    "writes": 2240
+  },
+  "params": {
+    "data_bytes": 8388608,
+    "iterations": 20000,
+    "region_bytes": 4096
+  },
+  "passthrough_engaged": true,
+  "passthrough_stats": {
+    "bulk_routed": 0,
+    "completions_max_per_reap": 1,
+    "daemon_reads": 0,
+    "dispatch_calls": 9,
+    "dispatch_ns": 9347876,
+    "fast_routed": 0,
+    "forgets_classical": 0,
+    "handoffs": 0,
+    "interrupts_classical": 0,
+    "negative_completions": 0,
+    "passthrough_bytes": 25165824,
+    "passthrough_fallbacks": 0,
+    "passthrough_last_error": null,
+    "passthrough_negotiated": true,
+    "passthrough_opens": 3,
+    "passthrough_registered": 3,
+    "passthrough_releases": 2,
+    "passthrough_requested": true,
+    "passthrough_reused": 0,
+    "queue_groups": [],
+    "register_failures": 0,
+    "register_sqes": 16,
+    "reply_bytes": 176,
+    "requests_served": 9,
+    "ring_completions": 9,
+    "ring_submits": 9,
+    "wait_calls": 10,
+    "wait_ns": 11353303,
+    "workers_bulk": 0,
+    "workers_fast": 0
+  },
+  "ran": true,
+  "schema": "orfs.baseline-passthrough.v1",
+  "workloads": [
+    {
+      "ext4": {
+        "bytes": 8388608,
+        "mb_per_s": 24719.998821258603,
+        "ops": 2048,
+        "ops_per_s": 6035155.962221338,
+        "seconds": 0.000339345
+      },
+      "orfs-fuse-passthrough": {
+        "bytes": 8388608,
+        "latency": {
+          "max_ns": 0,
+          "mean_ns": 0.0,
+          "min_ns": 0,
+          "p50_ns": 0,
+          "p95_ns": 0,
+          "p99_ns": 0,
+          "samples": 0
+        },
+        "mb_per_s": 26428.803669771016,
+        "ops": 2048,
+        "ops_per_s": 6452344.645940189,
+        "seconds": 0.000317404
+      },
+      "orfs-mount": {
+        "bytes": 8388608,
+        "mb_per_s": 1951.376378984353,
+        "ops": 2048,
+        "ops_per_s": 476410.2487754768,
+        "seconds": 0.004298816
+      },
+      "workload": "sequential-read"
+    },
+    {
+      "ext4": {
+        "bytes": 81920000,
+        "latency": {
+          "max_ns": 3036,
+          "mean_ns": 214.2884,
+          "min_ns": 130,
+          "p50_ns": 170,
+          "p95_ns": 421,
+          "p99_ns": 501,
+          "samples": 20000
+        },
+        "mb_per_s": 16727.833935408755,
+        "ops": 20000,
+        "ops_per_s": 4083943.831886903,
+        "seconds": 0.004897227
+      },
+      "orfs-fuse-passthrough": {
+        "bytes": 81920000,
+        "latency": {
+          "max_ns": 2545,
+          "mean_ns": 209.9557,
+          "min_ns": 160,
+          "p50_ns": 190,
+          "p95_ns": 370,
+          "p99_ns": 441,
+          "samples": 20000
+        },
+        "mb_per_s": 17056.574859874574,
+        "ops": 20000,
+        "ops_per_s": 4164202.846649066,
+        "seconds": 0.00480284
+      },
+      "orfs-mount": {
+        "bytes": 81920000,
+        "latency": {
+          "max_ns": 1014148,
+          "mean_ns": 1564.2707,
+          "min_ns": 140,
+          "p50_ns": 180,
+          "p95_ns": 17322,
+          "p99_ns": 20107,
+          "samples": 20000
+        },
+        "mb_per_s": 2567.462329259994,
+        "ops": 20000,
+        "ops_per_s": 626821.8577294907,
+        "seconds": 0.031906992
+      },
+      "workload": "random-read-4k"
+    },
+    {
+      "ext4": {
+        "bytes": 20000,
+        "latency": {
+          "max_ns": 17222,
+          "mean_ns": 198.9884,
+          "min_ns": 110,
+          "p50_ns": 211,
+          "p95_ns": 290,
+          "p99_ns": 360,
+          "samples": 20000
+        },
+        "mb_per_s": 4.344826267776857,
+        "ops": 20000,
+        "ops_per_s": 4344826.267776857,
+        "seconds": 0.004603176
+      },
+      "orfs-fuse-passthrough": {
+        "bytes": 20000,
+        "latency": {
+          "max_ns": 1412,
+          "mean_ns": 146.2831,
+          "min_ns": 130,
+          "p50_ns": 150,
+          "p95_ns": 160,
+          "p99_ns": 161,
+          "samples": 20000
+        },
+        "mb_per_s": 5.654172171238866,
+        "ops": 20000,
+        "ops_per_s": 5654172.171238866,
+        "seconds": 0.003537211
+      },
+      "orfs-mount": {
+        "bytes": 20000,
+        "latency": {
+          "max_ns": 225813,
+          "mean_ns": 1454.9536,
+          "min_ns": 110,
+          "p50_ns": 130,
+          "p95_ns": 17012,
+          "p99_ns": 20649,
+          "samples": 20000
+        },
+        "mb_per_s": 0.6724019640457929,
+        "ops": 20000,
+        "ops_per_s": 672401.9640457929,
+        "seconds": 0.029744113
+      },
+      "workload": "random-read-1"
+    },
+    {
+      "ext4": {
+        "bytes": 8388608,
+        "mb_per_s": 5144.769250394968,
+        "ops": 2048,
+        "ops_per_s": 1256047.180272209,
+        "seconds": 0.001630512
+      },
+      "orfs-mount": {
+        "bytes": 8388608,
+        "mb_per_s": 42.93026260157532,
+        "ops": 2048,
+        "ops_per_s": 10481.021142962725,
+        "seconds": 0.195400808
+      },
+      "workload": "sequential-append"
+    }
+  ]
+}

@@ -24,6 +24,8 @@ docker_run_kmount_root sh -c '
     export ORFS_FUSE_TEST=1
     export CARGO_TARGET_DIR="$(pwd)/target/kmount-passthrough"
     timeout -k 10 900 cargo test --test fuse_passthrough -- --nocapture --test-threads=1
+    echo "--- phase 66: baseline-passthrough (same workload: ext4 vs FUSE passthrough vs ordinary OrFS mount) ---"
+    timeout -k 10 900 cargo test --test baseline_passthrough -- --nocapture --test-threads=1
 '
 
 docker_run_kmount sh -c '
@@ -39,6 +41,8 @@ docker_run_kmount sh -c '
     timeout -k 10 900 cargo test --test fuse_uring -- --nocapture --test-threads=1
     echo "--- phase 47: F2 concurrency court (single-loop vs queue-affine vs F0/F1; writes evidence/performance/f2-concurrency-affine.json) ---"
     timeout -k 10 1200 cargo test --test f2_concurrency -- --nocapture --test-threads=1
+    echo "--- phase 66: paired mounted planner benchmark (manifested vs authoritative-only over a real mount) ---"
+    timeout -k 10 900 cargo test --test planner_mounted -- --nocapture --test-threads=1
     echo "--- phase 32: end-to-end group commit through a real mount (create/write/unlink churn, concurrent writers, O_APPEND ordering, write-heavy measurement) ---"
     timeout -k 10 1200 cargo test --test group_commit_e2e -- --nocapture --test-threads=1
     echo "--- performance court: conventional baseline + F0/F1/E1 through real mounts ---"

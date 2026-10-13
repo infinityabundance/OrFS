@@ -653,6 +653,84 @@ def chart_expansion_controller():
         [{"name": "aggregate read time (ns)", "values": values}])
 
 
+def chart_f2_concurrency_64_tail():
+    d = load("f2-concurrency-affine.json")
+    res = d["results"]
+    levels = d["levels"]
+    profiles = [("F0", "F0"), ("F1", "F1"),
+                ("F2-single", "F2-single"), ("F2-affine", "F2-affine")]
+    series = []
+    for key, name in profiles:
+        pts = []
+        for r in levels:
+            row = res.get("{}_{}".format(key, r))
+            if row is not None:
+                pts.append((r, row["p99_us"]))
+        series.append({"name": name + " p99", "points": pts})
+    cap = [
+        "source: evidence/performance/f2-concurrency-affine.json (4 KiB direct reads, 5 paired reps)",
+        "the target is F0-level p99 with no regression; queue-affine trails F0 from 2-64 readers",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return line_chart(
+        "F2 concurrency: p99 latency vs concurrent readers",
+        cap, "concurrent readers (log)", "p99 per-op latency (us, log)", series,
+        xlog=True, ylog=True, xticks=levels)
+
+
+def chart_baseline_passthrough():
+    d = load("baseline-passthrough.json")
+    rows = d["workloads"]
+    groups = [r["workload"] for r in rows]
+
+    def vals(arm):
+        out = []
+        for r in rows:
+            m = r.get(arm)
+            out.append(None if m is None else m.get("ops_per_s"))
+        return out
+
+    series = [
+        {"name": "ext4", "values": vals("ext4")},
+        {"name": "fuse-passthrough", "values": vals("orfs-fuse-passthrough")},
+        {"name": "orfs-mount", "values": vals("orfs-mount")},
+    ]
+    cap = [
+        "source: evidence/performance/baseline-passthrough.json (8 MiB, page-cache warm)",
+        "kernel passthrough matches plain ext4 and far exceeds the ordinary mounted path;",
+        "the append arm is ext4/mount only (the snapshot is read-only)",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return bar_chart(
+        "baseline passthrough: same workload, three mechanisms",
+        cap, "ops/s", groups, series)
+
+
+def chart_planner_mounted_paired():
+    d = load("planner-mounted-paired.json")
+    classes = d["size_classes"]
+    sizes = [c["request_bytes"] for c in classes]
+
+    def pts(arm, key):
+        return [(c["request_bytes"], c["in_process"][arm][key]) for c in classes]
+
+    series = [
+        {"name": "manifested p50", "points": pts("manifested", "p50_ns")},
+        {"name": "manifested p99", "points": pts("manifested", "p99_ns")},
+        {"name": "authoritative p50", "points": pts("authoritative_only", "p50_ns")},
+        {"name": "authoritative p99", "points": pts("authoritative_only", "p99_ns")},
+    ]
+    cap = [
+        "source: evidence/performance/planner-mounted-paired.json (in-process arm, one history)",
+        "per-size-class latency; 1 B selects manifested paths, 4/64 KiB select logical-extent",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return line_chart(
+        "paired planner: latency vs request size (in process)",
+        cap, "request size (bytes, log)", "latency (ns, log)", series,
+        xlog=True, ylog=True, xticks=sizes)
+
+
 # --------------------------------------------------------------------------
 # registry: file name -> (builder, source receipt, generating command)
 # --------------------------------------------------------------------------
@@ -688,6 +766,12 @@ CHARTS = (
      "evidence/performance/direct-page-atlas.json", "sh scripts/container-direct-page-atlas.sh"),
     ("expansion-controller.svg", chart_expansion_controller,
      "evidence/performance/expansion-controller.json", "sh scripts/container-expansion-controller.sh"),
+    ("f2-concurrency-64-tail.svg", chart_f2_concurrency_64_tail,
+     "evidence/performance/f2-concurrency-affine.json", "sh scripts/container-fuse-test.sh"),
+    ("baseline-passthrough.svg", chart_baseline_passthrough,
+     "evidence/performance/baseline-passthrough.json", "sh scripts/container-baseline-passthrough.sh"),
+    ("planner-mounted-paired.svg", chart_planner_mounted_paired,
+     "evidence/performance/planner-mounted-paired.json", "sh scripts/container-planner-mounted.sh"),
 )
 
 

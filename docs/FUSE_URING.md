@@ -323,6 +323,9 @@ Measured (`tests/f2_concurrency.rs`, paired and order-balanced, 8 rings × 2 que
 or better for 1/4/32 readers, with a residual p95/p99 gap at 8–16 readers. It does
 **not** meet a strict "F0 throughput and no p99 regression" bar everywhere; that
 is recorded as found in `evidence/performance/f2-concurrency-affine.json`.
+Phase 66 extends the same court to **64 readers** and confirms the picture: queue
+servicing stays at 86–107% of F0, but the p99 target is still unmet from 2 to 64
+readers (see `docs/PERFORMANCE.md` §29.1).
 
 ---
 

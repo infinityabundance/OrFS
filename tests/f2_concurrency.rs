@@ -39,8 +39,8 @@ const BENCH_SIZE: u64 = 4 * 1024 * 1024;
 const PAIRS: usize = 5;
 /// Ops each reader thread performs per run.
 const OPS_PER_THREAD: u64 = 100;
-/// The reader counts swept.
-const LEVELS: [usize; 6] = [1, 2, 4, 8, 16, 32];
+/// The reader counts swept (Phase 66 extends the reviewer's 1..32 to 1..64).
+const LEVELS: [usize; 7] = [1, 2, 4, 8, 16, 32, 64];
 
 fn test_knob(name: &str, default: usize) -> usize {
     std::env::var(name)
@@ -257,7 +257,7 @@ fn readers(m: &Mounted, threads: usize) -> Result<(Duration, u64, Vec<f64>), Str
 }
 
 #[test]
-fn f2_concurrency_readers_1_to_32() {
+fn f2_concurrency_readers_1_to_64() {
     let required = fuse_test_required();
     let scratch = unique_scratch("f2conc");
     let affine_rings = test_knob("ORFS_F2_TEST_RINGS", 8);
@@ -470,7 +470,7 @@ fn f2_concurrency_readers_1_to_32() {
     // Write the machine-generated evidence.
     let doc = serde_json::json!({
         "schema": "orfs.f2-concurrency-affine.v1",
-        "generated_by": "tests/f2_concurrency.rs::f2_concurrency_readers_1_to_32",
+        "generated_by": "tests/f2_concurrency.rs::f2_concurrency_readers_1_to_64",
         "method": "paired, order-balanced reader scaling on simultaneously-mounted F0/F1/F2-single/F2-affine; \
                    direct_io=on and TTL=0 so every read is a real transport round-trip",
         "affine_rings": affine_rings,

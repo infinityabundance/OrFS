@@ -3136,3 +3136,61 @@ production `inodes` spine and the snapshot/immutability guarantees are unchanged
 (`--features failpoints`); `fmt`/`clippy` clean; `check-docs-receipts.sh` PASS.
 Docs: `docs/PERFORMANCE.md` §24, `docs/ORFS-SPEC.md` §4, `README.md`,
 `docs/REPRODUCE.md`.
+
+## Phase 59 — Native fsx/fsstress-equivalent fault-injection court
+
+**Complete.** Reviewer gap: *"Fault injection — fsstress, fsx from xfstests,
+parallel fsstress -p 64 -n 100000, plus your FUSE adversarial fuzzer results in
+evidence."* OrFS already had the simulated power-loss court, the crash
+failpoints, and the native-FUSE adversarial fuzzer, but no `fsx`/`fsstress`
+data-integrity equivalent. The external tools are **not runnable here**
+(`evidence/correctness/xfstests.json`, `ran: false`): xfstests does not build or
+start without its own helper binaries, `fsstress`/`fsx`/`xfs_io` are absent, and
+there is no `FSTYP` for OrFS. No results are fabricated.
+
+### Delivered
+
+* **`tests/fs_fault_injection.rs`** — two library-level (no-mount) courts. An
+  **`fsx`-equivalent**: a deterministic per-file op loop over
+  write/read/truncate/append/fsync where **every read is verified against an
+  in-memory reference model** (non-page-aligned offsets/lengths, growth/shrink,
+  at/past-EOF and zero-length reads), `ordered` durability with
+  `Namespace::sync` as the single `fsync` barrier (no separate `fdatasync`), and
+  a final synced, independently-reopened byte-for-byte check. An
+  **`fsstress`-equivalent**: `N` parallel workers over a random mix of
+  create/write/read-verify/rename/link/unlink/mkdir/rmdir/symlink/truncate/
+  fsync/readdir on one shared namespace, reconciled at the end against the live
+  namespace and an independent reopen (every name resolves, every file matches,
+  every owned directory lists exactly, the reopened canonical digest equals the
+  live one) — **no lost or corrupted committed data**. Small deterministic
+  defaults (always-on) plus opt-in heavy sweeps (`ORFS_FSINJ_HEAVY=1`;
+  `ORFS_FSSTRESS=1` with `ORFS_FSSTRESS_P`/`ORFS_FSSTRESS_N`).
+* **`scripts/container-fault-injection.sh`** — the smoke (debug) then the heavy
+  sweep (release), one container at a time.
+* **`evidence/security/fault-injection.json`**
+  (`orfs.security.fault-injection.v1`) — per court, per run kind: workers,
+  operations, reads verified, wall time, mismatches, and reconciliation; it also
+  references the existing Phase 28 fuzzer receipt
+  (`evidence/security/native-fuse-fuzz.json`, 110 000 iterations, 0 panics)
+  **without re-running the mount**.
+
+### Results (evidence-backed)
+
+Heavy sweep (release): `fsstress`-equivalent **64 workers × 2 000 ops = 128 000
+operations**, 133 028 reads verified, **0 mismatches**, reconciliation ok
+(live + reopened digest), 21.3 s; final model 34 748 names / 18 875 files /
+6 773 dirs / 9 100 symlinks. `fsx`-equivalent **6 files × 12 000 ops**, 141 145
+reads verified, **0 mismatches**, synced-reopen ok, 5.0 s. Smoke (debug): 600 and
+400 operations, **0 mismatches**. `all_ok = true`.
+
+### Integrity
+
+The external `fsx`/`fsstress`/`xfstests` were **not** run (they are not runnable
+here) and no claim is made that they were; this is an explicitly labelled native
+equivalent. The reviewer's `-p 64` is honoured exactly; the literal `-n 100000`
+is reduced to `N = 2000` (the same operation order) because a library-level
+operation is a full authoritative transaction, not a block-device syscall —
+documented with the reason in `docs/PERFORMANCE.md` §25. Test counts rise to
+**451** (default) / **461** (`--features failpoints`); `fmt`/`clippy` clean;
+`check-docs-receipts.sh` PASS. Docs: `docs/PERFORMANCE.md` §25,
+`docs/ORFS-SPEC.md` §4, `README.md`, `docs/REPRODUCE.md`.

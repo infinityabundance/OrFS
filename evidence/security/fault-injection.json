@@ -1,0 +1,120 @@
+{
+  "all_ok": true,
+  "courts": {
+    "fsstress_equivalent": {
+      "heavy": {
+        "mismatches": 0,
+        "operations": 128000,
+        "ops_per_worker": 2000,
+        "readdir_checks": 3779,
+        "reads_verified": 133028,
+        "reconciliation": {
+          "live_data_ok": true,
+          "live_dirs_ok": true,
+          "live_names_ok": true,
+          "ok": true,
+          "reopened_data_ok": true,
+          "reopened_digest_matches": true,
+          "reopened_dirs_ok": true,
+          "reopened_names_ok": true,
+          "reopened_root_matches": true
+        },
+        "reference_model": {
+          "dirs": 6773,
+          "files": 18875,
+          "names": 34748,
+          "symlinks": 9100
+        },
+        "wall_time_s": 21.342,
+        "workers": 64
+      },
+      "smoke": {
+        "mismatches": 0,
+        "operations": 600,
+        "ops_per_worker": 150,
+        "readdir_checks": 21,
+        "reads_verified": 419,
+        "reconciliation": {
+          "live_data_ok": true,
+          "live_dirs_ok": true,
+          "live_names_ok": true,
+          "ok": true,
+          "reopened_data_ok": true,
+          "reopened_digest_matches": true,
+          "reopened_dirs_ok": true,
+          "reopened_names_ok": true,
+          "reopened_root_matches": true
+        },
+        "reference_model": {
+          "dirs": 31,
+          "files": 97,
+          "names": 185,
+          "symlinks": 57
+        },
+        "wall_time_s": 0.554,
+        "workers": 4
+      }
+    },
+    "fsx_equivalent": {
+      "heavy": {
+        "durability": {
+          "barrier": "Namespace::sync (the fsync equivalent)",
+          "fdatasync": "not a separate path: metadata is committed inside the same authoritative transaction as the data",
+          "mode": "ordered"
+        },
+        "files": 6,
+        "mismatches": 0,
+        "operations": 12000,
+        "reads_verified": 141145,
+        "reconciliation": {
+          "model_bytes_match": true,
+          "ok": true,
+          "reopened_digest_matches": true,
+          "reopened_root_matches": true,
+          "synced": true
+        },
+        "syncs": 1504,
+        "wall_time_s": 4.989
+      },
+      "smoke": {
+        "durability": {
+          "barrier": "Namespace::sync (the fsync equivalent)",
+          "fdatasync": "not a separate path: metadata is committed inside the same authoritative transaction as the data",
+          "mode": "ordered"
+        },
+        "files": 3,
+        "mismatches": 0,
+        "operations": 400,
+        "reads_verified": 4700,
+        "reconciliation": {
+          "model_bytes_match": true,
+          "ok": true,
+          "reopened_digest_matches": true,
+          "reopened_root_matches": true,
+          "synced": true
+        },
+        "syncs": 48,
+        "wall_time_s": 3.774
+      }
+    }
+  },
+  "external_tools": {
+    "fsstress": "built by xfstests' own `make`, which is not runnable here",
+    "fsx": "shipped by xfsprogs, a separate build that is not installed",
+    "ran": false,
+    "reference": "evidence/correctness/xfstests.json",
+    "xfstests": "does not configure or start without its own built helpers (libtool/acl/attr/uuid dev libs absent); no FSTYP for OrFS"
+  },
+  "generator": "tests/fs_fault_injection.rs",
+  "note": "OrFS-native, explicitly-labelled fsx/fsstress-equivalent fault-injection courts. The external xfstests/fsx/fsstress tools are NOT runnable in this environment (see evidence/correctness/xfstests.json); this receipt is an equivalent court, not a claim to have run those tools.",
+  "related_evidence": {
+    "native_fuse_adversarial_fuzzer": {
+      "generated_by": "tests/native_fuse_fuzz.rs",
+      "note": "Existing Phase 28 receipt, referenced here for the fault-injection section; not re-run (no mount).",
+      "panics": 0,
+      "path": "evidence/security/native-fuse-fuzz.json",
+      "total_iterations": 110000
+    }
+  },
+  "schema": "orfs.security.fault-injection.v1"
+}

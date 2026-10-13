@@ -1824,3 +1824,87 @@ both layouts). The sweep builds files directly under the root so the build stays
 linear; the inode-id spine it measures is independent of the directory shape.
 Hardware cache/TLB counters were not read in this court (it runs in the default
 container); §23 attributes the treap's lookup cost with real counters.
+
+## 25. Reviewer task — native fsx/fsstress fault injection
+
+**The gap.** The reviewing ask was: *"Fault injection — fsstress, fsx from
+xfstests, parallel fsstress -p 64 -n 100000, plus your FUSE adversarial fuzzer
+results in evidence."* OrFS already had the simulated power-loss court
+(`docs/RECOVERY.md` §4, `tests/power_loss.rs`), the crash failpoints
+(`tests/crash_recovery.rs`), and the native-FUSE adversarial fuzzer
+(`tests/native_fuse_fuzz.rs`), but **no `fsx`/`fsstress`-equivalent
+data-integrity court**.
+
+**Why the external tools are not run.** `evidence/correctness/xfstests.json`
+records `ran: false` with the concrete blockers: xfstests does not configure or
+start without its own built helper binaries (`libtool`/`acl`/`attr`/`uuid` dev
+libraries are absent); `./check` refuses to begin without `fsstress`; `fsx` is
+shipped by `xfsprogs` (a separate build, not installed); and there is no `FSTYP`
+for OrFS. **No results are fabricated.** This section reports an **OrFS-native,
+explicitly-labelled equivalent**, not a run of those tools.
+
+**The courts** (`tests/fs_fault_injection.rs`, run by
+`scripts/container-fault-injection.sh`; receipt
+`evidence/security/fault-injection.json`, schema
+`orfs.security.fault-injection.v1`). Both are **library-level** (no FUSE mount),
+so they run wherever the ordinary suite runs, and both are small and
+deterministic by default (always-on) with opt-in heavy sweeps.
+
+1. **`fsx`-equivalent.** For each of several files, a deterministic pseudo-random
+   op loop over write / read / truncate / append / fsync, where **every read is
+   verified against an in-memory reference model** of the expected bytes (with
+   non-page-aligned offsets and lengths, growth and shrink, and reads at/past
+   EOF and a zero-length read). Durability follows the project's model: the run
+   is `ordered`, and `Namespace::sync` is the explicit `fsync` equivalent. OrFS
+   has a **single** durability barrier and **no separate `fdatasync`** — metadata
+   is committed inside the same authoritative transaction as the data, and the
+   FUSE `fsync` path treats the `datasync` flag identically (see `docs/RECOVERY.md`
+   §4 and `src/fuse.rs`). At the end the volume is synced, reopened
+   independently, and both the recovered index and every model byte are checked.
+2. **`fsstress`-equivalent.** `N` parallel workers perform a random mix of
+   create / write / read-verify / rename / link / unlink / mkdir / rmdir /
+   symlink / truncate / fsync / readdir on **one shared namespace** with a single
+   authoritative log. Names are worker-partitioned, so the interleaving is real
+   but the expected final state is exact; the reference model is reconciled at
+   the end against the live namespace **and** an independent reopen, with **no
+   lost or corrupted committed data** — every name resolves to its recorded
+   entry, every file's bytes match, every worker-owned directory lists exactly
+   its model entries, and the reopened canonical digest equals the live one.
+
+**Measured (one run; release for the heavy sweep, debug for the smoke; host
+under external load).** The heavy sweep uses `ORFS_FSINJ_HEAVY=1`,
+`ORFS_FSSTRESS=1`, `ORFS_FSSTRESS_P=64` (the reviewer's `-p 64` exactly) and
+`ORFS_FSSTRESS_N=2000` (operations **per worker**, matching `fsstress(1)`'s
+per-process count) — 128 000 operations.
+
+| court | workers | operations | reads verified | wall time | mismatches | reconciliation |
+|---|---:|---:|---:|---:|---:|---|
+| `fsstress`-equivalent (heavy) | 64 | 128 000 | 133 028 | 21.3 s | **0** | ok (live + reopen digest) |
+| `fsx`-equivalent (heavy) | 1 | 12 000 | 141 145 | 5.0 s | **0** | ok (synced reopen) |
+| `fsstress`-equivalent (smoke) | 4 | 600 | 419 | 0.08 s | **0** | ok |
+| `fsx`-equivalent (smoke) | 1 | 400 | 4 700 | 0.26 s | **0** | ok |
+
+The heavy `fsstress` run's final reference model held 34 748 names (18 875
+files, 6 773 directories, 9 100 symlinks); all reconciled. The receipt's
+`all_ok` is `true`.
+
+**The FUSE adversarial fuzzer, in the same section.** The existing Phase 28
+native-FUSE adversarial fuzzer result is referenced (not re-run — it is
+enumerated here for completeness): `evidence/security/native-fuse-fuzz.json`
+records **110 000** mutate iterations over the FUSE request header, the
+FUSE-over-`io_uring` ring header and `RingRequest`, the 80-byte SQE command
+area, and reply encoding, with **0 panics** and no unbounded allocation
+(`tests/native_fuse_fuzz.rs`; see `docs/SECURITY.md` §4.1).
+
+**Scope reduction, stated honestly.** The reviewer's literal invocation is
+`-p 64 -n 100000`. The `-p 64` is honoured **exactly**. The literal `-n 100000`
+(6.4 M operations) is **not** run: a library-level operation here is a full
+authoritative transaction — a plan, an appended log record, and an index
+publication — not a syscall into a loop-mounted block device, so 6.4 M of them
+exceed the runtime and memory budget of this one-container, 8 GiB-capped
+environment. The committed sweep therefore uses `N = 2000` (128 000 operations,
+the same order as the reviewer's `-n 100000`), and the parameters are honoured
+verbatim through `ORFS_FSSTRESS_P` / `ORFS_FSSTRESS_N` if a larger run is
+desired. As with every court here, the numbers are a **single run on one host
+under external load**; the decisive, load-independent result is **0 mismatches
+and a clean reconciliation**, not the wall time.

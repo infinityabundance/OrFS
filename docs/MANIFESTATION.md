@@ -485,6 +485,37 @@ manifested-plane recovery grows with the accumulated generation count. See
 `evidence/performance/history-scaling.json` for the evidence; run the sweep with
 `sh scripts/container-history-scaling.sh`.
 
+### 14.8 Budget-subordinate, cancelable construction (Phase 78)
+
+The autonomous expansion controller (`src/expansion.rs`, `docs/PERFORMANCE.md`
+§28) `execute_plan` builds the manifested structures a plan chooses. Phase 78 makes
+that construction **strictly subordinate to the capacity governor** and
+**cancelable**, so an autonomous expansion can never silently undo the bounded
+reclaim (`src/reclaim.rs`, `docs/CAPACITY.md` §14) nor run an unbounded amount of
+optional work:
+
+* Before **every** object, and after each construction, the run consults
+  `CapacityGovernor::optional_allowed` and accounts the **measured** manifested
+  bytes (`Namespace::optional_bytes_in_use`). When optional construction is
+  forbidden — a degraded volume, the optional soft quota, or the authoritative
+  reserve ceiling — it constructs **nothing further** and reports a typed
+  `ConstructionRefusal` (`governor-degraded` / `governor-no-headroom`). A reclaim
+  is therefore re-consumed only while the governor *currently* allows optional
+  construction with *currently* free headroom.
+* The run stops when its accumulated **measured** bytes would exceed the budget
+  `B` or a bounded optional-byte **admission** (overload **refuses**, never
+  blocks), so a static estimate error cannot run the budget up on a later object.
+* A `CancelToken` is checked at least once per object, so a cancel returns within
+  **one object's construction**, publishes nothing partially built, and leaves
+  every committed byte identical; already-completed, digest-verified structures
+  remain valid (they are independent), and cancellation is idempotent.
+
+The court `tests/expansion_controller.rs` (always-on smoke plus the
+`ORFS_EXPANSION=1` release sweep, run by
+`sh scripts/container-expansion-controller.sh`) proves each property with real
+runs; the numbers are in `evidence/performance/expansion-controller.json` (schema
+`orfs.performance.expansion-controller.v2`, `subordination` block).
+
 ## 15. The append-only catalogue and its scaling court (reviewer task)
 
 `GenerationStore` and `TrigramStore` discover committed generations through the

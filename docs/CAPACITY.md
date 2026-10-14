@@ -487,3 +487,42 @@ oversized write was refused with a typed `ENOSPC` and the history stayed intact;
 an edge crash recovered the newest generation; a recovery that could not create its
 working set failed **closed** with the typed error and an intact prefix; and a
 read-only open at zero free returned identical history.
+
+---
+
+## 15. Optional construction is subordinate to the governor (Phase 78)
+
+A bounded reclaim (§14) frees space, but it would be pointless if the autonomous
+concealed-expansion controller (`src/expansion.rs`, `docs/MANIFESTATION.md` §14.8)
+immediately re-created the structures it had just dropped, and it would be unsafe
+if that construction were unbounded or uncancelable. Phase 78 makes the
+controller's construction **strictly subordinate** to the same `CapacityGovernor`
+that protects authoritative commits:
+
+* Before **every** object, and again after each construction, `execute_plan`
+  consults `CapacityGovernor::optional_allowed` and accounts the **real, measured**
+  manifested bytes — never only the predictor's estimate. When optional
+  construction is forbidden (a degraded volume, the optional soft quota, or the
+  authoritative reserve ceiling) it constructs **nothing further** and reports a
+  typed refusal (`governor-degraded` / `governor-no-headroom`).
+* The run stops when its accumulated **measured** bytes would exceed the budget
+  `B`, or a bounded optional-byte **admission**. Overload **refuses** — it never
+  blocks an authoritative operation. The gate is against the running *measured*
+  total, so an estimate error on one object cannot run the budget up on the next.
+* The run is **cancelable**: it checks a `CancelToken` at least once per object, so
+  a cancel returns within **one object's construction**, publishes nothing
+  partially built, and leaves every committed byte identical. Already-completed,
+  digest-verified structures remain valid (they are independent); cancellation is
+  idempotent.
+
+**Measured results** (from `evidence/performance/expansion-controller.json`, schema
+`orfs.performance.expansion-controller.v2`, `subordination` block; the same court
+runs the always-on gate). With optional construction forbidden the controller
+built **0** of the **2** planned objects and refused all **2** with
+`governor-no-headroom`, authority byte-identical. After a bounded reclaim dropped
+**703758 bytes** of rebuildable structures, a re-run under the still-forbidding
+policy again built **0** and refused **2**, so the freed space was not
+re-consumed; a commit still succeeded. A deterministic mid-run cancellation
+stopped the run after exactly **1** object (the documented bound); no scratch
+remained, authority was byte-identical, and a later run completed all **2** chosen
+structures.

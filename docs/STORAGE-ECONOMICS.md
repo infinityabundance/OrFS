@@ -235,6 +235,20 @@ the committed roots and the commit watermark byte-identical. The bounded action
 frees only derived bytes — the `permanent_authoritative` category is never
 reclaimable, which is exactly non-withdrawal.
 
+**Phase 78 makes optional (manifested) growth subordinate to that budget.** The
+`rebuildable_manifestation` category is exactly what the autonomous expansion
+controller re-creates, so a reclaim would be pointless if the controller
+immediately undid it. `execute_plan` (`src/expansion.rs`) now consults
+`CapacityGovernor::optional_allowed` before **every** object and accounts its
+**measured** manifested bytes, so it re-manifests into freed space only while the
+governor *currently* allows optional construction with *currently* free headroom;
+its construction is also bounded (measured-byte budget and optional-byte
+admission) and cancelable within one object's construction. A dropped
+`rebuildable_manifestation` therefore stays dropped while the governor forbids
+optional construction, and authoritative commits continue. See `docs/CAPACITY.md`
+§15, `docs/MANIFESTATION.md` §14.8, and the `subordination` block of
+`evidence/performance/expansion-controller.json`.
+
 ## 6. Evidence and reproduction
 
 * Receipt: `evidence/performance/storage-economics.json` (schema

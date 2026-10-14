@@ -487,6 +487,40 @@
       "fields": [
         {"group": 1, "label": "drop_rebuildable dropped_bytes", "evidence": "evidence/performance/bounded-recovery.json", "path": "drop_rebuildable.dropped_bytes"}
       ]
+    },
+    {
+      "id": "expansion-governor-refusal",
+      "doc": "docs/CAPACITY.md",
+      "section": "§15",
+      "claim": "Phase 78: with optional construction forbidden the controller built nothing and refused every planned object",
+      "regex": "built \\*\\*([0-9]+)\\*\\* of the \\*\\*([0-9]+)\\*\\* planned objects and refused all \\*\\*([0-9]+)\\*\\* with",
+      "fields": [
+        {"group": 1, "label": "governor_refusal constructed", "evidence": "evidence/performance/expansion-controller.json", "path": "subordination.governor_refusal.constructed"},
+        {"group": 2, "label": "governor_refusal planned", "evidence": "evidence/performance/expansion-controller.json", "path": "subordination.governor_refusal.planned"},
+        {"group": 3, "label": "governor_refusal refused", "evidence": "evidence/performance/expansion-controller.json", "path": "subordination.governor_refusal.refused"}
+      ]
+    },
+    {
+      "id": "expansion-reclaim-not-undone",
+      "doc": "docs/CAPACITY.md",
+      "section": "§15",
+      "claim": "Phase 78: after a bounded reclaim the controller refuses all its planned objects while the governor still forbids optional construction",
+      "regex": "reclaim dropped\\s+\\*\\*([0-9]+) bytes\\*\\* of rebuildable structures, a re-run under the still-forbidding\\s+policy again built \\*\\*[0-9]+\\*\\* and refused \\*\\*([0-9]+)\\*\\*",
+      "fields": [
+        {"group": 1, "label": "reclaim_not_undone dropped_bytes", "evidence": "evidence/performance/expansion-controller.json", "path": "subordination.reclaim_not_undone.dropped_bytes"},
+        {"group": 2, "label": "reclaim_not_undone refused", "evidence": "evidence/performance/expansion-controller.json", "path": "subordination.reclaim_not_undone.refused"}
+      ]
+    },
+    {
+      "id": "expansion-cancel-bound",
+      "doc": "docs/CAPACITY.md",
+      "section": "§15",
+      "claim": "Phase 78: a mid-run cancel stops after exactly one object (the documented bound) and a later run completes them all",
+      "regex": "(?s)stopped the run after exactly \\*\\*([0-9]+)\\*\\* object .*?a later run completed all\\s+\\*\\*([0-9]+)\\*\\* chosen",
+      "fields": [
+        {"group": 1, "label": "cancelation bound_objects", "evidence": "evidence/performance/expansion-controller.json", "path": "subordination.cancelation.bound_objects"},
+        {"group": 2, "label": "cancelation resumed_constructed", "evidence": "evidence/performance/expansion-controller.json", "path": "subordination.cancelation.resumed_constructed"}
+      ]
     }
   ]
 }

@@ -142,6 +142,7 @@ so it is not expected to name HEAD.
 | `recovery-s9-fault-verify-recover-rows` | `docs/RECOVERY.md` §9 | fault-injection verify/recover court: the always-on matrix and the opt-in sweep row counts → `fault-injection-verify-recover.json` `runs.default.row_count` / `runs.sweep.row_count` |
 | `tier-reloc-*` (8 citations) | `docs/TIERING.md` §10 | the tier-relocation court's headline counts: segments relocated/total, bytes relocated, digest matches/mismatches, default boundaries checked, crash-matrix rows, offline segments reported, and the local/total authoritative byte footprint → `tier-relocation.json` `assessment.{relocation,identity,crash_matrix,tier_unavailable}.*` |
 | `bounded-evac-free-space`, `bounded-evac-relocated`, `bounded-evac-boundaries`, `bounded-drop-rebuildable` (4 citations) | `docs/CAPACITY.md` §14.4 | the bounded-reclaim court's headline numbers: the free space freed by relocating sealed segments, the bytes relocated, the committed boundaries checked, and the bytes freed by dropping rebuildable manifestations → `bounded-recovery.json` `evacuation.{freed_bytes,relocated_bytes,boundaries_checked}` and `drop_rebuildable.dropped_bytes` |
+| `expansion-governor-refusal`, `expansion-reclaim-not-undone`, `expansion-cancel-bound` (5 citations) | `docs/CAPACITY.md` §15 | the Phase-78 subordination court's **deterministic** counts (not the host-sensitive times): the governor-refusal constructed/planned/refused, the reclaim-not-undone dropped bytes and refusals, and the cancelation bound + resumed constructions → `expansion-controller.json` `subordination.*` |
 
 ### `docs/ACCEPTANCE-AUDIT.md` is exempt from live comparison
 
@@ -213,7 +214,9 @@ numbers were not curated in this first pass:
   every planner read is asserted byte-identical. The aggregate-time figures are
   host/load-sensitive single-run values and are deliberately left uncurated. The
   committed figure `expansion-controller.svg` is nonetheless gated by
-  `python3 scripts/render_charts.py --check`.
+  `python3 scripts/render_charts.py --check`. The Phase-78 **`subordination`**
+  counts (deterministic) *are* curated, but against `docs/CAPACITY.md` §15, not
+  §28.
 * `evidence/recovery/fault-injection-verify-recover.json` (Phase 62) is mostly
   **qualitative** (a per-row matrix of `verify --deep` verdicts, `recover`
   outcomes, `data_intact` booleans and the `dm_probe` `ran:false` result); only

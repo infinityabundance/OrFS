@@ -440,6 +440,32 @@ impl Namespace {
         self.volume.set_capacity_policy(policy);
     }
 
+    /// Mutable access to the capacity governor (Phase 78). Optional construction
+    /// (the autonomous expansion controller, `src/expansion.rs`) consults it
+    /// before building anything, so a construction run is strictly subordinate to
+    /// the same budget authority that protects authoritative commits.
+    pub fn capacity_mut(&mut self) -> &mut crate::capacity::CapacityGovernor {
+        self.volume.log.capacity_mut()
+    }
+
+    /// The total optional (manifested) bytes currently published across every
+    /// derived plane: EKBLOOM generations, the trigram query index, and the
+    /// direct-page atlases. This is the number the capacity governor throttles
+    /// against, so an expansion run accounts its constructions here (Phase 78).
+    pub fn optional_bytes_in_use(&self) -> u64 {
+        let mut total = 0u64;
+        if let Some(s) = &self.manifestation {
+            total = total.saturating_add(s.manifested_bytes_total());
+        }
+        if let Some(s) = &self.trigram {
+            total = total.saturating_add(s.manifested_bytes_total());
+        }
+        if let Some(s) = &self.direct_atlas {
+            total = total.saturating_add(s.manifested_bytes_total());
+        }
+        total
+    }
+
     /// A truthful capacity report for this volume.
     pub fn capacity_report(&self) -> crate::capacity::CapacityReport {
         self.volume.capacity_report()

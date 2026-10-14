@@ -401,11 +401,18 @@ proof. Honest bounds:
 * **Dropping is irreversible for the dropped derived bytes.** They rebuild on
   demand (at a read- or mount-latency cost), but the *reclaim* itself does not
   rebuild them; a subsequent read or open does.
-* **`src/expansion.rs` is not yet subordinate to the capacity governor.** The
-  autonomous expansion controller could, in principle, re-consume freed space by
-  manifesting again. Making its construction strictly subordinate to
-  `CapacityGovernor::optional_allowed` (so a reclaim is not immediately undone) is
-  a stated follow-up, not done here.
+* **The autonomous expansion controller is now subordinate to the governor, so it
+  cannot silently undo a reclaim (Phase 78).** `src/expansion.rs`
+  (`docs/MANIFESTATION.md` §14.8, `docs/CAPACITY.md` §15) consults
+  `CapacityGovernor::optional_allowed` before **every** object and accounts its
+  **measured** bytes, so it re-manifests into freed space only while the governor
+  *currently* allows optional construction with *currently* free optional
+  headroom. Its construction is also cancelable and bounded. The remaining honest
+  limit is the same one the governor already states: if the governor *does* allow
+  optional construction after a reclaim (the volume is healthy and under its soft
+  quota), re-manifestation is *permitted* — that is the intended behavior, not a
+  defect.
 * **The measured numbers are bounded and host/build dependent**, as in §16: the
   receipt's `note` says so, and the byte-equality (not the absolute byte counts) is
-  the point.
+  the point. For the subordination court the **refusal and cancelation** counts
+  (not the byte totals) are the deterministic result.

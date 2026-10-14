@@ -3521,7 +3521,8 @@ is now **467** tests (+9); `--features failpoints` is **477** (+9).
   per-size-class selected path, versus the *none* and *all* heuristics.
 * **`scripts/container-expansion-controller.sh`** — the smoke + release runner.
 * **`evidence/performance/expansion-controller.json`** — schema
-  `orfs.performance.expansion-controller.v1`.
+  `orfs.performance.expansion-controller.v1` (bumped to **`.v2`** in Phase 78,
+  which adds the `subordination` block; the v1 fields are unchanged).
 * **`scripts/render_charts.py`** — a new `expansion-controller.svg` figure.
 * **`docs/PERFORMANCE.md` §28** — the court's question, structure, decision rule,
   table and chart (`docs/charts/expansion-controller.svg`).
@@ -4519,7 +4520,104 @@ authority bytes, left the volume read-only with its history fully readable.
   autonomous expansion controller could in principle re-consume freed space by
   manifesting again; making its construction strictly subordinate to
   `CapacityGovernor::optional_allowed` (so a reclaim is not immediately undone) is
-  the stated next phase, not half-done here.
+  the stated next phase, not half-done here. *(Done in Phase 78 below.)*
 * The absolute byte figures are single-run, single-host and bounded; the court's
   counts are deterministic for its fixed fixture, and the **byte-equality and the
   bookkeeping** are the point (the receipt's `note` says so).
+
+## Phase 78 — Budget-subordinate, cancelable manifestation construction
+
+**Complete.** Phase 77 gave the operator a bounded way to free derived space, but
+left the autonomous concealed-expansion controller (`src/expansion.rs`) free to
+re-consume it and uncancelable. This phase makes the controller's construction
+**strictly subordinate to the same `CapacityGovernor`** that protects
+authoritative commits, **budgets the real measured bytes**, bounds the optional
+work, and makes it **cancelable** — so a reclaim is not silently undone and an
+unbounded construction cannot run. Two field disciplines are adopted and cited:
+**RocksDB** — a *hard space limit* is first-class and derived work must be
+strictly subordinate to it, measured not assumed — and **Apache Kafka KIP-405** —
+derived/background work is bounded and never jeopardizes the authoritative tier.
+
+### Delivered
+
+* **Governor-subordinate construction (`src/expansion.rs`, `src/namespace.rs`).**
+  `execute_plan(ns, plan, options)` now takes `&mut Namespace` and consults
+  `CapacityGovernor::optional_allowed` **before every object** and again accounts
+  the **measured** manifested bytes after each construction
+  (`Namespace::optional_bytes_in_use` sums the EKBLOOM-generation, trigram, and
+  direct-page-atlas planes; `Namespace::capacity_mut` exposes the governor). When
+  optional construction is forbidden it constructs **nothing further** and reports
+  a typed `ConstructionRefusal` (`governor-degraded` / `governor-no-headroom`).
+* **Real-byte budget + bounded admission.** The run gates on the running
+  **measured** total, not only the predictor's estimate, so an estimate error on
+  one object cannot overshoot the budget `B` on the next; a separate bounded
+  optional-byte **admission** refuses the excess (`admission-exhausted`) rather
+  than blocking an authoritative operation.
+* **Cancellation (`CancelToken`).** A `CancelToken` (an `Arc<AtomicBool>`, clone-
+  shared) is checked at least once per object, so a cancel returns within **one
+  object's construction**; a canceled run publishes nothing partially built, keeps
+  every already-completed, digest-verified structure valid (they are independent),
+  leaves every committed byte identical, and is idempotent. A deterministic
+  `CancelToken::cancel_after(k)` schedule makes the bound directly testable.
+* **Court `tests/expansion_controller.rs` (extended) + the extended runner.**
+  Always-on courts prove: with optional construction forbidden (soft-quota
+  no-headroom, and a degraded volume) `execute_plan` constructs **zero** and
+  reports the typed reason with authoritative reads byte-identical; the
+  **measured** manifested bytes never exceed `B` and are monotone non-decreasing
+  in `B`; the admission bound refuses rather than blocks; a bounded reclaim is
+  **not undone** (the freed space is not re-consumed while the governor still
+  forbids it, and commits remain possible); and cancellation is bounded, safe,
+  idempotent, and resumed by a later run. The `ORFS_EXPANSION=1` release sweep
+  writes the extended receipt.
+* **`evidence/performance/expansion-controller.json` (schema `.v2`).** The v1
+  fields are unchanged; the new `measured_vs_budget` array and the `subordination`
+  block (governor refusals, the cancelation bound, and reclaim-not-undone) carry
+  the Phase-78 evidence. `scripts/container-expansion-controller.sh` runs the
+  bounded always-on smoke and the opt-in release sweep (one container at a time).
+
+### Results (from `evidence/performance/expansion-controller.json`)
+
+Subordination: with optional construction forbidden the controller built **0** of
+**2** planned objects and refused all **2** (`governor-no-headroom`), authority
+byte-identical. Reclaim-not-undone: a bounded reclaim dropped **703 758** bytes of
+rebuildable structures; a re-run under the still-forbidding policy again built
+**0** and refused **2** (the freed space was not re-consumed), and a commit still
+succeeded. Cancelation: a deterministic mid-run cancel stopped after exactly **1**
+object (the documented bound), left no scratch, kept authority byte-identical, and
+a later run completed all **2**. Measured-vs-budget: every bounded sweep row stayed
+within `B` (`measured_never_exceeds_budget = true`) and the measured bytes were
+monotone non-decreasing in `B`.
+
+### Docs
+
+`src/expansion.rs`, `src/namespace.rs`; `tests/expansion_controller.rs`;
+`scripts/container-expansion-controller.sh`; `docs/LIMITATIONS.md` §17;
+`docs/CAPACITY.md` §15; `docs/MANIFESTATION.md` §14.8;
+`docs/STORAGE-ECONOMICS.md` §5; `docs/PERFORMANCE.md` §28;
+`docs/REPRODUCE.md`; `docs/RECEIPTS.md`; `scripts/docs-receipts.json`;
+`README.md`; this entry. Receipt: `evidence/performance/expansion-controller.json`
+(schema bumped to `.v2`).
+
+### Test counts
+
+**526 (default; +1 ignored) / 537 (`--features failpoints`)** — +9 default and
++9 with `--features failpoints` (4 `expansion` unit tests — the cancel token,
+`cancel_after`, the refusal names, and the options default — plus the 5-test
+`expansion_controller` subordination/cancelation/reclaim courts); `fmt`/`clippy`
+clean.
+
+### Notes, stated honestly
+
+* The controller still **never** becomes authoritative: subordination only decides
+  *which* derived structures exist; selection stays the measured planner's and
+  every manifested read is verified byte-identical (`docs/PERFORMANCE.md` §28).
+* The measured-byte gate uses the pre-construction **estimate** against the running
+  measured total, so a single object may land marginally above its estimate; the
+  *next* object is then refused, which is what bounds the run. The receipt asserts
+  the measured total never exceeds `B` for its grid.
+* If the governor *currently* allows optional construction after a reclaim (a
+  healthy volume under its soft quota), re-manifestation is **permitted** — that
+  is the intended behavior, not a defect (`docs/LIMITATIONS.md` §17).
+* Cancellation is a **library/controller API** (`ExpansionOptions::cancel`),
+  exercised by the court; the mounted daemon does not currently drive the
+  expansion controller, so there is no separate CLI `--cancel` surface yet.

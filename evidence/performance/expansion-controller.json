@@ -3,17 +3,21 @@
   "controller_sweep": [
     {
       "actual_manifested_bytes": 0,
-      "aggregate_read_ns": 4781077,
+      "aggregate_read_ns": 5590680,
       "atlas_bytes": 0,
       "budget_bytes": 0,
+      "budget_respected": true,
+      "canceled": false,
       "chosen_count": 0,
       "chosen_inodes": [],
       "generation_bytes": 0,
+      "measured_bytes": 0,
       "outcome_verified": true,
-      "per_read_mean_ns": 4980.288541666667,
+      "per_read_mean_ns": 5823.625,
       "policy": "controller",
       "predicted_bytes": 0,
       "reads": 960,
+      "refused": 0,
       "selected_paths_by_class": {
         "byte": {
           "logical-extent": 240
@@ -31,23 +35,27 @@
     },
     {
       "actual_manifested_bytes": 234256,
-      "aggregate_read_ns": 4293742,
+      "aggregate_read_ns": 4515898,
       "atlas_bytes": 69632,
       "budget_bytes": 250000,
+      "budget_respected": true,
+      "canceled": false,
       "chosen_count": 1,
       "chosen_inodes": [
         2
       ],
       "generation_bytes": 164624,
+      "measured_bytes": 234256,
       "outcome_verified": true,
-      "per_read_mean_ns": 4472.647916666667,
+      "per_read_mean_ns": 4704.060416666666,
       "policy": "controller",
       "predicted_bytes": 233864,
       "reads": 960,
+      "refused": 0,
       "selected_paths_by_class": {
         "byte": {
-          "direct-image": 30,
-          "logical-extent": 210
+          "logical-extent": 210,
+          "path-bloom": 30
         },
         "large(>64K)": {
           "logical-extent": 120
@@ -64,23 +72,27 @@
     },
     {
       "actual_manifested_bytes": 463632,
-      "aggregate_read_ns": 4177129,
+      "aggregate_read_ns": 4235100,
       "atlas_bytes": 135168,
       "budget_bytes": 470000,
+      "budget_respected": true,
+      "canceled": false,
       "chosen_count": 1,
       "chosen_inodes": [
         6
       ],
       "generation_bytes": 328464,
+      "measured_bytes": 463632,
       "outcome_verified": true,
-      "per_read_mean_ns": 4351.176041666667,
+      "per_read_mean_ns": 4411.5625,
       "policy": "controller",
       "predicted_bytes": 463632,
       "reads": 960,
+      "refused": 0,
       "selected_paths_by_class": {
         "byte": {
-          "direct-image": 30,
-          "logical-extent": 210
+          "logical-extent": 210,
+          "path-bloom": 30
         },
         "large(>64K)": {
           "direct-image": 30,
@@ -98,20 +110,24 @@
     },
     {
       "actual_manifested_bytes": 927264,
-      "aggregate_read_ns": 3305441,
+      "aggregate_read_ns": 3747158,
       "atlas_bytes": 270336,
       "budget_bytes": 940000,
+      "budget_respected": true,
+      "canceled": false,
       "chosen_count": 2,
       "chosen_inodes": [
         6,
         7
       ],
       "generation_bytes": 656928,
+      "measured_bytes": 927264,
       "outcome_verified": true,
-      "per_read_mean_ns": 3443.1677083333334,
+      "per_read_mean_ns": 3903.289583333333,
       "policy": "controller",
       "predicted_bytes": 927264,
       "reads": 960,
+      "refused": 0,
       "selected_paths_by_class": {
         "byte": {
           "direct-image": 30,
@@ -134,9 +150,11 @@
     },
     {
       "actual_manifested_bytes": 1390896,
-      "aggregate_read_ns": 2745524,
+      "aggregate_read_ns": 2740549,
       "atlas_bytes": 405504,
       "budget_bytes": 1400000,
+      "budget_respected": true,
+      "canceled": false,
       "chosen_count": 3,
       "chosen_inodes": [
         6,
@@ -144,16 +162,17 @@
         8
       ],
       "generation_bytes": 985392,
+      "measured_bytes": 1390896,
       "outcome_verified": true,
-      "per_read_mean_ns": 2859.920833333333,
+      "per_read_mean_ns": 2854.7385416666666,
       "policy": "controller",
       "predicted_bytes": 1390896,
       "reads": 960,
+      "refused": 0,
       "selected_paths_by_class": {
         "byte": {
-          "direct-image": 60,
           "logical-extent": 150,
-          "path-bloom": 30
+          "path-bloom": 90
         },
         "large(>64K)": {
           "direct-image": 90,
@@ -171,9 +190,11 @@
     },
     {
       "actual_manifested_bytes": 2088784,
-      "aggregate_read_ns": 1590876,
+      "aggregate_read_ns": 1524967,
       "atlas_bytes": 610304,
       "budget_bytes": 2100000,
+      "budget_respected": true,
+      "canceled": false,
       "chosen_count": 5,
       "chosen_inodes": [
         2,
@@ -183,15 +204,18 @@
         9
       ],
       "generation_bytes": 1478480,
+      "measured_bytes": 2088784,
       "outcome_verified": true,
-      "per_read_mean_ns": 1657.1625,
+      "per_read_mean_ns": 1588.5072916666666,
       "policy": "controller",
       "predicted_bytes": 2088392,
       "reads": 960,
+      "refused": 0,
       "selected_paths_by_class": {
         "byte": {
+          "direct-image": 60,
           "logical-extent": 90,
-          "path-bloom": 150
+          "path-bloom": 90
         },
         "large(>64K)": {
           "direct-image": 120
@@ -208,9 +232,11 @@
     },
     {
       "actual_manifested_bytes": 2791552,
-      "aggregate_read_ns": 414921,
+      "aggregate_read_ns": 441175,
       "atlas_bytes": 819200,
       "budget_bytes": 18446744073709551615,
+      "budget_respected": true,
+      "canceled": false,
       "chosen_count": 8,
       "chosen_inodes": [
         2,
@@ -223,15 +249,17 @@
         9
       ],
       "generation_bytes": 1972352,
+      "measured_bytes": 2791552,
       "outcome_verified": true,
-      "per_read_mean_ns": 432.209375,
+      "per_read_mean_ns": 459.5572916666667,
       "policy": "controller",
       "predicted_bytes": 2789984,
       "reads": 960,
+      "refused": 0,
       "selected_paths_by_class": {
         "byte": {
-          "direct-image": 30,
-          "path-bloom": 210
+          "direct-image": 90,
+          "path-bloom": 150
         },
         "large(>64K)": {
           "direct-image": 120
@@ -268,19 +296,57 @@
   "heuristics": {
     "all": {
       "actual_manifested_bytes": 2791552,
-      "aggregate_read_ns": 404231,
+      "aggregate_read_ns": 421545,
       "budget_bytes": null,
       "chosen_count": 8,
       "reads": 960
     },
     "none": {
       "actual_manifested_bytes": 0,
-      "aggregate_read_ns": 4930662,
+      "aggregate_read_ns": 5429935,
       "budget_bytes": 0,
       "reads": 960
     }
   },
-  "note": "Single-run, single-host measurement of the autonomous concealed-expansion controller (research §12): a pure predictor decides, per object and under a manifested-space budget B, between no manifestation and the direct-page atlas (which also constructs its EKBLOOM generation prerequisite). It measures a fixed committed history (8 heavily fragmented objects, mixed sizes) with a fixed mixed-size workload, sweeping B and comparing against no manifestation and a manifest-everything heuristic. Every planner read is asserted byte-identical to the authoritative extent read at every budget; the controller's predicted bytes never exceed B; and the chosen set is monotone non-decreasing in B.",
+  "measured_vs_budget": [
+    {
+      "budget_bytes": 0,
+      "budget_respected": true,
+      "measured_bytes": 0,
+      "predicted_bytes": 0
+    },
+    {
+      "budget_bytes": 250000,
+      "budget_respected": true,
+      "measured_bytes": 234256,
+      "predicted_bytes": 233864
+    },
+    {
+      "budget_bytes": 470000,
+      "budget_respected": true,
+      "measured_bytes": 463632,
+      "predicted_bytes": 463632
+    },
+    {
+      "budget_bytes": 940000,
+      "budget_respected": true,
+      "measured_bytes": 927264,
+      "predicted_bytes": 927264
+    },
+    {
+      "budget_bytes": 1400000,
+      "budget_respected": true,
+      "measured_bytes": 1390896,
+      "predicted_bytes": 1390896
+    },
+    {
+      "budget_bytes": 2100000,
+      "budget_respected": true,
+      "measured_bytes": 2088784,
+      "predicted_bytes": 2088392
+    }
+  ],
+  "note": "Single-run, single-host measurement of the autonomous concealed-expansion controller (research §12): a pure predictor decides, per object and under a manifested-space budget B, between no manifestation and the direct-page atlas (which also constructs its EKBLOOM generation prerequisite). It measures a fixed committed history (8 heavily fragmented objects, mixed sizes) with a fixed mixed-size workload, sweeping B and comparing against no manifestation and a manifest-everything heuristic. Every planner read is asserted byte-identical to the authoritative extent read at every budget; the controller's *measured* manifested bytes never exceed B and the chosen set is monotone non-decreasing in B. The `subordination` block (Phase 78) additionally proves strict subordination to the capacity governor, bounded admission, a bounded/idempotent cancellation, and that a bounded reclaim is not undone.",
   "objects": [
     {
       "extents": 64,
@@ -352,16 +418,50 @@
       2791552
     ],
     "controller_read_ns": [
-      4781077,
-      4293742,
-      4177129,
-      3305441,
-      2745524,
-      1590876,
-      414921
+      5590680,
+      4515898,
+      4235100,
+      3747158,
+      2740549,
+      1524967,
+      441175
     ],
+    "measured_monotone_non_decreasing": true,
+    "measured_never_exceeds_budget": true,
     "monotonic_non_increasing": true,
     "strictly_improved_over_budget": true
   },
-  "schema": "orfs.performance.expansion-controller.v1"
+  "schema": "orfs.performance.expansion-controller.v2",
+  "subordination": {
+    "cancelation": {
+      "authority_unchanged": true,
+      "bound_objects": 1,
+      "canceled": true,
+      "constructed": 1,
+      "measured_bytes": 234256,
+      "planned": 2,
+      "pre_cancel_constructed": 0,
+      "refused": 1,
+      "resumed_constructed": 2,
+      "scratch_free": true
+    },
+    "governor_refusal": {
+      "authority_unchanged": true,
+      "constructed": 0,
+      "measured_bytes": 0,
+      "planned": 2,
+      "reason": "governor-no-headroom",
+      "refused": 2
+    },
+    "reclaim_not_undone": {
+      "authority_unchanged": true,
+      "commit_ok": true,
+      "constructed": 0,
+      "dropped_bytes": 703758,
+      "measured_bytes": 0,
+      "planned": 2,
+      "reason": "governor-no-headroom",
+      "refused": 2
+    }
+  }
 }

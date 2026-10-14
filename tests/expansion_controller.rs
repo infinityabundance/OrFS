@@ -1,4 +1,4 @@
-//! **Phase 65 — the autonomous concealed-expansion controller court (research §12).**
+//! **Phase 65 + 78 — the autonomous concealed-expansion controller court (research §12).**
 //!
 //! Research §12 asks whether OrFS can *observe* a read workload, *predict* which
 //! additional manifested structure would most reduce work, *construct* it,
@@ -33,19 +33,31 @@
 //! opt-in behind `ORFS_EXPANSION=1` and writes
 //! `evidence/performance/expansion-controller.json` (run it via
 //! `scripts/container-expansion-controller.sh`).
+//!
+//! **Phase 78** extends the court with the subordination, cancellation, and
+//! reclaim-not-undone rows: with the governor forbidding optional construction
+//! `execute_plan` constructs nothing and reports the typed reason; the **measured**
+//! manifested bytes never exceed the budget `B`; a bounded admission refuses the
+//! remainder rather than blocking; a bounded reclaim is not re-consumed; and a
+//! cancellation is bounded (one object's construction), safe, idempotent, and
+//! resumed by a later run. Every row asserts authority is byte-identical.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Instant;
 
+use orfs::capacity::CapacityPolicy;
 use orfs::commit::DurabilityMode;
 use orfs::expansion::{
-    execute_plan, ByteModel, ExpansionConfig, ExpansionController, ExpansionCosts, ReadWorkload,
+    execute_plan, ByteModel, CancelToken, ConstructionRefusal, ExpansionConfig,
+    ExpansionController, ExpansionCosts, ExpansionOptions, ExpansionRun, ReadWorkload,
     EXPANSION_SCHEMA,
 };
+use orfs::log::OpenMode;
 use orfs::manifestation::{ManifestationConfig, ManifestationProfile, ManifestationStatus};
 use orfs::namespace::Namespace;
 use orfs::readpath::{ReadPathKind, ReadQuery, SizeClass};
+use orfs::reclaim::{capture_authority, drop_rebuildable_structures};
 use tempfile::TempDir;
 
 const UUID: [u8; 16] = [
@@ -354,6 +366,14 @@ struct SweepRow {
     generation_bytes: u64,
     atlas_bytes: u64,
     actual_manifested_bytes: u64,
+    /// The **measured** manifested bytes the run actually published.
+    measured_bytes: u64,
+    /// Whether the measured bytes stayed within the budget.
+    budget_respected: bool,
+    /// Decisions refused (governor / budget / admission / cancel).
+    refused: usize,
+    /// Whether cancellation stopped the run.
+    canceled: bool,
     outcome_verified: bool,
     run: RunResult,
 }
@@ -366,18 +386,18 @@ fn run_policy(
     pilot_len: usize,
     policy: Policy,
 ) -> SweepRow {
-    let court = build_court(dir, sizes, frag_chunk, pilot_len);
+    let mut court = build_court(dir, sizes, frag_chunk, pilot_len);
     let jobs = build_jobs(&court);
     let workload = build_workload(&court);
 
-    let (label, budget, chosen_inodes, predicted_bytes, outcome_verified): (
+    let (label, budget, chosen_inodes, predicted_bytes, expansion): (
         &'static str,
         u64,
         Vec<u64>,
         u64,
-        bool,
+        ExpansionRun,
     ) = match policy {
-        Policy::None => ("none", 0, Vec::new(), 0, true),
+        Policy::None => ("none", 0, Vec::new(), 0, empty_run(0)),
         Policy::All => {
             let controller = ExpansionController::new(
                 ExpansionConfig::new(u64::MAX, PROFILE),
@@ -385,14 +405,13 @@ fn run_policy(
                 ByteModel::with_atlas_align(court.generation_bytes_per_logical),
             );
             let plan = controller.plan(&workload);
-            let outcomes = execute_plan(&court.ns, &plan);
-            let verified = outcomes.iter().all(|o| o.built && o.verified);
+            let run = execute_plan(&mut court.ns, &plan, &ExpansionOptions::unbounded());
             (
                 "all",
                 u64::MAX,
                 plan.chosen_inodes(),
                 plan.predicted_bytes,
-                verified,
+                run,
             )
         }
         Policy::Controller(budget) => {
@@ -402,17 +421,19 @@ fn run_policy(
                 ByteModel::with_atlas_align(court.generation_bytes_per_logical),
             );
             let plan = controller.plan(&workload);
-            let outcomes = execute_plan(&court.ns, &plan);
-            let verified = outcomes.iter().all(|o| o.built && o.verified);
+            let run = execute_plan(&mut court.ns, &plan, &ExpansionOptions::new(budget));
             (
                 "controller",
                 budget,
                 plan.chosen_inodes(),
                 plan.predicted_bytes,
-                verified,
+                run,
             )
         }
     };
+    // Every program the run did not refuse must have been built and verified
+    // byte-identical; a refused decision is bounded out, never half-built.
+    let outcome_verified = verified_all(&expansion);
 
     let (generation_bytes, atlas_bytes) = manifested_bytes(&court, &chosen_inodes);
     let run = run_jobs(&court, &jobs, 3, 5);
@@ -424,8 +445,330 @@ fn run_policy(
         generation_bytes,
         atlas_bytes,
         actual_manifested_bytes: generation_bytes + atlas_bytes,
+        measured_bytes: expansion.measured_bytes,
+        budget_respected: expansion.budget_respected,
+        refused: expansion.refused,
+        canceled: expansion.canceled,
         outcome_verified,
         run,
+    }
+}
+
+/// An empty run (the "manifest nothing" policy).
+fn empty_run(budget: u64) -> ExpansionRun {
+    ExpansionRun {
+        outcomes: Vec::new(),
+        measured_bytes: 0,
+        budget_bytes: budget,
+        budget_respected: true,
+        admission_bytes: budget,
+        predicted_bytes: 0,
+        constructed: 0,
+        refused: 0,
+        canceled: false,
+    }
+}
+
+/// Whether every non-refused program was built and verified byte-identical.
+fn verified_all(run: &ExpansionRun) -> bool {
+    run.outcomes
+        .iter()
+        .filter(|o| !o.refused())
+        .all(|o| o.built && o.verified)
+}
+
+/// The controller for a court under a budget.
+fn make_controller(court: &Court, budget: u64) -> ExpansionController {
+    ExpansionController::new(
+        ExpansionConfig::new(budget, PROFILE),
+        court.costs.clone(),
+        ByteModel::with_atlas_align(court.generation_bytes_per_logical),
+    )
+}
+
+/// Manifest a generation + direct-page atlas for every object in the court, so the
+/// volume holds real optional bytes (to reclaim, and for the controller to skip).
+fn manifest_all(court: &Court) {
+    for obj in &court.objects {
+        let out = court
+            .ns
+            .manifest_eligible(Some(obj.inode), PROFILE)
+            .expect("manifest object");
+        assert!(
+            out.iter()
+                .any(|o| o.inode == obj.inode && o.status == ManifestationStatus::Published),
+            "object {} must publish a generation",
+            obj.inode
+        );
+        let atlas = court
+            .ns
+            .manifest_direct_page_atlas(obj.inode)
+            .expect("manifest atlas");
+        assert!(atlas.published, "object {} atlas must publish", obj.inode);
+    }
+}
+
+/// Whether no construction scratch (`*.tmp`) is left beneath `dir`.
+fn no_scratch_files(dir: &Path) -> bool {
+    fn walk(p: &Path, ok: &mut bool) {
+        let Ok(rd) = std::fs::read_dir(p) else {
+            return;
+        };
+        for entry in rd.flatten() {
+            let path = entry.path();
+            let Ok(ft) = entry.file_type() else { continue };
+            if ft.is_dir() {
+                walk(&path, ok);
+            } else if path.to_string_lossy().ends_with(".tmp") {
+                *ok = false;
+            }
+        }
+    }
+    let mut ok = true;
+    walk(dir, &mut ok);
+    ok
+}
+
+/// The governor-refusal scenario: with optional construction forbidden, the run
+/// constructs zero structures, reports the typed reason, and leaves authority
+/// byte-identical. `throttled` and `degraded` select which forbidden state.
+struct GovernorRow {
+    planned: usize,
+    constructed: usize,
+    refused: usize,
+    measured_bytes: u64,
+    reason: &'static str,
+    authority_unchanged: bool,
+}
+
+fn governor_refusal_row(
+    dir: &Path,
+    sizes: &[usize],
+    frag_chunk: usize,
+    pilot_len: usize,
+) -> GovernorRow {
+    let mut court = build_court(dir, sizes, frag_chunk, pilot_len);
+    let workload = build_workload(&court);
+    let plan = make_controller(&court, u64::MAX).plan(&workload);
+    assert!(
+        plan.chosen_count() > 0,
+        "the plan must choose at least one object"
+    );
+    let planned = plan.chosen_count();
+
+    let before = capture_authority(dir).expect("authority before");
+    // The optional soft quota is at the authoritative usage: optional construction
+    // is throttled, but authoritative commits are never refused by a soft quota.
+    let authoritative = court.ns.volume().log.authoritative_bytes();
+    court
+        .ns
+        .set_capacity_policy(CapacityPolicy::new().with_soft_quota(authoritative));
+    let run = execute_plan(&mut court.ns, &plan, &ExpansionOptions::unbounded());
+    let throttled = court.ns.volume().log.capacity().optional_throttled();
+    assert!(throttled, "optional construction must be throttled");
+    assert_eq!(
+        run.constructed, 0,
+        "no structure may be built when forbidden"
+    );
+    assert_eq!(run.measured_bytes, 0);
+    assert_eq!(run.refused, planned);
+    assert!(run
+        .outcomes
+        .iter()
+        .all(|o| o.refusal == Some(ConstructionRefusal::GovernorNoHeadroom)));
+    let after = capture_authority(dir).expect("authority after");
+    let authority_unchanged = before.committed_root == after.committed_root
+        && before.committed_digest == after.committed_digest
+        && before.committed_bytes == after.committed_bytes;
+    assert!(authority_unchanged, "authority must be byte-identical");
+    GovernorRow {
+        planned,
+        constructed: run.constructed,
+        refused: run.refused,
+        measured_bytes: run.measured_bytes,
+        reason: "governor-no-headroom",
+        authority_unchanged,
+    }
+}
+
+/// The cancellation scenario, exercised for real: a deterministic schedule stops
+/// the run after exactly one object; a subsequent run completes the rest. Authority
+/// is byte-identical throughout.
+struct CancelRow {
+    planned: usize,
+    constructed: usize,
+    refused: usize,
+    measured_bytes: u64,
+    canceled: bool,
+    scratch_free: bool,
+    authority_unchanged: bool,
+    pre_cancel_constructed: usize,
+    resumed_constructed: usize,
+}
+
+fn cancelation_row(dir: &Path, sizes: &[usize], frag_chunk: usize, pilot_len: usize) -> CancelRow {
+    let mut court = build_court(dir, sizes, frag_chunk, pilot_len);
+    let workload = build_workload(&court);
+    let plan = make_controller(&court, u64::MAX).plan(&workload);
+    let planned = plan.chosen_count();
+    assert!(planned >= 2, "several objects are needed to cancel mid-run");
+
+    let before = capture_authority(dir).expect("authority before");
+    let optional_before = court.ns.optional_bytes_in_use();
+
+    // (1) Pre-canceled: nothing is built, and a second cancel is idempotent.
+    let pre = CancelToken::new();
+    pre.cancel();
+    let run = execute_plan(
+        &mut court.ns,
+        &plan,
+        &ExpansionOptions::unbounded().with_cancel(pre.clone()),
+    );
+    assert_eq!(run.constructed, 0);
+    assert_eq!(run.refused, planned);
+    pre.cancel();
+    let run2 = execute_plan(
+        &mut court.ns,
+        &plan,
+        &ExpansionOptions::unbounded().with_cancel(pre.clone()),
+    );
+    assert_eq!(run2.constructed, 0);
+    assert_eq!(court.ns.optional_bytes_in_use(), optional_before);
+
+    // (2) Mid-run: `cancel_after(2)` stops after exactly one object's construction.
+    let run = execute_plan(
+        &mut court.ns,
+        &plan,
+        &ExpansionOptions::unbounded().with_cancel(CancelToken::cancel_after(2)),
+    );
+    assert!(run.canceled);
+    assert_eq!(
+        run.constructed, 1,
+        "the cancellation bound is one object's construction"
+    );
+    assert_eq!(run.refused, planned - 1);
+    assert!(run
+        .outcomes
+        .iter()
+        .filter(|o| !o.refused())
+        .all(|o| o.built && o.verified));
+    assert!(
+        no_scratch_files(dir),
+        "a canceled run must leave no scratch"
+    );
+    let mid = capture_authority(dir).expect("authority after cancel");
+    let authority_unchanged = before.committed_root == mid.committed_root
+        && before.committed_digest == mid.committed_digest
+        && before.committed_bytes == mid.committed_bytes
+        && before.watermark == mid.watermark;
+    assert!(
+        authority_unchanged,
+        "a cancel must not change a committed byte"
+    );
+
+    // (3) A subsequent, uncancelled run completes every chosen structure.
+    let fresh = execute_plan(&mut court.ns, &plan, &ExpansionOptions::unbounded());
+    assert!(!fresh.canceled);
+    assert_eq!(fresh.refused, 0);
+    assert_eq!(fresh.constructed, planned);
+    assert!(fresh.outcomes.iter().all(|o| o.built && o.verified));
+
+    CancelRow {
+        planned,
+        constructed: run.constructed,
+        refused: run.refused,
+        measured_bytes: run.measured_bytes,
+        canceled: run.canceled,
+        scratch_free: no_scratch_files(dir),
+        authority_unchanged,
+        pre_cancel_constructed: 0,
+        resumed_constructed: fresh.constructed,
+    }
+}
+
+/// The reclaim-not-undone scenario: after a bounded reclaim frees derived bytes,
+/// the controller does not re-consume them while the governor still forbids
+/// optional construction, and authoritative commits remain possible.
+struct ReclaimRow {
+    planned: usize,
+    constructed: usize,
+    refused: usize,
+    measured_bytes: u64,
+    dropped_bytes: u64,
+    reason: &'static str,
+    authority_unchanged: bool,
+    commit_ok: bool,
+}
+
+fn reclaim_not_undone_row(
+    dir: &Path,
+    sizes: &[usize],
+    frag_chunk: usize,
+    pilot_len: usize,
+) -> ReclaimRow {
+    // Build a volume with real optional structures and a plan to (re)build them.
+    let plan = {
+        let court = build_court(dir, sizes, frag_chunk, pilot_len);
+        manifest_all(&court);
+        assert!(
+            court.ns.optional_bytes_in_use() > 0,
+            "optional bytes must exist"
+        );
+        let workload = build_workload(&court);
+        make_controller(&court, u64::MAX).plan(&workload)
+    };
+    let planned = plan.chosen_count();
+    assert!(planned > 0);
+
+    // The bounded reclaim frees derived (manifestation) bytes, not authority.
+    let before = capture_authority(dir).expect("authority before reclaim");
+    let dropped_bytes: u64 = drop_rebuildable_structures(dir)
+        .expect("drop rebuildable")
+        .iter()
+        .map(|s| s.bytes_freed)
+        .sum();
+    let after = capture_authority(dir).expect("authority after reclaim");
+    assert!(dropped_bytes > 0, "the reclaim must free derived bytes");
+    let authority_unchanged = before.committed_root == after.committed_root
+        && before.committed_digest == after.committed_digest
+        && before.committed_bytes == after.committed_bytes;
+    assert!(authority_unchanged, "a reclaim must not change authority");
+
+    // Reopen with the no-headroom policy still in force: the controller must not
+    // re-consume the freed space, and commits must remain possible.
+    let mut ns =
+        Namespace::open(dir, OpenMode::ReadWrite, DurabilityMode::Ordered).expect("reopen");
+    let authoritative = ns.volume().log.authoritative_bytes();
+    ns.set_capacity_policy(CapacityPolicy::new().with_soft_quota(authoritative));
+    let run = execute_plan(&mut ns, &plan, &ExpansionOptions::unbounded());
+    assert_eq!(
+        run.constructed, 0,
+        "the freed space must not be re-consumed"
+    );
+    assert_eq!(run.measured_bytes, 0);
+    assert_eq!(run.refused, planned);
+    assert!(run
+        .outcomes
+        .iter()
+        .all(|o| o.refusal == Some(ConstructionRefusal::GovernorNoHeadroom)));
+    assert_eq!(ns.optional_bytes_in_use(), 0);
+    let ino = ns
+        .create(ns.root_inode(), b"after-reclaim", 0o644, 0, 0)
+        .expect("commit after reclaim");
+    ns.write_at(ino, 0, b"still-writable").expect("write");
+    ns.sync().expect("sync");
+    let commit_ok = !ns.is_degraded();
+    assert!(commit_ok, "the volume must still be writable");
+
+    ReclaimRow {
+        planned,
+        constructed: run.constructed,
+        refused: run.refused,
+        measured_bytes: run.measured_bytes,
+        dropped_bytes,
+        reason: "governor-no-headroom",
+        authority_unchanged,
+        commit_ok,
     }
 }
 
@@ -463,12 +806,16 @@ fn print_row(row: &SweepRow) {
         })
         .collect();
     eprintln!(
-        "policy={:<10} B={:>10} chosen={:>2} pred_bytes={:>9} actual_bytes={:>9} verified={} read_ns={:>12} paths=[{}]",
+        "policy={:<10} B={:>10} chosen={:>2} refusals={:>2} measured={:>9} pred_bytes={:>9} actual_bytes={:>9} budget_ok={} canceled={} verified={} read_ns={:>12} paths=[{}]",
         row.policy,
         row.budget_bytes,
         row.chosen_inodes.len(),
+        row.refused,
+        row.measured_bytes,
         row.predicted_bytes,
         row.actual_manifested_bytes,
+        row.budget_respected,
+        row.canceled,
         row.outcome_verified,
         row.run.total_ns,
         paths.join(" ")
@@ -507,6 +854,7 @@ fn expansion_controller_smoke() {
     let budgets = [0u64, 150_000, 1_000_000, u64::MAX];
     let mut rows = Vec::new();
     let mut prev_chosen = 0usize;
+    let mut prev_measured = 0u64;
     for &b in budgets.iter() {
         let td = TempDir::new().unwrap();
         let row = run_policy(
@@ -528,12 +876,25 @@ fn expansion_controller_smoke() {
                 "budget {b}: predicted {} bytes exceeds it",
                 row.predicted_bytes
             );
+            // The **measured** manifested bytes must never exceed the budget, and
+            // the run reports that honestly.
+            assert!(
+                row.measured_bytes <= b,
+                "budget {b}: measured {} bytes exceeds it",
+                row.measured_bytes
+            );
+            assert!(row.budget_respected, "budget {b} was reported violated");
         }
         assert!(
             row.chosen_inodes.len() >= prev_chosen,
             "budget {b} chose fewer objects than a smaller budget"
         );
+        assert!(
+            row.measured_bytes >= prev_measured,
+            "budget {b} measured fewer bytes than a smaller budget"
+        );
         prev_chosen = row.chosen_inodes.len();
+        prev_measured = row.measured_bytes;
         rows.push(row);
     }
     // The largest budget must choose every object with a positive predicted
@@ -629,6 +990,103 @@ fn expansion_bad_decision_is_ignored() {
             .any(|v| v.path == ReadPathKind::DirectImage && v.equivalent),
         "a tampered atlas must not be reported equivalent"
     );
+}
+
+#[test]
+fn expansion_governor_forbids_construction() {
+    // With optional construction forbidden (the optional soft quota is at the
+    // authoritative usage), the run constructs nothing and reports the typed
+    // reason; authority stays byte-identical.
+    let td = TempDir::new().unwrap();
+    let row = governor_refusal_row(td.path(), &[16_384, 32_768, 16_384], 2048, 16_384);
+    assert_eq!(row.constructed, 0);
+    assert_eq!(row.measured_bytes, 0);
+    assert_eq!(row.refused, row.planned);
+    assert!(row.authority_unchanged);
+}
+
+#[test]
+fn expansion_governor_degraded_forbids_construction() {
+    // A degraded (read-only) volume forbids optional construction with its own
+    // typed reason; authority stays byte-identical.
+    let sizes = [16_384usize, 32_768, 16_384];
+    let td = TempDir::new().unwrap();
+    let mut court = build_court(td.path(), &sizes, 2048, 16_384);
+    let workload = build_workload(&court);
+    let plan = make_controller(&court, u64::MAX).plan(&workload);
+    assert!(plan.chosen_count() > 0);
+    let before = capture_authority(td.path()).expect("authority before");
+    court.ns.capacity_mut().degrade("test: degraded");
+    assert!(court.ns.is_degraded());
+    let run = execute_plan(&mut court.ns, &plan, &ExpansionOptions::unbounded());
+    assert_eq!(run.constructed, 0);
+    assert_eq!(run.refused, plan.chosen_count());
+    assert!(run
+        .outcomes
+        .iter()
+        .all(|o| o.refusal == Some(ConstructionRefusal::GovernorDegraded)));
+    let after = capture_authority(td.path()).expect("authority after");
+    assert_eq!(before.committed_digest, after.committed_digest);
+    // Every authoritative read still returns the exact pattern bytes.
+    for obj in &court.objects {
+        let got = court
+            .ns
+            .read_extent(obj.inode, court.root, 0, obj.data.len() as u64)
+            .expect("authoritative read");
+        assert_eq!(got, obj.data);
+    }
+}
+
+#[test]
+fn expansion_admission_is_bounded_and_refuses_rather_than_blocks() {
+    // Bounded admission: exactly one object fits, the remainder is *refused*
+    // (never blocked), and every built structure verifies.
+    let sizes = [16_384usize, 32_768, 16_384, 32_768];
+    let td = TempDir::new().unwrap();
+    let mut court = build_court(td.path(), &sizes, 2048, 16_384);
+    let workload = build_workload(&court);
+    let plan = make_controller(&court, u64::MAX).plan(&workload);
+    assert!(plan.chosen_count() >= 2);
+    let admission = plan.chosen().next().unwrap().predicted_bytes;
+    let opts = ExpansionOptions::unbounded().with_admission_bytes(admission);
+    let run = execute_plan(&mut court.ns, &plan, &opts);
+    assert_eq!(run.constructed, 1, "exactly one object fits the admission");
+    assert_eq!(run.refused, plan.chosen_count() - 1);
+    assert!(run
+        .outcomes
+        .iter()
+        .filter(|o| o.refused())
+        .all(|o| o.refusal == Some(ConstructionRefusal::AdmissionExhausted)));
+    assert!(verified_all(&run));
+}
+
+#[test]
+fn expansion_reclaim_is_not_undone() {
+    // Free space with the Phase-77 reclaim, then run the controller: it does not
+    // re-consume the freed space while the governor still forbids optional
+    // construction, and authoritative commits remain possible.
+    let td = TempDir::new().unwrap();
+    let row = reclaim_not_undone_row(td.path(), &[16_384, 32_768], 2048, 16_384);
+    assert_eq!(row.constructed, 0);
+    assert_eq!(row.measured_bytes, 0);
+    assert!(row.dropped_bytes > 0);
+    assert!(row.authority_unchanged);
+    assert!(row.commit_ok);
+}
+
+#[test]
+fn expansion_cancellation_is_bounded_safe_and_idempotent() {
+    // Cancellation returns within one object's construction, publishes nothing
+    // partial, leaves every committed byte identical, is idempotent, and a later
+    // run completes the remaining structures.
+    let td = TempDir::new().unwrap();
+    let row = cancelation_row(td.path(), &[16_384, 32_768, 16_384, 32_768], 2048, 16_384);
+    assert!(row.canceled);
+    assert_eq!(row.constructed, 1);
+    assert_eq!(row.refused, row.planned - 1);
+    assert!(row.scratch_free);
+    assert!(row.authority_unchanged);
+    assert_eq!(row.resumed_constructed, row.planned);
 }
 
 #[test]
@@ -758,6 +1216,10 @@ fn expansion_controller_sweep() {
                 "generation_bytes": r.generation_bytes,
                 "atlas_bytes": r.atlas_bytes,
                 "actual_manifested_bytes": r.actual_manifested_bytes,
+                "measured_bytes": r.measured_bytes,
+                "budget_respected": r.budget_respected,
+                "refused": r.refused,
+                "canceled": r.canceled,
                 "outcome_verified": r.outcome_verified,
                 "aggregate_read_ns": r.run.total_ns as u64,
                 "reads": r.run.reads,
@@ -766,6 +1228,42 @@ fn expansion_controller_sweep() {
             })
         })
         .collect();
+
+    // The Phase-78 subordination courts, run for real on a small fixed history so
+    // the receipt carries measured bytes, refusal reasons, the cancelation bound,
+    // and the reclaim-not-undone result alongside the budget sweep.
+    let scn = [65_536usize, 65_536];
+    let sub_governor = {
+        let td = TempDir::new().unwrap();
+        governor_refusal_row(td.path(), &scn, 2048, 65_536)
+    };
+    let sub_cancel = {
+        let td = TempDir::new().unwrap();
+        cancelation_row(td.path(), &scn, 2048, 65_536)
+    };
+    let sub_reclaim = {
+        let td = TempDir::new().unwrap();
+        reclaim_not_undone_row(td.path(), &scn, 2048, 65_536)
+    };
+
+    // Measured-vs-budget: for every bounded sweep row the *measured* manifested
+    // bytes must not exceed the budget; report the worst case honestly.
+    let budget_rows: Vec<&SweepRow> = rows.iter().filter(|r| r.budget_bytes != u64::MAX).collect();
+    let measured_vs_budget: Vec<serde_json::Value> = budget_rows
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "budget_bytes": r.budget_bytes,
+                "measured_bytes": r.measured_bytes,
+                "predicted_bytes": r.predicted_bytes,
+                "budget_respected": r.budget_respected,
+            })
+        })
+        .collect();
+    let measured_never_exceeds_budget = budget_rows.iter().all(|r| r.budget_respected);
+    let measured_monotone = rows
+        .windows(2)
+        .all(|w| w[1].measured_bytes >= w[0].measured_bytes);
 
     let environment = orfs::bench::Environment::capture(std::env::var("ORFS_IMAGE").ok());
     let doc = serde_json::json!({
@@ -779,12 +1277,47 @@ fn expansion_controller_sweep() {
                  fixed mixed-size workload, sweeping B and comparing against no manifestation \
                  and a manifest-everything heuristic. Every planner read is asserted \
                  byte-identical to the authoritative extent read at every budget; the \
-                 controller's predicted bytes never exceed B; and the chosen set is monotone \
-                 non-decreasing in B.",
+                 controller's *measured* manifested bytes never exceed B and the chosen set is \
+                 monotone non-decreasing in B. The `subordination` block (Phase 78) additionally \
+                 proves strict subordination to the capacity governor, bounded admission, a \
+                 bounded/idempotent cancellation, and that a bounded reclaim is not undone.",
         "profile": "path(8)",
         "budget_unit": "manifested physical bytes (EKBLOOM generation + direct-page atlas)",
         "objects": objects,
         "controller_sweep": rows_json,
+        "measured_vs_budget": measured_vs_budget,
+        "subordination": {
+            "governor_refusal": {
+                "planned": sub_governor.planned,
+                "constructed": sub_governor.constructed,
+                "refused": sub_governor.refused,
+                "measured_bytes": sub_governor.measured_bytes,
+                "reason": sub_governor.reason,
+                "authority_unchanged": sub_governor.authority_unchanged,
+            },
+            "cancelation": {
+                "planned": sub_cancel.planned,
+                "constructed": sub_cancel.constructed,
+                "refused": sub_cancel.refused,
+                "measured_bytes": sub_cancel.measured_bytes,
+                "canceled": sub_cancel.canceled,
+                "pre_cancel_constructed": sub_cancel.pre_cancel_constructed,
+                "bound_objects": sub_cancel.constructed,
+                "scratch_free": sub_cancel.scratch_free,
+                "authority_unchanged": sub_cancel.authority_unchanged,
+                "resumed_constructed": sub_cancel.resumed_constructed,
+            },
+            "reclaim_not_undone": {
+                "planned": sub_reclaim.planned,
+                "constructed": sub_reclaim.constructed,
+                "refused": sub_reclaim.refused,
+                "measured_bytes": sub_reclaim.measured_bytes,
+                "dropped_bytes": sub_reclaim.dropped_bytes,
+                "reason": sub_reclaim.reason,
+                "authority_unchanged": sub_reclaim.authority_unchanged,
+                "commit_ok": sub_reclaim.commit_ok,
+            },
+        },
         "heuristics": {
             "none": {
                 "budget_bytes": 0,
@@ -806,6 +1339,8 @@ fn expansion_controller_sweep() {
             "controller_read_ns": controller_times.iter().map(|v| *v as u64).collect::<Vec<_>>(),
             "monotonic_non_increasing": monotonic,
             "strictly_improved_over_budget": strictly_improved,
+            "measured_never_exceeds_budget": measured_never_exceeds_budget,
+            "measured_monotone_non_decreasing": measured_monotone,
         },
         "environment": {
             "bench": serde_json::to_value(&environment).unwrap_or(serde_json::Value::Null),

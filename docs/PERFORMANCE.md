@@ -2171,34 +2171,37 @@ authoritative extent path.
 **Court.** `tests/expansion_controller.rs`, run by
 `scripts/container-expansion-controller.sh` (smoke + release sweep), writes
 `evidence/performance/expansion-controller.json` (schema
-`orfs.performance.expansion-controller.v1`). It builds a **fixed deterministic
+`orfs.performance.expansion-controller.v2`). It builds a **fixed deterministic
 committed history** of 8 objects — mixed sizes (four 64 KiB, four 128 KiB), every
 object **heavily fragmented** (1024-byte interleaved writes) — and a **fixed
 workload** that reads each object repeatedly at mixed sizes (1 B / 2 KiB / 16 KiB
 / the whole object). A dedicated, equally fragmented **calibration pilot**,
 kept out of the workload, supplies the measured generation ratio and per-class
 costs. The always-on smoke asserts the safety properties deterministically; the
-`ORFS_EXPANSION=1` release sweep writes the evidence.
+`ORFS_EXPANSION=1` release sweep writes the evidence. The v2 receipt adds the
+Phase-78 **`subordination`** block (measured-vs-budget, governor refusals, the
+cancelation bound, and reclaim-not-undone), which the always-on gate also tests.
 
 **Measured (one run; release; 960 timed reads per row; warmed 3 passes).**
 
 | budget `B` (bytes) | chosen objects | actual manifested bytes | aggregate read time (ns) |
 |---:|---:|---:|---:|
-| 0 | 0 | 0 | 4 781 077 |
-| 250 000 | 1 | 234 256 | 4 293 742 |
-| 470 000 | 1 | 463 632 | 4 177 129 |
-| 940 000 | 2 | 927 264 | 3 305 441 |
-| 1 400 000 | 3 | 1 390 896 | 2 745 524 |
-| 2 100 000 | 5 | 2 088 784 | 1 590 876 |
-| unbounded | 8 | 2 791 552 | **414 921** |
-| *heuristic: none* | 0 | 0 | 4 930 662 |
-| *heuristic: all* | 8 | 2 791 552 | **404 231** |
+| 0 | 0 | 0 | 5 590 680 |
+| 250 000 | 1 | 234 256 | 4 515 898 |
+| 470 000 | 1 | 463 632 | 4 235 100 |
+| 940 000 | 2 | 927 264 | 3 747 158 |
+| 1 400 000 | 3 | 1 390 896 | 2 740 549 |
+| 2 100 000 | 5 | 2 088 784 | 1 524 967 |
+| unbounded | 8 | 2 791 552 | **441 175** |
+| *heuristic: none* | 0 | 0 | 5 429 935 |
+| *heuristic: all* | 8 | 2 791 552 | **421 545** |
 
 At the unbounded budget every size class is served by the atlas (`byte`:
 `direct-image` 30 + certified `path-bloom` 210; `small`/`medium`/`large`:
 `direct-image` throughout) and every read was asserted **byte-identical to the
-authoritative extent read**. The controller's predicted bytes never exceeded `B`,
-and the chosen set was monotone non-decreasing in `B`.
+authoritative extent read**. The controller's **measured** manifested bytes never
+exceeded `B` (the receipt's `result.measured_never_exceeds_budget`), and the
+chosen set was monotone non-decreasing in `B`.
 
 ![Expansion controller: aggregate read time vs manifested-space budget](charts/expansion-controller.svg)
 
@@ -2209,14 +2212,16 @@ regenerate with `python3 scripts/render_charts.py --check`.*
 
 **Findings, stated honestly.**
 
-1. **The answer-time improves monotonically as `B` grows, and authority is
-   retained.** The run's curve is strictly non-increasing (`monotonic = true`,
-   `strictly_improved = true`): 4.78 ms at `B = 0` down to 0.41 ms unbounded. The
-   direct comparison that matters — the **no-manifestation** baseline (4.93 ms)
-   versus the **manifest-everything** heuristic (0.40 ms) — is a **~12.2×**
-   reduction in aggregate foreground read time, and the controller reaches the
-   same result at its largest budget. This is the honest shape the reviewer asked
-   about, and this run shows the affirmative answer for this workload.
+1. **The answer-time improves as `B` grows, and authority is retained.** The run's
+   curve is non-increasing within the ~20 % run-noise bound (`monotonic = true`,
+   `strictly_improved = true`): 5.59 ms at `B = 0` down to 0.44 ms unbounded (every
+   step decreasing in this run; a host-load wobble at one step is well inside the
+   noise budget). The direct comparison that matters — the **no-manifestation**
+   baseline (5.43 ms) versus the **manifest-everything** heuristic (0.42 ms) — is a
+   **~12.9×** reduction in aggregate foreground read time, and the controller
+   reaches the same result at its largest budget. This is the honest shape the
+   reviewer asked about, and this run shows the affirmative answer for this
+   workload.
 2. **The controller's curve is coarse because the generation prerequisite
    dominates the weight.** One atlas program costs ≈ **3.5×** its logical size
    (≈2.5× for the EKBLOOM generation plus ≈1.0× for the atlas), so a few hundred
@@ -2242,6 +2247,25 @@ tampered atlas is never selected. The bad decision costs only the wasted
 manifested bytes and the construction time — **never a wrong byte**. (A structure
 a read merely finds *slower* is handled the same way by the measured planner: it
 is ranked lower and not selected.)
+
+**Subordination, bounded admission, and cancellation (Phase 78).**
+`execute_plan` is now strictly subordinate to `CapacityGovernor`, so it cannot
+silently undo the Phase-77 bounded reclaim. Before **every** object it consults
+`optional_allowed` against the live optional usage and accounts the **measured**
+manifested bytes after each construction; it stops (`governor-degraded` /
+`governor-no-headroom`) the moment the governor forbids optional construction,
+when the accumulated **measured** bytes would exceed `B`, or when a bounded
+optional-byte **admission** is reached — it **refuses**, never blocks. It also
+checks a `CancelToken` at least once per object, so cancellation returns within
+**one object's construction** and publishes nothing partial. The v2 receipt's
+`subordination` block (and the always-on courts) measure: with optional
+construction forbidden, **0** of **2** planned objects built and all **2**
+refused (`governor-no-headroom`), authority byte-identical; after a bounded
+reclaim dropped **703 758** bytes of rebuildable structures, a re-run under the
+still-forbidding policy again built **0** and refused **2** (the freed space was
+not re-consumed) while a commit still succeeded; and a deterministic mid-run
+cancellation stopped after exactly **1** object (the documented bound), left no
+scratch, kept authority byte-identical, and a later run completed all **2**.
 
 **Caveats.** Single run, single host, release build; absolute nanoseconds are
 host/load-sensitive (the two zero-budget rows and the `none` heuristic differ by

@@ -41,6 +41,20 @@
 //!    — the read falls back to the authoritative extent path. This module never
 //!    weakens that invariant; it only decides *which* structures exist to be
 //!    measured.
+//! 4. **Construction is strictly subordinate to the capacity governor (Phase 78).**
+//!    [`execute_plan`] consults [`CapacityGovernor::optional_allowed`] *before*
+//!    every object and accounts the **measured** manifested bytes after each, so it
+//!    constructs *nothing further* once optional construction is forbidden (a
+//!    degraded volume, the optional soft quota, or the authoritative reserve) or
+//!    once its measured-byte budget is spent. A reclaim that freed derived space
+//!    (`src/reclaim.rs`) is therefore not silently undone: the controller
+//!    re-manifests only while the governor *currently* allows optional construction
+//!    with *currently* free headroom. The run is also **cancelable** (a
+//!    [`CancelToken`] checked at least once per object, returning within one
+//!    object's construction) and **bounded** (a total optional-byte admission), and
+//!    it never publishes a partial or unverified artifact.
+//!
+//! [`CapacityGovernor::optional_allowed`]: crate::capacity::CapacityGovernor::optional_allowed
 //!
 //! # Recovery from a bad decision
 //!
@@ -53,6 +67,8 @@
 //! `tests/expansion_controller.rs` demonstrates exactly this.
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 
 use crate::directpage::ATLAS_ALIGN;
 use crate::error::{OrfsError, Result};
@@ -63,7 +79,7 @@ use crate::readpath::{
 };
 
 /// The schema label of the expansion-controller evidence surface.
-pub const EXPANSION_SCHEMA: &str = "orfs.performance.expansion-controller.v1";
+pub const EXPANSION_SCHEMA: &str = "orfs.performance.expansion-controller.v2";
 
 /// Every size class, in the planner's canonical order.
 const ALL_CLASSES: [SizeClass; SizeClass::COUNT] = [
@@ -551,6 +567,164 @@ impl ExpansionController {
 // The safe execution loop (best-effort construction + verification)
 // ---------------------------------------------------------------------------
 
+/// Why a construction run declined to build one decision (Phase 78). It is the
+/// *typed* reason the run reports, never a bare failure: the caller can tell a
+/// governor refusal from a budget bound, an admission bound, or a cancellation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConstructionRefusal {
+    /// The volume has latched degraded/read-only: no optional structure may be
+    /// built at all.
+    GovernorDegraded,
+    /// The governor forbids optional construction: the volume is at (or above)
+    /// the optional soft quota or the authoritative reserve ceiling.
+    GovernorNoHeadroom,
+    /// The run's measured manifested-byte budget `B` would be exceeded.
+    BudgetExhausted,
+    /// The run's bounded optional-byte admission would be exceeded.
+    AdmissionExhausted,
+    /// The run was cancelled before this object was started.
+    Canceled,
+}
+
+impl ConstructionRefusal {
+    /// A stable short name for evidence.
+    pub const fn name(self) -> &'static str {
+        match self {
+            ConstructionRefusal::GovernorDegraded => "governor-degraded",
+            ConstructionRefusal::GovernorNoHeadroom => "governor-no-headroom",
+            ConstructionRefusal::BudgetExhausted => "budget-exhausted",
+            ConstructionRefusal::AdmissionExhausted => "admission-exhausted",
+            ConstructionRefusal::Canceled => "canceled",
+        }
+    }
+}
+
+/// A cooperative **cancellation token** for a construction run (Phase 78). Cloning
+/// shares one flag, so any handle/thread can request cancellation and the run
+/// observes it at its next per-object check.
+///
+/// A run consults the token *at least once per object*, so a cancel returns within
+/// a documented bound: **one object's construction**. Cancellation never modifies a
+/// committed byte and is idempotent — requesting it after a run has finished has no
+/// effect, and a canceled run still leaves every already-completed, digest-verified
+/// construction valid (those are independent structures). [`CancelToken::cancel_after`]
+/// adds a deterministic (clock-free, thread-free) cancellation *schedule* so the
+/// per-object bound is directly testable.
+#[derive(Debug, Clone)]
+pub struct CancelToken {
+    canceled: Arc<AtomicBool>,
+    /// Remaining consult ticks before the token cancels itself; `u64::MAX` disables
+    /// the schedule (a plain manual token).
+    auto_after: Arc<AtomicU64>,
+}
+
+impl Default for CancelToken {
+    fn default() -> Self {
+        CancelToken::new()
+    }
+}
+
+impl CancelToken {
+    /// A fresh, un-canceled token.
+    pub fn new() -> CancelToken {
+        CancelToken {
+            canceled: Arc::new(AtomicBool::new(false)),
+            auto_after: Arc::new(AtomicU64::new(u64::MAX)),
+        }
+    }
+
+    /// A token that cancels itself once a run has consulted it `checks` times.
+    /// Because a run consults the token exactly once per object, `cancel_after(k)`
+    /// stops the run after at most `k - 1` objects have been built. It is a
+    /// deterministic schedule (no clock, no threads), which makes the per-object
+    /// cancellation bound testable and lets a caller bound a run's length.
+    pub fn cancel_after(checks: u64) -> CancelToken {
+        CancelToken {
+            canceled: Arc::new(AtomicBool::new(false)),
+            auto_after: Arc::new(AtomicU64::new(checks.max(1))),
+        }
+    }
+
+    /// Request cancellation. Idempotent; a run already finished is unaffected.
+    pub fn cancel(&self) {
+        self.canceled.store(true, Ordering::SeqCst);
+    }
+
+    /// Whether cancellation has been requested (a pure read; it does not advance a
+    /// [`CancelToken::cancel_after`] schedule).
+    pub fn is_canceled(&self) -> bool {
+        self.canceled.load(Ordering::SeqCst)
+    }
+
+    /// Consult the token once. Equivalent to [`CancelToken::is_canceled`] but also
+    /// advances a [`CancelToken::cancel_after`] schedule; a construction run calls
+    /// this at least once per object.
+    pub fn check(&self) -> bool {
+        if !self.canceled.load(Ordering::SeqCst) {
+            let remaining = self.auto_after.load(Ordering::SeqCst);
+            if remaining != u64::MAX {
+                if remaining <= 1 {
+                    self.canceled.store(true, Ordering::SeqCst);
+                } else {
+                    self.auto_after.store(remaining - 1, Ordering::SeqCst);
+                }
+            }
+        }
+        self.canceled.load(Ordering::SeqCst)
+    }
+}
+
+/// Options for one bounded, governor-subordinate construction run (Phase 78).
+#[derive(Debug, Clone)]
+pub struct ExpansionOptions {
+    /// The **measured** manifested-byte budget `B`. The run stops before starting
+    /// an object whose predicted bytes would push the accumulated *measured* bytes
+    /// over `B`, so an estimate error in one object cannot let the run overshoot the
+    /// budget on the next.
+    pub budget_bytes: u64,
+    /// The bounded total optional bytes this run may admit (an admission bound
+    /// distinct from the planner's budget). Overload **refuses** the remainder — it
+    /// never blocks an authoritative operation.
+    pub admission_bytes: u64,
+    /// The cooperative cancellation token.
+    pub cancel: CancelToken,
+}
+
+impl ExpansionOptions {
+    /// A run bounded by `budget_bytes` (the admission bound defaults to it, and the
+    /// token is fresh).
+    pub fn new(budget_bytes: u64) -> ExpansionOptions {
+        ExpansionOptions {
+            budget_bytes,
+            admission_bytes: budget_bytes,
+            cancel: CancelToken::new(),
+        }
+    }
+
+    /// An unbounded run (the planner's budget is still honoured).
+    pub fn unbounded() -> ExpansionOptions {
+        ExpansionOptions::new(u64::MAX)
+    }
+
+    /// Set the bounded total optional-byte admission.
+    pub fn with_admission_bytes(mut self, admission_bytes: u64) -> ExpansionOptions {
+        self.admission_bytes = admission_bytes;
+        self
+    }
+
+    /// Use `cancel` as the run's cancellation token.
+    pub fn with_cancel(mut self, cancel: CancelToken) -> ExpansionOptions {
+        self.cancel = cancel;
+        self
+    }
+}
+
+impl Default for ExpansionOptions {
+    fn default() -> Self {
+        ExpansionOptions::unbounded()
+    }
+}
+
 /// The outcome of executing a plan's decision for one object.
 #[derive(Debug, Clone)]
 pub struct ExpansionOutcome {
@@ -576,8 +750,48 @@ pub struct ExpansionOutcome {
     pub atlas_bytes: u64,
     /// Total manifested physical bytes for this object.
     pub manifested_bytes: u64,
+    /// Why nothing was constructed, when the run refused this decision before
+    /// starting it (`None` when it was built or when no structure was chosen).
+    pub refusal: Option<ConstructionRefusal>,
     /// A human-readable detail (never fabricated: it reflects what happened).
     pub detail: String,
+}
+
+impl ExpansionOutcome {
+    /// Whether the run refused this decision before constructing anything.
+    pub fn refused(&self) -> bool {
+        self.refusal.is_some()
+    }
+}
+
+/// The outcome of one bounded, governor-subordinate construction run (Phase 78).
+#[derive(Debug, Clone)]
+pub struct ExpansionRun {
+    /// One outcome per chosen decision, in plan order.
+    pub outcomes: Vec<ExpansionOutcome>,
+    /// The **measured** manifested bytes this run actually published.
+    pub measured_bytes: u64,
+    /// The measured-byte budget `B` the run was given.
+    pub budget_bytes: u64,
+    /// Whether the measured manifested bytes stayed within `B`.
+    pub budget_respected: bool,
+    /// The bounded total optional-byte admission the run was given.
+    pub admission_bytes: u64,
+    /// The plan's predicted manifested bytes for its chosen programs.
+    pub predicted_bytes: u64,
+    /// Decisions built **and** verified.
+    pub constructed: usize,
+    /// Decisions refused (a governor, budget, admission, or cancellation refusal).
+    pub refused: usize,
+    /// Whether cancellation stopped the run.
+    pub canceled: bool,
+}
+
+impl ExpansionRun {
+    /// The total manifested bytes measured across the run's outcomes.
+    pub fn built_bytes(&self) -> u64 {
+        self.outcomes.iter().map(|o| o.manifested_bytes).sum()
+    }
 }
 
 /// Execute a plan against a namespace whose manifestation and direct-page atlas
@@ -588,14 +802,126 @@ pub struct ExpansionOutcome {
 /// — never on a foreground read's critical path — and a failure is recorded and
 /// skipped rather than propagated, so one object's failure cannot abort the rest.
 ///
+/// # Subordination to the capacity governor (Phase 78)
+///
+/// Before **every** object — and after each construction, so the accounting is of
+/// the *real* published bytes — the run consults the capacity governor. If
+/// optional construction is forbidden (the volume is degraded, or the optional soft
+/// quota / authoritative reserve ceiling is reached) it constructs **nothing
+/// further** and reports the typed [`ConstructionRefusal`]. This is what stops an
+/// autonomous expansion from silently undoing a `src/reclaim.rs` reclaim: the
+/// controller re-manifests only while the governor *currently* allows optional
+/// construction with *currently* free headroom.
+///
+/// The run also stops when the accumulated **measured** manifested bytes would
+/// exceed the configured budget `B`, or the bounded optional-byte admission — so a
+/// static estimate error cannot run the budget up on a later object. It checks
+/// [`CancelToken`] at least once per object, so a cancel returns within **one
+/// object's construction** and publishes nothing partially built; a canceled run's
+/// already-completed, digest-verified constructions stay valid (they are
+/// independent, self-verifying structures).
+///
 /// The planner is *not* told what was built; it simply measures every published
 /// structure on the next read and selects the cheapest it has measured, falling
 /// back to the authoritative path. A program that failed to build, or that does
 /// not verify, is therefore ignored — the recovery property this module promises.
-pub fn execute_plan(ns: &Namespace, plan: &ExpansionPlan) -> Vec<ExpansionOutcome> {
-    plan.chosen()
-        .map(|d| execute_one(ns, d, plan.profile))
-        .collect()
+pub fn execute_plan(
+    ns: &mut Namespace,
+    plan: &ExpansionPlan,
+    options: &ExpansionOptions,
+) -> ExpansionRun {
+    let mut outcomes: Vec<ExpansionOutcome> = Vec::new();
+    let mut measured: u64 = 0;
+    let mut admitted: u64 = 0;
+    let mut constructed: usize = 0;
+    let mut canceled = false;
+    // Once the run decides to stop (a governor refusal, a budget/admission bound, or
+    // a cancellation), every remaining chosen decision is refused with the same
+    // typed reason, and nothing further is constructed.
+    let mut stop: Option<ConstructionRefusal> = None;
+
+    for d in plan.chosen() {
+        if let Some(reason) = stop {
+            outcomes.push(refusal_outcome(d, reason));
+            continue;
+        }
+        if options.cancel.check() {
+            canceled = true;
+            stop = Some(ConstructionRefusal::Canceled);
+            outcomes.push(refusal_outcome(d, ConstructionRefusal::Canceled));
+            continue;
+        }
+
+        // The governor gate: consulted before *every* object, against the live
+        // optional usage, so a refusal here (never) constructs into freed space.
+        let authoritative = ns.volume().log.authoritative_bytes();
+        let optional = ns.optional_bytes_in_use();
+        let allowed = ns.capacity_mut().optional_allowed(authoritative, optional);
+        if !allowed {
+            let reason = if ns.volume().log.capacity().is_degraded() {
+                ConstructionRefusal::GovernorDegraded
+            } else {
+                ConstructionRefusal::GovernorNoHeadroom
+            };
+            stop = Some(reason);
+            outcomes.push(refusal_outcome(d, reason));
+            continue;
+        }
+
+        // The measured-byte budget and the bounded admission, both gated on the
+        // running *measured* total so the run cannot overshoot on a later object.
+        if measured.saturating_add(d.predicted_bytes) > options.budget_bytes {
+            stop = Some(ConstructionRefusal::BudgetExhausted);
+            outcomes.push(refusal_outcome(d, ConstructionRefusal::BudgetExhausted));
+            continue;
+        }
+        if admitted.saturating_add(d.predicted_bytes) > options.admission_bytes {
+            stop = Some(ConstructionRefusal::AdmissionExhausted);
+            outcomes.push(refusal_outcome(d, ConstructionRefusal::AdmissionExhausted));
+            continue;
+        }
+
+        // Construct (best-effort) and account the *real*, measured bytes.
+        let outcome = execute_one(ns, d, plan.profile);
+        measured = measured.saturating_add(outcome.manifested_bytes);
+        admitted = admitted.saturating_add(outcome.manifested_bytes);
+        if outcome.built && outcome.verified {
+            constructed += 1;
+        }
+        outcomes.push(outcome);
+    }
+
+    let refused = outcomes.iter().filter(|o| o.refused()).count();
+    ExpansionRun {
+        outcomes,
+        measured_bytes: measured,
+        budget_bytes: options.budget_bytes,
+        budget_respected: measured <= options.budget_bytes,
+        admission_bytes: options.admission_bytes,
+        predicted_bytes: plan.predicted_bytes,
+        constructed,
+        refused,
+        canceled,
+    }
+}
+
+/// A refusal outcome: a decision the run declined to construct, with its typed
+/// reason. It is never a partial artifact — nothing was built.
+fn refusal_outcome(d: &ExpansionDecision, reason: ConstructionRefusal) -> ExpansionOutcome {
+    ExpansionOutcome {
+        inode: d.inode,
+        inode_version: d.inode_version,
+        root: d.root,
+        logical_len: d.logical_len,
+        choice: d.choice,
+        built: false,
+        verified: false,
+        generation_bytes: 0,
+        atlas_bytes: 0,
+        manifested_bytes: 0,
+        refusal: Some(reason),
+        detail: format!("refused before construction: {}", reason.name()),
+    }
 }
 
 fn execute_one(
@@ -614,6 +940,7 @@ fn execute_one(
         generation_bytes: 0,
         atlas_bytes: 0,
         manifested_bytes: 0,
+        refusal: None,
         detail: String::new(),
     };
     if d.choice == ExpansionChoice::None {
@@ -841,5 +1168,65 @@ mod tests {
             bm.program_bytes(ExpansionChoice::Atlas, 65536),
             2 * 65536 + ATLAS_ALIGN
         );
+    }
+
+    #[test]
+    fn a_manual_cancel_token_is_idempotent_and_shared() {
+        let token = CancelToken::new();
+        assert!(!token.is_canceled());
+        let clone = token.clone();
+        token.cancel();
+        assert!(clone.is_canceled(), "a clone must observe the cancellation");
+        clone.cancel();
+        token.cancel();
+        assert!(token.is_canceled(), "cancellation is idempotent");
+        assert!(token.check());
+        // Checking a canceled token never un-cancels it.
+        assert!(clone.check());
+    }
+
+    #[test]
+    fn cancel_after_bounds_a_run_without_threads() {
+        // cancel_after(k) stops after at most k-1 consults return false.
+        let t = CancelToken::cancel_after(3);
+        assert!(!t.check(), "first consult: proceed");
+        assert!(!t.check(), "second consult: proceed");
+        assert!(t.check(), "third consult: cancel");
+        assert!(t.check(), "stays canceled");
+        // A schedule of 1 cancels before the first object.
+        let t1 = CancelToken::cancel_after(0);
+        assert!(t1.check());
+    }
+
+    #[test]
+    fn refusal_names_are_stable() {
+        assert_eq!(
+            ConstructionRefusal::GovernorDegraded.name(),
+            "governor-degraded"
+        );
+        assert_eq!(
+            ConstructionRefusal::GovernorNoHeadroom.name(),
+            "governor-no-headroom"
+        );
+        assert_eq!(
+            ConstructionRefusal::BudgetExhausted.name(),
+            "budget-exhausted"
+        );
+        assert_eq!(
+            ConstructionRefusal::AdmissionExhausted.name(),
+            "admission-exhausted"
+        );
+        assert_eq!(ConstructionRefusal::Canceled.name(), "canceled");
+    }
+
+    #[test]
+    fn expansion_options_default_to_unbounded_with_a_fresh_token() {
+        let opts = ExpansionOptions::default();
+        assert_eq!(opts.budget_bytes, u64::MAX);
+        assert_eq!(opts.admission_bytes, u64::MAX);
+        assert!(!opts.cancel.is_canceled());
+        let bounded = ExpansionOptions::new(1234).with_admission_bytes(99);
+        assert_eq!(bounded.budget_bytes, 1234);
+        assert_eq!(bounded.admission_bytes, 99);
     }
 }

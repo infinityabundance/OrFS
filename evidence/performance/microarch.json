@@ -1,4 +1,125 @@
 {
+  "counters": {
+    "granted_counters": [
+      "cycles",
+      "instructions",
+      "cache_references",
+      "cache_misses",
+      "branch_instructions",
+      "branch_misses"
+    ],
+    "hardware_counters_available": true,
+    "missing_counters": {
+      "dtlb_read_misses": "ENOENT (os error 2)",
+      "itlb_read_misses": "EINVAL (os error 22)"
+    },
+    "note": "Real user-space per-thread counters (exclude_kernel=1), reset/enabled around each measured loop, disabled before reading. `missing_counters` maps each event this microarchitecture/PMU does not expose to the exact errno/reason the kernel returned (e.g. EINVAL for an unsupported generic TLB event); those counters are skipped by name, never reported as zero and never conflated with an unavailable PMU. When the container profile denies perf_event_open the whole section records available:false with the exact errno and every probe reports measured:false with wall-clock time only — no counter is fabricated.",
+    "perf_event_open_error": null,
+    "probes": [
+      {
+        "measured": true,
+        "name": "pmap_point_lookup",
+        "ops": 500000,
+        "per_op": {
+          "branch_instructions": 51.1881,
+          "branch_miss_rate": 0.04347544588955438,
+          "branch_misses": 8.646132,
+          "cache_miss_rate": 0.268150649144436,
+          "cache_misses": 5.660768,
+          "cache_references": 21.110402,
+          "cycles": 574.655126,
+          "instructions": 198.873912,
+          "ipc": 0.3460752423532719
+        },
+        "wall_ns_per_op": 109.6658
+      },
+      {
+        "measured": true,
+        "name": "ekbloom_manifested_read",
+        "ops": 20000,
+        "per_op": {
+          "branch_instructions": 944.00415,
+          "branch_miss_rate": 0.00020335700972027402,
+          "branch_misses": 1.0538,
+          "cache_miss_rate": 0.02355534926897192,
+          "cache_misses": 0.01015,
+          "cache_references": 0.4309,
+          "cycles": 1726.3063,
+          "instructions": 5182.01955,
+          "ipc": 3.001796118104881
+        },
+        "wall_ns_per_op": 330.19555
+      },
+      {
+        "measured": true,
+        "name": "readplanner_steady_state_read",
+        "ops": 500000,
+        "per_op": {
+          "branch_instructions": 646.000506,
+          "branch_miss_rate": 0.0002835933442858517,
+          "branch_misses": 1.001652,
+          "cache_miss_rate": 0.20067674884331194,
+          "cache_misses": 0.005812,
+          "cache_references": 0.028962,
+          "cycles": 944.199632,
+          "instructions": 3532.001086,
+          "ipc": 3.7407355036969556
+        },
+        "wall_ns_per_op": 180.831868
+      },
+      {
+        "measured": true,
+        "name": "backing_log_segment_read",
+        "ops": 100000,
+        "per_op": {
+          "branch_instructions": 247.00082,
+          "branch_miss_rate": 0.0008860552787947595,
+          "branch_misses": 1.00479,
+          "cache_miss_rate": 0.024499350320872058,
+          "cache_misses": 0.0247,
+          "cache_references": 1.00819,
+          "cycles": 520.81559,
+          "instructions": 1134.00374,
+          "ipc": 2.177361357404835
+        },
+        "wall_ns_per_op": 194.64045
+      },
+      {
+        "measured": true,
+        "name": "ordered_commit",
+        "ops": 20000,
+        "per_op": {
+          "branch_instructions": 3584.34365,
+          "branch_miss_rate": 0.0005925615466029458,
+          "branch_misses": 12.13595,
+          "cache_miss_rate": 0.002251980321739524,
+          "cache_misses": 1.96125,
+          "cache_references": 870.90015,
+          "cycles": 7846.4997,
+          "instructions": 20480.4886,
+          "ipc": 2.610143297399221
+        },
+        "wall_ns_per_op": 7850.4238
+      },
+      {
+        "measured": true,
+        "name": "historical_index_open",
+        "ops": 20000,
+        "per_op": {
+          "branch_instructions": 552630.1124,
+          "branch_miss_rate": 0.0009939479154156283,
+          "branch_misses": 2847.12985,
+          "cache_miss_rate": 0.011368598558207354,
+          "cache_misses": 255.3484,
+          "cache_references": 22460.85115,
+          "cycles": 1321347.89715,
+          "instructions": 2864465.83955,
+          "ipc": 2.167836226726007
+        },
+        "wall_ns_per_op": 255151.2627
+      }
+    ]
+  },
   "environment": {
     "bench": {
       "cgroup_memory_max": "8589934592",
@@ -11,7 +132,8 @@
       "kernel_release": "7.2.9-2-cachyos",
       "likely_container": true,
       "machine": "x86_64",
-      "perf_counters_available": false,
+      "perf_counters_available": true,
+      "perf_event_open_error": null,
       "perf_event_paranoid": "2",
       "ram_total_bytes": 134723346432
     },
@@ -24,57 +146,57 @@
     "latest_for_shared_allocs": 0,
     "note": "latest_for_shared (the read path) allocates nothing per call; the deep-cloning latest_for allocates the manifest's owned fields. Before Phase 50 the read path used latest_for: the court measured 8.0 allocs/read, dropping to 2.0 after the change."
   },
-  "note": "Single-run, single-host, PMU-free microarchitecture probes. Hardware performance counters are unavailable on this host (perf_event_paranoid level and no usable `perf`), so AMD IBS and cache/TLB event counts could not be read; the court records that and uses proxies that need no PMU: a counting global allocator for hot-path allocator traffic, concurrent-reader throughput for the remaining shared-lock surface, and a working-set latency curve as a cache-hierarchy proxy. Absolute nanoseconds are host/load sensitive; the shape and the allocator counts are the point.",
+  "note": "Single-run, single-host microarchitecture probes. The **proxies** (a counting global allocator for hot-path allocator traffic, concurrent-reader throughput for the remaining shared-lock surface, and a working-set latency curve as a cache-hierarchy shape) need no PMU and run in every container. Under the probed PERFMON profile (scripts/container-microarch.sh) the `counters` section additionally carries **real** user-space hardware counters for each hot-path component (cycles, instructions, cache-references/-misses, branch-misses, and the DTLB/ITLB read misses where the PMU exposes them). A counter the microarchitecture does not provide is skipped by name; when the container profile denies perf_event_open the section records available:false with the exact errno and only wall-clock times are reported — the default container's seccomp profile denies the syscall with EPERM, which is **not** the paranoid level (perf_event_paranoid=2 permits user-space counters; see docs/PMU.md). Absolute nanoseconds are host/load sensitive; the shape, the allocator counts, and the counter ratios are the point.",
   "pmap_lookup_curve": [
     {
       "entries": 1024,
-      "ns_per_lookup": 31.4686075
+      "ns_per_lookup": 31.41073
     },
     {
       "entries": 8192,
-      "ns_per_lookup": 56.637775
+      "ns_per_lookup": 54.6175425
     },
     {
       "entries": 65536,
-      "ns_per_lookup": 114.065315
+      "ns_per_lookup": 110.6455175
     },
     {
       "entries": 262144,
-      "ns_per_lookup": 174.2655
+      "ns_per_lookup": 164.8135975
     }
   ],
   "pmu": {
-    "hardware_counters_available": false,
-    "note": "IBS / cache / TLB counter attribution is unavailable when false.",
+    "hardware_counters_available": true,
+    "note": "Environment metadata. perf_event_paranoid=2 permits user-space per-thread counters; the real gate is the container seccomp profile, which denies perf_event_open with EPERM in the default container. Run under --cap-add PERFMON to read the counters (see docs/PMU.md).",
     "perf_event_paranoid": "2"
   },
   "reader_scaling": [
     {
-      "ns_per_op": 103.871655,
-      "ops_per_s": 9627265.49413312,
+      "ns_per_op": 104.55962,
+      "ops_per_s": 9563921.52152045,
       "readers": 1
     },
     {
-      "ns_per_op": 140.59726,
-      "ops_per_s": 7112514.141456242,
+      "ns_per_op": 127.3335775,
+      "ops_per_s": 7853388.082181229,
       "readers": 2
     },
     {
-      "ns_per_op": 146.528915,
-      "ops_per_s": 6824591.58316978,
+      "ns_per_op": 143.14287375,
+      "ops_per_s": 6986027.133607131,
       "readers": 4
     },
     {
-      "ns_per_op": 211.857876875,
-      "ops_per_s": 4720145.480311871,
+      "ns_per_op": 201.930665625,
+      "ops_per_s": 4952194.838287083,
       "readers": 8
     }
   ],
   "reader_scaling_baseline": {
     "note": "Phase 50 replaced the per-path served counter (an RwLock<HashMap>) with a lock-free atomic array, removing the last policy write lock from the served-read path."
   },
-  "rss_kib_end": 19412,
-  "rss_kib_growth": 16952,
+  "rss_kib_end": 20012,
+  "rss_kib_growth": 17552,
   "schema": "orfs.performance.microarch.v1",
   "steady_state_read_allocations": {
     "allocs": 1000000,
@@ -82,7 +204,7 @@
     "bytes": 64000000,
     "bytes_per_read": 128.0,
     "interpretation": "A steady-state certified read returns one result Vec; the read planner adds no per-read manifest clone (Phase 50 shares the published manifest as an Arc).",
-    "ns_per_read": 104.660966,
+    "ns_per_read": 104.211652,
     "reads": 500000
   }
 }

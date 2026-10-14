@@ -1381,14 +1381,16 @@ than guessing which Rust constructs are slow, names AMD IBS and cache/TLB
 counters, and proposes mitigations: cache-line alignment, compact candidate
 arrays, **reduced temporary allocations**, and fewer contended shared locks.
 
-**PMU availability (recorded honestly).** This court ran in the **default
-container**, where `perf_counters_available=false`: the seccomp profile denies
-`perf_event_open` with `EPERM`. The blocker is the container profile, **not** the
-paranoid level — `perf_event_paranoid=2` permits user-space per-thread counters,
-and with `--cap-add PERFMON` this court's counters are read for real (§23,
-`docs/PMU.md`). In this default run AMD IBS and cache/TLB event counts could not
-be read, so the court uses PMU-free probes that are still decisive and records
-the limitation rather than inventing counter numbers.
+**PMU availability (recorded honestly).** Phase 83 runs this court under the
+**probed PERFMON profile**: `scripts/container-microarch.sh` proves at run time
+with `scripts/pmu-probe.c` that the default profile is **DENIED** (`EPERM`) and
+that `--cap-add PERFMON` is **PERMITTED**, then runs the court under the proven
+flags. The blocker was always the container seccomp profile, **not**
+`perf_event_paranoid=2` (which permits user-space per-thread counters). The
+`counters` section of `evidence/performance/microarch.json` therefore carries
+**real** per-op hardware counters for each component (below), with the exact
+errno of any event the PMU does not expose; the court also keeps its PMU-free
+proxies so it stays meaningful in the default container.
 
 **Court.** `tests/microarch.rs`, run by `scripts/container-microarch.sh`
 (release), writes `evidence/performance/microarch.json`. It uses a counting
@@ -1423,10 +1425,38 @@ a lock-free `[AtomicU64; ReadPathKind::COUNT]`.
 
 ![Microarch: PMap point-lookup latency vs working-set size](charts/microarch.svg)
 
-*Figure 18.1 — the `PMap` lookup curve (a cache-hierarchy proxy; a shape, not
-PMU-attributed in this default-container run). Source:
+*Figure 18.1 — the `PMap` lookup curve (a cache-hierarchy shape). Source:
 `evidence/performance/microarch.json`; regenerate with
 `python3 scripts/render_charts.py --check`.*
+
+**Real counters (Phase 83; one run; release; single host; one thread).** Under
+the PERFMON profile the same components read real user-space counters
+(`exclude_kernel=1`); the cycle counter is the group leader and a member the PMU
+does not expose is skipped by name:
+
+| Component | ops | wall ns/op | cycles/op | insn/op | cache-miss/op | branch-miss/op | IPC |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `PMap` point lookup | 500 000 | 109.7 | **575** | 198.9 | 5.66 | 8.65 | **0.35** |
+| EKBLOOM manifested read (via planner) | 20 000 | 330.2 | **1 726** | 5 182.0 | 0.010 | 1.05 | **3.00** |
+| `ReadPlanner` steady-state read | 500 000 | 180.8 | **944** | 3 532.0 | 0.006 | 1.00 | **3.74** |
+| backing log segment read | 100 000 | 194.6 | **521** | 1 134.0 | 0.025 | 1.01 | **2.18** |
+| ordered commit (append + barrier) | 20 000 | 7 850.4 | **7 846** | 20 480.5 | 1.96 | 12.14 | **2.61** |
+| historical index open (decode + re-seal) | 20 000 | 255 151.3 | **1 321 348** | 2 864 465.8 | 255.35 | 2 847.13 | **2.17** |
+
+**TLB counters (recorded honestly).** The court also requests the data- and
+instruction-TLB read-miss events (`PERF_TYPE_HW_CACHE`); on this host the kernel
+**refuses both**: `dtlb_read_misses` → `ENOENT`, `itlb_read_misses` → `EINVAL`
+(recorded verbatim in `counters.missing_counters`). They are skipped by name —
+not reported as zero and not conflated with an unavailable PMU. §11's "cache/TLB
+counters" therefore has a cache attribution here and a stated TLB gap.
+
+Reading the counters: the `PMap` point lookup is **cache-miss-bound** (IPC 0.35,
+5.7 cache misses/lookup — the treap walks pointer-linked nodes across cache
+lines), which is exactly the shape the latency curve implies; the
+manifested/planner/backing paths are instruction-bound and stayed in cache (IPC
+2.2–3.7). `ordered_commit` prices the append + durability-barrier substrate the
+group-commit coordinator amortises, and `historical_index_open` prices the warm
+historical-root open (accelerator decode + the dense-ordinal re-seal).
 
 **Findings, stated honestly.**
 
@@ -1441,19 +1471,21 @@ PMU-attributed in this default-container run). Source:
    follow-up; it is **not** done here, and the honest reading of the curve is that
    this remains the dominant shared-lock surface.
 3. **The `PMap` curve shows the expected monotone cache-pressure growth**
-   (~31 ns working-set-resident to ~174 ns at 262 k entries) but, without PMU
-   counters in *this* run, whether each step is an L1/L2/L3 or TLB boundary is
-   **not** attributed — the curve is a shape, not a counter attribution. §23's
-   PMU court does attribute the `PMap` lookup: IPC 0.30 with ~9.5 cache misses
-   per lookup — it is cache-miss-bound, exactly the shape this curve implies.
+   (31 → 55 → 111 → 165 ns from 1 Ki to 262 Ki entries). This run's own counters
+   (above) attribute it: IPC 0.35 with 5.7 cache misses per lookup — the treap
+   walks pointer-linked nodes, so it is cache-miss-bound, exactly the shape this
+   curve implies. Whether each step is an L1/L2/L3 **or a TLB** boundary is not
+   attributed: the kernel refused both TLB events on this host
+   (`counters.missing_counters`).
 
 **Caveats.** Single run, single host, release build; the host is under external
 load and the container is capped, so absolute nanoseconds and the reader-scaling
-aggregate are host/load sensitive. Hardware counters were unavailable *in this
-default container* (seccomp), so TLB and cache-miss counts are not reported here;
-the allocator counts and the `latest_for_shared`/`latest_for` comparison are the
-deterministic results. The separate PMU court (§23), which runs with
-`--cap-add PERFMON`, *does* read the counters.
+aggregate are host/load sensitive. The counters are **user-space only**
+(`exclude_kernel=1`): the kernel's FUSE/VFS time is not counted, and TLB misses
+are not reported because the kernel refused both TLB events on this host
+(`counters.missing_counters`) — the gap is stated, not estimated. The allocator
+counts and the `latest_for_shared`/`latest_for` comparison remain the
+deterministic results.
 
 ## 19. Reviewer task — the global search directory (research §9)
 
@@ -1771,17 +1803,22 @@ performs the syscall and records `perf_counters_available` plus
 **DENIED** (`EPERM`); `--cap-add PERFMON`, `--cap-add SYS_ADMIN`, and
 `seccomp=unconfined` all PERMIT. It writes `evidence/performance/pmu.json`
 (release) and the flamegraph under `evidence/performance/flamegraph-microarch.*`
-(debug).
+(debug). It also requests the data-/instruction-TLB read-miss events
+(`PERF_TYPE_HW_CACHE`); the kernel refuses both on this host
+(`dtlb_read_misses` → `ENOENT`, `itlb_read_misses` → `EINVAL`), recorded in
+`missing_counters` — a genuine PMU gap, **not** an unavailable PMU. The same
+counters now also drive the microarchitecture court (§18) and a mounted hot-path
+attribution (§34).
 
 **Measured (release; single host; one thread; per-op hardware counters over the
 measured loop).**
 
 | Component | ops | wall ns/op | cycles/op | insn/op | cache-miss/op | branch-miss/op | IPC | cache-miss rate |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `PMap` point lookup | 500 000 | 126.4 | **659** | 198.9 | 9.53 | 8.81 | **0.30** | 0.298 |
-| EKBLOOM manifested read (via planner) | 20 000 | 284.5 | **1 477** | 5 101.0 | 0.14 | 1.24 | **3.45** | 0.085 |
-| `ReadPlanner` steady-state selection | 500 000 | 170.8 | **890** | 3 547.0 | 0.013 | 1.01 | **3.98** | 0.027 |
-| backing log segment read | 100 000 | 188.2 | **456** | 1 160.0 | 0.03 | 1.01 | **2.54** | 0.005 |
+| `PMap` point lookup | 500 000 | 122.6 | **635** | 198.9 | 6.60 | 8.13 | **0.31** | 0.285 |
+| EKBLOOM manifested read (via planner) | 20 000 | 281.0 | **1 453** | 5 127.0 | 0.011 | 1.01 | **3.53** | 0.038 |
+| `ReadPlanner` steady-state selection | 500 000 | 91.1 | **470** | 1 300.0 | 0.006 | 0.001 | **2.77** | 0.070 |
+| backing log segment read | 100 000 | 185.9 | **452** | 1 161.0 | 0.016 | 1.00 | **2.57** | 0.027 |
 
 ![PMU counters per hot-path component](charts/pmu.svg)
 
@@ -1792,13 +1829,13 @@ instructions/cycles). Source: `evidence/performance/pmu.json`; regenerate with
 **Reading the counters.**
 
 1. **The `PMap` point lookup is cache-miss-bound**, not instruction-bound: IPC
-   **0.30** with **9.53 cache misses per lookup** — the treap walks pointer-linked
+   **0.31** with **6.60 cache misses per lookup** — the treap walks pointer-linked
    nodes across cache lines. This is the counter attribution §18 could only infer
    as a latency *shape*; the counters confirm it.
 2. **The manifested acceleration is instruction-bound and stayed in cache:** the
-   steady-state planner selection runs at IPC **3.98** with a 0.027 cache-miss rate,
-   and the EKBLOOM manifested read at IPC **3.45** — the point of spending manifested
-   space.
+   steady-state planner selection runs at IPC **2.77** with a 0.070 cache-miss
+   rate, and the EKBLOOM manifested read at IPC **3.53** — the point of spending
+   manifested space.
 3. **Caveat on the absolute numbers:** wall nanoseconds are host/load sensitive, and
    the selection's instruction count varies between runs because the planner's
    calibration is timing-based (it may pick a different path on a different run). The
@@ -1821,7 +1858,7 @@ ordering (`rank_measured`).
 **Caveats.** Single run, single host, one thread. The PMU court itself records
 `perf_counters_available: true` at `perf_event_paranoid: "2"` — i.e. **real
 counters at paranoid level 2** — precisely because it runs under `--cap-add
-PERFMON`. A court running in the **default** container (e.g. §18, §21) still
+PERFMON`. A court running in the **default** container (e.g. §21) still
 records `perf_counters_available=false`; that is a property of the container
 profile, not the kernel's paranoid level.
 
@@ -2899,3 +2936,90 @@ reported. Receipt:
 
 **Provenance.** `evidence/performance/application-workloads.json`; chart
 `application-workloads.svg`; `docs/APPLICATIONS.md`.
+
+## 34. Phase 83 — real counters on the mounted metadata/read hot path
+
+**The question.** Phase 81 measured every application workload as a loss
+(§33; 8.9×–52× slower) but nobody had **attributed** the mounted hot path with
+*real hardware counters*. This section does. It also finishes the Phase-57
+correction: the microarchitecture court (§18) now runs under the probed PERFMON
+profile, and the stale "counters are unavailable because `perf_event_paranoid=2`"
+excuse is gone from the current tree (see `docs/PMU.md`).
+
+**Court.** `tests/hotpath_counters.rs` (bounded always-on smoke + an opt-in
+`ORFS_HOTPATH=1` sweep), run by `scripts/container-hotpath-counters.sh` under the
+`docker_run_kmount_pmu` profile (`/dev/fuse` + SYS_ADMIN + `--cap-add PERFMON`,
+unconfined AppArmor/seccomp). It mounts a real OrFS volume with `fuse::spawn`
+(the classical F0 `/dev/fuse` transport, the same code path as `orfs mount`) and
+drives a bounded `create`/`stat`/`rename`/`unlink` + small `read`/`write`
+workload through it while a **counting global allocator** records allocations and
+per-thread **hardware counters** are attached to the calling thread and to every
+live `fuser*` **daemon** thread. Receipt:
+`evidence/performance/hotpath-counters.json`
+(schema `orfs.performance.hotpath-counters.v1`); daemon flamegraph
+`evidence/performance/flamegraph-hotpath.{folded,svg,json}`.
+
+**Measured (one run, release; F0; 2 500 iterations = 15 000 measured syscalls).**
+Per-op client latency (ns):
+
+| op | p50 | p95 | p99 |
+|---|---:|---:|---:|
+| `create` (+96 B) | 64 961 | 79 668 | 100 958 |
+| `stat` | 16 871 | 21 029 | 28 763 |
+| `rename` | 34 064 | 42 469 | 58 299 |
+| `unlink` | 35 917 | 45 325 | 63 488 |
+| `read` 96 B | 6 031 | 8 476 | 11 972 |
+| `write` 96 B | 19 095 | 23 995 | 36 939 |
+
+Real user-space counters per op (`exclude_kernel=1`):
+
+| thread group | cycles/op | insn/op | cache-miss/op | branch-miss/op | IPC |
+|---|---:|---:|---:|---:|---:|
+| **client** (calling thread) | 1 081.6 | 1 038.7 | 7.00 | 5.04 | 0.96 |
+| **daemon** (every `fuser*` thread, summed) | **43 751.2** | **64 741.3** | **400.65** | **165.62** | 1.48 |
+
+Allocations: **101.9 allocs/op / 12 991.7 bytes per op** (client + daemon, same
+process). The daemon flamegraph (837 samples, 97 leaves, 2 kHz software CPU-clock
+per thread) is dominated by `libc` (syscall/framing), `blake3_hash_many_avx512`
+(integrity hashing on the append path), `Index::decode_snapshot` /
+`persistent::insert_node` (engine index work), and `Log::open_resolved` /
+`CommitSequencer::commit` (append + barrier).
+
+**Reading the counters.**
+
+1. **The daemon dominates by ~50×.** A mounted metadata op costs the daemon
+   **~43.8 k cycles / ~64.7 k instructions** in user space versus the client's
+   ~1.1 k cycles — the cost is the FUSE dispatch + engine work on the daemon
+   threads, not the caller. This is the counter form of §33's metadata-tree loss,
+   and it is why Phase 74 decided F0-for-latency: each op is a daemon round trip.
+2. **The daemon's cache-miss rate is high (400.7/op, IPC 1.48).** The append path
+   hashes (`blake3`), walks the index, and frames replies — a working set larger
+   than L1. The client side is tiny and cache-friendlier (7.0 misses/op).
+3. **Honest limitation — what the counters cannot split.** User-space counters
+   (`exclude_kernel=1`) **exclude the kernel's FUSE/VFS time**, which is visible
+   only in the client wall-clock percentiles. They also cannot separate, within
+   the daemon number, FUSE dispatch from engine lookup/getattr from transaction
+   append; the flamegraph gives the *leaf* shape (hashing and index decode at the
+   top) but is indicative, not a call-chain attribution. The counter table is the
+   decisive, deterministic evidence.
+4. **TLB events are genuinely unsupported here** (`dtlb_read_misses` → `ENOENT`,
+   `itlb_read_misses` → `EINVAL`, recorded in the receipt's
+   `pmu.missing_counters`) — skipped by name, never reported as zero.
+
+**Optimization investigated and rejected (no change made).** §4's candidate was
+the per-write `core.getattr(ino, root)` inside the mutate job in `src/fuse.rs` and
+`src/fuse_native.rs`. The counters do **not** show a material redundancy, and the
+suggested condition cannot be expressed without the very call it would remove:
+the adapter needs `st.size` for `O_APPEND` and `st.uid`/`st.mode` for the
+non-owner `suid`/`sgid` killpriv decision. After Phase 82 the kernel's
+`FUSE_WRITE_KILL_SUIDGID` flag only lets the daemon skip the decision when the
+kernel already signalled it (or the writer is root); in the common non-root,
+non-append write the lookup is still required, so a conditional call would not
+remove common-case work. `write_at_inner` already reads the inode from the
+in-memory index (`self.index.inode`), so the residual extra work is a single
+in-memory lookup — below the resolution of a bounded mount A/B under host load.
+It is therefore **rejected, not applied** (`no measured win`).
+
+**Provenance.** `evidence/performance/hotpath-counters.json`; charts
+`hotpath-counters-latency.svg`, `hotpath-counters-counters.svg`;
+`docs/PMU.md`.

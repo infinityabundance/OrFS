@@ -1,0 +1,213 @@
+{
+  "allocations": {
+    "allocs_per_op": 101.8874,
+    "bytes": 194876118,
+    "bytes_per_op": 12991.7412,
+    "calls": 1528311,
+    "note": "counting #[global_allocator]; the client and the daemon run in the same process, so this counts both."
+  },
+  "build": "release",
+  "environment": {
+    "cgroup_memory_max": "8589934592",
+    "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "container_image": null,
+    "cores_visible": 8,
+    "cpu_max": "800000 100000",
+    "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+    "fuse_enable_uring": true,
+    "kernel_release": "7.2.9-2-cachyos",
+    "likely_container": true,
+    "machine": "x86_64",
+    "perf_counters_available": true,
+    "perf_event_open_error": null,
+    "perf_event_paranoid": "2",
+    "ram_total_bytes": 134723346432
+  },
+  "flamegraph": {
+    "folded": "/mnt/1tb_kingston/OrFS/evidence/performance/flamegraph-hotpath.folded",
+    "frames": 97,
+    "produced": true,
+    "reason": null,
+    "samples": 837,
+    "sidecar": "/mnt/1tb_kingston/OrFS/evidence/performance/flamegraph-hotpath.json",
+    "svg": "/mnt/1tb_kingston/OrFS/evidence/performance/flamegraph-hotpath.svg"
+  },
+  "generated_by": "tests/hotpath_counters.rs",
+  "latency_ns": {
+    "create": {
+      "mean_ns": 66963.7204,
+      "n": 2500,
+      "p50_ns": 64961,
+      "p95_ns": 79668,
+      "p99_ns": 100958
+    },
+    "read": {
+      "mean_ns": 6373.0276,
+      "n": 2500,
+      "p50_ns": 6031,
+      "p95_ns": 8476,
+      "p99_ns": 11972
+    },
+    "rename": {
+      "mean_ns": 35290.4268,
+      "n": 2500,
+      "p50_ns": 34064,
+      "p95_ns": 42469,
+      "p99_ns": 58299
+    },
+    "stat": {
+      "mean_ns": 17438.458,
+      "n": 2500,
+      "p50_ns": 16871,
+      "p95_ns": 21029,
+      "p99_ns": 28763
+    },
+    "unlink": {
+      "mean_ns": 36111.1176,
+      "n": 2500,
+      "p50_ns": 35917,
+      "p95_ns": 45325,
+      "p99_ns": 63488
+    },
+    "write": {
+      "mean_ns": 19890.1268,
+      "n": 2500,
+      "p50_ns": 19095,
+      "p95_ns": 23995,
+      "p99_ns": 36939
+    }
+  },
+  "mount": {
+    "backing_io_used": "Sync",
+    "container_image": null,
+    "image_digest": "sha256:a41df86df391732ab467b5bedc8b4a17c0df437fa180b5230417a6a8339d97ac",
+    "options": "MountOptions::default() (classical FUSE transport, synchronous backing I/O, page cache on, durability Ordered)",
+    "transport_used": "F0"
+  },
+  "note": "Phase 83 counter-guided forensics of the MOUNTED metadata/read hot path. A real OrFS volume is mounted with fuse::spawn (the same code path as `orfs mount`, classical /dev/fuse transport) and a bounded create/stat/rename/unlink + small read/write workload is driven through it while per-thread user-space hardware counters (exclude_kernel=1) are attached to the calling thread and to every live fuser* daemon thread, and a counting global allocator records allocations. The counters see user-space dispatch + engine work on the daemon threads; the kernel FUSE/VFS time is excluded and is visible only in the client wall-clock percentiles. No number is fabricated: when perf_event_open is denied the court records available:false with the exact errno.",
+  "pmu": {
+    "available": true,
+    "client_thread": {
+      "branch_misses_per_op": 5.0384,
+      "cache_misses_per_op": 6.996866666666667,
+      "cache_references_per_op": 144.07546666666667,
+      "cycles_per_op": 1081.554,
+      "dtlb_read_misses_per_op": 0.0,
+      "instructions_per_op": 1038.7252,
+      "ipc": 0.9604006827213436
+    },
+    "counters": [
+      "cycles",
+      "instructions",
+      "cache_references",
+      "cache_misses",
+      "branch_instructions",
+      "branch_misses"
+    ],
+    "daemon_threads": {
+      "attached_tids": [
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121
+      ],
+      "failed_tids": [],
+      "method_note": "sums every live fuser* thread of the test process, divided by the client's measured syscall count; the classical /dev/fuse daemon runs on fuser-bg + fuser-0..N. Client-side counters are user-space only (exclude_kernel=1), so the kernel FUSE syscall time is not counted on either side.",
+      "per_op": {
+        "branch_misses_per_op": 165.62166666666667,
+        "cache_misses_per_op": 400.654,
+        "cache_references_per_op": 4455.9078,
+        "cycles_per_op": 43751.1504,
+        "dtlb_read_misses_per_op": 0.0,
+        "instructions_per_op": 64741.34846666667,
+        "ipc": 1.4797633405010229
+      },
+      "per_thread": [
+        {
+          "branch_misses": 0,
+          "cache_misses": 0,
+          "cycles": 0,
+          "instructions": 0,
+          "tid": 113
+        },
+        {
+          "branch_misses": 305560,
+          "cache_misses": 745480,
+          "cycles": 80530778,
+          "instructions": 118810959,
+          "tid": 114
+        },
+        {
+          "branch_misses": 307172,
+          "cache_misses": 753450,
+          "cycles": 82669356,
+          "instructions": 122793370,
+          "tid": 115
+        },
+        {
+          "branch_misses": 313743,
+          "cache_misses": 763470,
+          "cycles": 82880120,
+          "instructions": 123081854,
+          "tid": 116
+        },
+        {
+          "branch_misses": 285587,
+          "cache_misses": 706087,
+          "cycles": 78293417,
+          "instructions": 117304104,
+          "tid": 117
+        },
+        {
+          "branch_misses": 296301,
+          "cache_misses": 722249,
+          "cycles": 81436382,
+          "instructions": 121620339,
+          "tid": 118
+        },
+        {
+          "branch_misses": 316636,
+          "cache_misses": 761762,
+          "cycles": 80792731,
+          "instructions": 117939784,
+          "tid": 119
+        },
+        {
+          "branch_misses": 329102,
+          "cache_misses": 773414,
+          "cycles": 84445507,
+          "instructions": 124683287,
+          "tid": 120
+        },
+        {
+          "branch_misses": 330224,
+          "cache_misses": 783898,
+          "cycles": 85218965,
+          "instructions": 124886530,
+          "tid": 121
+        }
+      ],
+      "reason": null
+    },
+    "error": null,
+    "missing_counters": {
+      "dtlb_read_misses": "ENOENT (os error 2)",
+      "itlb_read_misses": "EINVAL (os error 22)"
+    }
+  },
+  "ran": true,
+  "scale": "sweep",
+  "schema": "orfs.performance.hotpath-counters.v1",
+  "workload": {
+    "iters": 2500,
+    "measured_syscalls": 15000,
+    "ops": "create (+96 B payload) | stat | rename | unlink | read 96 B | write 96 B",
+    "wall_ns": 472033327,
+    "wall_ns_per_op": 31468.888466666667
+  }
+}

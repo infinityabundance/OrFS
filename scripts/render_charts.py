@@ -509,8 +509,9 @@ def chart_microarch():
                "points": [(c["entries"], c["ns_per_lookup"]) for c in curve]}]
     cap = [
         "source: evidence/performance/microarch.json (pmap_lookup_curve)",
-        "working-set sweep of PMap point lookups; a cache-hierarchy proxy",
-        "(a shape here, not PMU-attributed in this default-container run)",
+        "working-set sweep of PMap point lookups; a cache-hierarchy shape",
+        "the court's counters section attributes this with REAL PMU counters",
+        "(run under scripts/container-microarch.sh, --cap-add PERFMON)",
         "regenerate: python3 scripts/render_charts.py --check",
     ]
     return line_chart(
@@ -705,13 +706,63 @@ def chart_pmu():
     ]
     cap = [
         "source: evidence/performance/pmu.json (release, one thread, --cap-add PERFMON)",
-        "per-op hardware counters: pmap is cache-miss-bound (IPC 0.30);",
-        "the manifested read/planner paths are instruction-bound (IPC 3.45-3.98)",
+        "per-op hardware counters: pmap is cache-miss-bound (IPC 0.31);",
+        "the manifested read/planner paths are instruction-bound (IPC 2.77-3.53)",
         "regenerate: python3 scripts/render_charts.py --check",
     ]
     return bar_chart(
         "PMU counters per hot-path component (IPC = insn/cycle)",
         cap, "per-op count", groups, series)
+
+
+def chart_hotpath_latency():
+    d = load("hotpath-counters.json")
+    lat = d["latency_ns"]
+    groups = [k for k in ("create", "stat", "rename", "unlink", "read", "write") if k in lat]
+    series = [
+        {"name": "p50", "values": [lat[k]["p50_ns"] for k in groups]},
+        {"name": "p95", "values": [lat[k]["p95_ns"] for k in groups]},
+        {"name": "p99", "values": [lat[k]["p99_ns"] for k in groups]},
+    ]
+    cap = [
+        "source: evidence/performance/hotpath-counters.json (real OrFS mount, classical F0 transport)",
+        "client-side syscall latency per op (ns); one host, release build, bounded workload",
+        "the kernel FUSE/VFS time is included here and excluded from the user-space counters below",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return bar_chart(
+        "mounted hot path: per-op latency (p50/p95/p99, ns)",
+        cap, "ns", groups, series)
+
+
+def chart_hotpath_counters():
+    d = load("hotpath-counters.json")
+    p = d.get("pmu", {})
+    client = p.get("client_thread") or {}
+    daemon = (p.get("daemon_threads") or {}).get("per_op") or {}
+    groups = ["client", "daemon"]
+
+    def val(src, key):
+        v = src.get(key)
+        return v if isinstance(v, (int, float)) else 0.0
+
+    series = [
+        {"name": "cycles/op",
+         "values": [val(client, "cycles_per_op"), val(daemon, "cycles_per_op")]},
+        {"name": "instructions/op",
+         "values": [val(client, "instructions_per_op"), val(daemon, "instructions_per_op")]},
+        {"name": "cache-misses/op",
+         "values": [val(client, "cache_misses_per_op"), val(daemon, "cache_misses_per_op")]},
+    ]
+    cap = [
+        "source: evidence/performance/hotpath-counters.json (real PMU counters, PERFMON profile)",
+        "user-space per-thread counters (exclude_kernel=1): client = the calling thread,",
+        "daemon = every fuser* thread summed (FUSE dispatch + engine). kernel time excluded",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return bar_chart(
+        "mounted hot path: real counters per op (client vs daemon)",
+        cap, "per op", groups, series)
 
 
 def chart_direct_page_atlas():
@@ -1065,6 +1116,10 @@ CHARTS = (
      "evidence/performance/reader-scaling-64.json", "sh scripts/container-reader-scale64.sh"),
     ("pmu.svg", chart_pmu,
      "evidence/performance/pmu.json", "sh scripts/container-pmu.sh"),
+    ("hotpath-counters-latency.svg", chart_hotpath_latency,
+     "evidence/performance/hotpath-counters.json", "sh scripts/container-hotpath-counters.sh"),
+    ("hotpath-counters-counters.svg", chart_hotpath_counters,
+     "evidence/performance/hotpath-counters.json", "sh scripts/container-hotpath-counters.sh"),
     ("direct-page-atlas.svg", chart_direct_page_atlas,
      "evidence/performance/direct-page-atlas.json", "sh scripts/container-direct-page-atlas.sh"),
     ("expansion-controller.svg", chart_expansion_controller,

@@ -8,17 +8,17 @@
       "name": "pmap_point_lookup",
       "ops": 500000,
       "per_op": {
-        "branch_instructions": 51.188144,
-        "branch_miss_rate": 0.044275780614500146,
-        "branch_misses": 8.8053,
-        "cache_miss_rate": 0.29774075280919093,
-        "cache_misses": 9.532144,
-        "cache_references": 32.014912,
-        "cycles": 659.234366,
-        "instructions": 198.873964,
-        "ipc": 0.301674145428274
+        "branch_instructions": 51.188134,
+        "branch_miss_rate": 0.040876685138969984,
+        "branch_misses": 8.129308,
+        "cache_miss_rate": 0.2854407276902922,
+        "cache_misses": 6.60019,
+        "cache_references": 23.122804,
+        "cycles": 634.985514,
+        "instructions": 198.873954,
+        "ipc": 0.31319447391362065
       },
-      "wall_ns_per_op": 126.442238
+      "wall_ns_per_op": 122.60952
     },
     {
       "chosen": [],
@@ -29,40 +29,40 @@
       "name": "ekbloom_manifested_read",
       "ops": 20000,
       "per_op": {
-        "branch_instructions": 928.0055,
-        "branch_miss_rate": 0.00024270606093522787,
-        "branch_misses": 1.23805,
-        "cache_miss_rate": 0.08548371962090645,
-        "cache_misses": 0.13665,
-        "cache_references": 1.59855,
-        "cycles": 1476.76725,
-        "instructions": 5101.0263,
-        "ipc": 3.4541843340580582
+        "branch_instructions": 934.00575,
+        "branch_miss_rate": 0.0001967123266296472,
+        "branch_misses": 1.00855,
+        "cache_miss_rate": 0.038461538461538464,
+        "cache_misses": 0.011,
+        "cache_references": 0.286,
+        "cycles": 1452.91825,
+        "instructions": 5127.03,
+        "ipc": 3.528780783089482
       },
-      "wall_ns_per_op": 284.45115
+      "wall_ns_per_op": 281.03265
     },
     {
       "chosen": [
         {
           "count": 500128,
-          "path": "path-bloom"
+          "path": "logical-extent"
         }
       ],
       "measured_paths": [],
       "name": "readplanner_steady_state_selection",
       "ops": 500000,
       "per_op": {
-        "branch_instructions": 652.00049,
-        "branch_miss_rate": 0.00028396157095733214,
-        "branch_misses": 1.007212,
-        "cache_miss_rate": 0.02683569311820876,
-        "cache_misses": 0.01304,
-        "cache_references": 0.48592,
-        "cycles": 890.166184,
-        "instructions": 3547.001084,
-        "ipc": 3.9846504481459837
+        "branch_instructions": 199.000298,
+        "branch_miss_rate": 8.153840559057093e-7,
+        "branch_misses": 0.00106,
+        "cache_miss_rate": 0.070245254756422,
+        "cache_misses": 0.006284,
+        "cache_references": 0.089458,
+        "cycles": 469.850496,
+        "instructions": 1300.000892,
+        "ipc": 2.7668394586519707
       },
-      "wall_ns_per_op": 170.800358
+      "wall_ns_per_op": 91.082374
     },
     {
       "chosen": [],
@@ -70,17 +70,17 @@
       "name": "backing_log_segment_read",
       "ops": 100000,
       "per_op": {
-        "branch_instructions": 259.00083,
-        "branch_miss_rate": 0.0008670920020622692,
-        "branch_misses": 1.00583,
-        "cache_miss_rate": 0.0051677738521677475,
-        "cache_misses": 0.02529,
-        "cache_references": 4.89379,
-        "cycles": 456.1012,
-        "instructions": 1160.00378,
-        "ipc": 2.5433035036961096
+        "branch_instructions": 260.00075,
+        "branch_miss_rate": 0.0008651565882175913,
+        "branch_misses": 1.00445,
+        "cache_miss_rate": 0.026686902102552736,
+        "cache_misses": 0.01565,
+        "cache_references": 0.58643,
+        "cycles": 451.94246,
+        "instructions": 1161.0037,
+        "ipc": 2.568919282335189
       },
-      "wall_ns_per_op": 188.22482
+      "wall_ns_per_op": 185.89989
     }
   ],
   "environment": {
@@ -104,7 +104,8 @@
     "frames": 200,
     "produced": true,
     "reason": null,
-    "samples": 6164,
+    "samples": 6245,
+    "sidecar": null,
     "svg": "/mnt/1tb_kingston/OrFS/evidence/performance/flamegraph-microarch.svg"
   },
   "generated_by": "tests/microarch_pmu.rs",
@@ -119,7 +120,10 @@
       "branch_misses"
     ],
     "error": null,
-    "missing_counters": [],
+    "missing_counters": [
+      "dtlb_read_misses",
+      "itlb_read_misses"
+    ],
     "note": "perf_event_paranoid=2 permits user-space per-thread counters; a seccomp profile that denies perf_event_open returns EPERM. The container flag that fixes it is proven by scripts/container-pmu.sh.",
     "perf_event_paranoid": "2"
   },

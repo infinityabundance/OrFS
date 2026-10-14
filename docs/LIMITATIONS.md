@@ -173,7 +173,11 @@ and `perf` are absent from the pinned image, and hardware counters are
 additionally blocked by the default container's seccomp profile (which denies
 `perf_event_open` with `EPERM`) — **not** by `perf_event_paranoid=2`, which
 permits user-space counters, nor by a dropped `CAP_PERFMON`, which restores them
-(see `docs/PMU.md`);
+(see `docs/PMU.md`). Granted `--cap-add PERFMON`, the microarchitecture and the
+mounted hot-path courts read real counters (`docs/PERFORMANCE.md` §18/§34); the
+kernel exposes **no** TLB read-miss event on this host (`dtlb_read_misses` →
+`ENOENT`, `itlb_read_misses` → `EINVAL`), which those courts record rather than
+estimate;
 Criterion/Divan were not added (the pinned build is offline-capable and
 dependency-free). No performance superiority is claimed.
 

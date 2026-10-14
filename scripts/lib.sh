@@ -206,6 +206,40 @@ docker_run_kmount() {
         "$ORFS_KMOUNT_IMAGE" "$@"
 }
 
+# docker_run_kmount_pmu: exactly `docker_run_kmount` plus `--cap-add PERFMON`, so a
+# mounted court can read **real** hardware counters. The kmount profile already
+# carries `seccomp=unconfined`, which permits `perf_event_open`; adding the scoped
+# CAP_PERFMON makes the intent explicit and matches the microarchitecture courts'
+# least-privilege grant (`scripts/container-pmu.sh` proves the flags at run time).
+# One container at a time; does not `exec`.
+docker_run_kmount_pmu() {
+    _orfs_write_kmount_passwd
+    docker run --rm \
+        --memory="$ORFS_MEM_LIMIT" \
+        --memory-swap="$ORFS_MEMSWAP_LIMIT" \
+        --cpus="$ORFS_CPUS" \
+        --pids-limit="$ORFS_PIDS" \
+        --device /dev/fuse \
+        --cap-add SYS_ADMIN \
+        --cap-add PERFMON \
+        --security-opt apparmor=unconfined \
+        --security-opt seccomp=unconfined \
+        --ulimit core=0 \
+        -v "$ORFS_PARENT_DIR":"$ORFS_PARENT_DIR" \
+        -v "$ORFS_KMOUNT_PASSWD:/etc/passwd:ro" \
+        -w "$ORFS_PROJECT_DIR" \
+        -u "$(id -u):$(id -g)" \
+        -e HOME=/tmp \
+        -e TMPDIR="$ORFS_TMP_DIR" \
+        -e CARGO_HOME="$ORFS_CARGO_HOME" \
+        -e RUSTUP_HOME=/usr/local/rustup \
+        -e CARGO_TARGET_DIR="$ORFS_TARGET_DIR" \
+        -e CARGO_TERM_COLOR=never \
+        -e RUSTUP_TOOLCHAIN=1.99.0 \
+        -e ORFS_IMAGE_DIGEST="$(_orfs_image_digest "$ORFS_KMOUNT_IMAGE")" \
+        "$ORFS_KMOUNT_IMAGE" "$@"
+}
+
 # Generate the mount-test /etc/passwd (root, the invoking uid, and `nobody`).
 #
 # `nobody` (65534) is REQUIRED by pjdfstest: several tests resolve it with

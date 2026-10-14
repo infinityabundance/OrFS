@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="48" font-family="monospace" font-size="11">
+<rect width="1200" height="48" fill="#f7f7f9"/>
+<g><title>libc.so.6 (303)</title><rect x="0.00" y="16.00" width="434.41" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<text x="3.00" y="28.00" fill="#111111">libc.so.6 (303)</text>
+<g><title>blake3_hash_many_avx512 (123)</title><rect x="434.41" y="16.00" width="176.34" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<text x="437.41" y="28.00" fill="#111111">blake3_hash_many_avx512 (12~</text>
+<g><title>&lt;orfs::index::Index&gt;::decode_snapshot (29)</title><rect x="610.75" y="16.00" width="41.58" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>orfs::persistent::insert_node::&lt;alloc::vec::Vec&lt;u8&gt;, u64&gt; (27)</title><rect x="652.33" y="16.00" width="38.71" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::fuse_native::PassthroughControl&gt;::release (25)</title><rect x="691.04" y="16.00" width="35.84" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;serde_json::ser::PrettyFormatter as serde_json::ser::Formatter&gt;::end_array::&lt;&amp;mut alloc::vec::Vec&lt;u8&gt;&gt; (16)</title><rect x="726.88" y="16.00" width="22.94" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;usize as core::fmt::Debug&gt;::fmt (16)</title><rect x="749.82" y="16.00" width="22.94" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>core::ptr::drop_glue::&lt;orfs::manifestation::BuiltPayload&gt; (15)</title><rect x="772.76" y="16.00" width="21.51" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::log::Log&gt;::open_resolved (13)</title><rect x="794.27" y="16.00" width="18.64" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>core::ptr::drop_glue::&lt;alloc::sync::ArcInner&lt;std::thread::lifecycle::Packet&lt;()&gt;&gt;&gt; (13)</title><rect x="812.90" y="16.00" width="18.64" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>?? (11)</title><rect x="831.54" y="16.00" width="15.77" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;addr2line::line::Lines&gt;::find_location (10)</title><rect x="847.31" y="16.00" width="14.34" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::commit::CommitSequencer&gt;::commit (10)</title><rect x="861.65" y="16.00" width="14.34" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;alloc::collections::btree::map::BTreeMap&lt;std::ffi::os_str::OsString, core::option::Option&lt;std::ffi::os_str::OsString&gt;&gt;&gt;::insert (9)</title><rect x="875.99" y="16.00" width="12.90" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;alloc::collections::btree::node::BalancingContext&lt;std::ffi::os_str::OsString, std::ffi::os_str::OsString&gt;&gt;::bulk_steal_right (9)</title><rect x="888.89" y="16.00" width="12.90" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::historical::HistoricalIndexCache&gt;::resolve_traced (9)</title><rect x="901.79" y="16.00" width="12.90" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::historical::RootCatalogue&gt;::append (9)</title><rect x="914.70" y="16.00" width="12.90" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::manifestation::GenerationManifest&gt;::decode (9)</title><rect x="927.60" y="16.00" width="12.90" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;usize as core::fmt::Display&gt;::fmt (9)</title><rect x="940.50" y="16.00" width="12.90" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;alloc::collections::btree::map::entry::VacantEntry&lt;alloc::string::String, orfs::powerloss::FileModel&gt;&gt;::insert_entry (8)</title><rect x="953.41" y="16.00" width="11.47" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>core::ptr::drop_glue::&lt;alloc::vec::Vec&lt;(u64, alloc::sync::Arc&lt;orfs::manifestation::GenerationManifest&gt;)&gt;&gt; (8)</title><rect x="964.87" y="16.00" width="11.47" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>orfs::namespace::planned_read_from (8)</title><rect x="976.34" y="16.00" width="11.47" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;i64 as core::fmt::Display&gt;::fmt (6)</title><rect x="987.81" y="16.00" width="8.60" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::namespace::ReadState as orfs::namespace::CoreRead&gt;::readdir (5)</title><rect x="996.42" y="16.00" width="7.17" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;std::sync::mpmc::Sender&lt;core::result::Result&lt;i64, orfs::error::OrfsError&gt;&gt;&gt;::send (5)</title><rect x="1003.58" y="16.00" width="7.17" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>blake3::compress_subtree_wide::&lt;blake3::join::SerialJoin&gt; (5)</title><rect x="1010.75" y="16.00" width="7.17" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::error::OrfsError as core::fmt::Display&gt;::fmt (4)</title><rect x="1017.92" y="16.00" width="5.73" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::namespace::Namespace&gt;::create_object (4)</title><rect x="1023.66" y="16.00" width="5.73" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::record::RecordFooter&gt;::validate (4)</title><rect x="1029.39" y="16.00" width="5.73" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;u8 as core::fmt::LowerHex&gt;::fmt (4)</title><rect x="1035.13" y="16.00" width="5.73" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>std::thread::functions::available_parallelism (4)</title><rect x="1040.86" y="16.00" width="5.73" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::index::Snapshot as serde_core::ser::Serialize&gt;::serialize::&lt;&amp;mut serde_json::ser::Serializer&lt;&amp;mut alloc::vec::Vec&lt;u8&gt;&gt;&gt; (3)</title><rect x="1046.59" y="16.00" width="4.30" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::segment::Segment&gt;::create (3)</title><rect x="1050.90" y="16.00" width="4.30" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::trigram::TrigramManifest&gt;::decode (3)</title><rect x="1055.20" y="16.00" width="4.30" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::trigram::TrigramState&gt;::record_published (3)</title><rect x="1059.50" y="16.00" width="4.30" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;serde_json::de::Deserializer&lt;serde_json::read::SliceRead&gt;&gt;::parse_integer (3)</title><rect x="1063.80" y="16.00" width="4.30" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>core::ptr::drop_glue::&lt;alloc::sync::ArcInner&lt;std::thread::lifecycle::Packet&lt;core::result::Result&lt;(), core::io::error::Error&gt;&gt;&gt;&gt; (3)</title><rect x="1068.10" y="16.00" width="4.30" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>orfs::index::packed::decode_snapshots (3)</title><rect x="1072.40" y="16.00" width="4.30" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>orfs::inode::take_len_bytes (3)</title><rect x="1076.70" y="16.00" width="4.30" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;alloc::sync::Arc&lt;orfs::fuse::Inner&lt;orfs::namespace::Namespace&gt;&gt;&gt;::drop_slow (2)</title><rect x="1081.00" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;alloc::vec::Vec&lt;core::option::Option&lt;ekbloom::bloom_region::RegionTable&gt;&gt; as alloc::vec::spec_from_iter_nested::SpecFromIterNested&lt;core::option::Option&lt;ekbloom::bloom_region::RegionTable&gt;, core::iter::adapters::map::Map&lt;core::slice::iter::Iter&lt;ekbloom::bloom::BloomShell&gt;, &lt;orfs::readpath::ReadPlanner&gt;::build_loaded_body::{closure#2}&gt;&gt;&gt;::from_iter (2)</title><rect x="1083.87" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;core::fmt::Formatter&gt;::write_formatted_parts (2)</title><rect x="1086.74" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;core::num::niche_types::Nanoseconds as core::fmt::Debug&gt;::fmt (2)</title><rect x="1089.61" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;core::ops::range::Range&lt;usize&gt; as core::fmt::Debug&gt;::fmt (2)</title><rect x="1092.47" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;core::str::pattern::StrSearcher&gt;::new (2)</title><rect x="1095.34" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::bench::Environment&gt;::capture (2)</title><rect x="1098.21" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::fuse::HandleTable&gt;::insert (2)</title><rect x="1101.08" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::fuse::OrfsFuse&lt;orfs::namespace::Namespace&gt; as fuser::Filesystem&gt;::copy_file_range (2)</title><rect x="1103.94" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::index::Index&gt;::apply_range_traced (2)</title><rect x="1106.81" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::log::Log&gt;::append (2)</title><rect x="1109.68" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::segment::Segment&gt;::open (2)</title><rect x="1112.54" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;serde_json::de::SeqAccess&lt;serde_json::read::SliceRead&gt; as serde_core::de::SeqAccess&gt;::next_element::&lt;alloc::vec::Vec&lt;orfs::index::SnapshotVersion&gt;&gt; (2)</title><rect x="1115.41" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;std::sync::mpmc::zero::Channel&lt;orfs::fuse::NotifyMsg&gt;&gt;::send::{closure#0} (2)</title><rect x="1118.28" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;std::sync::mpmc::zero::Channel&lt;orfs::fuse_native::Done&gt;&gt;::recv (2)</title><rect x="1121.15" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>addr2line::line::path_push (2)</title><rect x="1124.01" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>core::ptr::drop_glue::&lt;alloc::sync::ArcInner&lt;orfs::fuse_native::PassthroughControl&gt;&gt; (2)</title><rect x="1126.88" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>core::ptr::drop_glue::&lt;orfs::manifestation::JobSpec&gt; (2)</title><rect x="1129.75" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>core::ptr::drop_glue::&lt;orfs::manifestation::ManifestationEngineReport&gt; (2)</title><rect x="1132.62" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>core::ptr::drop_glue::&lt;orfs::segment::Segment&gt; (2)</title><rect x="1135.48" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>orfs::fuse::spawn (2)</title><rect x="1138.35" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>orfs::index::packed::decode_dentries (2)</title><rect x="1141.22" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>orfs::inode::perm_class_groups (2)</title><rect x="1144.09" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>orfs::readpath::direct_bytes (2)</title><rect x="1146.95" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>std::panicking::panic_with_hook (2)</title><rect x="1149.82" y="16.00" width="2.87" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;addr2line::function::Function&lt;gimli::read::endian_slice::EndianSlice&lt;gimli::endianity::LittleEndian&gt;&gt;&gt;::parse_children (1)</title><rect x="1152.69" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;adler2::Adler32&gt;::write_slice (1)</title><rect x="1154.12" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;alloc::collections::btree::map::BTreeMap&lt;u64, orfs::manifestation::GenerationManifest&gt;&gt;::insert (1)</title><rect x="1155.56" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;alloc::sync::Arc&lt;orfs::fuse_native::Dispatcher&lt;orfs::namespace::Namespace&gt;&gt;&gt;::drop_slow (1)</title><rect x="1156.99" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;char&gt;::is_assigned (1)</title><rect x="1158.42" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;core::bstr::ByteStr as core::fmt::Display&gt;::fmt (1)</title><rect x="1159.86" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;core::fmt::Formatter&gt;::pad_integral (1)</title><rect x="1161.29" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;fuser::mnt::Mount&gt;::new (1)</title><rect x="1162.72" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::directory::DentryRenamePayload&gt;::decode (1)</title><rect x="1164.16" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::fuse::OrfsFuse&lt;orfs::namespace::Namespace&gt;&gt;::new (1)</title><rect x="1165.59" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::fuse_native::PassthroughControl&gt;::close_all (1)</title><rect x="1167.03" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::group_commit::BatchCoordinator&lt;orfs::namespace::Namespace&gt;&gt;::try_admit (1)</title><rect x="1168.46" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::historical::RootCatalogue&gt;::publish (1)</title><rect x="1169.89" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::historical::RootCatalogue&gt;::watermark (1)</title><rect x="1171.33" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::index::Index&gt;::apply_record (1)</title><rect x="1172.76" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::index::Index&gt;::link_count_from_dentries (1)</title><rect x="1174.19" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::manifestation::ManifestationState&gt;::record_published (1)</title><rect x="1175.63" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::namespace::Namespace&gt;::commit_plan (1)</title><rect x="1177.06" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::namespace::Namespace&gt;::rename (1)</title><rect x="1178.49" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::namespace::Namespace&gt;::rmdir (1)</title><rect x="1179.93" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::readpath::RegionCache&gt;::insert (1)</title><rect x="1181.36" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::transaction::TxCommitPayload&gt;::decode (1)</title><rect x="1182.80" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::trigram::TrigramIndex&gt;::build (1)</title><rect x="1184.23" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::trigram::TrigramIndex&gt;::encode (1)</title><rect x="1185.66" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>&lt;orfs::trigram::TrigramStore&gt;::read_head (1)</title><rect x="1187.10" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>[vdso] (1)</title><rect x="1188.53" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>__do_global_dtors_aux (1)</title><rect x="1189.96" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>core::ptr::drop_glue::&lt;alloc::boxed::Box&lt;std::sync::mpmc::counter::Counter&lt;std::sync::mpmc::list::Channel&lt;orfs::group_commit::Envelope&lt;orfs::namespace::Namespace&gt;&gt;&gt;&gt;&gt; (1)</title><rect x="1191.40" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>core::ptr::drop_glue::&lt;orfs::manifestation::ManifestComponent&gt; (1)</title><rect x="1192.83" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>core::ptr::drop_glue::&lt;orfs::namespace::Plan&gt; (1)</title><rect x="1194.27" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>core::ptr::drop_glue::&lt;std::process::Command&gt; (1)</title><rect x="1195.70" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>orfs::capabilities::uname::{closure#0} (1)</title><rect x="1197.13" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+<g><title>orfs::index::packed::decode_parents (1)</title><rect x="1198.57" y="16.00" width="1.43" height="16" fill="hsl(47,60%,72%)" stroke="#ffffff"/></g>
+</svg>

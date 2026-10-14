@@ -1,31 +1,31 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="monospace"><rect x="0" y="0" width="760" height="440" fill="#ffffff"/><text x="380.0" y="22.0" fill="#111111" font-size="14" text-anchor="middle" font-weight="bold">PMU counters per hot-path component (IPC = insn/cycle)</text>
 <line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
 <text x="76.0" y="344.0" fill="#111111" font-size="11" text-anchor="end">0</text>
-<line x1="84.0" y1="231.0" x2="736.0" y2="231.0" stroke="#e8e8e8" stroke-width="1"/>
-<text x="76.0" y="235.0" fill="#111111" font-size="11" text-anchor="end">2k</text>
-<line x1="84.0" y1="122.0" x2="736.0" y2="122.0" stroke="#e8e8e8" stroke-width="1"/>
-<text x="76.0" y="126.0" fill="#111111" font-size="11" text-anchor="end">4k</text>
+<line x1="84.0" y1="231.6" x2="736.0" y2="231.6" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="235.6" fill="#111111" font-size="11" text-anchor="end">2k</text>
+<line x1="84.0" y1="123.1" x2="736.0" y2="123.1" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="127.1" fill="#111111" font-size="11" text-anchor="end">4k</text>
 <line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
 <line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
 <text x="26.0" y="201.0" fill="#111111" font-size="12" text-anchor="middle" transform="rotate(-90 26.0 201.0)">per-op count</text>
-<rect x="106.8" y="304.1" width="52.2" height="35.9" fill="#1f77b4"/>
+<rect x="106.8" y="305.6" width="52.2" height="34.4" fill="#1f77b4"/>
 <rect x="172.0" y="329.2" width="52.2" height="10.8" fill="#d62728"/>
 <text x="165.5" y="358.0" fill="#111111" font-size="11" text-anchor="middle">pmap</text>
-<rect x="269.8" y="259.5" width="52.2" height="80.5" fill="#1f77b4"/>
+<rect x="269.8" y="261.2" width="52.2" height="78.8" fill="#1f77b4"/>
 <rect x="335.0" y="62.0" width="52.2" height="278.0" fill="#d62728"/>
 <text x="328.5" y="358.0" fill="#111111" font-size="11" text-anchor="middle">ekbloom</text>
-<rect x="432.8" y="291.5" width="52.2" height="48.5" fill="#1f77b4"/>
-<rect x="498.0" y="146.7" width="52.2" height="193.3" fill="#d62728"/>
+<rect x="432.8" y="314.5" width="52.2" height="25.5" fill="#1f77b4"/>
+<rect x="498.0" y="269.5" width="52.2" height="70.5" fill="#d62728"/>
 <text x="491.5" y="358.0" fill="#111111" font-size="11" text-anchor="middle">planner</text>
-<rect x="595.8" y="315.1" width="52.2" height="24.9" fill="#1f77b4"/>
-<rect x="661.0" y="276.8" width="52.2" height="63.2" fill="#d62728"/>
+<rect x="595.8" y="315.5" width="52.2" height="24.5" fill="#1f77b4"/>
+<rect x="661.0" y="277.0" width="52.2" height="63.0" fill="#d62728"/>
 <text x="654.5" y="358.0" fill="#111111" font-size="11" text-anchor="middle">backing</text>
 <rect x="84.0" y="35.0" width="10" height="10" fill="#1f77b4"/>
 <text x="99.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">cycles/op</text>
 <rect x="182.0" y="35.0" width="10" height="10" fill="#d62728"/>
 <text x="197.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">instructions/op</text>
 <text x="84.0" y="370.0" fill="#555555" font-size="10" text-anchor="start">source: evidence/performance/pmu.json (release, one thread, --cap-add PERFMON)</text>
-<text x="84.0" y="386.0" fill="#555555" font-size="10" text-anchor="start">per-op hardware counters: pmap is cache-miss-bound (IPC 0.30);</text>
-<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">the manifested read/planner paths are instruction-bound (IPC 3.45-3.98)</text>
+<text x="84.0" y="386.0" fill="#555555" font-size="10" text-anchor="start">per-op hardware counters: pmap is cache-miss-bound (IPC 0.31);</text>
+<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">the manifested read/planner paths are instruction-bound (IPC 2.77-3.53)</text>
 <text x="84.0" y="418.0" fill="#555555" font-size="10" text-anchor="start">regenerate: python3 scripts/render_charts.py --check</text>
 </svg>

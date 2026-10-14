@@ -910,7 +910,11 @@ statement) and `docs/RECOVERY.md` (recovery states, modes, invariants).
 ### Explicitly not measured / left open
 
 * `F2`/`E2` numbers: **UNAVAILABLE** on this host (`fuse.enable_uring=0`).
-* Hardware counters (`perf`): unavailable (`perf` absent; `perf_event_paranoid=2`).
+* Hardware counters (`perf`): **historical (Phase 12), corrected in Phase 57.** The
+  claim recorded here — that they were unavailable due to `perf_event_paranoid=2` —
+  was **wrong**: the `perf` CLI is absent from the pinned image, but the counters
+  themselves come from the `perf_event_open` syscall, which level 2 permits for a
+  user-space per-thread event and `--cap-add PERFMON` grants (see `docs/PMU.md`).
 * `fio`/`hyperfine`/`Criterion`/`Divan`: not used (documented blockers in
   `docs/PERFORMANCE.md` §7).
 * Figures are warm-cache, single-run, non-portable (documented caveats).
@@ -2702,9 +2706,12 @@ follow-up for the Phase-20 historical-index cache).
 Nothing was integrated into the production index; `Index`'s API and the
 snapshot/immutability guarantees are untouched. Cross-candidate equality and
 non-destructive persistence are asserted by the court; the `namespace_model`
-proptest and `snapshot_model` suite stay green. Cache/TLB counters were
-unavailable (`perf_event_paranoid=2`), recorded as such (page faults used as a
-proxy); the 10⁷ scale is implemented but opt-in and was not run.
+proptest and `snapshot_model` suite stay green. **Historical, corrected in Phase
+57:** Cache/TLB counters were unavailable **in this default container** at the
+time (recorded as such; page faults used as a proxy); the reason attributed here
+— `perf_event_paranoid=2` — is **wrong**: the gate is the container seccomp
+profile, and with `--cap-add PERFMON` the counters are read for real (see
+`docs/PMU.md`). The 10⁷ scale is implemented but opt-in and was not run.
 
 ## Phase 49 — Scan-resistant volatile planner caches (§10)
 
@@ -2784,15 +2791,21 @@ call over 200 000 calls, versus 1 200 000 (6/call) for the deep-cloning
 
 ### Honest limitations
 
-Hardware performance counters are **unavailable** on this host
-(`perf_event_paranoid=2`; `perf_counters_available=false`), so AMD IBS and
-cache/TLB counts could not be read — the court records that and uses PMU-free
-proxies. Aggregate steady-state read throughput **does not scale with readers**
-(9.63 M → 4.72 M ops/s from 1 to 8 readers): the served-counter lock is gone, but
-the read still takes the body-cache mutex per request, which the court identifies
-as the remaining shared-lock surface (sharding it is the concrete follow-up, not
-done here). Test counts rise to **431** (default) / **441** (`--features
-failpoints`); `fmt`/`clippy` clean.
+**Historical, corrected in Phase 57 and Phase 83.** At the time of Phase 50
+hardware performance counters were **unavailable in the default container**
+(recorded as `perf_counters_available=false`), so AMD IBS and cache/TLB counts
+could not be read and the court used PMU-free proxies. The reason given here —
+`perf_event_paranoid=2` — was **wrong**: a user-space per-thread counter is
+permitted at level 2, and the real gate is the container's seccomp profile.
+**Phase 83** runs this same court under the probed `--cap-add PERFMON` profile,
+reads the counters for real, and adds a mounted hot-path attribution
+(`docs/PMU.md`, `docs/PERFORMANCE.md` §18/§34). Aggregate steady-state read
+throughput **does not scale with readers** (9.63 M → 4.72 M ops/s from 1 to 8
+readers): the served-counter lock is gone, but the read still takes the
+body-cache mutex per request, which the court identifies as the remaining
+shared-lock surface (sharding it is the concrete follow-up, not done here). Test
+counts rise to **431** (default) / **441** (`--features failpoints`);
+`fmt`/`clippy` clean.
 
 ## Phase 51 — Documentation refresh and `orfs` v0.2.0 publication
 
@@ -2971,10 +2984,14 @@ to ~2.57 M at depth 128; write ~2.0 GB/s rising to ~3.9 GB/s.
 
 ### Integrity
 
-Hardware perf counters are unavailable (`perf_event_paranoid=2`), so there are no
-flamegraphs — the SQ/CQ counters are the mechanism evidence (recorded honestly). The
-`uring_integration` court (7/7) and the equivalence court stay green. Test counts rise
-to **440** (default) / **450** (`--features failpoints`); `fmt`/`clippy` clean.
+**Historical, corrected in Phase 57.** Hardware perf counters were unavailable
+**in this default container** at the time; the reason attributed here —
+`perf_event_paranoid=2` — is **wrong** (a user-space, per-thread counter is
+permitted at level 2 and `--cap-add PERFMON` grants it; the PMU court *does*
+produce a flamegraph — see `docs/PMU.md`). The `SQ/CQ` counters remain this
+io_uring court's mechanism evidence (recorded honestly). The `uring_integration`
+court (7/7) and the equivalence court stay green. Test counts rise to **440**
+(default) / **450** (`--features failpoints`); `fmt`/`clippy` clean.
 
 ## Phase 56 — 64-thread read scaling and the POSIX-extras court
 
@@ -5035,3 +5052,100 @@ clean.
   its bound: the native F2 session fell back under host load
   (`io_uring_setup: ENOMEM`) — the documented environment limitation, not a
   Phase 82 regression.
+
+## Phase 83 — Real counters, no excuses, and a counter-guided mounted hot-path
+
+**Complete.** The reviewer's P0 was blunt: *"Hardware perf counters are
+unavailable (`perf_event_paranoid=2`), so there are no flamegraphs … **bad
+mediocre excuses**."* Phase 57 had already proved that claim wrong and corrected
+it; this phase finishes the correction everywhere it survived and puts the real
+counters to work on the mounted hot path.
+
+### Delivered
+
+* **The stale excuse is purged from the current tree.**
+  `scripts/container-microarch.sh` now **proves** at run time which container
+  flags permit `perf_event_open` (default → `DENIED`/`EPERM`; `--cap-add PERFMON`
+  → `PERMITTED`) and runs the court under the proven profile; the "PMU-free
+  probes" header is gone. The historical phase logs that carried the claim
+  (`docs/PROGRESS.md` Phases 12/48/50/55) are **marked historical/corrected with a
+  pointer to `docs/PMU.md`** — never silently rewritten. `perf_event_paranoid: "2"`
+  remains only as environment metadata.
+* **The microarchitecture court reads real counters.** `tests/microarch.rs`
+  (shared `tests/support/pmu.rs`) now records, per component, real user-space
+  cycles/instructions/cache-references/cache-misses/branch-misses, plus the
+  data-/instruction-TLB events. `evidence/performance/microarch.json` gains a
+  `counters` section (schema-preserving) with the granted counters and the exact
+  errno of any event the PMU refuses. Six components: `PMap` lookup, EKBLOOM
+  manifested read, `ReadPlanner` steady-state read, backing log-segment read,
+  ordered commit, historical-index open.
+* **A mounted hot-path counter court.** `tests/hotpath_counters.rs` +
+  `scripts/container-hotpath-counters.sh` (the `docker_run_kmount_pmu` profile)
+  mount a real OrFS volume with `fuse::spawn` (F0) and drive a bounded
+  `create`/`stat`/`rename`/`unlink` + small `read`/`write` workload through it
+  with a counting allocator, per-thread counters on the calling thread **and on
+  every live `fuser*` daemon thread**, per-op latency percentiles, and a daemon
+  flamegraph. `evidence/performance/hotpath-counters.json` (schema
+  `orfs.performance.hotpath-counters.v1`) and
+  `flamegraph-hotpath.{folded,svg,json}`.
+* **Shared flamegraph machinery.** The symboliser/folder/SVG renderer is now
+  `tests/support/flamegraph.rs` (used by `microarch_pmu` and the new court), and
+  `Sampler::open_pid` attaches a sampling ring to another thread of the process.
+
+### Result (release; one run; real counters under `--cap-add PERFMON`)
+
+Microarchitecture (`docs/PERFORMANCE.md` §18): `PMap` **575 cycles/op, IPC 0.35,
+5.7 cache-misses/op** (cache-miss-bound); manifested read **1 726 cyc, IPC 3.00**;
+planner steady-state read **944 cyc, IPC 3.74**; backing segment read **521 cyc,
+IPC 2.18**; ordered commit **7 846 cyc, IPC 2.61**; historical-index open
+**1 321 348 cyc**. The two TLB events were **genuinely refused**
+(`dtlb_read_misses` → `ENOENT`, `itlb_read_misses` → `EINVAL`) and recorded with
+those errnos — a PMU gap, not an unavailable PMU.
+
+Mounted hot path (`docs/PERFORMANCE.md` §34): client vs **daemon** per op — the
+daemon does **~43.8 k cycles / ~64.7 k instructions / 400.7 cache-misses** per op
+versus the client's ~1.1 k cycles — so the cost is the daemon round trip, not the
+caller. Per-op p50/p95/p99 (ns): create 64 961/79 668/100 958, stat
+16 871/21 029/28 763, rename 34 064/42 469/58 299, unlink 35 917/45 325/63 488,
+read 6 031/8 476/11 972, write 19 095/23 995/36 939. Allocations **101.9/op**.
+
+### Optimization investigated and rejected
+
+The §4 candidate — dropping the per-write `core.getattr(ino, root)` in
+`src/fuse.rs`/`src/fuse_native.rs` — was **investigated and rejected** (no change
+made). The counters show no material redundancy, and the suggested condition
+cannot be expressed without the lookup in the common case: the adapter needs
+`st.size` for `O_APPEND` and `st.uid`/`st.mode` for the non-owner
+`suid`/`sgid` killpriv decision, and (post-Phase-82) the kernel's
+`FUSE_WRITE_KILL_SUIDGID` flag only lets the daemon skip the decision when the
+kernel already signalled it (or the writer is root). `write_at_inner` already
+reads the inode from the in-memory index, so the residual extra work is one
+in-memory lookup — below the resolution of a bounded mount A/B under host load.
+
+### Runner and docs
+
+`scripts/container-hotpath-counters.sh`; `scripts/container-microarch.sh`
+(PERFMON); `docs/PMU.md`; `docs/PERFORMANCE.md` §18/§23/§34;
+`docs/LIMITATIONS.md` §7; `README.md`; `docs/REPRODUCE.md`; `docs/RECEIPTS.md`;
+new charts `hotpath-counters-latency.svg`, `hotpath-counters-counters.svg`
+(`scripts/render_charts.py`).
+
+### Test counts
+
+**546 (default; +1 ignored) / 557 (`--features failpoints`)** — +2 in both
+(the new mounted-hot-path smoke and sweep); `cargo fmt -p orfs --check`,
+`cargo clippy -p orfs --all-targets -- -D warnings`, `check-all.sh --fast`,
+`check-docs-receipts.sh` and `render_charts.py --check` all clean.
+
+### Notes, stated honestly
+
+* **What the counters cannot split.** User-space counters (`exclude_kernel=1`)
+  exclude the kernel's FUSE/VFS time (visible only in the client percentiles), and
+  cannot separate FUSE dispatch from engine lookup/getattr from transaction append
+  within the daemon number; the flamegraph is a *leaf* profile (indicative), not a
+  call-chain attribution. The counter table is the decisive evidence.
+* **TLB events are unsupported here, not unavailable PMU.** They are skipped by
+  name with their errnos, never reported as zero.
+* **Mounted courts were run as bounded per-court drivers** (one container at a
+  time) on this host; the ~11 pre-existing wedged `orfs-kmount` containers were
+  left untouched.

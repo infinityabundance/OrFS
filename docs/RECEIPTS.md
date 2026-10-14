@@ -192,8 +192,9 @@ numbers were not curated in this first pass:
 * `docs/PERFORMANCE.md` §18–§20 — the microarchitecture, global-search-directory
   and external-baseline figures. §18's deterministic `latest_for_shared` count and
   §19's rare-pattern file/byte counts are curated; the host-sensitive latency
-  figures (ns/read, reader scaling, the ext4/tmpfs/overlay latencies) are
-  deliberately left uncovered because they move between runs.
+  figures (ns/read, reader scaling, the ext4/tmpfs/overlay latencies) and the
+  §18 real-counter table (cycles/instructions/misses per op, which move between
+  runs) are deliberately left uncovered because they move between runs.
 * `docs/PERFORMANCE.md` §22–§23 — the 64-thread reader-scaling and PMU courts. §22's
   steady-state no-replan invariant (`plan_builds_delta`) **is** curated; the
   host-sensitive aggregate throughput and p50/p95/p99/p99.9 figures, every
@@ -201,6 +202,10 @@ numbers were not curated in this first pass:
   and hosts), and the flamegraph are deliberately uncovered.
   `evidence/correctness/posix-extras.json` is likewise not curated: it is
   qualitative (`all_ok: true` plus per-check PASS/errno strings), not numeric.
+* `docs/PERFORMANCE.md` §34 (Phase 83) — the mounted hot-path counter court. Every
+  number (per-op latency percentiles, client/daemon cycles/instructions/misses per
+  op, allocs/op) is host- and load-sensitive and is deliberately uncovered; the
+  `hotpath-counters.json` receipt and the daemon flamegraph are its provenance.
 * `docs/PERFORMANCE.md` §27 (Phase 64) — the direct-page-atlas court. Its honest
   content is a **selection** (which path the planner measured cheapest per size)
   plus host-sensitive latency; the deterministic facts in the receipt are the

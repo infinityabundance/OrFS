@@ -1,4 +1,5 @@
 //! **Phase 50 — the CPU microarchitecture court (reviewer research §11).**
+//! **Phase 83 — run under the probed PERFMON profile, so the counters are real.**
 //!
 //! §11 asks where OrFS's hot paths actually spend their time — "rather than
 //! guessing which Rust constructs are slow" — and names the PMap lookup, the
@@ -7,18 +8,15 @@
 //! alignment, compact candidate arrays, **reduced temporary allocations**, and
 //! fewer contended shared locks.
 //!
-//! In the **default container** hardware performance counters are unavailable:
-//! the seccomp profile denies `perf_event_open` with `EPERM`, so
-//! `perf_counters_available=false`. This is **not** the paranoid level —
-//! `perf_event_paranoid=2` permits user-space counters, and with
-//! `--cap-add PERFMON` `tests/microarch_pmu.rs` reads them for real (see
-//! `docs/PMU.md`). This court records the default-container limitation honestly
-//! and uses the PMU-free probes that are still decisive:
+//! The court has two layers. The **proxies** need no PMU and run in every
+//! container (including the default seccomp-confined one, where the profile denies
+//! `perf_event_open` with `EPERM` — **not** `perf_event_paranoid=2`, which permits
+//! user-space counters; see `docs/PMU.md`):
 //!
 //! * **Allocator traffic on the steady-state read.** A counting global allocator
 //!   measures allocations and bytes per certified read in the hot path — the
-//!   direct, PMU-free way to check §11's "reduced temporary allocations". A
-//!   steady-state read must not allocate beyond the result buffer it returns.
+//!   direct way to check §11's "reduced temporary allocations". A steady-state
+//!   read must not allocate beyond the result buffer it returns.
 //! * **Contended shared locks under reader scaling.** The court measures
 //!   steady-state read throughput at 1/2/4/8 concurrent readers. Phase 50 removed
 //!   the last policy write lock from the served-read path (the per-path served
@@ -26,29 +24,58 @@
 //!   measure of the remaining shared-lock surface.
 //! * **A cache/TLB-pressure curve for the order-statistics treap.** A
 //!   working-set sweep of `PMap` point lookups (`src/persistent.rs`) at sizes
-//!   spanning L1/L2/L3 shows the flat-to-steep transition that PMU cache counters
-//!   would otherwise attribute — a PMU-free cache-hierarchy proxy.
+//!   spanning L1/L2/L3 shows the flat-to-steep transition.
+//!
+//! The **counters** layer (Phase 83) reads real user-space hardware counters for
+//! each hot-path component when the court runs under the probed `--cap-add PERFMON`
+//! profile (`scripts/container-microarch.sh` proves the flags at run time). A
+//! counter the microarchitecture genuinely does not expose is skipped by name with
+//! its exact errno; a counter the container profile denies is recorded with the
+//! errno — never reported as a proxy, never invented.
 //!
 //! The always-on `microarch_smoke` runs a bounded version in the default gate; the
 //! full sweep is opt-in behind `ORFS_MICROARCH=1` and writes
 //! `evidence/performance/microarch.json` (run it via
 //! `scripts/container-microarch.sh`).
+//!
+//! **Phase 83 — real counters, not only proxies.** The same sweep additionally
+//! reads **real** user-space hardware counters (cycles, instructions,
+//! cache-references/-misses, branch-misses, and the data/instruction-TLB misses
+//! where the PMU exposes them) for each hot-path component, through
+//! `tests/support/pmu.rs`. `scripts/container-microarch.sh` now runs the court
+//! under the probed **PERFMON** profile (`--cap-add PERFMON`, proven at run time
+//! with `scripts/pmu-probe.c`), so the counters are read for real instead of being
+//! inferred. A counter the microarchitecture genuinely does not provide is skipped
+//! by name; a counter the container profile denies is recorded with the exact
+//! errno. A proxy is never reported as a counter, and a counter is never invented.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
+use orfs::commit::{CommitSequencer, DurabilityMode};
+use orfs::historical::{self, load_persisted_historical};
+use orfs::index::ROOT_INODE;
 use orfs::manifestation::{
     ekbloom_format_version, CertificationState, GenerationManifest, GenerationStore,
     ManifestationProfile, ManifestationState, MANIFEST_SCHEMA,
 };
+use orfs::namespace::Namespace;
 use orfs::persistent::PMap;
 use orfs::readpath::{ReadPlanner, ReadPlannerConfig, ReadQuery};
+use orfs::record::RecordType;
+use orfs::transaction::TransactionBuilder;
+use orfs::volume::Volume;
 use tempfile::TempDir;
 
+#[path = "support/pmu.rs"]
+mod pmu;
+
+use pmu::{Counter, PmuGroup};
+
 // ---------------------------------------------------------------------------
-// A counting global allocator (PMU-free allocation instrument)
+// A counting global allocator (allocation instrument)
 // ---------------------------------------------------------------------------
 
 static ALLOC_CALLS: AtomicU64 = AtomicU64::new(0);
@@ -400,6 +427,241 @@ fn pmap_curve(sizes: &[usize], lookups: u64) -> Vec<LookupRow> {
     rows
 }
 
+// ---------------------------------------------------------------------------
+// Real hardware counters (Phase 83)
+// ---------------------------------------------------------------------------
+//
+// The probes above are PMU-free proxies that also run in the default container.
+// When the court runs under the probed PERFMON profile
+// (`scripts/container-microarch.sh`), the same hot-path components additionally
+// read **real** user-space hardware counters. A counter the microarchitecture or
+// the kernel genuinely does not expose is skipped by name; a counter the
+// container profile denies is recorded with the exact errno. The court never
+// reports a proxy as a counter, nor a counter as a proxy.
+
+const LOG_SEGMENT_SIZE: u64 = 256 * 1024;
+
+/// A probe's real counters over `ops` operations; `total` is `None` when no PMU
+/// group was granted (so the wall-clock time is still reported).
+struct Countered {
+    name: &'static str,
+    ops: u64,
+    wall_ns_per_op: f64,
+    total: Option<Vec<(Counter, u64)>>,
+}
+
+fn counter_of(counters: &[(Counter, u64)], c: Counter) -> u64 {
+    counters
+        .iter()
+        .find(|(k, _)| *k == c)
+        .map(|(_, v)| *v)
+        .unwrap_or(0)
+}
+
+/// Run `ops` iterations of `work` with the counters reset/enabled around the
+/// loop and disabled before reading them once.
+fn run_countered<F: FnMut()>(
+    name: &'static str,
+    mut group: Option<&mut PmuGroup>,
+    ops: u64,
+    mut work: F,
+) -> Countered {
+    if let Some(g) = group.as_mut() {
+        let _ = g.reset();
+        let _ = g.enable();
+    }
+    let started = Instant::now();
+    for _ in 0..ops {
+        work();
+    }
+    let elapsed = started.elapsed();
+    let total = if let Some(g) = group.as_mut() {
+        let _ = g.disable();
+        Some(g.read_all())
+    } else {
+        None
+    };
+    Countered {
+        name,
+        ops,
+        wall_ns_per_op: elapsed.as_nanos() as f64 / ops.max(1) as f64,
+        total,
+    }
+}
+
+impl Countered {
+    fn json(&self) -> serde_json::Value {
+        let mut per_op = serde_json::Map::new();
+        if let Some(counters) = &self.total {
+            let ops = self.ops.max(1) as f64;
+            for (c, v) in counters {
+                per_op.insert(c.name().to_string(), serde_json::json!(*v as f64 / ops));
+            }
+            let cycles = counter_of(counters, Counter::Cycles);
+            let insn = counter_of(counters, Counter::Instructions);
+            let refs = counter_of(counters, Counter::CacheReferences);
+            let misses = counter_of(counters, Counter::CacheMisses);
+            let bmiss = counter_of(counters, Counter::BranchMisses);
+            if cycles > 0 {
+                per_op.insert("ipc".into(), serde_json::json!(insn as f64 / cycles as f64));
+            }
+            if refs > 0 {
+                per_op.insert(
+                    "cache_miss_rate".into(),
+                    serde_json::json!(misses as f64 / refs as f64),
+                );
+            }
+            if insn > 0 {
+                per_op.insert(
+                    "branch_miss_rate".into(),
+                    serde_json::json!(bmiss as f64 / insn as f64),
+                );
+            }
+        }
+        serde_json::json!({
+            "name": self.name,
+            "ops": self.ops,
+            "wall_ns_per_op": self.wall_ns_per_op,
+            "per_op": per_op,
+            "measured": self.total.is_some(),
+        })
+    }
+}
+
+/// `PMap` point lookup over a 64 Ki-entry treap.
+fn countered_pmap(group: Option<&mut PmuGroup>, ops: u64) -> Countered {
+    let n = 1usize << 16;
+    let mut map: PMap<u64, u64> = PMap::new();
+    for k in 0..n as u64 {
+        map = map.insert(k, k);
+    }
+    let mask = (n as u64).next_power_of_two() - 1;
+    let mut rng = Lcg(0x1234_5678_9abc_def0);
+    let mut acc = 0u64;
+    let c = run_countered("pmap_point_lookup", group, ops, || {
+        let k = rng.next() & mask;
+        if let Some(v) = map.get(&(k % n as u64)) {
+            acc = acc.wrapping_add(*v);
+        }
+    });
+    std::hint::black_box(acc);
+    c
+}
+
+/// The EKBLOOM manifested read path via the planner (`measure_paths` executes
+/// each manifested candidate structure for the object).
+fn countered_ekbloom(group: Option<&mut PmuGroup>, ops: u64) -> Countered {
+    let td = TempDir::new().expect("tempdir");
+    let source = pattern(SRC_LEN);
+    let planner = planner_for(td.path(), &source);
+    let q = query(source.len() as u64);
+    let mut warm = |o: u64, l: u64| -> orfs::Result<Vec<u8>> { Ok(auth_slice(&source, o, l)) };
+    planner.measure_paths(&q, &mut warm, 1).expect("warm paths");
+    run_countered("ekbloom_manifested_read", group, ops, || {
+        let mut auth = |o: u64, l: u64| -> orfs::Result<Vec<u8>> { Ok(auth_slice(&source, o, l)) };
+        std::hint::black_box(
+            planner
+                .measure_paths(&q, &mut auth, 1)
+                .expect("measure paths"),
+        );
+    })
+}
+
+/// The `ReadPlanner` steady-state selection: a hot certified read that walks the
+/// published ranking and executes the chosen path.
+fn countered_readplanner(group: Option<&mut PmuGroup>, ops: u64) -> Countered {
+    let td = TempDir::new().expect("tempdir");
+    let source = pattern(SRC_LEN);
+    let planner = planner_for(td.path(), &source);
+    for _ in 0..128 {
+        std::hint::black_box(hot_read(&planner, &source));
+    }
+    run_countered("readplanner_steady_state_read", group, ops, || {
+        std::hint::black_box(hot_read(&planner, &source));
+    })
+}
+
+/// A volume with a committed log, for the backing-segment-read component.
+fn log_fixture() -> (TempDir, Volume, u64) {
+    let td = TempDir::new().expect("tempdir");
+    let mut vol = Volume::init_with_uuid(td.path(), LOG_SEGMENT_SIZE, UUID, 1_700_000_000)
+        .expect("init volume");
+    let mut seq = CommitSequencer::new(&mut vol, DurabilityMode::Ordered);
+    for i in 0..32u64 {
+        let mut b = TransactionBuilder::new(seq.peek_transaction_id()).expect("builder");
+        b.add(RecordType::InodeCreate, 1, 0, small_payload(i, 1))
+            .expect("add");
+        b.add(RecordType::DataExtent, 1, 0, small_payload(i, 2))
+            .expect("add");
+        seq.commit(b.build().expect("build")).expect("commit");
+    }
+    let len = vol.log.committed_end_offset();
+    (td, vol, len)
+}
+
+fn small_payload(seed: u64, salt: u8) -> Vec<u8> {
+    (0..48)
+        .map(|k| {
+            ((seed as u8).wrapping_mul(31))
+                .wrapping_add(salt)
+                .wrapping_add(k as u8)
+        })
+        .collect()
+}
+
+/// A backing log segment read (`Log::read_range`).
+fn countered_log(group: Option<&mut PmuGroup>, ops: u64) -> Countered {
+    let (_td, vol, len) = log_fixture();
+    let read_len = 4096u64.min(len.max(1));
+    let _ = vol.log.read_range(0, read_len).expect("warm read");
+    run_countered("backing_log_segment_read", group, ops, || {
+        std::hint::black_box(vol.log.read_range(0, read_len).expect("segment read"));
+    })
+}
+
+/// The ordered commit path (transaction append + durability barrier) that the
+/// group-commit coordinator amortises: one single-record transaction committed
+/// with `DurabilityMode::Ordered` per iteration.
+fn countered_commit(group: Option<&mut PmuGroup>, ops: u64) -> Countered {
+    let td = TempDir::new().expect("tempdir");
+    let mut vol = Volume::init_with_uuid(td.path(), LOG_SEGMENT_SIZE, UUID, 1_700_000_001)
+        .expect("init volume");
+    let mut seq = CommitSequencer::new(&mut vol, DurabilityMode::Ordered);
+    run_countered("ordered_commit", group, ops, || {
+        let mut b = TransactionBuilder::new(seq.peek_transaction_id()).expect("builder");
+        b.add(RecordType::InodeCreate, 1, 0, small_payload(7, 3))
+            .expect("add");
+        seq.commit(b.build().expect("build")).expect("commit");
+    })
+}
+
+/// Opening a persisted historical index accelerator: the decode + dense-ordinal
+/// re-seal a warm historical-root open performs.
+fn countered_historical_open(group: Option<&mut PmuGroup>, ops: u64) -> Countered {
+    let td = TempDir::new().expect("tempdir");
+    let mut ns =
+        Namespace::init(td.path(), LOG_SEGMENT_SIZE, DurabilityMode::Ordered).expect("init volume");
+    for i in 0..200 {
+        ns.create(ROOT_INODE, format!("h{i:04}").as_bytes(), 0o644, 0, 0)
+            .expect("create");
+    }
+    ns.sync().expect("sync");
+    let uuid = ns.volume().meta.uuid;
+    let root = ns.root();
+    let index_dir = td.path().join("index");
+    historical::persist_historical(&index_dir, &uuid, ns.index()).expect("persist");
+    let probe = load_persisted_historical(&index_dir, &uuid, root)
+        .expect("load")
+        .expect("accelerator present");
+    std::hint::black_box(probe.inode_layout());
+    run_countered("historical_index_open", group, ops, || {
+        let idx = load_persisted_historical(&index_dir, &uuid, root)
+            .expect("load")
+            .expect("accelerator present");
+        std::hint::black_box(idx.inode_layout());
+    })
+}
+
 /// The always-on smoke: a bounded version of every probe.
 #[test]
 fn microarch_smoke() {
@@ -476,6 +738,42 @@ fn microarch_sweep() {
     let scaling = reader_scaling(&[1, 2, 4, 8], 200_000);
     let curve = pmap_curve(&[1 << 10, 1 << 13, 1 << 16, 1 << 18], 400_000);
 
+    // Phase 83: the same hot-path components, now with real hardware counters.
+    let (cnt_available, cnt_error, cnt_granted, cnt_missing, cnt_probes) = {
+        let mut group = match PmuGroup::open() {
+            Ok(g) => Some(g),
+            Err(e) => {
+                eprintln!("microarch: hardware counters unavailable: {e}");
+                None
+            }
+        };
+        let available = group.is_some();
+        let error = PmuGroup::open().err();
+        let granted: Vec<String> = group
+            .as_ref()
+            .map(|g| g.counters().iter().map(|c| c.name().to_string()).collect())
+            .unwrap_or_default();
+        let missing: serde_json::Value = group
+            .as_ref()
+            .map(|g| {
+                let mut m = serde_json::Map::new();
+                for (c, reason) in g.missing_reasons() {
+                    m.insert(c.name().to_string(), serde_json::json!(reason));
+                }
+                serde_json::Value::Object(m)
+            })
+            .unwrap_or_else(|| serde_json::json!({}));
+        let probes = vec![
+            countered_pmap(group.as_mut(), 500_000),
+            countered_ekbloom(group.as_mut(), 20_000),
+            countered_readplanner(group.as_mut(), 500_000),
+            countered_log(group.as_mut(), 100_000),
+            countered_commit(group.as_mut(), 20_000),
+            countered_historical_open(group.as_mut(), 20_000),
+        ];
+        (available, error, granted, missing, probes)
+    };
+
     let rss_after = rss_kib().unwrap_or(0);
     let environment = orfs::bench::Environment::capture(std::env::var("ORFS_IMAGE").ok());
     let counters_available = environment.perf_counters_available;
@@ -483,23 +781,45 @@ fn microarch_sweep() {
     let doc = serde_json::json!({
         "schema": "orfs.performance.microarch.v1",
         "generated_by": "tests/microarch.rs",
-        "note": "Single-run, single-host, PMU-free microarchitecture probes. In \
-                 the default container hardware performance counters are unavailable \
-                 (the seccomp profile denies perf_event_open with EPERM; \
-                 perf_event_paranoid=2 alone does not block user-space counters — \
-                 see docs/PMU.md), so AMD IBS and cache/TLB event counts could not be \
-                 read here; the court records that and uses proxies that need no PMU: \
-                 a counting global allocator for hot-path allocator traffic, \
-                 concurrent-reader throughput for the remaining shared-lock surface, \
-                 and a working-set latency curve as a cache-hierarchy proxy. Absolute \
-                 nanoseconds are host/load sensitive; the shape and the allocator \
-                 counts are the point.",
+        "note": "Single-run, single-host microarchitecture probes. The **proxies** \
+                 (a counting global allocator for hot-path allocator traffic, \
+                 concurrent-reader throughput for the remaining shared-lock surface, and a \
+                 working-set latency curve as a cache-hierarchy shape) need no PMU and run \
+                 in every container. Under the probed PERFMON profile \
+                 (scripts/container-microarch.sh) the `counters` section additionally \
+                 carries **real** user-space hardware counters for each hot-path component \
+                 (cycles, instructions, cache-references/-misses, branch-misses, and the \
+                 DTLB/ITLB read misses where the PMU exposes them). A counter the \
+                 microarchitecture does not provide is skipped by name; when the container \
+                 profile denies perf_event_open the section records available:false with the \
+                 exact errno and only wall-clock times are reported — the default container's \
+                 seccomp profile denies the syscall with EPERM, which is **not** the paranoid \
+                 level (perf_event_paranoid=2 permits user-space counters; see docs/PMU.md). \
+                 Absolute nanoseconds are host/load sensitive; the shape, the allocator \
+                 counts, and the counter ratios are the point.",
         "pmu": {
             "hardware_counters_available": counters_available,
             "perf_event_paranoid": environment.perf_event_paranoid,
-            "note": "IBS / cache / TLB counter attribution is unavailable in the \
-                     default container when false; with --cap-add PERFMON the counters \
-                     are read by tests/microarch_pmu.rs (see docs/PMU.md).",
+            "note": "Environment metadata. perf_event_paranoid=2 permits user-space \
+                     per-thread counters; the real gate is the container seccomp profile, \
+                     which denies perf_event_open with EPERM in the default container. Run \
+                     under --cap-add PERFMON to read the counters (see docs/PMU.md).",
+        },
+        "counters": {
+            "hardware_counters_available": cnt_available,
+            "perf_event_open_error": cnt_error,
+            "granted_counters": cnt_granted,
+            "missing_counters": cnt_missing,
+            "note": "Real user-space per-thread counters (exclude_kernel=1), reset/enabled \
+                     around each measured loop, disabled before reading. `missing_counters` \
+                     maps each event this microarchitecture/PMU does not expose to the exact \
+                     errno/reason the kernel returned (e.g. EINVAL for an unsupported generic \
+                     TLB event); those counters are skipped by name, never reported as zero \
+                     and never conflated with an unavailable PMU. When the container profile \
+                     denies perf_event_open the whole section records available:false with the \
+                     exact errno and every probe reports measured:false with wall-clock time \
+                     only — no counter is fabricated.",
+            "probes": cnt_probes.iter().map(|p| p.json()).collect::<Vec<_>>(),
         },
         "steady_state_read_allocations": {
             "reads": a.reads,

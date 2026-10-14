@@ -12,10 +12,12 @@
 # at run time that the default profile blocks io_uring_setup on this host while
 # `seccomp=unconfined` permits it, so `docker_run_uring` is always safe here.
 #
-# Hardware performance counters are unavailable on this host
-# (`perf_event_paranoid=2`), so there are no flamegraphs; the sweep records the
-# SQ-backpressure (sq_full_events) and CQ-depth (cq_max_len) counters as the
-# mechanism evidence — see docs/PERFORMANCE.md §21.
+# Hardware performance counters are **not** unavailable on this host: the claim
+# that `perf_event_paranoid=2` blocks them was wrong and was corrected in Phase 57
+# — a user-space, per-thread counter is permitted, and Docker's default seccomp
+# profile is the real gate (see docs/PMU.md). This court does not need them, so it
+# records the SQ-backpressure (`sq_full_events`) and CQ-depth (`cq_max_len`)
+# counters as the mechanism evidence — see docs/PERFORMANCE.md §21.
 #
 # Usage:
 #   sh scripts/container-uring-depth.sh

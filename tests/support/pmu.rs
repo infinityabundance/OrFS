@@ -33,6 +33,9 @@ use std::os::unix::io::RawFd;
 
 const PERF_TYPE_HARDWARE: u32 = 0;
 const PERF_TYPE_SOFTWARE: u32 = 1;
+/// `PERF_TYPE_HW_CACHE` — the generic cache/TLB event encoding
+/// (`cache_id | op<<8 | result<<16`); the only way to ask for a TLB event.
+const PERF_TYPE_HW_CACHE: u32 = 3;
 
 const PERF_COUNT_HW_CPU_CYCLES: u64 = 0;
 const PERF_COUNT_HW_INSTRUCTIONS: u64 = 1;
@@ -40,6 +43,17 @@ const PERF_COUNT_HW_CACHE_REFERENCES: u64 = 2;
 const PERF_COUNT_HW_CACHE_MISSES: u64 = 3;
 const PERF_COUNT_HW_BRANCH_INSTRUCTIONS: u64 = 4;
 const PERF_COUNT_HW_BRANCH_MISSES: u64 = 5;
+
+// `PERF_TYPE_HW_CACHE` sub-fields (include/uapi/linux/perf_event.h).
+const PERF_COUNT_HW_CACHE_DTLB: u64 = 3;
+const PERF_COUNT_HW_CACHE_ITLB: u64 = 4;
+const PERF_COUNT_HW_CACHE_OP_READ: u64 = 1;
+const PERF_COUNT_HW_CACHE_RESULT_MISS: u64 = 1;
+
+/// `PERF_TYPE_HW_CACHE` configuration for `<cache_id>` read misses.
+const fn hw_cache_read_miss(cache_id: u64) -> u64 {
+    cache_id | (PERF_COUNT_HW_CACHE_OP_READ << 8) | (PERF_COUNT_HW_CACHE_RESULT_MISS << 16)
+}
 
 /// `PERF_TYPE_SOFTWARE` / `PERF_COUNT_SW_CPU_CLOCK` — a timer-driven sampling
 /// event. Used for the flamegraph because it is robust across (virtualised) CPUs
@@ -160,17 +174,25 @@ pub enum Counter {
     CacheMisses,
     BranchInstructions,
     BranchMisses,
+    /// Data-TLB read misses (`PERF_TYPE_HW_CACHE`, `DTLB`/read/miss). Not every
+    /// microarchitecture or virtualised PMU exposes a TLB event; when the kernel
+    /// refuses it, the group records it as missing rather than failing.
+    DTlbReadMisses,
+    /// Instruction-TLB read misses (same encoding, `ITLB`).
+    ITlbReadMisses,
 }
 
 impl Counter {
     /// Every counter the group reader attempts to open, leader first.
-    pub const ALL: [Counter; 6] = [
+    pub const ALL: [Counter; 8] = [
         Counter::Cycles,
         Counter::Instructions,
         Counter::CacheReferences,
         Counter::CacheMisses,
         Counter::BranchInstructions,
         Counter::BranchMisses,
+        Counter::DTlbReadMisses,
+        Counter::ITlbReadMisses,
     ];
 
     /// The stable evidence name.
@@ -182,6 +204,16 @@ impl Counter {
             Counter::CacheMisses => "cache_misses",
             Counter::BranchInstructions => "branch_instructions",
             Counter::BranchMisses => "branch_misses",
+            Counter::DTlbReadMisses => "dtlb_read_misses",
+            Counter::ITlbReadMisses => "itlb_read_misses",
+        }
+    }
+
+    /// The `perf_event_attr.type_` this counter needs.
+    fn event_type(self) -> u32 {
+        match self {
+            Counter::DTlbReadMisses | Counter::ITlbReadMisses => PERF_TYPE_HW_CACHE,
+            _ => PERF_TYPE_HARDWARE,
         }
     }
 
@@ -193,23 +225,21 @@ impl Counter {
             Counter::CacheMisses => PERF_COUNT_HW_CACHE_MISSES,
             Counter::BranchInstructions => PERF_COUNT_HW_BRANCH_INSTRUCTIONS,
             Counter::BranchMisses => PERF_COUNT_HW_BRANCH_MISSES,
+            Counter::DTlbReadMisses => hw_cache_read_miss(PERF_COUNT_HW_CACHE_DTLB),
+            Counter::ITlbReadMisses => hw_cache_read_miss(PERF_COUNT_HW_CACHE_ITLB),
         }
     }
 }
 
-/// A user-space-only, per-thread, disabled-by-default hardware attribute.
-fn hardware_attr(config: u64) -> PerfEventAttr {
+/// A user-space-only, per-task, disabled-by-default hardware attribute.
+fn hardware_attr(kind: u32, config: u64) -> PerfEventAttr {
     PerfEventAttr {
-        type_: PERF_TYPE_HARDWARE,
+        type_: kind,
         size: std::mem::size_of::<PerfEventAttr>() as u32,
         config,
         flags: PERF_ATTR_DISABLED | PERF_ATTR_EXCLUDE_KERNEL | PERF_ATTR_EXCLUDE_HV,
         ..Default::default()
     }
-}
-
-fn syscall_open(attr: &mut PerfEventAttr, group_fd: RawFd) -> Result<RawFd, String> {
-    syscall_open_pid(attr, group_fd, 0)
 }
 
 /// `perf_event_open` for an explicit `pid` (`0` = the calling thread, `tid` = a
@@ -250,6 +280,9 @@ pub struct PmuGroup {
     /// Counters the kernel could not provide on this microarchitecture
     /// (skipped, never fatal).
     missing: Vec<Counter>,
+    /// The exact errno/reason for each skipped counter, so a genuinely unsupported
+    /// event is never mistaken for "the PMU is unavailable".
+    missing_reasons: Vec<(Counter, String)>,
     enabled: bool,
 }
 
@@ -268,25 +301,30 @@ impl PmuGroup {
     /// [`Self::open`]; `EPERM`/`EACCES` when the caller may not attach.
     pub fn open_pid(pid: i32) -> Result<PmuGroup, String> {
         let leader = {
-            let mut attr = hardware_attr(Counter::Cycles.config());
+            let mut attr = hardware_attr(Counter::Cycles.event_type(), Counter::Cycles.config());
             syscall_open_pid(&mut attr, -1, pid)?
         };
         let mut events = vec![(Counter::Cycles, leader)];
         let mut missing = Vec::new();
+        let mut missing_reasons = Vec::new();
         for &counter in &Counter::ALL {
             if counter == Counter::Cycles {
                 continue;
             }
-            let mut attr = hardware_attr(counter.config());
+            let mut attr = hardware_attr(counter.event_type(), counter.config());
             match syscall_open_pid(&mut attr, leader, pid) {
                 Ok(fd) => events.push((counter, fd)),
-                // E.g. a virtualised CPU without generic cache/branch counters.
-                Err(_) => missing.push(counter),
+                // E.g. a virtualised CPU without generic cache/branch/TLB counters.
+                Err(e) => {
+                    missing.push(counter);
+                    missing_reasons.push((counter, e));
+                }
             }
         }
         Ok(PmuGroup {
             events,
             missing,
+            missing_reasons,
             enabled: false,
         })
     }
@@ -299,6 +337,11 @@ impl PmuGroup {
     /// The counters the kernel refused (best-effort members only).
     pub fn missing(&self) -> &[Counter] {
         &self.missing
+    }
+
+    /// The counters the kernel refused, each with the exact errno/reason.
+    pub fn missing_reasons(&self) -> &[(Counter, String)] {
+        &self.missing_reasons
     }
 
     /// Whether a counter is live.
@@ -432,12 +475,18 @@ impl Sampler {
     /// clock is used instead of a hardware event because its overflow interrupt
     /// is dependable on this virtualised AMD host.
     pub fn open(period_ns: u64) -> Result<Sampler, String> {
-        let mut attr = hardware_attr(PERF_COUNT_SW_CPU_CLOCK);
-        attr.type_ = PERF_TYPE_SOFTWARE;
+        Self::open_pid(period_ns, 0)
+    }
+
+    /// Open a sampling event on `pid` (`0` = the calling thread; a `tid` attaches
+    /// the sampler to another thread of this process, e.g. a FUSE servicer thread,
+    /// so the daemon's leaves — not the caller's — are the ones sampled).
+    pub fn open_pid(period_ns: u64, pid: i32) -> Result<Sampler, String> {
+        let mut attr = hardware_attr(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_CLOCK);
         attr.sample_period = period_ns.max(1);
         attr.sample_type = PERF_SAMPLE_IP | PERF_SAMPLE_TID;
         attr.wakeup_events = 1;
-        let fd = syscall_open(&mut attr, -1)?;
+        let fd = syscall_open_pid(&mut attr, -1, pid)?;
 
         let page = page_size();
         // One metadata page plus eight data pages.

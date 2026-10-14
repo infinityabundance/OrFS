@@ -50,6 +50,7 @@ reported `SKIPPED (reason)` and is **not** counted as a pass. See
 | `evidence/performance/direct-page-atlas.json` | `tests/direct_page_atlas.rs` | `sh scripts/container-direct-page-atlas.sh` |
 | `evidence/performance/expansion-controller.json` | `tests/expansion_controller.rs` | `sh scripts/container-expansion-controller.sh` |
 | `evidence/performance/microarch.json` | `tests/microarch.rs` | `sh scripts/container-microarch.sh` |
+| `evidence/performance/hotpath-counters.json`, `flamegraph-hotpath.{folded,svg,json}` | `tests/hotpath_counters.rs` | `sh scripts/container-hotpath-counters.sh` |
 | `evidence/performance/planner-cache.json` | `tests/planner_cache.rs` | `sh scripts/container-planner-cache.sh` |
 | `evidence/performance/read-planner.json` | `benches/read_path.rs` | `sh scripts/container-read-planner.sh` |
 | `evidence/performance/index-layout.json` | `tests/index_layout.rs` | `sh scripts/container-index-layout.sh` |
@@ -147,6 +148,8 @@ image → receipt → command mapping:
 | `reader-scaling-64.svg` | `PERFORMANCE.md` §22 | `evidence/performance/reader-scaling-64.json` | `sh scripts/container-reader-scale64.sh` |
 | `reader-scaling-64-tail.svg` | `PERFORMANCE.md` §22 | `evidence/performance/reader-scaling-64.json` | `sh scripts/container-reader-scale64.sh` |
 | `pmu.svg` | `PERFORMANCE.md` §23 | `evidence/performance/pmu.json` | `sh scripts/container-pmu.sh` |
+| `hotpath-counters-latency.svg` | `PERFORMANCE.md` §34 | `evidence/performance/hotpath-counters.json` | `sh scripts/container-hotpath-counters.sh` |
+| `hotpath-counters-counters.svg` | `PERFORMANCE.md` §34 | `evidence/performance/hotpath-counters.json` | `sh scripts/container-hotpath-counters.sh` |
 | `direct-page-atlas.svg` | `PERFORMANCE.md` §27 | `evidence/performance/direct-page-atlas.json` | `sh scripts/container-direct-page-atlas.sh` |
 | `expansion-controller.svg` | `PERFORMANCE.md` §28 | `evidence/performance/expansion-controller.json` | `sh scripts/container-expansion-controller.sh` |
 | `f2-concurrency-64-tail.svg` | `PERFORMANCE.md` §29 | `evidence/performance/f2-concurrency-affine.json` | `sh scripts/container-fuse-test.sh` |

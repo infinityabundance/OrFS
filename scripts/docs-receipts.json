@@ -571,6 +571,19 @@
         {"group": 5, "label": "mounted mismatches", "evidence": "evidence/correctness/adversarial-concurrency.json", "path": "mounted.mismatches"},
         {"group": 6, "label": "mounted shared_torn_reads", "evidence": "evidence/correctness/adversarial-concurrency.json", "path": "mounted.shared_torn_reads"}
       ]
+    },
+    {
+      "id": "durability-qualification-matrix",
+      "doc": "docs/DURABILITY.md",
+      "section": "§7",
+      "claim": "Phase 80 durability qualification: matrix size, remount cycles, detected refusals, and undetectable residual-window losses",
+      "regex": "matrix of \\*\\*([0-9][0-9 ]*)\\*\\* rows and \\*\\*([0-9]+)\\*\\* power-fail/remount cycles; \\*\\*([0-9]+)\\*\\* rows are explicit detections \\(refusals\\) and \\*\\*([0-9]+)\\*\\* are the undetectable residual window",
+      "fields": [
+        {"group": 1, "label": "matrix_rows", "evidence": "evidence/recovery/durability-qualification.json", "path": "matrix_rows"},
+        {"group": 2, "label": "remount_cycles", "evidence": "evidence/recovery/durability-qualification.json", "path": "remount_cycles"},
+        {"group": 3, "label": "detected_refusals", "evidence": "evidence/recovery/durability-qualification.json", "path": "detected_refusals"},
+        {"group": 4, "label": "residual_window_undetectable", "evidence": "evidence/recovery/durability-qualification.json", "path": "residual_window_undetectable"}
+      ]
     }
   ]
 }

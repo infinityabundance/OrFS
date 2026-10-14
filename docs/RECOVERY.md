@@ -186,6 +186,33 @@ loss of exactly those not-yet-watermarked bytes is undetectable. Interior segmen
 removal, sequence breaks, and roots dangling past present bytes remain refused as
 before (§2.4).
 
+### 5.1 The residual window as an explicit property (Phase 80)
+
+Phase 80 makes the residual window a **named property of a failure-state model**
+with three distinguished failure classes (`Process`/`Kernel`/`Storage`) and tests
+it per durability mode and per class. Every recovered row is classified:
+
+| Backing state | Watermark vs. surviving root | Detection | Outcome |
+|---|---|---|---|
+| A committed segment is lost/truncated below the watermark | watermark **ahead** | **detected** | open **refused** (never silently shortened) |
+| Durable bytes were never watermarked | watermark **at or behind** | **undetectable** | recovery proceeds to the surviving root — the **residual window** |
+
+The court asserts, for every row, `silent_shortening = false` (recovery never
+returns a root shorter than the watermark certifies **without** refusing) and
+records the per-row `residual_window` (`none` / `detected_refusal` /
+`undetectable_unwatermarked_tail`). Where a contract-violating device loses
+acknowledged-durable bytes beyond the watermark, the loss is **classified as the
+documented residual**, never smoothed over. Detection **cannot be strengthened**
+without an additional synchronous write on the acknowledgment path or rewriting
+committed bytes (forbidden by non-withdrawal); the receipt records
+`can_be_strengthened: false` with the reason.
+
+Tests: `durability_qualification::the_residual_window_is_an_explicit_property`,
+`every_durability_mode_survives_the_fault_matrix`, and
+`torn_metadata_is_detected_or_recovers_validly`. Court:
+`tests/durability_qualification.rs`; evidence
+`evidence/recovery/durability-qualification.json`. See `docs/DURABILITY.md` §4.
+
 ---
 
 ## 6. Evidence
@@ -199,6 +226,7 @@ before (§2.4).
 | `evidence/recovery/capacity.json` | Capacity-policy invariant verdicts (ENOSPC/latch) |
 | `evidence/recovery/enospc.json` | ENOSPC injection at record/rollover/watermark points |
 | `evidence/recovery/device-error.json` | EIO / short write / failed fsync injection |
+| `evidence/recovery/durability-qualification.json` | Durability qualification beyond the model (Phase 80): per failure class (`Process`/`Kernel`/`Storage`) × durability mode × fault profile — the acknowledged contract, the measured retained tail, in-flight completions, torn metadata, remount cycles, and the residual-window classification |
 | `evidence/recovery/fault-enospc.json` | ENOSPC at the edge (Phase 72): fill a volume to ~90/95/99/100% of its usable capacity, then `write + fsync` (clean commit or a typed refusal) or `write + fsync + crash` and the real `orfs recover` |
 | `evidence/performance/bounded-recovery.json` | Bounded recovery under space pressure (Phase 77): edge crash → newest generation; recovery fails **closed** with the typed `RecoverySpaceExhausted`; evacuation frees space and commits resume; an unavailable tier cannot free authority bytes; drop-rebuildable is safe; read-only at 0 free |
 

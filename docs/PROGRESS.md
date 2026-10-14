@@ -4726,3 +4726,107 @@ and mounted tests; the sustained and mounted bodies are opt-in behind `ORFS_STRE
 * The mounted latency figures are single-run, single-host and load-sensitive; the
   deterministic result is **zero** mismatches / orphans / duplicate inodes / torn
   reads, not the absolute times (the receipt says so).
+
+## Phase 80 — Durability qualification beyond the model
+
+**Complete.** The reviewer's P0 was *"crash and durability qualification beyond the
+model … block-device fault experiments involving reordered writes, delayed
+completions, torn metadata, lost flushes, remounts, and long-running concurrent
+mutation … distinguish process failure, kernel failure, and actual storage power
+loss"*, and to make the commit-watermark **residual window** an explicit property
+of a failure-state model with tests for every acknowledged-durability mode.
+
+### Delivered
+
+* **A failure-state model with three distinguished classes**
+  (`powerloss::FailureClass`):
+  * **`Process`** — a clean-ish process kill; only userspace buffers are lost, the
+    OS page cache survives (the `crash_recovery.rs` model);
+  * **`Kernel`** — a panic/reboot; userspace buffers and the page cache are lost,
+    bytes the device accepted survive (device cache retained), writes may reorder;
+  * **`Storage`** — the Phase 17/23 `SimDevice`: the device write-back cache is
+    lost too.
+  The court runs the **same workload** under each class and proves the same
+  acknowledged-durability contract while the **unacknowledged tail differs** — the
+  retained-byte difference is measured (`Storage` drops the volatile tail,
+  `Kernel`/`Process` retain it; the recovered root obeys the same ordering).
+* **The extended fault matrix (behind the `powerloss` feature, inert without a
+  device):** **delayed/in-flight completions** (`DeviceFaultKind::InFlight` → a
+  transient, non-latching `OrfsError::InFlight`/`EAGAIN`, never durable);
+  **metadata-targeted tearing** (`DurableLoss::TornWatermark`,
+  `TornDirectoryEntry`, `TearInterior` — targeted at the watermark, a directory
+  entry, and an interior framing sector, not just a trailing data sector);
+  **repeated power loss with remount cycles**; plus retained **reordered writes**
+  and **lost flushes**.
+* **Every acknowledged-durability mode.** Each `DurabilityMode` (`Sync`, `Ordered`,
+  `Batched{n}`) is run through the whole matrix; the per-mode contract is a table
+  in `docs/DURABILITY.md` §3 and machine-readable `per_mode_contract` in the
+  receipt. After an acknowledged durability point the acknowledged data survives
+  **every** class; before it, the tail loss is detected (refused) or classified.
+* **The residual window as an explicit, tested property.** Every recovered row is
+  classified `residual_window ∈ {none, detected_refusal,
+  undetectable_unwatermarked_tail}`; the court asserts `silent_shortening = false`
+  (recovery never returns a root shorter than the watermark certifies without
+  refusing) and that the loss of not-yet-watermarked durable bytes is the
+  documented residual, not a hidden gap. The receipt records
+  `can_be_strengthened: false` with the reason (strengthening would need an extra
+  synchronous write on the ack path or rewriting committed bytes).
+* **Real block-device fault injection probed, not assumed.**
+  `scripts/container-durability-qualification.sh` re-runs the Phase-62 `dm` probe in
+  an elevated container; on this host it records `ran:false` with the exact
+  blockers (`dmsetup` absent, `losetup --find --show` fails, no
+  `/dev/mapper/control`). No `dm-*` result is fabricated; the matrix uses the
+  simulated device.
+* **Court + runner + receipt.** `tests/durability_qualification.rs` (bounded
+  always-on smoke + opt-in `ORFS_DQ_SWEEP=1` sweep);
+  `scripts/container-durability-qualification.sh`; and
+  `evidence/recovery/durability-qualification.json` (schema
+  `orfs.recovery.durability-qualification.v1`) with honest environment/commit
+  fields, the three classes and their assumptions, the per-mode contract, the
+  residual property, and the `dm_probe` result.
+
+### Results (from `evidence/recovery/durability-qualification.json`)
+
+The sweep runs a matrix of **315** rows (mode × class × profile) and **5**
+power-fail/remount cycles. `newest_valid_generation_selected = true`,
+`silent_shortening = false`, `unclassified_durable_losses = 0`; **123** rows are
+contract-honouring (all preserve their acknowledged-durable data), **145** are
+explicit detections (refusals), and **11** are the undetectable residual window —
+classified, never smoothed over. All three per-mode contract rows report
+`acknowledged_data_survives_all_classes = true`. `dm_probe.ran = false` with the
+concrete `dmsetup`/`losetup` blockers.
+
+### Docs
+
+`docs/DURABILITY.md` (new); `tests/durability_qualification.rs` (new);
+`scripts/container-durability-qualification.sh` (new);
+`evidence/recovery/durability-qualification.json` (new); `docs/POWERLOSS.md` §8;
+`docs/LIMITATIONS.md` §6/§19; `docs/RECOVERY.md` §5.1 + §6; `docs/TRANSACTIONS.md`
+§4.1.1; `docs/LOG-INVARIANTS.md`; `docs/GATES.md` (gate J); `docs/RECEIPTS.md`;
+`docs/REPRODUCE.md`; `scripts/docs-receipts.json`; `README.md`; `src/powerloss.rs`;
+`src/error.rs`; this entry.
+
+### Test counts
+
+**540 (default; +1 ignored) / 551 (`--features failpoints`)** — +11 default and
++11 with `--features failpoints` (4 `powerloss` unit tests — the class retention
+and the three metadata tears — plus the 7-test `durability_qualification` court:
+classes, the fault matrix, in-flight completions, torn metadata, remount cycles,
+the residual window, and the opt-in sweep); `fmt`/`clippy` clean.
+
+### Notes, stated honestly
+
+* **This is still a simulation, not hardware.** A green run proves OrFS recovery
+  correct relative to the model's assumed device semantics; it does not prove
+  real-hardware durability (`claims_power_loss_durability()` stays `false`). No
+  real block-device fault was injected (`dm_probe.ran = false`).
+* **For OrFS, `Process` and `Kernel` retain the same bytes.** The commit path has
+  no acknowledged-but-unwritten userspace data, so the two coincide for the
+  acknowledged contract; the model differs only in that `Kernel` may reorder. The
+  measurable class distinction is cache-retaining vs. cache-losing (`Storage`).
+* **The residual window is a documented property, not a bug.** It is inherent to
+  any scheme that cannot rewrite committed history; the receipt records why it
+  cannot be strengthened without changing the contract, and never claims it is
+  closed.
+* **The generation manifest/catalogue is out of the log-device's scope** (it lives
+  outside the log directory); it is covered by the manifestation courts.

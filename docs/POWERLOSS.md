@@ -213,3 +213,30 @@ authoritative commit. A `proptest` randomises the kind and point. Evidence:
 
 This is still a simulation: the injected errors model a device that returns
 `ENOSPC`/`EIO` (or a short write / failed `fsync`), not real hardware timing.
+
+---
+
+## 8. Distinguished failure classes and beyond-the-model qualification (Phase 80)
+
+Since Phase 80 the same device can simulate one of three **distinguished failure
+classes** (`powerloss::FailureClass`), which differ only in how much *volatile*
+state they lose — and therefore how many bytes they retain:
+
+* **`Process`** — a clean-ish process kill: only the process's buffers are lost;
+  the **OS page cache survives** (the `tests/crash_recovery.rs` model).
+* **`Kernel`** — a kernel panic/reboot: userspace buffers and the page cache are
+  lost; bytes the device accepted survive (the write-back cache is not lost), and
+  writes may be **reordered**.
+* **`Storage`** — the Phase 17/23 profile: additionally the device write-back
+  cache is lost, so only flushed bytes survive.
+
+Every class upholds the *same* acknowledged-durability contract while the
+**unacknowledged tail** differs; the court makes the difference in retained bytes
+measurable. The model also gains **delayed/in-flight completions**
+(`DeviceFaultKind::InFlight`, a transient non-latching `OrfsError::InFlight`),
+**metadata-targeted tearing** (`DurableLoss::TornWatermark`,
+`TornDirectoryEntry`, `TearInterior`), and the explicit **residual-window** profile
+(`DurableLoss::ResidualWindow`). These are described, with the per-mode contract
+table and the residual-window property, in **`docs/DURABILITY.md`**; the court is
+`tests/durability_qualification.rs` and the evidence is
+`evidence/recovery/durability-qualification.json`.

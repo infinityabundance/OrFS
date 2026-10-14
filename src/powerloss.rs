@@ -71,6 +71,21 @@
 //! applying only *promoted* writes to the durable image in issue order, and a
 //! power failure only ever *drops* not-yet-durable bytes (or tears the trailing
 //! edge of the durable image). It can make history *shorter*, never different.
+//!
+//! # Distinguished failure classes (Phase 80)
+//!
+//! Since Phase 80 the device can simulate one of three **distinguished failure
+//! classes** ([`FailureClass`]), which differ only in how much *volatile* state
+//! they lose and therefore how many bytes they retain: `Process` (page cache
+//! survives), `Kernel` (page cache lost, device cache retained), and `Storage`
+//! (device write-back cache lost — the Phase 17/23 profile). Every class must
+//! uphold the *same* acknowledged-durability contract while the
+//! **unacknowledged tail** differs. See `docs/DURABILITY.md`;
+//! `tests/durability_qualification.rs` runs the model × class × profile matrix.
+//!
+//! It also adds metadata-targeted tearing ([`DurableLoss::TornWatermark`],
+//! [`DurableLoss::TornDirectoryEntry`], [`DurableLoss::TearInterior`]) and a
+//! non-durable **in-flight completion** ([`DeviceFaultKind::InFlight`]).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -121,6 +136,87 @@ pub enum DurableLoss {
     /// reach a complete committed boundary or refuse, never expose a partial
     /// transaction.
     ReorderDurable,
+    /// At power failure, the commit watermark is **torn**: neither the new image
+    /// nor the old one survives complete. Models a filesystem/device that
+    /// violated the atomic `write-tmp → rename → fsync` guarantee for the
+    /// watermark, i.e. *torn metadata the log depends on* (Phase 80). Recovery
+    /// must **refuse** a corrupt watermark (fail closed), never silently ignore
+    /// it or fall back to a shorter history.
+    TornWatermark,
+    /// At power failure, a file created during the session loses its **directory
+    /// entry** even though a directory `fsync` was observed — a lost/torn
+    /// directory-metadata update (Phase 80). For a segment created in-session
+    /// this drops a committed segment, so the surviving bytes are short of the
+    /// watermark: recovery must refuse or return a valid earlier boundary.
+    TornDirectoryEntry,
+    /// At power failure, tear one deterministic **interior** sector-aligned block
+    /// of a committed file (a hole in the middle of the log's own framing/
+    /// record metadata, not the trailing edge). Recovery must detect the damaged
+    /// metadata (checksum/sequence) and refuse or return a valid earlier
+    /// boundary — never silently reconstruct a shorter log (Phase 80).
+    TearInterior,
+    /// At power failure, the commit watermark reverts to the previous (durable)
+    /// image **and** the trailing sector of every committed segment is torn:
+    /// durable bytes between the last watermark and the committed root are lost
+    /// while the watermark stays *behind* it. This is the documented **residual
+    /// window** (Phase 80): the loss is undetectable by the watermark alone
+    /// (`docs/LIMITATIONS.md` §6, `docs/RECOVERY.md` §5).
+    ResidualWindow,
+}
+
+/// The **three distinguished failure classes** of the Phase 80 failure-state
+/// model (see `docs/DURABILITY.md`).
+///
+/// The classes are ordered by how much volatile state they lose, and therefore
+/// by how many bytes they retain: `Process` retains the most, `Storage` the
+/// least. Every class must uphold the *same* acknowledged-durability contract —
+/// a mutation the caller acknowledged as durable survives — while the
+/// **unacknowledged tail** may differ.
+///
+/// * **`Process`** — a clean-ish process kill (`SIGKILL`/abort). Only the
+///   process's own userspace buffers are lost; every byte that completed a
+///   `write` syscall survives because the **OS page cache survives**. This is the
+///   strongest class and the model of `tests/crash_recovery.rs`.
+/// * **`Kernel`** — a kernel panic / reboot. Userspace buffers **and** the OS
+///   page cache are lost. Bytes the **device had accepted** survive (the device
+///   write-back cache is *not* lost); writes may be **reordered**.
+/// * **`Storage`** — an un-clean storage power loss. Additionally the device
+///   write-back cache is lost, so only flushed bytes survive, and per the
+///   configured [`FlushMode`]/[`DurableLoss`] writes may be reordered, partially
+///   applied, or torn. This is the [`SimDevice`] profile of Phases 17/23.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureClass {
+    /// Process failure (page cache survives).
+    Process,
+    /// Kernel failure (page cache lost; device cache retained).
+    Kernel,
+    /// Storage power loss (device write-back cache lost).
+    Storage,
+}
+
+impl FailureClass {
+    /// The stable snake-case name used in receipts.
+    pub const fn name(self) -> &'static str {
+        match self {
+            FailureClass::Process => "process",
+            FailureClass::Kernel => "kernel",
+            FailureClass::Storage => "storage",
+        }
+    }
+
+    /// Every class, in decreasing retained-byte order.
+    pub const ALL: [FailureClass; 3] = [
+        FailureClass::Process,
+        FailureClass::Kernel,
+        FailureClass::Storage,
+    ];
+
+    /// Whether this class loses the device write-back cache (and therefore the
+    /// un-flushed volatile tail) at failure.
+    pub const fn loses_device_cache(self) -> bool {
+        matches!(self, FailureClass::Storage)
+    }
 }
 
 /// The deterministic configuration of a simulated device.
@@ -216,6 +312,52 @@ impl SimConfig {
         }
     }
 
+    /// An honoured barrier, but the commit watermark is **torn** at power failure
+    /// (a device/FS that violated the atomic watermark update — torn metadata).
+    pub const fn torn_watermark(seed: u64) -> Self {
+        Self {
+            seed,
+            sector: DEFAULT_SECTOR,
+            flush: FlushMode::Barrier,
+            durable_loss: DurableLoss::TornWatermark,
+        }
+    }
+
+    /// An honoured barrier, but a session-created file loses its **directory
+    /// entry** at power failure (torn directory metadata).
+    pub const fn torn_directory_entry(seed: u64) -> Self {
+        Self {
+            seed,
+            sector: DEFAULT_SECTOR,
+            flush: FlushMode::Barrier,
+            durable_loss: DurableLoss::TornDirectoryEntry,
+        }
+    }
+
+    /// An honoured barrier, but one interior sector-aligned block of a committed
+    /// file is torn at power failure (a hole in the log's framing metadata).
+    pub const fn tear_interior(seed: u64) -> Self {
+        Self {
+            seed,
+            sector: DEFAULT_SECTOR,
+            flush: FlushMode::Barrier,
+            durable_loss: DurableLoss::TearInterior,
+        }
+    }
+
+    /// An honoured barrier, but the watermark is lost *and* the trailing sector of
+    /// each committed segment is torn: durable bytes between the last watermark
+    /// and the committed root are lost while the watermark stays behind (the
+    /// documented residual window).
+    pub const fn residual_window(seed: u64) -> Self {
+        Self {
+            seed,
+            sector: DEFAULT_SECTOR,
+            flush: FlushMode::Barrier,
+            durable_loss: DurableLoss::ResidualWindow,
+        }
+    }
+
     /// Override the modelled sector size.
     pub const fn with_sector(mut self, sector: u64) -> Self {
         self.sector = sector;
@@ -286,6 +428,11 @@ pub enum DeviceFaultKind {
     ShortWrite,
     /// A failed `fsync` during an otherwise successful write: `EIO`.
     SyncError,
+    /// An operation whose **completion was in flight** when the power was cut: the
+    /// device did not finish it and the caller never observed a success. It is
+    /// modelled as [`OrfsError::InFlight`] (a transient, non-latching outcome),
+    /// never as durable (Phase 80).
+    InFlight,
 }
 
 /// A deterministic rule that fails matching device operations.
@@ -350,6 +497,9 @@ fn fault_error(kind: DeviceFaultKind, op: DeviceOp) -> OrfsError {
         DeviceFaultKind::IoError | DeviceFaultKind::ShortWrite | DeviceFaultKind::SyncError => {
             OrfsError::Io(std::io::Error::from_raw_os_error(libc::EIO))
         }
+        DeviceFaultKind::InFlight => OrfsError::InFlight(format!(
+            "simulated device: {op:?} was in flight at the power cut and never completed"
+        )),
     }
 }
 
@@ -410,7 +560,7 @@ pub struct FileLoss {
     pub durable_len: u64,
     /// Volatile (un-flushed) bytes discarded.
     pub dropped_volatile_bytes: u64,
-    /// Durable bytes torn off the trailing edge.
+    /// Durable bytes torn off the trailing edge (or zeroed by an interior tear).
     pub torn_durable_bytes: u64,
     /// Whether the file remains present after the failure.
     pub present: bool,
@@ -421,10 +571,15 @@ pub struct FileLoss {
 pub struct PowerFailReport {
     /// The configuration this device was run with.
     pub config: SimConfig,
+    /// The distinguished failure class that was simulated (Phase 80).
+    pub failure_class: FailureClass,
     /// Per-file outcomes, ordered by name.
     pub files: Vec<FileLoss>,
     /// Total volatile bytes discarded across all files.
     pub total_dropped_volatile_bytes: u64,
+    /// Total volatile bytes **retained** because the failure class preserves the
+    /// device/OS cache (`Process`/`Kernel`); always `0` for `Storage`.
+    pub retained_volatile_bytes: u64,
     /// Total durable bytes torn off across all files.
     pub total_torn_durable_bytes: u64,
     /// Number of cached writes discarded.
@@ -437,6 +592,8 @@ pub struct PowerFailReport {
 pub struct SimDevice {
     dir: PathBuf,
     cfg: SimConfig,
+    /// The distinguished failure class this device simulates (Phase 80).
+    class: FailureClass,
     rng: Rng,
     files: BTreeMap<String, FileModel>,
     /// Deterministic device-failure injection rules (Phase 23).
@@ -444,8 +601,8 @@ pub struct SimDevice {
 }
 
 impl SimDevice {
-    /// Load the current contents of `dir` into a fresh device image.
-    fn load(dir: &Path, cfg: SimConfig) -> Result<SimDevice> {
+    /// Load the current contents of `dir` under an explicit failure class.
+    fn load_with_class(dir: &Path, cfg: SimConfig, class: FailureClass) -> Result<SimDevice> {
         let mut files = BTreeMap::new();
         for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
@@ -461,6 +618,7 @@ impl SimDevice {
         Ok(SimDevice {
             dir: dir.to_path_buf(),
             cfg,
+            class,
             rng: Rng::new(cfg.seed),
             files,
             faults: Vec::new(),
@@ -470,6 +628,11 @@ impl SimDevice {
     /// The device's configuration.
     pub fn config(&self) -> SimConfig {
         self.cfg
+    }
+
+    /// The failure class this device simulates.
+    pub fn failure_class(&self) -> FailureClass {
+        self.class
     }
 
     /// Decide whether a fault fires for `op` on `name`, advancing the counters of
@@ -658,15 +821,50 @@ impl SimDevice {
         Ok(())
     }
 
+    /// The highest-numbered committed segment file currently modelled (`None`
+    /// when there is none). Segment names are zero-padded, so the lexical
+    /// maximum is the highest id.
+    fn final_segment(&self) -> Option<&str> {
+        self.files
+            .keys()
+            .filter(|k| k.ends_with(".seg"))
+            .map(|k| k.as_str())
+            .max()
+    }
+
     /// Reconstruct the durable image of one file at power failure, returning its
-    /// content, the number of durable bytes torn off, and whether it remains.
+    /// content, the number of durable bytes torn off/damaged, and whether it
+    /// remains.
     fn reconstruct(&self, name: &str, fm: &FileModel) -> (Vec<u8>, u64, bool) {
-        let present = !(fm.created && !fm.dir_synced);
+        let mut present = !(fm.created && !fm.dir_synced);
+        // A lost/torn directory entry: the file existed and a directory `fsync`
+        // was observed, yet its name did not survive. For a session-created
+        // segment this drops a committed segment (Phase 80).
+        if self.cfg.durable_loss == DurableLoss::TornDirectoryEntry && fm.created {
+            present = false;
+        }
         // The commit watermark is written with an atomic `write-tmp → rename`, so
-        // the model treats it as all-or-nothing: it is either a complete
-        // watermark or the previous one (never a torn one).
+        // the model normally treats it as all-or-nothing. `TornWatermark` models a
+        // device/FS that violated that guarantee: a *present but corrupt* image
+        // (recovery must fail closed, never treat a torn watermark as absent).
         if name == WATERMARK_FILE {
-            let content = if self.cfg.durable_loss == DurableLoss::LostWatermark {
+            if self.cfg.durable_loss == DurableLoss::TornWatermark {
+                let mut content = fm.durable.clone();
+                if content.is_empty() {
+                    content = vec![0xFFu8; 8];
+                } else if content.len() >= WATERMARK_LEN {
+                    content.truncate(WATERMARK_LEN - 1);
+                } else {
+                    let keep = content.len().saturating_sub(1).max(1);
+                    content.truncate(keep);
+                }
+                let present = present && !content.is_empty();
+                return (content, 0, present);
+            }
+            let content = if matches!(
+                self.cfg.durable_loss,
+                DurableLoss::LostWatermark | DurableLoss::ResidualWindow
+            ) {
                 fm.base.clone()
             } else if fm.durable.len() == WATERMARK_LEN {
                 fm.durable.clone()
@@ -678,65 +876,135 @@ impl SimDevice {
         }
         let mut content = fm.durable.clone();
         let mut torn = 0u64;
-        if self.cfg.durable_loss == DurableLoss::TearTail && !content.is_empty() {
-            let sector = self.cfg.sector.max(1) as usize;
-            let rem = content.len() % sector;
-            let new_len = if rem == 0 {
-                content.len().saturating_sub(sector)
-            } else {
-                content.len() - rem
-            };
-            torn = (content.len() - new_len) as u64;
-            content.truncate(new_len);
-        } else if self.cfg.durable_loss == DurableLoss::ReorderDurable && !content.is_empty() {
-            // Drop sector-aligned blocks of the *durable* image: a reordered /
-            // partially-applied durable write. A dropped block reads back as
-            // zeros (a sector that did not survive), and any all-dropped suffix is
-            // truncated so the file length reflects the loss. Recovery observes
-            // exactly the shapes a torn/reordered flush would leave: an interior
-            // hole (a malformed record), a torn tail, or a shorter valid prefix.
-            let sector = self.cfg.sector.max(1) as usize;
-            let blocks = content.len().div_ceil(sector);
-            let mut rng = Rng::new(self.cfg.seed ^ 0x5EED_D00D);
-            let mut keep: Vec<bool> = Vec::with_capacity(blocks);
-            for _ in 0..blocks {
-                keep.push(rng.next_u64() & 1 == 0);
+        match self.cfg.durable_loss {
+            DurableLoss::TearTail if !content.is_empty() => {
+                let sector = self.cfg.sector.max(1) as usize;
+                let rem = content.len() % sector;
+                let new_len = if rem == 0 {
+                    content.len().saturating_sub(sector)
+                } else {
+                    content.len() - rem
+                };
+                torn = (content.len() - new_len) as u64;
+                content.truncate(new_len);
             }
-            for (i, k) in keep.iter().enumerate() {
-                if *k {
-                    continue;
+            // The residual window: tear only the *final* segment's trailing
+            // sector, so the torn tail is quarantine-able and recovery reaches an
+            // earlier valid boundary while the (lost) watermark stays behind it.
+            DurableLoss::ResidualWindow
+                if !content.is_empty() && Some(name) == self.final_segment() =>
+            {
+                let sector = self.cfg.sector.max(1) as usize;
+                let rem = content.len() % sector;
+                let new_len = if rem == 0 {
+                    content.len().saturating_sub(sector)
+                } else {
+                    content.len() - rem
+                };
+                torn = (content.len() - new_len) as u64;
+                content.truncate(new_len);
+            }
+            DurableLoss::TearInterior if !content.is_empty() => {
+                // Zero one *interior* sector-aligned block: a hole in the log's own
+                // framing/record metadata (not the trailing edge). The length is
+                // left unchanged; the zeroed header makes the record undecodable.
+                let sector = self.cfg.sector.max(1) as usize;
+                let blocks = content.len().div_ceil(sector);
+                if blocks >= 2 {
+                    let idx = (blocks / 2).min(blocks - 1);
+                    let lo = idx * sector;
+                    let hi = (lo + sector).min(content.len());
+                    for b in &mut content[lo..hi] {
+                        *b = 0;
+                    }
+                    torn = (hi - lo) as u64;
                 }
-                let lo = i * sector;
-                let hi = (lo + sector).min(content.len());
-                for b in &mut content[lo..hi] {
-                    *b = 0;
+            }
+            DurableLoss::ReorderDurable if !content.is_empty() => {
+                // Drop sector-aligned blocks of the *durable* image: a reordered /
+                // partially-applied durable write. A dropped block reads back as
+                // zeros (a sector that did not survive), and any all-dropped suffix
+                // is truncated so the file length reflects the loss. Recovery
+                // observes exactly the shapes a torn/reordered flush would leave:
+                // an interior hole (a malformed record), a torn tail, or a shorter
+                // valid prefix.
+                let sector = self.cfg.sector.max(1) as usize;
+                let blocks = content.len().div_ceil(sector);
+                let mut rng = Rng::new(self.cfg.seed ^ 0x5EED_D00D);
+                let mut keep: Vec<bool> = Vec::with_capacity(blocks);
+                for _ in 0..blocks {
+                    keep.push(rng.next_u64() & 1 == 0);
                 }
+                for (i, k) in keep.iter().enumerate() {
+                    if *k {
+                        continue;
+                    }
+                    let lo = i * sector;
+                    let hi = (lo + sector).min(content.len());
+                    for b in &mut content[lo..hi] {
+                        *b = 0;
+                    }
+                }
+                // Truncate a fully-dropped suffix.
+                let mut new_len = content.len();
+                while new_len > 0 && content[new_len - 1] == 0 && !keep[(new_len - 1) / sector] {
+                    new_len -= 1;
+                }
+                torn = (content.len() - new_len) as u64;
+                content.truncate(new_len);
             }
-            // Truncate a fully-dropped suffix.
-            let mut new_len = content.len();
-            while new_len > 0 && content[new_len - 1] == 0 && !keep[(new_len - 1) / sector] {
-                new_len -= 1;
-            }
-            torn = (content.len() - new_len) as u64;
-            content.truncate(new_len);
+            _ => {}
         }
         (content, torn, present)
     }
 
-    /// Discard every un-flushed cached write, apply configured durable damage,
-    /// materialise the surviving image to the real directory, and report.
+    /// Apply the configured failure class to the volatile cache, then discard
+    /// whatever the class loses, apply configured durable damage, materialise the
+    /// surviving image to the real directory, and report.
+    ///
+    /// A `Process`/`Kernel` failure preserves the device/OS cache, so this device
+    /// promotes every cached write (in issue order for `Process`, reordered for
+    /// `Kernel`) instead of discarding it; `Storage` discards the un-flushed tail
+    /// exactly as before. The distinguished classes are described in
+    /// `docs/DURABILITY.md`.
     pub fn power_fail(&mut self) -> Result<PowerFailReport> {
-        let mut files = Vec::with_capacity(self.files.len());
+        let class = self.class;
+        let mut retained_total = 0u64;
         let mut total_dropped = 0u64;
-        let mut total_torn = 0u64;
         let mut dropped_writes = 0u64;
+
+        if class.loses_device_cache() {
+            for fm in self.files.values() {
+                total_dropped += fm.pending.iter().map(|o| o.bytes.len() as u64).sum::<u64>();
+                dropped_writes += fm.pending.len() as u64;
+            }
+        } else {
+            // The cache survives: promote every cached write into the durable
+            // image (Kernel applies them reordered; Process in issue order).
+            let mut rng = self.rng;
+            for fm in self.files.values_mut() {
+                let mut pending = std::mem::take(&mut fm.pending);
+                if class == FailureClass::Kernel {
+                    rng.shuffle(&mut pending);
+                }
+                for op in &pending {
+                    retained_total += op.bytes.len() as u64;
+                    apply(&mut fm.durable, op.offset, &op.bytes);
+                }
+            }
+            self.rng = rng;
+        }
+
+        let mut files = Vec::with_capacity(self.files.len());
+        let mut total_torn = 0u64;
         for (name, fm) in &self.files {
-            let dropped: u64 = fm.pending.iter().map(|o| o.bytes.len() as u64).sum();
-            let dropped_n = fm.pending.len() as u64;
+            let dropped: u64 = if class.loses_device_cache() {
+                fm.pending.iter().map(|o| o.bytes.len() as u64).sum()
+            } else {
+                0
+            };
             let (content, torn, present) = self.reconstruct(name, fm);
-            total_dropped += dropped;
             total_torn += torn;
-            dropped_writes += dropped_n;
             files.push((name.clone(), content, dropped, torn, present));
         }
 
@@ -769,8 +1037,10 @@ impl SimDevice {
 
         Ok(PowerFailReport {
             config: self.cfg,
+            failure_class: class,
             files: file_losses,
             total_dropped_volatile_bytes: total_dropped,
+            retained_volatile_bytes: retained_total,
             total_torn_durable_bytes: total_torn,
             dropped_writes,
         })
@@ -824,6 +1094,7 @@ thread_local! {
 pub struct PowerLossHandle {
     dir: PathBuf,
     config: SimConfig,
+    class: FailureClass,
 }
 
 impl PowerLossHandle {
@@ -835,6 +1106,11 @@ impl PowerLossHandle {
     /// The device configuration.
     pub fn config(&self) -> SimConfig {
         self.config
+    }
+
+    /// The failure class this device simulates.
+    pub fn failure_class(&self) -> FailureClass {
+        self.class
     }
 
     /// Trigger the un-clean power failure: discard un-flushed writes, apply
@@ -870,9 +1146,10 @@ impl Drop for PowerLossHandle {
 /// Attach a simulated device to `log_dir`, loading its current contents as the
 /// durable base image. All subsequent log I/O in this directory on this thread
 /// is captured by the device until [`PowerLossHandle::power_fail`] (or the
-/// handle's drop) detaches it.
+/// handle's drop) detaches it. The device models the **`Storage`** failure class
+/// (storage power loss); use [`attach_with_class`] for another class.
 pub fn attach(log_dir: &Path, cfg: SimConfig) -> Result<PowerLossHandle> {
-    attach_with_faults(log_dir, cfg, Vec::new())
+    attach_with_class(log_dir, cfg, FailureClass::Storage, Vec::new())
 }
 
 /// Attach a simulated device with a deterministic fault-injection plan. The plan
@@ -884,7 +1161,19 @@ pub fn attach_with_faults(
     cfg: SimConfig,
     rules: Vec<DeviceFaultRule>,
 ) -> Result<PowerLossHandle> {
-    let mut dev = SimDevice::load(log_dir, cfg)?;
+    attach_with_class(log_dir, cfg, FailureClass::Storage, rules)
+}
+
+/// Attach a simulated device for an explicit Phase-80 **failure class** and
+/// deterministic fault plan. `Storage` reproduces the Phase 17/23 behaviour;
+/// `Process`/`Kernel` preserve the volatile tail (see [`FailureClass`]).
+pub fn attach_with_class(
+    log_dir: &Path,
+    cfg: SimConfig,
+    class: FailureClass,
+    rules: Vec<DeviceFaultRule>,
+) -> Result<PowerLossHandle> {
+    let mut dev = SimDevice::load_with_class(log_dir, cfg, class)?;
     dev.faults = rules
         .into_iter()
         .map(|rule| ArmedFault { rule, fired: 0 })
@@ -896,6 +1185,7 @@ pub fn attach_with_faults(
     Ok(PowerLossHandle {
         dir: log_dir.to_path_buf(),
         config: cfg,
+        class,
     })
 }
 
@@ -1019,7 +1309,7 @@ mod tests {
         for (name, bytes) in files {
             std::fs::write(td.path().join(name), bytes).unwrap();
         }
-        let dev = SimDevice::load(td.path(), cfg).unwrap();
+        let dev = SimDevice::load_with_class(td.path(), cfg, FailureClass::Storage).unwrap();
         (td, dev)
     }
 
@@ -1124,5 +1414,102 @@ mod tests {
         };
         dev.write_watermark(&wm).unwrap();
         assert_eq!(dev.files.get(WATERMARK_FILE).unwrap().durable, wm.encode());
+    }
+
+    fn class_dev(
+        files: &[(&str, Vec<u8>)],
+        cfg: SimConfig,
+        class: FailureClass,
+    ) -> (tempfile::TempDir, SimDevice) {
+        let td = tempfile::TempDir::new().unwrap();
+        for (name, bytes) in files {
+            std::fs::write(td.path().join(name), bytes).unwrap();
+        }
+        let dev = SimDevice::load_with_class(td.path(), cfg, class).unwrap();
+        (td, dev)
+    }
+
+    /// Storage loses the un-flushed volatile tail; Process/Kernel retain it.
+    #[test]
+    fn failure_classes_differ_in_the_retained_volatile_tail() {
+        let cfg = SimConfig::honest(2);
+        let (td, mut storage) = class_dev(&[("seg", b"abcd".to_vec())], cfg, FailureClass::Storage);
+        storage.record_write("seg", 4, b"EFGH");
+        let r = storage.power_fail().unwrap();
+        assert_eq!(r.failure_class, FailureClass::Storage);
+        assert_eq!(r.total_dropped_volatile_bytes, 4);
+        assert_eq!(r.retained_volatile_bytes, 0);
+        assert_eq!(std::fs::read(td.path().join("seg")).unwrap(), b"abcd");
+
+        for class in [FailureClass::Kernel, FailureClass::Process] {
+            let (td, mut dev) = class_dev(&[("seg", b"abcd".to_vec())], cfg, class);
+            dev.record_write("seg", 4, b"EFGH");
+            let r = dev.power_fail().unwrap();
+            assert_eq!(r.failure_class, class);
+            assert_eq!(r.total_dropped_volatile_bytes, 0, "{class:?} drops nothing");
+            assert_eq!(r.retained_volatile_bytes, 4, "{class:?} retains the tail");
+            assert_eq!(std::fs::read(td.path().join("seg")).unwrap(), b"abcdEFGH");
+        }
+    }
+
+    #[test]
+    fn torn_watermark_is_present_but_corrupt() {
+        let (_td, mut dev) = dev_with(&[], SimConfig::torn_watermark(3));
+        let wm = Watermark {
+            committed_root: 256,
+            segment_id: 0,
+            segment_valid_len: 256,
+        };
+        // Establish a durable watermark, then model the device tearing it.
+        dev.write_watermark(&wm).unwrap();
+        let report = dev.power_fail().unwrap();
+        let wl = report
+            .files
+            .iter()
+            .find(|f| f.name == WATERMARK_FILE)
+            .expect("watermark present");
+        assert!(
+            wl.present,
+            "a torn watermark must remain present, never vanish"
+        );
+        let bytes = std::fs::read(dev.dir.join(WATERMARK_FILE)).unwrap();
+        assert!(
+            Watermark::decode(&bytes).is_err(),
+            "a torn watermark must be undecodable (recovery fails closed)"
+        );
+    }
+
+    #[test]
+    fn torn_directory_entry_drops_a_created_file() {
+        let (_td, mut dev) = dev_with(&[], SimConfig::torn_directory_entry(4));
+        dev.record_create("new.seg");
+        dev.record_write("new.seg", 0, b"data");
+        dev.sync_dir();
+        let report = dev.power_fail().unwrap();
+        assert!(!report.files[0].present, "the lost dirent drops the file");
+    }
+
+    #[test]
+    fn tear_interior_zeroes_an_interior_block() {
+        // 4 sectors: the interior tear zeroes the middle, keeping the length.
+        let base = vec![0xABu8; 2048];
+        let (_td, mut dev) = dev_with(&[("seg", base.clone())], SimConfig::tear_interior(5));
+        let report = dev.power_fail().unwrap();
+        let bytes = std::fs::read(dev.dir.join("seg")).unwrap();
+        assert_eq!(bytes.len(), base.len(), "an interior tear keeps the length");
+        assert!(report.total_torn_durable_bytes > 0);
+        assert!(
+            bytes[..512].iter().all(|b| *b == 0xAB),
+            "first block intact"
+        );
+        assert!(
+            bytes[1536..].iter().all(|b| *b == 0xAB),
+            "last block intact"
+        );
+        // blocks = 4, index = blocks/2 = 2 -> bytes [1024, 1536) are torn.
+        assert!(
+            bytes[1024..1536].iter().all(|b| *b == 0),
+            "an interior block was torn"
+        );
     }
 }

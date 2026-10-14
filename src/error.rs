@@ -174,6 +174,15 @@ pub enum OrfsError {
     #[error("cold tier copy is corrupt or missing: {0}")]
     TierCorrupt(String),
 
+    /// An operation was **in flight** at the moment of a power cut and its
+    /// completion was never observed (Phase 80). The caller did not receive a
+    /// success, so it **must not** treat the operation as durable; unlike an EIO
+    /// or ENOSPC it is **not** an unrecoverable authoritative-store failure, so
+    /// it does not latch the volume read-only — the device simply did not finish
+    /// the operation. Maps to `EAGAIN`. See `docs/DURABILITY.md`.
+    #[error("operation in flight, completion not observed: {0}")]
+    InFlight(String),
+
     /// A fault-injection failpoint fired (only reachable in `failpoints` builds).
     /// The write path must be discarded; see `docs/TRANSACTIONS.md`.
     #[error("injected failpoint: {0}")]
@@ -197,6 +206,10 @@ impl OrfsError {
             // The guard latches degraded itself only when the reserve floor is
             // breached (zero headroom).
             OrfsError::CapacityExhausted { .. } => false,
+            // An in-flight completion is not a store failure: the device accepted
+            // nothing reliably and did not error; the caller simply did not
+            // observe a success. It must not latch the volume (Phase 80).
+            OrfsError::InFlight(_) => false,
             _ => false,
         }
     }
@@ -234,6 +247,8 @@ impl OrfsError {
             OrfsError::Overflow { .. } => libc::EIO,
             OrfsError::TierUnavailable(_) => libc::EIO,
             OrfsError::TierCorrupt(_) => libc::EIO,
+            // A completion that was never observed is transient, not fatal.
+            OrfsError::InFlight(_) => libc::EAGAIN,
             OrfsError::Failpoint(_) => libc::EIO,
         }
     }

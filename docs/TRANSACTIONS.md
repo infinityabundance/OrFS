@@ -302,6 +302,23 @@ real-hardware durability. See `docs/POWERLOSS.md`.
 in-process: the write path is terminated, the log discarded, and the volume
 reopened.)
 
+### 4.1.1 Three distinguished failure classes (Phase 80)
+
+**Process crash is the strongest of three classes**, not one point on a spectrum.
+Phase 80 names them in code (`powerloss::FailureClass`) and docs, and qualifies
+OrFS against each while asserting the *same* acknowledged-durability contract:
+
+| Class | Volatile layer lost | Retained bytes |
+|---|---|---|
+| `Process` | userspace buffers only | every byte that completed a `write` (OS page cache survives) |
+| `Kernel` | userspace buffers + OS page cache | bytes the device accepted (write-back cache not lost); may reorder |
+| `Storage` | + device write-back cache | flushed bytes only; reorder/partial/torn per profile |
+
+The retained set is monotone (`Process ⊇ Kernel ⊇ Storage`). An acknowledged
+durability point (`fsync`/`SyncOutcome`) commits data that survives **every**
+class; before it, the contract states exactly what may be lost (the tail). The
+court is `tests/durability_qualification.rs`; see `docs/DURABILITY.md`.
+
 ### 4.2 Grouped-commit crash court (Phase 31)
 
 The same shutdown discipline is applied to the grouped path. Two arms live in

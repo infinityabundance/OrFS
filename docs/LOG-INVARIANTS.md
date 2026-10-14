@@ -132,6 +132,18 @@ The scanner distinguishes and reports:
 A fault in the final segment after the genesis is treated as an uncommitted
 tail; the same fault in any earlier segment is corruption.
 
+### The residual window is never a silent repair (Phase 80)
+
+The watermark (I1/I6, `docs/RECOVERY.md` §5) is written *after* the bytes it
+describes, so it cannot cover a byte that was made durable but never watermarked.
+The loss of such bytes is **undetectable by the watermark alone** — the documented
+**residual window** — and is *not* a silent repair: it is a named property of the
+Phase-80 failure-state model, classified per row (`residual_window =
+undetectable_unwatermarked_tail`) and asserted as such. A watermark **ahead** of
+the surviving bytes is always **detected** (the open is refused), so recovery
+never returns a root shorter than the watermark certifies **without** refusing
+(`silent_shortening = false`). See `docs/DURABILITY.md` §4.
+
 ## Locator continuity
 
 `SegmentLocator` requires extents to start at logical offset `0` and abut

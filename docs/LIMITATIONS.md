@@ -153,7 +153,14 @@ Properties of the fix:
 Residual window: a crash *between* committing bytes and persisting the watermark
 leaves the watermark one durability point behind, so loss of exactly those
 not-yet-watermarked bytes cannot be detected. This is inherent to any scheme that
-cannot rewrite committed history. See `docs/RECOVERY.md` §5.
+cannot rewrite committed history. See `docs/RECOVERY.md` §5. Phase 80 makes this
+an **explicit property** of a three-class failure-state model, with a per-mode
+detectable/undetectable classification and a tested `residual_window` field:
+`docs/DURABILITY.md` §4 (court `tests/durability_qualification.rs`, evidence
+`evidence/recovery/durability-qualification.json`). Detection cannot be
+strengthened without an additional synchronous write on the acknowledgment path or
+rewriting committed bytes (forbidden by non-withdrawal), so the receipt records
+`can_be_strengthened: false` with the reason.
 
 ## 7. Performance: no portability claim
 
@@ -452,3 +459,41 @@ and custom rename/link/unlink races. Honest bounds:
   files) is bounded here to thousands (`ORFS_FSMARK_FILES`, default 4 000) because
   each file is a full authoritative transaction; the parameters are honoured
   verbatim if a larger bounded run is wanted.
+
+## 19. Durability qualification distinguishes failure classes but is still a simulation (Phase 80)
+
+Phase 80 adds an explicit failure-state model with three **distinguished failure
+classes** (`Process`, `Kernel`, `Storage`) and an extended fault matrix (in-flight
+completions, metadata tearing, remount cycles, reordered writes, lost flushes). It
+qualifies OrFS's durability *relative to the model*, and states the honest bounds:
+
+* **It is a simulation.** `tests/durability_qualification.rs` runs the
+  deterministic in-process device (`src/powerloss.rs`). Every class retains a
+  *modelled* set of bytes; a green run proves recovery correct relative to the
+  model's assumed device semantics, **not** real-hardware durability. `sync` still
+  promises only what the backing device documents
+  (`claims_power_loss_durability()` remains `false`). See `docs/DURABILITY.md`.
+* **Real block-device faults are not injected here.** The Phase-62/80 `dm` probe
+  (elevated container) records `ran:false` on this host: the pinned image ships no
+  `dmsetup` and exposes no `/dev/mapper/control`, so no `dm-flaky`/`dm-error`
+  target can be built. The receipt's `dm_probe` field carries the exact failing
+  commands; the fault matrix uses the simulated device and direct byte injection
+  instead. No `dm-*` result is fabricated.
+* **For OrFS, `Process` and `Kernel` retain the same bytes.** The commit path has
+  no acknowledged-but-unwritten userspace data, so the two coincide for the
+  acknowledged contract; the model differs only in that `Kernel` may reorder the
+  retained writes. The measurable class distinction for OrFS is between
+  cache-retaining (`Process`/`Kernel`) and cache-losing (`Storage`) devices.
+* **The residual window cannot be closed without changing the contract.** The
+  loss of durable bytes between the last persisted watermark and the committed
+  root is undetectable by the watermark alone. Strengthening detection would need
+  an additional synchronous write on the acknowledgment path or rewriting committed
+  bytes (forbidden by non-withdrawal); the receipt records
+  `can_be_strengthened: false` with the reason rather than claiming it closed.
+* **The generation manifest/catalogue is out of the log-device's scope.** It lives
+  outside the log directory, so the log-directory device does not tear it; that is
+  covered by the manifestation courts (Phases 42/78).
+* **The matrix is bounded and opt-in.** The always-on smoke is small; the full
+  mode × class × profile sweep runs only under `ORFS_DQ_SWEEP=1`, one container at
+  a time, and its numbers (matrix size, refusals, residual rows) are the
+  deterministic result, not a timing claim.

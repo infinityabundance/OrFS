@@ -15,7 +15,7 @@ use orfs::bench::{BenchConfig, BenchParams, Workload};
 use orfs::capacity::{CapacityStatus, CapacityVerdict, ForecastInputs, StorageEconomics};
 use orfs::commit::DurabilityMode;
 use orfs::fuse::{self, BackingIo, F2Servicing, MountOptions, StatfsMode, Transport};
-use orfs::log::{scan_log, OpenMode, TailInfo, DEFAULT_SEGMENT_SIZE};
+use orfs::log::{OpenMode, TailInfo, DEFAULT_SEGMENT_SIZE};
 use orfs::manifestation::{ManifestationConfig, ManifestationProfile, ManifestationStatus};
 use orfs::namespace::SnapshotRootPayload;
 use orfs::query::QueryRequest;
@@ -311,6 +311,12 @@ enum Command {
         #[arg(long, requires = "economics")]
         transactions_rate: Option<u64>,
     },
+
+    /// Cold-tier relocation of sealed authoritative segments (Phase 76).
+    Tier {
+        #[command(subcommand)]
+        cmd: TierCommand,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -339,6 +345,47 @@ enum SnapshotCommand {
         /// falls back automatically when it cannot engage).
         #[arg(long)]
         no_passthrough: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum TierCommand {
+    /// Relocate sealed (immutable) segments to a cold tier without withdrawing
+    /// authority. The active head segment is never relocatable.
+    Relocate {
+        /// Backing volume directory.
+        #[arg(long)]
+        backing: PathBuf,
+        /// Cold-tier root directory (must exist).
+        #[arg(long)]
+        tier_root: PathBuf,
+        /// Relocate this sealed segment id (default: every sealed segment).
+        #[arg(long)]
+        segment: Option<u64>,
+        /// Relocate every sealed segment (the default when `--segment` is absent).
+        #[arg(long)]
+        all: bool,
+    },
+    /// List per-segment relocation state, digest, and home.
+    List {
+        /// Backing volume directory.
+        #[arg(long)]
+        backing: PathBuf,
+    },
+    /// Re-verify every relocated segment's digest (and report mismatches).
+    Verify {
+        /// Backing volume directory.
+        #[arg(long)]
+        backing: PathBuf,
+    },
+    /// Recall a released segment back to the local store, verified.
+    Recall {
+        /// Backing volume directory.
+        #[arg(long)]
+        backing: PathBuf,
+        /// Recall this segment id (default: every released segment).
+        #[arg(long)]
+        segment: Option<u64>,
     },
 }
 
@@ -518,6 +565,17 @@ fn run(cli: &Cli) -> Result<()> {
             *cold,
             cli.json,
         ),
+        Command::Tier { cmd } => match cmd {
+            TierCommand::Relocate {
+                backing,
+                tier_root,
+                segment,
+                all,
+            } => tier_relocate(backing, tier_root, *segment, *all, cli.json),
+            TierCommand::List { backing } => tier_list(backing, cli.json),
+            TierCommand::Verify { backing } => tier_verify(backing, cli.json),
+            TierCommand::Recall { backing, segment } => tier_recall(backing, *segment, cli.json),
+        },
     }
 }
 
@@ -1544,8 +1602,7 @@ fn verify(backing: &Path, deep: bool, json: bool) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 fn recover(backing: &Path, json: bool) -> Result<()> {
-    let log_dir = Volume::log_dir(backing);
-    let before = match scan_log(&log_dir) {
+    let before = match orfs::tiering::scan_volume(backing) {
         Ok(s) => Some(s),
         Err(e) => {
             // A scan failure is reported honestly; recovery cannot invent data.
@@ -1599,6 +1656,200 @@ fn recover(backing: &Path, json: bool) -> Result<()> {
         vol.log.committed_record_count()
     );
     println!("  canonical segments:         {}", vol.log.extents().len());
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// tier (Phase 76, immutable tier relocation)
+// ---------------------------------------------------------------------------
+
+fn tier_relocate(
+    backing: &Path,
+    tier_root: &Path,
+    segment: Option<u64>,
+    all: bool,
+    json: bool,
+) -> Result<()> {
+    let _ = all; // `--all` is the default when `--segment` is absent.
+    let mut relocator = orfs::tiering::Relocator::open(backing)?;
+    relocator.set_tier_root(tier_root)?;
+    let head = relocator.head_id();
+    let ids = match segment {
+        Some(id) => vec![id],
+        None => relocator.sealed_ids()?,
+    };
+    let mut outcomes = Vec::new();
+    for id in ids {
+        outcomes.push(relocator.relocate(id)?);
+    }
+    let report = orfs::tiering::list_report(backing)?;
+    if json {
+        let out = serde_json::json!({
+            "schema": "orfs.tier.relocate.v1",
+            "volume": backing.display().to_string(),
+            "head_segment": head,
+            "outcomes": outcomes,
+            "local_authoritative_bytes": report.local_authoritative_bytes,
+            "tier_bytes": report.tier_bytes,
+            "total_authoritative_bytes": report.total_authoritative_bytes,
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
+    println!("relocating sealed segments of {}", backing.display());
+    println!("  active head segment:        {head} (never relocatable)");
+    for o in &outcomes {
+        println!(
+            "  segment {:<20} {:<16} {} bytes  digest {}{}",
+            o.segment_id,
+            o.action,
+            o.bytes,
+            &o.digest[..8.min(o.digest.len())],
+            if o.home == "tier" {
+                "  home=tier"
+            } else {
+                "  home=local"
+            }
+        );
+    }
+    println!(
+        "  local authoritative bytes:  {} (relocation target)",
+        report.local_authoritative_bytes
+    );
+    println!("  tier bytes held:            {}", report.tier_bytes);
+    println!(
+        "  total authority (unchanged): {}",
+        report.total_authoritative_bytes
+    );
+    Ok(())
+}
+
+fn tier_list(backing: &Path, json: bool) -> Result<()> {
+    let r = orfs::tiering::list_report(backing)?;
+    if json {
+        let out = serde_json::json!({
+            "schema": "orfs.tier.list.v1",
+            "report": r,
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
+    println!("OrFS tier relocation — {}", r.volume);
+    println!("  uuid:                       {}", r.uuid);
+    println!("  active head segment:        {}", r.head_segment);
+    println!("  released segments:          {}", r.released_segments);
+    for s in &r.segments {
+        println!(
+            "    seg {:<20} {:<9} home={:<5} {:>12} bytes  digest {}{}",
+            s.segment_id,
+            s.state,
+            s.home,
+            s.bytes,
+            &s.digest[..8.min(s.digest.len())],
+            if s.head { "  (head)" } else { "" }
+        );
+    }
+    if !r.tier_roots.is_empty() {
+        println!("  tier roots:");
+        for t in &r.tier_roots {
+            println!("    {t}");
+        }
+    }
+    println!(
+        "  local authoritative bytes:  {} (under or.log/)",
+        r.local_authoritative_bytes
+    );
+    println!("  tier bytes held:            {}", r.tier_bytes);
+    println!(
+        "  total authority:            {} (unchanged by relocation)",
+        r.total_authoritative_bytes
+    );
+    Ok(())
+}
+
+fn tier_verify(backing: &Path, json: bool) -> Result<()> {
+    let r = orfs::tiering::verify_report(backing)?;
+    if json {
+        let out = serde_json::json!({
+            "schema": "orfs.tier.verify.v1",
+            "report": r,
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else {
+        println!("verifying relocated segments of {}", r.volume);
+        for s in &r.segments {
+            println!(
+                "  [{}] seg {} digest {}: {}",
+                if s.verified { "ok" } else { "FAIL" },
+                s.segment_id,
+                &s.digest[..8.min(s.digest.len())],
+                s.detail
+            );
+        }
+        if !r.unavailable_segments.is_empty() {
+            println!(
+                "  tier unavailable for segment(s): {:?}",
+                r.unavailable_segments
+            );
+        }
+        println!(
+            "result: {}",
+            if r.all_ok {
+                "PASS"
+            } else {
+                "FAIL (mismatches)"
+            }
+        );
+    }
+    if r.all_ok {
+        Ok(())
+    } else {
+        Err(OrfsError::TierCorrupt(format!(
+            "{} relocated segment(s) failed verification: {:?}",
+            r.mismatches.len(),
+            r.mismatches
+        )))
+    }
+}
+
+fn tier_recall(backing: &Path, segment: Option<u64>, json: bool) -> Result<()> {
+    let mut relocator = orfs::tiering::Relocator::open(backing)?;
+    let ids = match segment {
+        Some(id) => vec![id],
+        None => relocator.released_ids(),
+    };
+    let mut outcomes = Vec::new();
+    for id in ids {
+        outcomes.push(relocator.recall(id)?);
+    }
+    let report = orfs::tiering::list_report(backing)?;
+    if json {
+        let out = serde_json::json!({
+            "schema": "orfs.tier.recall.v1",
+            "volume": backing.display().to_string(),
+            "outcomes": outcomes,
+            "local_authoritative_bytes": report.local_authoritative_bytes,
+            "tier_bytes": report.tier_bytes,
+            "total_authoritative_bytes": report.total_authoritative_bytes,
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
+    println!("recalling released segments of {}", backing.display());
+    for o in &outcomes {
+        println!(
+            "  segment {:<20} {:<16} {} bytes  home={}",
+            o.segment_id, o.action, o.bytes, o.home
+        );
+    }
+    println!(
+        "  local authoritative bytes:  {}",
+        report.local_authoritative_bytes
+    );
+    println!(
+        "  total authority (unchanged): {}",
+        report.total_authoritative_bytes
+    );
     Ok(())
 }
 

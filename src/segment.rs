@@ -19,6 +19,7 @@ use std::io;
 use std::os::unix::fs::FileExt;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::error::{OrfsError, Result};
 
@@ -70,6 +71,59 @@ impl SegmentExtent {
         self.id + self.valid_len
     }
 }
+
+/// A source of immutable segments: resolves a segment id to a readable file path
+/// and enumerates the segment ids that are available.
+///
+/// The default source is [`LocalSegments`] (segments live directly under the log
+/// directory). A relocated segment (Phase 76, [`crate::tiering`]) is resolved
+/// from the cold tier instead, transparently to the log layer: the log reads a
+/// segment's bytes from whatever path the source yields, so relocation never
+/// changes a logical byte, a committed root, or the read path's shape.
+///
+/// A source is expected to be cheap to clone behind an [`Arc`] and safe to share
+/// across reader threads.
+pub trait SegmentSource: Send + Sync {
+    /// The path of segment `id`, or a typed error when it is unavailable.
+    fn resolve_path(&self, id: u64) -> Result<PathBuf>;
+
+    /// Every available segment id, sorted ascending, without duplicates.
+    fn discover(&self) -> Result<Vec<u64>>;
+}
+
+/// The default [`SegmentSource`]: segments live in `dir` as
+/// `NNNNNNNNNNNNNNNN.seg`. Behaviour is byte-for-byte the pre-tiering log layer.
+#[derive(Debug, Clone)]
+pub struct LocalSegments {
+    dir: PathBuf,
+}
+
+impl LocalSegments {
+    /// A local source rooted at a log directory.
+    pub fn new(dir: &Path) -> LocalSegments {
+        LocalSegments {
+            dir: dir.to_path_buf(),
+        }
+    }
+
+    /// The log directory this source reads from.
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+}
+
+impl SegmentSource for LocalSegments {
+    fn resolve_path(&self, id: u64) -> Result<PathBuf> {
+        Ok(self.dir.join(segment_file_name(id)?))
+    }
+
+    fn discover(&self) -> Result<Vec<u64>> {
+        discover_segment_ids(&self.dir)
+    }
+}
+
+/// A shared, type-erased segment source.
+pub type SharedSegmentSource = Arc<dyn SegmentSource>;
 
 /// Discover segment ids directly inside `dir`, sorted ascending.
 ///
@@ -245,8 +299,9 @@ pub(crate) struct ReadAt {
 }
 
 impl ReadAt {
-    pub(crate) fn open(dir: &Path, id: u64) -> Result<ReadAt> {
-        let path = dir.join(segment_file_name(id)?);
+    /// Open a segment by an explicit path (used by a [`SegmentSource`] that may
+    /// resolve the segment to a relocated tier copy).
+    pub(crate) fn open_path(path: &Path, id: u64) -> Result<ReadAt> {
         Ok(ReadAt {
             file: File::open(path)?,
             id,

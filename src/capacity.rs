@@ -679,7 +679,7 @@ impl StorageAccounting {
 /// Classify one file (by its path relative to the volume root) into exactly one
 /// economics category. A scratch / in-progress (`*.tmp`) file is temporary
 /// wherever it lives; everything else is classified by its top-level area.
-fn classify_storage(rel: &Path) -> StorageCategory {
+pub(crate) fn classify_storage(rel: &Path) -> StorageCategory {
     let parts: Vec<String> = rel
         .components()
         .map(|c| c.as_os_str().to_string_lossy().into_owned())

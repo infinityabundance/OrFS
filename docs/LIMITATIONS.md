@@ -354,3 +354,25 @@ along with a possible dependency-free (uncompressed-BMP) reconsideration, are in
 **`docs/REJECTED.md`**. Image **recognition**, dimension and colour-semantics
 parsing, and the descriptive `pyramid_levels` geometry remain implemented and
 tested (`src/image.rs`).
+
+## 16. Tier relocation is local-directory and single-host (Phase 76)
+
+`orfs tier` implements immutable tier relocation (`docs/TIERING.md`): sealed
+segments move to a cold tier without withdrawing authority. Honest bounds:
+
+* **The cold tier is a local filesystem directory.** There is no object-store (S3
+  &c.) backend: `--tier-root` is a path — a cheaper local device, a network mount,
+  or an object-store FUSE mount. The content-addressed layout
+  (`orfs-tier/<uuid>/<segment id>/<digest>.seg`) is what an object-store backend
+  would key on, but the transport here is POSIX file I/O.
+* **No background tiering daemon.** Relocation is an explicit operator command run
+  while the volume is not mounted; there is no automatic, online, watermarked
+  relocation. The court proves the durable state machine, idempotence, and crash
+  convergence — not an online controller.
+* **The relocation catalogue is integrity-checked, not authenticated.** Its
+  records carry a CRC32C and the tier objects a BLAKE3 digest — the same
+  integrity-not-authentication caveat as §14: an attacker with write access to the
+  volume or the tier can rewrite both.
+* **The measured numbers are bounded and host/build dependent.** The court's
+  byte counts are deterministic for its fixed fixture, but the absolute footprint
+  figures are single-run, single-host (see the receipt's `note`).

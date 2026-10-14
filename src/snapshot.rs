@@ -141,11 +141,13 @@ impl Snapshot {
     /// The snapshot shares the volume's committed-root pin registry, so a live
     /// writer cannot roll over or quarantine a segment the snapshot depends on.
     pub fn open(volume: &Volume, root: u64) -> Result<Snapshot> {
-        let log = Log::open_with_pins(
+        let source = crate::tiering::segment_source(&volume.root_dir, volume.meta.uuid)?;
+        let log = Log::open_resolved(
             &Volume::log_dir(&volume.root_dir),
             volume.meta.segment_size,
             OpenMode::ReadOnly,
             volume.log.root_pins(),
+            source,
         )?;
         Snapshot::from_read_log(Arc::new(log), volume.meta.uuid, root)
     }
@@ -154,7 +156,13 @@ impl Snapshot {
     /// self-contained read handle with its own pin registry).
     pub fn open_dir(dir: &Path, root: u64) -> Result<Snapshot> {
         let meta = Volume::read_meta(dir)?;
-        let log = Log::open(&Volume::log_dir(dir), meta.segment_size, OpenMode::ReadOnly)?;
+        let source = crate::tiering::segment_source(dir, meta.uuid)?;
+        let log = Log::open_with_source(
+            &Volume::log_dir(dir),
+            meta.segment_size,
+            OpenMode::ReadOnly,
+            source,
+        )?;
         Snapshot::from_read_log(Arc::new(log), meta.uuid, root)
     }
 

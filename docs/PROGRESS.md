@@ -4312,3 +4312,108 @@ directly re-measured from `sh scripts/container-test.sh` and
 * **Tier relocation is the next phase.** It must preserve identity, verify the
   remote copy before removing the local one, and keep metadata consistent and
   separate (KIP-405) — relocation moves a copy, it never withdraws authority.
+
+## Phase 76 — Immutable tier relocation: sealed segments to a cold tier without withdrawing authority
+
+**Complete.** Sealed (immutable) authoritative segments can now be moved from the
+local backing store to a cheaper **cold tier** without changing a single
+authoritative byte, a committed root, the commit watermark, or the read path's
+semantics. The active head segment is never relocatable. Two field disciplines are
+adopted explicitly — Kafka tiered storage (KIP-405: metadata strongly consistent
+and separate from the data tier; idempotent copy/delete; explicit durable
+transitions; never remove the local copy before the remote copy is verified and
+recorded) and RocksDB (amplification/space are *measured* objectives — here, the
+bytes that move and the identity that is preserved).
+
+### Delivered
+
+* **`src/tiering.rs` — the relocation catalogue and state machine.** An
+  append-only, immutable catalogue at `.or_bloom/tiering/relocations.cat`
+  (classified **Metadata** by `src/capacity.rs`, asserted by a unit test) records
+  every durable transition. Per-segment: `Local → Copying{intent} →
+  Copied{verified} → Released`, plus an operator `Recalled` path. Each transition is
+  fsynced before the next (destructive) step: the local copy is deleted **only**
+  after the tier copy is written, fsynced, **read back and digest-verified**, and
+  only after `Released` is durable. The tier target is **content-addressed** by
+  `(volume uuid, segment id, digest)` (`<tier_root>/orfs-tier/<uuid>/<segment
+  id>/<digest>.seg`), so copy and delete are **idempotent** (temp file + atomic
+  rename; re-copy re-verifies). Typed errors `OrfsError::TierUnavailable` and
+  `OrfsError::TierCorrupt`; a **segment home resolver** returns the local path, the
+  tier path, or a typed error.
+* **Log-layer integration (`src/segment.rs`, `src/log.rs`, `src/volume.rs`,
+  `src/snapshot.rs`).** A new `SegmentSource` trait resolves a segment id to a
+  path and enumerates ids. `LocalSegments` is the default (byte-for-byte the
+  pre-tiering behaviour, preserving existing call sites via wrappers);
+  `TieredSegments` resolves released segments from the tier. `Log`, `RecordReader`,
+  and the segment-handle cache read through the source, so `scan`/`open`/`recover`/
+  `replay`/`verify`/snapshots and the hot read path are agnostic to *where* a
+  segment lives. `Volume::open` constructs the source from the volume root, so a
+  volume with relocated segments opens, scans, recovers, and verifies
+  **identically** to the un-relocated volume. The watermark/commit invariants hold:
+  an offline released segment is detected (the live bytes are short of the
+  committed prefix) and the open is **refused**, never silently shortened.
+* **CLI (`src/main.rs`).** `orfs tier relocate --backing <dir> --tier-root <dir>
+  [--segment <id> | --all]`, `orfs tier list --backing <dir>` (per-segment state,
+  digest, home, and the **local authoritative footprint before/after**),
+  `orfs tier verify --backing <dir>` (re-verify every relocated digest; report
+  mismatches and offline segments), `orfs tier recall --backing <dir>
+  [--segment <id>]`. All support the global `--json`.
+* **Court (`tests/tier_relocation.rs`) + failpoints.** New failpoints
+  (`Failpoint::TIER_ALL`) instrument each transition; they are kept **separate**
+  from `Failpoint::ALL` so the §34 commit-path crash matrix is unaffected. The
+  court proves: identity (every committed root byte-identical, root/digest/
+  watermark unchanged, deep verify both sides); verify-before-forget; idempotent
+  copy/delete; a six-row crash matrix (all converged); the typed `TierUnavailable`
+  error; catalogue fail-closed behaviour (flip/truncate/remove); and mixed
+  local+remote recovery.
+* **Runner + docs.** `scripts/container-tier-relocation.sh` (bounded smoke always
+  on; a release/opt-in sweep behind `ORFS_TIER_RELOCATION` that writes the
+  receipt); `docs/TIERING.md` (the full spec); `docs/STORAGE-ECONOMICS.md` §5 now
+  points at it; `docs/OPERATIONS.md` §5.1, `docs/LIMITATIONS.md` §16,
+  `docs/RECOVERY.md` §10, `README.md`, `docs/ORFS-SPEC.md` §4/§5, `docs/REPRODUCE.md`,
+  `docs/RECEIPTS.md`.
+
+### Results (from `evidence/performance/tier-relocation.json`)
+
+**10** of **11** segments (all sealed; the head stayed local) were relocated:
+**1 002 542 bytes** moved. **Digest matches 10, mismatches 0**; read-after-relocate
+byte equivalence **true**; **41** committed boundaries all byte-identical; the
+committed root (1 068 918) and its digest unchanged. The local authoritative
+footprint dropped **1 068 954 → 66 412 B** (by exactly the relocated bytes) while
+total authority stayed **1 068 918 B**. The crash matrix has **6** rows, all
+converged with exactly one home. With the tier offline, reads returned the typed
+`TierUnavailable` and **10** offline segments were reported; restoring the tier
+restored the reads.
+
+### Docs
+
+`src/tiering.rs` (new), `src/segment.rs`, `src/log.rs`, `src/volume.rs`,
+`src/snapshot.rs`, `src/capacity.rs`, `src/failpoints.rs`, `src/error.rs`,
+`src/lib.rs`, `src/main.rs`; `tests/tier_relocation.rs` (new);
+`scripts/container-tier-relocation.sh` (new); `docs/TIERING.md` (new);
+`docs/STORAGE-ECONOMICS.md` §5; `docs/OPERATIONS.md` §5.1;
+`docs/LIMITATIONS.md` §16; `docs/RECOVERY.md` §10; `docs/REPRODUCE.md`;
+`docs/RECEIPTS.md`; `scripts/docs-receipts.json`; `README.md`; `docs/ORFS-SPEC.md`;
+this entry. Receipt: `evidence/performance/tier-relocation.json` (new).
+
+### Test counts
+
+**512 (default; +1 ignored) / 523 (`--features failpoints`)** — +13 default (+5
+`tiering` unit tests, +8 `tier_relocation` court) and +14 with `--features
+failpoints` (the court adds `local_copy_survives_a_fault_between_copy_and_verification`);
+`fmt`/`clippy` clean.
+
+### Notes, stated honestly
+
+* The cold tier is a **local filesystem directory** (a cheaper device, a network
+  or object-store FUSE mount); there is no object-store backend and no background
+  tiering daemon — relocation is an explicit operator command (`docs/LIMITATIONS.md`
+  §16). The content-addressed layout is what an object-store backend would key on.
+* The relocation catalogue is **integrity-checked, not authenticated** (CRC32C per
+  record, BLAKE3 per tier object) — the same caveat as every other on-disk check.
+* Absolute byte figures are single-run, single-host and bounded; the court's counts
+  are deterministic for its fixed fixture, and the **identity and the bookkeeping**
+  are the point (the receipt's `note` says so).
+* **Recall keeps the tier copy** (a redundant, verified copy); it restores the
+  local copy and returns the segment to `Local`. Removing the tier copy after a
+  recall is a stated follow-up, not done here.

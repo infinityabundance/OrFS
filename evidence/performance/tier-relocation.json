@@ -1,0 +1,161 @@
+{
+  "all_ok": true,
+  "assessment": {
+    "all_ok": true,
+    "crash_matrix": {
+      "all_converged": true,
+      "failpoints_feature": true,
+      "rows": [
+        {
+          "all_ok": true,
+          "authority_intact": true,
+          "converged": true,
+          "converged_action": "relocated",
+          "digest_intact": true,
+          "exactly_one_home": true,
+          "failpoint": "tier_after_intent",
+          "fired": true,
+          "remote_objects": 1,
+          "volume_opens": true
+        },
+        {
+          "all_ok": true,
+          "authority_intact": true,
+          "converged": true,
+          "converged_action": "relocated",
+          "digest_intact": true,
+          "exactly_one_home": true,
+          "failpoint": "tier_after_remote_copy",
+          "fired": true,
+          "remote_objects": 1,
+          "volume_opens": true
+        },
+        {
+          "all_ok": true,
+          "authority_intact": true,
+          "converged": true,
+          "converged_action": "relocated",
+          "digest_intact": true,
+          "exactly_one_home": true,
+          "failpoint": "tier_after_verified",
+          "fired": true,
+          "remote_objects": 1,
+          "volume_opens": true
+        },
+        {
+          "all_ok": true,
+          "authority_intact": true,
+          "converged": true,
+          "converged_action": "already_released",
+          "digest_intact": true,
+          "exactly_one_home": true,
+          "failpoint": "tier_after_released",
+          "fired": true,
+          "remote_objects": 1,
+          "volume_opens": true
+        },
+        {
+          "all_ok": true,
+          "authority_intact": true,
+          "converged": true,
+          "converged_action": "already_released",
+          "digest_intact": true,
+          "exactly_one_home": true,
+          "failpoint": "tier_after_local_delete",
+          "fired": true,
+          "remote_objects": 1,
+          "volume_opens": true
+        },
+        {
+          "all_ok": true,
+          "authority_intact": true,
+          "converged": true,
+          "converged_action": "recalled",
+          "digest_intact": true,
+          "exactly_one_home": true,
+          "failpoint": "tier_after_recall",
+          "fired": true,
+          "remote_objects": 1,
+          "volume_opens": true
+        }
+      ],
+      "rows_count": 6
+    },
+    "idempotence": {
+      "idempotent_copy": true,
+      "remote_objects_for_probe": 1,
+      "second_relocation_action": "already_released"
+    },
+    "identity": {
+      "all_boundaries_byte_identical": true,
+      "boundaries_checked": 41,
+      "committed_digest_after": "0e2a644ccb9ce0407bd0f170f2cafa35979e7c8623fc6f72db09b178b761b6dc",
+      "committed_digest_before": "0e2a644ccb9ce0407bd0f170f2cafa35979e7c8623fc6f72db09b178b761b6dc",
+      "committed_digest_unchanged": true,
+      "committed_root_after": 1068918,
+      "committed_root_before": 1068918,
+      "committed_root_unchanged": true,
+      "deep_verify_after": true,
+      "deep_verify_before": true,
+      "read_after_relocate_byte_equivalence": true
+    },
+    "relocation": {
+      "bytes_relocated": 1002542,
+      "digest_matches": 10,
+      "digest_mismatches": 0,
+      "local_authoritative_bytes_after": 66412,
+      "local_authoritative_bytes_before": 1068954,
+      "local_bytes_reduced": true,
+      "segments_relocated": 10,
+      "segments_total": 11,
+      "tier_bytes": 1002542,
+      "total_authoritative_bytes_after": 1068918,
+      "total_authoritative_bytes_before": 1068918,
+      "total_authority_unchanged": true
+    },
+    "tier_unavailable": {
+      "authority_intact_after_restore": true,
+      "error_is_typed": true,
+      "mismatches_reported": 10,
+      "unavailable_segments_reported": 10
+    },
+    "verify_before_forget": {
+      "fault_after_remote_copy_local_survives": true
+    }
+  },
+  "crash_matrix_converged": true,
+  "environment": {
+    "bench": {
+      "cgroup_memory_max": "8589934592",
+      "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "container_image": null,
+      "cores_visible": 8,
+      "cpu_max": "800000 100000",
+      "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+      "fuse_enable_uring": true,
+      "kernel_release": "7.2.9-2-cachyos",
+      "likely_container": true,
+      "machine": "x86_64",
+      "perf_counters_available": false,
+      "perf_event_open_error": "Operation not permitted (os error 1)",
+      "perf_event_paranoid": "2",
+      "ram_total_bytes": 134723346432
+    },
+    "features": [
+      "failpoints"
+    ],
+    "profile": "release"
+  },
+  "generated_by": "tests/tier_relocation.rs",
+  "note": "Single-run, single-host, BOUNDED measurements. Sealed immutable segments are relocated from the local backing store to a cold tier WITHOUT withdrawing authority: the tier copy is written, fsynced, read back and digest-verified, and only then is the local copy removed, after a durable `Released` transition (Kafka KIP-405). The committed root and every committed root's bytes are byte-identical before and after; the active head segment is never relocatable. Absolute bytes are host/build dependent; the identity and the bookkeeping are the point.",
+  "schema": "orfs.performance.tier-relocation.v1",
+  "workload": {
+    "boundaries": 41,
+    "chunk_bytes": 32768,
+    "chunks_per_object": 4,
+    "committed_bytes": 1068918,
+    "committed_root": 1068918,
+    "objects": 8,
+    "segment_size": 131072
+  }
+}

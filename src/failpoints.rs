@@ -78,6 +78,24 @@ pub enum Failpoint {
     DuringSegmentRollover,
     /// 11. During a directory `fsync` (segment-directory durability).
     DuringDirectorySync,
+    /// 12. Tier relocation (Phase 76): after the durable `Copying` intent record,
+    ///     before the cold-tier copy is written.
+    TierAfterIntent,
+    /// 13. Tier relocation: after the cold-tier copy is written and fsynced,
+    ///     before it is read back and digest-verified.
+    TierAfterRemoteCopy,
+    /// 14. Tier relocation: after the `Copied{verified}` transition is durable,
+    ///     before `Released`.
+    TierAfterVerified,
+    /// 15. Tier relocation: after the `Released` transition is durable, before
+    ///     the local copy is (idempotently) deleted.
+    TierAfterReleased,
+    /// 16. Tier relocation: after the local copy is deleted and the log directory
+    ///     fsynced.
+    TierAfterLocalDelete,
+    /// 17. Tier recall: after a recalled local copy is restored and verified,
+    ///     before the `Recalled` transition is recorded.
+    TierAfterRecall,
 }
 
 impl Failpoint {
@@ -96,6 +114,20 @@ impl Failpoint {
         Failpoint::DuringDirectorySync,
     ];
 
+    /// The tier-relocation transitions (Phase 76, items 12–17). Kept *separate*
+    /// from [`Failpoint::ALL`] so the §34 crash matrix (which arms every
+    /// [`Failpoint::ALL`] item on the commit path and requires each to fire) is
+    /// unaffected by relocation failpoints that only fire in
+    /// [`crate::tiering`]. `from_name` searches both.
+    pub const TIER_ALL: [Failpoint; 6] = [
+        Failpoint::TierAfterIntent,
+        Failpoint::TierAfterRemoteCopy,
+        Failpoint::TierAfterVerified,
+        Failpoint::TierAfterReleased,
+        Failpoint::TierAfterLocalDelete,
+        Failpoint::TierAfterRecall,
+    ];
+
     /// The stable snake-case name used in `ORFS_FAILPOINT` and evidence.
     pub const fn name(self) -> &'static str {
         match self {
@@ -110,12 +142,22 @@ impl Failpoint {
             Failpoint::AfterPublicationBeforeSync => "after_publication_before_sync",
             Failpoint::DuringSegmentRollover => "during_segment_rollover",
             Failpoint::DuringDirectorySync => "during_directory_sync",
+            Failpoint::TierAfterIntent => "tier_after_intent",
+            Failpoint::TierAfterRemoteCopy => "tier_after_remote_copy",
+            Failpoint::TierAfterVerified => "tier_after_verified",
+            Failpoint::TierAfterReleased => "tier_after_released",
+            Failpoint::TierAfterLocalDelete => "tier_after_local_delete",
+            Failpoint::TierAfterRecall => "tier_after_recall",
         }
     }
 
-    /// Parse a failpoint from its stable name.
+    /// Parse a failpoint from its stable name (either the §34 set or the tier
+    /// relocation transitions).
     pub fn from_name(name: &str) -> Option<Failpoint> {
-        Failpoint::ALL.into_iter().find(|f| f.name() == name)
+        Failpoint::ALL
+            .into_iter()
+            .chain(Failpoint::TIER_ALL)
+            .find(|f| f.name() == name)
     }
 }
 

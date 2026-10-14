@@ -34,8 +34,8 @@ use crate::error::{OrfsError, Result};
 use crate::failpoints::{self, Failpoint};
 use crate::record::{Record, RecordHeader, RecordType, TypeClass, HEADER_LEN, MAX_PAYLOAD_LEN};
 use crate::segment::{
-    discover_segment_ids, fsync_dir, segment_file_name, ReadAt, Segment, SegmentExtent,
-    SegmentLocator,
+    discover_segment_ids, fsync_dir, segment_file_name, LocalSegments, ReadAt, Segment,
+    SegmentExtent, SegmentLocator, SegmentSource, SharedSegmentSource,
 };
 use crate::transaction::{
     bracket_checksum, verify_bracket, AbortReason, TxAbortPayload, TxBeginPayload, TxCommitPayload,
@@ -381,12 +381,21 @@ impl TxMachine {
 /// This validates framing, transaction structure, and sequence continuity, and
 /// locates both the committed root and any abandoned physical tail.
 pub fn scan_log(dir: &Path) -> Result<LogScan> {
-    let ids = discover_segment_ids(dir)?;
+    scan_log_with(&LocalSegments::new(dir))
+}
+
+/// Scan the segments exposed by `source` without modifying anything.
+///
+/// The tier-aware variant of [`scan_log`]: a [`SegmentSource`] may resolve a
+/// sealed segment to a relocated tier copy (Phase 76), so a volume whose
+/// segments have been relocated scans and validates **identically** to the
+/// un-relocated volume. A segment the source cannot resolve (an offline tier, or
+/// a corrupt catalogue) surfaces as a typed error, never as a silently shorter
+/// history.
+pub fn scan_log_with(source: &dyn SegmentSource) -> Result<LogScan> {
+    let ids = source.discover()?;
     if ids.is_empty() {
-        return Err(OrfsError::Corrupt(format!(
-            "log directory {} contains no segments",
-            dir.display()
-        )));
+        return Err(OrfsError::Corrupt("log contains no segments".to_string()));
     }
     let mut machine = TxMachine::default();
     let mut extents: Vec<SegmentExtent> = Vec::with_capacity(ids.len());
@@ -397,7 +406,7 @@ pub fn scan_log(dir: &Path) -> Result<LogScan> {
 
     for (i, &id) in ids.iter().enumerate() {
         let is_last = i + 1 == ids.len();
-        let reader = ReadAt::open(dir, id)?;
+        let reader = ReadAt::open_path(&source.resolve_path(id)?, id)?;
         let physical_len = reader.len()?;
         physical_end = id.checked_add(physical_len).ok_or(OrfsError::Overflow {
             what: "segment physical end",
@@ -646,25 +655,34 @@ fn quarantine_after(dir: &Path, extents: &[SegmentExtent], committed: u64) -> Re
 /// A read-only iterator over validated canonical records.
 pub struct RecordReader {
     reader: Option<(u64, ReadAt)>,
-    dir: PathBuf,
+    source: SharedSegmentSource,
     extents: Vec<SegmentExtent>,
     end: u64,
     offset: u64,
 }
 
 impl RecordReader {
-    /// Iterate the canonical records in `[0, end)`.
+    /// Iterate the canonical records in `[0, end)` (local segments).
     pub fn new(dir: &Path, extents: &[SegmentExtent], end: u64) -> RecordReader {
+        Self::new_with_source(Arc::new(LocalSegments::new(dir)), extents, end)
+    }
+
+    /// Iterate the canonical records in `[0, end)` through an explicit source.
+    pub fn new_with_source(
+        source: SharedSegmentSource,
+        extents: &[SegmentExtent],
+        end: u64,
+    ) -> RecordReader {
         RecordReader {
             reader: None,
-            dir: dir.to_path_buf(),
+            source,
             extents: extents.to_vec(),
             end,
             offset: 0,
         }
     }
 
-    /// Iterate the canonical records in `[start, end)`.
+    /// Iterate the canonical records in `[start, end)` (local segments).
     ///
     /// `start` must be a committed transaction boundary (a record boundary), so
     /// that iteration begins exactly at a framed record. Used by checkpoint
@@ -675,9 +693,19 @@ impl RecordReader {
         start: u64,
         end: u64,
     ) -> RecordReader {
+        Self::starting_at_with_source(Arc::new(LocalSegments::new(dir)), extents, start, end)
+    }
+
+    /// Iterate the canonical records in `[start, end)` through an explicit source.
+    pub fn starting_at_with_source(
+        source: SharedSegmentSource,
+        extents: &[SegmentExtent],
+        start: u64,
+        end: u64,
+    ) -> RecordReader {
         RecordReader {
             reader: None,
-            dir: dir.to_path_buf(),
+            source,
             extents: extents.to_vec(),
             end,
             offset: start,
@@ -702,7 +730,10 @@ impl RecordReader {
             OrfsError::Corrupt(format!("no segment covers offset {}", self.offset))
         })?;
         if self.reader.as_ref().map(|(id, _)| *id) != Some(sid) {
-            self.reader = Some((sid, ReadAt::open(&self.dir, sid)?));
+            self.reader = Some((
+                sid,
+                ReadAt::open_path(&self.source.resolve_path(sid)?, sid)?,
+            ));
         }
         let reader = &self.reader.as_ref().expect("reader opened").1;
         let avail = valid
@@ -888,14 +919,14 @@ impl Drop for RootPin {
 /// observe different bytes than a freshly opened one. Reusing it removes one
 /// `open(2)`/`close(2)` per request from the hot read path (Phase 18).
 struct SegmentCache {
-    dir: PathBuf,
+    source: SharedSegmentSource,
     handles: BTreeMap<u64, Arc<ReadAt>>,
 }
 
 impl SegmentCache {
-    fn new(dir: PathBuf) -> SegmentCache {
+    fn new(source: SharedSegmentSource) -> SegmentCache {
         SegmentCache {
-            dir,
+            source,
             handles: BTreeMap::new(),
         }
     }
@@ -904,7 +935,8 @@ impl SegmentCache {
         if let Some(h) = self.handles.get(&id) {
             return Ok(h.clone());
         }
-        let h = Arc::new(ReadAt::open(&self.dir, id)?);
+        let path = self.source.resolve_path(id)?;
+        let h = Arc::new(ReadAt::open_path(&path, id)?);
         self.handles.insert(id, h.clone());
         Ok(h)
     }
@@ -1026,6 +1058,11 @@ pub struct Log {
     /// every [`LogView`] handed to a reader, so the writer and all concurrent
     /// readers reuse the same open descriptors (Phase 19).
     readers: Arc<Mutex<SegmentCache>>,
+    /// The segment source every read resolves through (Phase 76). Local by
+    /// default ([`LocalSegments`]); a tier-aware source when the volume has
+    /// relocated sealed segments, so the read path is agnostic to *where* a
+    /// segment physically lives.
+    source: SharedSegmentSource,
     /// Authoritative-space admission control and the degraded/read-only latch
     /// (Phase 23; research I8, §30, §31).
     capacity: CapacityGovernor,
@@ -1053,6 +1090,7 @@ impl Log {
             id: 0,
             valid_len: 0,
         });
+        let source: SharedSegmentSource = Arc::new(LocalSegments::new(dir));
         Ok(Log {
             dir: dir.to_path_buf(),
             segment_size,
@@ -1077,7 +1115,8 @@ impl Log {
             recovery: RecoveryDisposition::Clean,
             watermark: None,
             durable_watermark: None,
-            readers: Arc::new(Mutex::new(SegmentCache::new(dir.to_path_buf()))),
+            readers: Arc::new(Mutex::new(SegmentCache::new(source.clone()))),
+            source,
             capacity: {
                 let mut g = CapacityGovernor::new(CapacityPolicy::default());
                 g.resolve_from_backing(dir, 0);
@@ -1095,6 +1134,19 @@ impl Log {
         Self::open_with_pins(dir, segment_size, mode, RootPins::new())
     }
 
+    /// Open an existing log resolving segments through `source` (Phase 76).
+    ///
+    /// The convenience form of [`Log::open_resolved`] with a fresh pin registry,
+    /// used by [`crate::volume::Volume::open`] to make relocation transparent.
+    pub fn open_with_source(
+        dir: &Path,
+        segment_size: u64,
+        mode: OpenMode,
+        source: SharedSegmentSource,
+    ) -> Result<Log> {
+        Self::open_resolved(dir, segment_size, mode, RootPins::new(), source)
+    }
+
     /// Open an existing log with a caller-supplied committed-root pin registry.
     ///
     /// A read-only handle opened over the same volume as a writer can share the
@@ -1106,7 +1158,32 @@ impl Log {
         mode: OpenMode,
         pins: Arc<RootPins>,
     ) -> Result<Log> {
-        let scan = scan_log(dir)?;
+        Self::open_resolved(
+            dir,
+            segment_size,
+            mode,
+            pins,
+            Arc::new(LocalSegments::new(dir)),
+        )
+    }
+
+    /// Open an existing log with a caller-supplied committed-root pin registry
+    /// **and** a segment source (Phase 76).
+    ///
+    /// The source lets a caller make relocation transparent: a tier-aware source
+    /// ([`crate::tiering::TieredSegments`]) resolves a `Released` sealed segment
+    /// from the cold tier, so `open`/`scan`/`replay` see the same bytes at the
+    /// same logical offsets. `dir` remains the local log directory (where the
+    /// active head segment and the watermark live), so a relocated volume still
+    /// has exactly one local home for its head.
+    pub fn open_resolved(
+        dir: &Path,
+        segment_size: u64,
+        mode: OpenMode,
+        pins: Arc<RootPins>,
+        source: SharedSegmentSource,
+    ) -> Result<Log> {
+        let scan = scan_log_with(source.as_ref())?;
         let committed = scan.committed_end_offset;
         let mut locator = SegmentLocator::from_extents(scan.extents.clone())?;
         let mut writer = None;
@@ -1202,7 +1279,8 @@ impl Log {
             recovery,
             watermark: recovered_wm,
             durable_watermark: disk_watermark,
-            readers: Arc::new(Mutex::new(SegmentCache::new(dir.to_path_buf()))),
+            readers: Arc::new(Mutex::new(SegmentCache::new(source.clone()))),
+            source,
             capacity: {
                 let mut g = CapacityGovernor::new(CapacityPolicy::default());
                 g.resolve_from_backing(dir, committed);
@@ -1916,7 +1994,8 @@ impl Log {
     /// Used by the commit sequencer to validate the `TX_COMMIT` record from the
     /// backing store (not merely from the in-memory buffer) before publishing.
     pub(crate) fn read_back(&self, res: &AppendReservation) -> Result<Vec<u8>> {
-        let reader = ReadAt::open(&self.dir, res.segment_id)?;
+        let path = self.source.resolve_path(res.segment_id)?;
+        let reader = ReadAt::open_path(&path, res.segment_id)?;
         let mut buf = vec![0u8; res.len as usize];
         match &self.io {
             BackingEngine::Sync => reader.read_exact_at(res.physical_offset, &mut buf)?,
@@ -2134,7 +2213,7 @@ impl Log {
 
     /// A validated record iterator over `[0, end)`.
     pub fn records_upto(&self, end: u64) -> RecordReader {
-        RecordReader::new(&self.dir, self.locator.extents(), end)
+        RecordReader::new_with_source(self.source.clone(), self.locator.extents(), end)
     }
 
     /// A validated record iterator over `[start, end)`.
@@ -2143,7 +2222,12 @@ impl Log {
     /// begins exactly there and reads no bytes before it (the checkpoint-replay
     /// fast path).
     pub fn records_from(&self, start: u64, end: u64) -> RecordReader {
-        RecordReader::starting_at(&self.dir, self.locator.extents(), start, end)
+        RecordReader::starting_at_with_source(
+            self.source.clone(),
+            self.locator.extents(),
+            start,
+            end,
+        )
     }
 
     /// Read the single committed record whose first byte is at `offset`.
@@ -2402,7 +2486,8 @@ impl Log {
             }
             let take = e.valid_len.min(remaining);
             if take > 0 {
-                let reader = ReadAt::open(&self.dir, e.id)?;
+                let path = self.source.resolve_path(e.id)?;
+                let reader = ReadAt::open_path(&path, e.id)?;
                 let mut buf = vec![0u8; take as usize];
                 reader.read_exact_at(0, &mut buf)?;
                 out.extend_from_slice(&buf);

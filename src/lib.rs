@@ -150,6 +150,7 @@ pub mod suffix;
 /// of it. See `docs/CONCURRENCY.md` §10.
 #[cfg(any(loom, test))]
 pub mod sync_model;
+pub mod tiering;
 pub mod transaction;
 pub mod trigram;
 pub mod uring;

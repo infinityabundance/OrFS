@@ -143,6 +143,21 @@ pub enum OrfsError {
     #[error("integer overflow while decoding {what}")]
     Overflow { what: &'static str },
 
+    /// The **cold tier** holding a relocated (released) segment is unreachable
+    /// (Phase 76): the tier root does not exist, or a segment the relocation
+    /// catalogue marks `Released` cannot be resolved. A read that needs a
+    /// released segment returns this typed error rather than wrong or truncated
+    /// data; the open is refused rather than silently shortening history.
+    #[error("cold tier unavailable: {0}")]
+    TierUnavailable(String),
+
+    /// A relocated segment's cold-tier copy is missing or its digest does not
+    /// match the digest recorded in the relocation catalogue (Phase 76). Authority
+    /// is never fabricated or destroyed: the fault is reported and the read is
+    /// refused.
+    #[error("cold tier copy is corrupt or missing: {0}")]
+    TierCorrupt(String),
+
     /// A fault-injection failpoint fired (only reachable in `failpoints` builds).
     /// The write path must be discarded; see `docs/TRANSACTIONS.md`.
     #[error("injected failpoint: {0}")]
@@ -200,6 +215,8 @@ impl OrfsError {
             OrfsError::ReadOnly(_) => libc::EROFS,
             OrfsError::Pinned(_) => libc::EBUSY,
             OrfsError::Overflow { .. } => libc::EIO,
+            OrfsError::TierUnavailable(_) => libc::EIO,
+            OrfsError::TierCorrupt(_) => libc::EIO,
             OrfsError::Failpoint(_) => libc::EIO,
         }
     }

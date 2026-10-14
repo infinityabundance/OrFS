@@ -22,7 +22,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::capacity::{CapacityPolicy, CapacityReport, CapacityStatus};
 use crate::error::{OrfsError, Result};
-use crate::log::{scan_log, Log, OpenMode};
+use crate::log::{Log, OpenMode};
 use crate::record::{
     get_u16, get_u32, get_u64, put_u16, put_u32, put_u64, Record, RecordType, TypeClass,
 };
@@ -381,7 +381,11 @@ impl Volume {
     /// Open an existing volume.
     pub fn open(dir: &Path, mode: OpenMode) -> Result<Volume> {
         let meta = Self::read_meta(dir)?;
-        let log = Log::open(&Self::log_dir(dir), meta.segment_size, mode)?;
+        // Phase 76: resolve sealed segments through the cold tier when the
+        // relocation catalogue marks them released, so a volume with relocated
+        // segments opens, scans, and replays identically to the un-relocated one.
+        let source = crate::tiering::segment_source(dir, meta.uuid)?;
+        let log = Log::open_with_source(&Self::log_dir(dir), meta.segment_size, mode, source)?;
         // Decide compatibility from the authoritative log itself. An unknown
         // *higher* log format version is refused here, so a future-format volume
         // is never interpreted on a guess (no silent repair; `docs/RECOVERY.md`).
@@ -684,9 +688,11 @@ pub struct VerifyReport {
     pub checks: Vec<VerifyCheck>,
 }
 
-/// Convenience: scan a volume's log directory read-only (no open).
+/// Convenience: scan a volume's log read-only (no open). Tier-aware: a volume
+/// whose sealed segments have been relocated to the cold tier (Phase 76) is
+/// scanned identically to the un-relocated volume.
 pub fn scan_volume_log(dir: &Path) -> Result<crate::log::LogScan> {
-    scan_log(&Volume::log_dir(dir))
+    crate::tiering::scan_volume(dir)
 }
 
 #[cfg(test)]

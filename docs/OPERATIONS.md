@@ -181,6 +181,32 @@ Behaviour is ordered, typed, and never silent (`docs/CAPACITY.md` §3, §11, §1
 `orfs doctor --capacity --json` reports `degraded` and `degraded_reason` so a
 monitor can alert on the latch.
 
+### 5.1 Cold-tier relocation — shrink the *local* footprint without reclaiming history
+
+When the **local** device must hold less retained history but the history itself
+must be kept, move the cold (sealed) part of it to a cheaper tier:
+
+```sh
+orfs tier relocate --backing <dir> --tier-root <cold> [--segment <id> | --all]
+orfs tier list     --backing <dir>     # per-segment state, digest, home, local bytes
+orfs tier verify   --backing <dir>     # re-verify every relocated segment's digest
+orfs tier recall   --backing <dir>     # restore a released segment to the local store
+```
+
+Relocation moves a **copy** (`docs/TIERING.md`): the tier copy is written, fsynced,
+read back and digest-verified, and only then is the local copy removed — after a
+durable `Released` transition (Kafka KIP-405). It **never reclaims** and never
+withdraws authority: the committed root and watermark are unchanged.
+
+* The **active head segment is never relocatable**; only sealed (immutable) segments.
+* `orfs tier list` reports the **local authoritative footprint before/after** — it
+  drops — while `total_authoritative_bytes` (local + tier) is **unchanged**.
+* If the cold tier is offline, a read needing a released segment returns the typed
+  `TierUnavailable` and the open is **refused** — never silently shortened.
+  `orfs tier verify` names the offline segments explicitly.
+* A crash or an interrupted relocation is **idempotent and convergent**: re-run the
+  same command. A fault in the relocation catalogue **fails closed**.
+
 ---
 
 ## 6. Where the security model lives
@@ -216,15 +242,21 @@ orfs inspect [--json] <dir>
 orfs verify [--deep] <dir>      # read-only; surfaces damage, repairs nothing
 orfs recover <dir>             # quarantine an abandoned tail; refuse corruption
 
+# Cold-tier relocation (sealed segments only; never withdraws authority)
+orfs tier relocate --backing <dir> --tier-root <cold> [--segment <id> | --all]
+orfs tier list     --backing <dir>
+orfs tier verify   --backing <dir>
+orfs tier recall   --backing <dir> [--segment <id>]
+
 # Query (typed API, separate from POSIX reads)
 orfs query <path> --pattern <bytes> [--hex] [--limit N] [--build] [--no-recurse] [--json]
 ```
 
-References: `docs/CAPACITY.md` (capacity runbook), `docs/RECOVERY.md` (recovery
-states and refusals), `docs/PERFORMANCE.md` §9.5/§13 (mount and history-scaling
-latency), `docs/LIMITATIONS.md` §5/§11/§12/§13, `docs/THREAT-MODEL.md` (security
-model), `docs/FUSE_URING.md` (F2 transport), `docs/FUSE-SEMANTICS.md` (POSIX
-semantics).
+References: `docs/CAPACITY.md` (capacity runbook), `docs/TIERING.md` (cold-tier
+relocation), `docs/RECOVERY.md` (recovery states and refusals), `docs/PERFORMANCE.md`
+§9.5/§13 (mount and history-scaling latency), `docs/LIMITATIONS.md` §5/§11/§12/§13,
+`docs/THREAT-MODEL.md` (security model), `docs/FUSE_URING.md` (F2 transport),
+`docs/FUSE-SEMANTICS.md` (POSIX semantics).
 
 ---
 

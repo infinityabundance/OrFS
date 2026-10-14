@@ -76,7 +76,7 @@ correctness contract (see `src/lib.rs`):
 
 ---
 
-## 4. The ordered build phases (0–75)
+## 4. The ordered build phases (0–76)
 
 Each phase is independently testable and has an exit gate. `research/OrFS.md`
 (milestones M0–M8 and the acceptance requirements) governs the substance of each
@@ -161,23 +161,24 @@ per-phase record.
 | 73 | One-command continuous verification (reviewer item #12): `scripts/container-verify.sh` is the pre-PR entry point — it runs `check-all`, the default and `--features failpoints` suites, the POSIX / native fault-injection / `io_uring` / Loom courts, and the docs-receipts check again, one container at a time, with a per-stage `PASS`/`FAIL`/`SKIPPED` summary (`--fast` runs the cheap, always-available subset); publishes the volatile-cache court's scan-resistance **hit-rate** comparison (admission 95.2 % vs FIFO 88.0 % vs a faithful LRU 95.2 %) and the steady-state `allocs/read` (8 → 2) in `docs/PERFORMANCE.md` §17/§18 (reviewer item #10) | **complete** |
 | 74 | F2 honest p99 **decision** and external comparison (reviewer items #3, #9): `tests/f2_concurrency.rs` records **p99.99** per transport across 1–64 readers plus the F2 FUSE ring's **SQ/CQ counters** (`sq_full_events`, `cq_max_len`), and a **PMU** pass (`tests/support/pmu.rs::open_pid`) attributes the **`orfs-f2*` servicer threads** (~54 k cycles / ~220 k instructions per 4 KiB read); `tests/external_comparison.rs` runs the identical `src/bench.rs` workloads through mounted OrFS **F0** and **F2 queue-affine** beside the committed ext4/tmpfs baselines. `docs/PERFORMANCE.md` §31 publishes the decision — F2 queue-affine matches F0's p50 and 93–110 % of its throughput (winning at 64 readers) but **loses p99 from 4 readers up**, so **use F0 for latency, `ORFS_F2_RINGS=8` for throughput-bound bulk reads** — and the head-to-head with the honest losses (rand 4 KiB p99 ~70–118× worse; seq read ~17–40× lower). Adds p99.99 to the 64-thread scaling (§22) | **complete** |
 | 75 | Storage economics — separated accounting + a validated retained-growth forecast: `src/capacity.rs` accounts every byte beneath a volume in **four non-overlapping categories** (permanent authoritative history; rebuildable manifestations; metadata; temporary construction space), proves the four totals sum to the independently measured on-disk total, and predicts retained-authority growth and time-to-full from a **written**-bytes rate and an overwrite ratio. `orfs doctor --economics`/`--capacity` report both. `tests/storage_economics.rs` drives a known workload (8 MiB new + 8 MiB overwrite, plus a manifested arm) and **validates** the prediction against the measured growth (φ·W; relative error ≤ 0.05), falsifying the naive live-bytes model (100 % off) — an overwrite still appends. `docs/STORAGE-ECONOMICS.md`; forward-refs the tier-relocation phase (KIP-405 principles) | **complete** |
+| 76 | Immutable tier relocation: `src/tiering.rs` moves **sealed** (immutable) authoritative segments to a cheaper cold tier **without withdrawing authority**. An append-only catalogue in the **Metadata** category is the strongly-consistent, separate state; each segment has a durable state machine `Local → Copying{intent} → Copied{verified} → Released` (plus `Recalled`) with each transition fsynced before the next destructive step — the local copy is removed only after the tier copy is written, fsynced, read back and digest-verified, and after `Released` is durable (Kafka KIP-405). The tier is **content-addressed** `(uuid, segment id, digest)`, so copy/delete are idempotent and a crash converges. A `SegmentSource` makes the log layer agnostic to where a segment lives, so a volume with relocated segments opens/scans/recovers/verifies **identically**; the active head is never relocatable; an offline tier returns a typed `TierUnavailable` and refuses the open (never silently shortened). `tests/tier_relocation.rs` proves identity, verify-before-forget, a six-row crash matrix, catalogue fail-closed, and mixed local+remote recovery. `docs/TIERING.md` | **complete** |
 
 ### Implementation status (accurate)
 
-Phases 0–75 are implemented; `docs/PROGRESS.md` is the per-phase record.
+Phases 0–76 are implemented; `docs/PROGRESS.md` is the per-phase record.
 
 The crate `orfs` v0.2.0 is published on crates.io (see `docs/PUBLISHING.md`);
 v0.1.0 was the first release.
 
-- The `orfs` crate builds, its **499** tests (default) pass (+1 ignored), and
-  `cargo test --features failpoints` adds the crash-injection court (509 tests in
+- The `orfs` crate builds, its **512** tests (default) pass (+1 ignored), and
+  `cargo test --features failpoints` adds the crash-injection court (523 tests in
   total); `cargo fmt -p orfs --check` / `clippy --all-targets -- -D warnings` are
   clean **inside the pinned container** (`scripts/container-*.sh`).
 - `src/capabilities.rs` + `orfs doctor` perform a **real** kernel/container
   capability probe (no mutation of host state).
 - The CLI is fully wired: `doctor`, `init`, `inspect`, `verify`, `recover`,
-  `mount`/`unmount`, `stat`, `snapshot`, `manifest`, `grow`, `query`, and `bench`
-  are implemented and exercised by tests.
+  `tier`, `mount`/`unmount`, `stat`, `snapshot`, `manifest`, `grow`, `query`, and
+  `bench` are implemented and exercised by tests.
 - EKBLOOM `v0.3.0` is consumed **unchanged** as an exact-version crates.io
   dependency (`ekbloom = "=0.3.0"`) and exercised by round-trip/equivalence
   tests; its state mathematics is not reimplemented here. A clean checkout builds
@@ -238,7 +239,8 @@ Normative implementation documents to be produced. Status is marked honestly.
 | `docs/OPERATIONS.md` | The Docker-only operator runbook: `doctor --capacity` monitoring, `recover`, mount latency as history grows, POSIX operational notes, capacity/`ENOSPC` and the read-only transition, and where the security model lives | **exists** (Phase 71) |
 | `docs/REJECTED.md` | Design candidates deliberately rejected (the image pixel-surface pyramid), with reasons and reconsideration conditions | **exists** (Phase 71) |
 | `docs/CAPACITY.md` | The volume capacity policy, `orfs doctor --capacity`, the pre-flight `CapacityExhausted` refusal, and the operator runbook for disk filling and the read-only transition | **exists** (Phase 23; runbook Phase 68) |
-| `docs/STORAGE-ECONOMICS.md` | The four-category storage accounting (`orfs doctor --economics`), the retained-growth forecast model and its assumptions, the operator budgeting procedure, and the forward reference to tier relocation | **exists** (Phase 75) |
+| `docs/STORAGE-ECONOMICS.md` | The four-category storage accounting (`orfs doctor --economics`), the retained-growth forecast model and its assumptions, the operator budgeting procedure, and the pointer to tier relocation | **exists** (Phase 75) |
+| `docs/TIERING.md` | Immutable tier relocation (Phase 76): the durable `Local → Copying → Copied → Released → Recalled` state machine, the integrity contract (identity, verify-before-forget, digest), idempotency and the crash matrix, the failure model (crash / tier unavailable / tier corruption / catalogue corruption) and the fail-closed rule, the `SegmentSource` log-layer integration, the operator procedure, and what relocation does **not** do | **exists** (Phase 76) |
 
 Every normative document above exists; there are no planned-only documents.
 

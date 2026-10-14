@@ -363,6 +363,90 @@
       "fields": [
         {"group": 1, "label": "predicted-vs-actual tolerance", "evidence": "evidence/performance/storage-economics.json", "path": "tolerance"}
       ]
+    },
+    {
+      "id": "tier-reloc-segments",
+      "doc": "docs/TIERING.md",
+      "section": "§10",
+      "claim": "tier relocation: sealed segments relocated of the total, and the bytes moved",
+      "regex": "\\*\\*([0-9][0-9 ]*) sealed segments\\*\\* of \\*\\*([0-9][0-9 ]*)\\*\\* were relocated; \\*\\*([0-9][0-9 ]*) bytes\\*\\* moved",
+      "fields": [
+        {"group": 1, "label": "segments relocated", "evidence": "evidence/performance/tier-relocation.json", "path": "assessment.relocation.segments_relocated"},
+        {"group": 2, "label": "segments total", "evidence": "evidence/performance/tier-relocation.json", "path": "assessment.relocation.segments_total"},
+        {"group": 3, "label": "bytes relocated", "evidence": "evidence/performance/tier-relocation.json", "path": "assessment.relocation.bytes_relocated"}
+      ]
+    },
+    {
+      "id": "tier-reloc-digest",
+      "doc": "docs/TIERING.md",
+      "section": "§10",
+      "claim": "tier relocation: digest matches vs mismatches",
+      "regex": "\\*\\*Digest matches ([0-9]+), mismatches ([0-9]+)\\*\\*",
+      "fields": [
+        {"group": 1, "label": "digest matches", "evidence": "evidence/performance/tier-relocation.json", "path": "assessment.relocation.digest_matches"},
+        {"group": 2, "label": "digest mismatches", "evidence": "evidence/performance/tier-relocation.json", "path": "assessment.relocation.digest_mismatches"}
+      ]
+    },
+    {
+      "id": "tier-reloc-boundaries",
+      "doc": "docs/TIERING.md",
+      "section": "§10",
+      "claim": "tier relocation: committed boundaries checked (all byte-identical)",
+      "regex": "\\*\\*([0-9][0-9 ]*)\\*\\* committed boundaries were all byte-identical",
+      "fields": [
+        {"group": 1, "label": "boundaries checked", "evidence": "evidence/performance/tier-relocation.json", "path": "assessment.identity.boundaries_checked"}
+      ]
+    },
+    {
+      "id": "tier-reloc-root",
+      "doc": "docs/TIERING.md",
+      "section": "§10",
+      "claim": "tier relocation: the committed root is unchanged",
+      "regex": "The committed root \\(([0-9][0-9 ]*)\\) and its digest were \\*\\*unchanged\\*\\*",
+      "fields": [
+        {"group": 1, "label": "committed root", "evidence": "evidence/performance/tier-relocation.json", "path": "assessment.identity.committed_root_before"}
+      ]
+    },
+    {
+      "id": "tier-reloc-local-footprint",
+      "doc": "docs/TIERING.md",
+      "section": "§10",
+      "claim": "tier relocation: the local authoritative footprint before/after",
+      "regex": "local authoritative footprint\\*\\* dropped from ([0-9][0-9 ]*) B to ([0-9][0-9 ]*) B",
+      "fields": [
+        {"group": 1, "label": "local authoritative bytes before", "evidence": "evidence/performance/tier-relocation.json", "path": "assessment.relocation.local_authoritative_bytes_before"},
+        {"group": 2, "label": "local authoritative bytes after", "evidence": "evidence/performance/tier-relocation.json", "path": "assessment.relocation.local_authoritative_bytes_after"}
+      ]
+    },
+    {
+      "id": "tier-reloc-total",
+      "doc": "docs/TIERING.md",
+      "section": "§10",
+      "claim": "tier relocation: the total authority is unchanged",
+      "regex": "total authority stayed ([0-9][0-9 ]*)\\*\\* B",
+      "fields": [
+        {"group": 1, "label": "total authoritative bytes after", "evidence": "evidence/performance/tier-relocation.json", "path": "assessment.relocation.total_authoritative_bytes_after"}
+      ]
+    },
+    {
+      "id": "tier-reloc-crash",
+      "doc": "docs/TIERING.md",
+      "section": "§10",
+      "claim": "tier relocation: the crash matrix row count",
+      "regex": "crash matrix\\*\\* has \\*\\*([0-9][0-9 ]*)\\*\\* rows",
+      "fields": [
+        {"group": 1, "label": "crash matrix rows", "evidence": "evidence/performance/tier-relocation.json", "path": "assessment.crash_matrix.rows_count"}
+      ]
+    },
+    {
+      "id": "tier-reloc-unavailable",
+      "doc": "docs/TIERING.md",
+      "section": "§10",
+      "claim": "tier relocation: with the tier offline, the offline segments reported",
+      "regex": "Tier unavailable\\*\\*: reads returned the typed error; \\*\\*([0-9][0-9 ]*)\\*\\* offline segments",
+      "fields": [
+        {"group": 1, "label": "offline segments reported", "evidence": "evidence/performance/tier-relocation.json", "path": "assessment.tier_unavailable.unavailable_segments_reported"}
+      ]
     }
   ]
 }

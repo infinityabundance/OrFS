@@ -408,3 +408,27 @@ the default container exposes neither `/dev/loop-control` nor
 `/dev/loop0` node). No `dm-*` result is fabricated; the fault matrix above uses
 the project's deterministic simulated device (`src/powerloss.rs`) and direct
 segment-byte injection instead.
+
+## 10. Recovery after tier relocation (Phase 76)
+
+A volume whose **sealed** segments have been relocated to a cold tier
+(`docs/TIERING.md`) opens, scans, recovers, and verifies **identically** to the
+un-relocated volume. The relocation catalogue is append-only and immutable;
+recovery reads the latest state per segment and resolves each segment's home — the
+local `or.log/<id>.seg` if present, else the tier copy when the catalogue says
+`Released`, else a **typed error**.
+
+* **A crash mid-relocation recovers by convergence.** The durable transitions
+  (`Copying → Copied → Released`) are idempotent; re-running `orfs tier relocate`
+  converges to exactly one authoritative home with the digest intact (the court
+  arms a fault after *each* transition).
+* **An offline tier is refused, never silently shortened.** A read needing a
+  released segment returns the typed `TierUnavailable`, and the open is refused
+  because the live bytes are short of the committed prefix — exactly the §5
+  guarantee (a watermark ahead of readable bytes ⇒ refuse). `orfs tier verify`
+  names the offline segments.
+* **A corrupt / truncated / removed catalogue fails closed.** A CRC/flip fault
+  makes the catalogue refuse to load; a truncation leaves the surviving state
+  (e.g. `Copied`) inconsistent with the missing local copy; removing the catalogue
+  leaves non-contiguous local ids. In every case the open is refused rather than
+  recovering a shorter history.

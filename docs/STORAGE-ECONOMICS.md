@@ -12,8 +12,10 @@ projects it, plus the operator procedure for reading both.
 and writes `evidence/performance/storage-economics.json`.
 
 > **Scope.** This phase is the *storage-economics* half of the operational control
-> plane. **Tier relocation is the follow-on phase and is not implemented here.**
-> The forward reference at the end states the constraints that phase must respect.
+> plane: the truthful accounting and the retained-growth forecast. The **tier
+> relocation** follow-on is now implemented (Phase 76, `docs/TIERING.md`): it moves
+> sealed immutable segments to a cheaper cold tier **without withdrawing authority**,
+> and the four categories below are the budget it spends against.
 
 ## 1. Why this phase exists
 
@@ -186,28 +188,39 @@ metadata tier. Source: `evidence/performance/storage-economics.json`.*
    forecast degrades **ok → warn → exhausted** as the reserve is approached
    (asserted by the court at reserves `0`, `¾·free`, and `free + 1`).
 
-## 5. Forward reference — tier relocation (the next phase)
+## 5. Tier relocation (implemented — Phase 76)
 
-Tiering is **not** implemented here, and when it lands it must obey the KIP-405
-principles this phase was designed around:
+Tier relocation is **implemented** in Phase 76; the full specification is
+`docs/TIERING.md`. It moves **sealed** (immutable) authoritative segments from the
+local backing store to a cheaper *cold tier* **without withdrawing authority**: a
+segment's bytes are copied, fsynced, read back and digest-verified, and only then
+is the local copy removed — after a durable `Released` transition. The **active
+head segment is never relocatable**, and a fault in the tier or in the relocation
+catalogue **fails closed** (a typed error or a refused open), never silently
+shortening history.
+
+It obeys the KIP-405 principles this phase was designed around:
 
 * **Identity is preserved.** A relocated segment keeps its identity (committed
   root / segment id). Relocation moves a *copy*; it never renumbers, rewrites, or
-  withdraws authoritative history.
+  withdraws authoritative history. Every committed root returns byte-identical
+  content and the committed end offset / watermark is unchanged.
 * **Verify before forgetting.** The local copy is **never** removed before the
   remote copy is verified and its location recorded — an explicit, durable state
-  transition, not an inferred one.
+  transition (`Copying → Copied → Released`), not an inferred one.
 * **Idempotent copy and delete.** Copy and delete are individually re-runnable
   after a crash, so a partial relocation converges to exactly one authoritative
   home.
-* **Metadata stays consistent and separate.** The relocation catalogue is
-  strongly consistent metadata, distinct from the data tier — the same separation
-  this document's four categories already make observable.
+* **Metadata stays consistent and separate.** The relocation catalogue lives in
+  the **Metadata** category (under `.or_bloom/`) — strongly consistent metadata,
+  distinct from the data tier — exactly the separation this document's four
+  categories already make observable.
 
-The four-category accounting is the budget those transitions will spend against:
-relocation moves bytes **between** the permanent-authoritative and
-rebuildable/metadata tiers, and the forecast continues to bound the
-non-withdrawn footprint.
+The four-category accounting is the budget those transitions spend against:
+relocation moves bytes **between** the permanent-authoritative local tier and the
+cold tier, so `orfs tier list` reports the **local authoritative footprint before
+and after** while the **total authority is unchanged**. The forecast continues to
+bound the non-withdrawn footprint (`docs/TIERING.md` §10).
 
 ## 6. Evidence and reproduction
 

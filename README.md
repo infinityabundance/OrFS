@@ -27,7 +27,9 @@ but not yet wired rejects the request with its owning phase rather than
 pretending to work.
 
 Working today: `orfs doctor` (and `orfs doctor --capacity --backing <dir>`, a
-capacity report), `orfs init`, `orfs inspect [--json]`,
+capacity report, and `orfs doctor --economics --backing <dir>`, the four-category
+storage accounting plus a validated retained-growth forecast), `orfs init`,
+`orfs inspect [--json]`,
 `orfs verify [--deep]`, `orfs recover`, and
 `orfs mount <backing> <mnt> --transport <fuse|fuse-uring> --backing-io <sync|uring> ...`
 (plus `orfs unmount`). `--transport fuse-uring` requests FUSE-over-`io_uring`
@@ -111,6 +113,7 @@ enable it (see `docs/FUSE_URING.md`).
 | 72 | ENOSPC fault injection at the edge (reviewer item #13): fill a volume to ~90/95/99/100% of its usable capacity with the deterministic Phase-23 capacity latch, prove `write + fsync` either commits cleanly or is refused with a typed ENOSPC leaving the previous root byte-identical and the volume read-only, and prove a crash at the edge then `recover` selects the newest valid committed generation and silently repairs nothing | complete |
 | 73 | One-command continuous verification (`scripts/container-verify.sh`): the pre-PR gate runs `check-all`, the default + `--features failpoints` suites, and the POSIX / native fault-injection / `io_uring` / Loom courts, then the docs-receipts check again — one container at a time, with a per-stage `PASS`/`FAIL`/`SKIPPED` summary; `--fast` runs the cheap, always-available subset. Publishes the volatile-cache scan-resistance **hit-rate** comparison (admission 95.2 % vs FIFO 88.0 % vs LRU 95.2 %) and the steady-state `allocs/read` (8 → 2) in `docs/PERFORMANCE.md` §17/§18 | complete |
 | 74 | F2 honest p99 **decision** + external comparison (reviewer items #3, #9): the F2 court records **p99.99**, the ring's **SQ/CQ counters**, and a **PMU** pass on the F2 daemon threads; `docs/PERFORMANCE.md` §31 states the call — F2 queue-affine matches F0's p50 and 93–110 % of its throughput (winning at 64 readers) but **loses p99 from 4 readers up**, so **use F0 for latency, `ORFS_F2_RINGS=8` for throughput**. Publishes the mounted **OrFS (F0/F2) vs ext4 vs tmpfs** head-to-head with the honest losses (rand 4 KiB p99 ~70–118× worse; seq read ~17–40× lower) and adds **p99.99** to the 64-thread scaling | complete |
+| 75 | Storage economics (separated accounting + a validated retained-growth forecast): `orfs doctor --economics` accounts every byte beneath a volume in **four non-overlapping categories** (permanent authoritative history / rebuildable manifestations / metadata / temporary construction space), proves they sum to the observed on-disk total, and predicts retained growth and time-to-full from a **written**-bytes rate and an overwrite ratio. The court `tests/storage_economics.rs` **falsifies** the naive live-bytes model (an overwrite still appends; prediction φ·W matches measurement within tolerance); `docs/STORAGE-ECONOMICS.md` forward-refs the tier-relocation phase | complete |
 
 Honest non-claims: the **image pixel-surface pyramid is rejected, not merely
 unimplemented** — only descriptive geometry is implemented, and the decision and

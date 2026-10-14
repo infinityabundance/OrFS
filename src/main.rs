@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use orfs::bench::{BenchConfig, BenchParams, Workload};
-use orfs::capacity::{CapacityStatus, CapacityVerdict};
+use orfs::capacity::{CapacityStatus, CapacityVerdict, ForecastInputs, StorageEconomics};
 use orfs::commit::DurabilityMode;
 use orfs::fuse::{self, BackingIo, F2Servicing, MountOptions, StatfsMode, Transport};
 use orfs::log::{scan_log, OpenMode, TailInfo, DEFAULT_SEGMENT_SIZE};
@@ -275,18 +275,41 @@ enum Command {
     },
 
     /// Report real kernel and container capabilities.
+    #[command(group(clap::ArgGroup::new("report").args(["capacity", "economics"]).multiple(true)))]
     Doctor {
         /// Report the capacity policy, live backing free space, projected growth,
         /// and a verdict for a volume (requires `--backing`).
         #[arg(long)]
         capacity: bool,
-        /// Backing volume directory to inspect (with `--capacity`).
-        #[arg(long, requires = "capacity")]
+        /// Report the four-category storage accounting and the retained-growth
+        /// forecast for a volume (requires `--backing`).
+        #[arg(long)]
+        economics: bool,
+        /// Backing volume directory to inspect (with `--capacity` or `--economics`).
+        #[arg(long, requires = "report")]
         backing: Option<PathBuf>,
         /// Judge the verdict against this reserve in bytes (default: the policy
-        /// reserve; only meaningful with `--capacity`).
-        #[arg(long, requires = "capacity")]
+        /// reserve; only meaningful with a report flag).
+        #[arg(long, requires = "report")]
         reserve: Option<u64>,
+        /// Forecast input: logical bytes written per time unit (or per transaction).
+        #[arg(long, requires = "economics")]
+        write_rate: Option<u64>,
+        /// Forecast input: fraction of written bytes that overwrite existing ranges.
+        #[arg(long, requires = "economics")]
+        overwrite_ratio: Option<f64>,
+        /// Forecast input: authoritative bytes appended per logical byte written.
+        #[arg(long, requires = "economics")]
+        authority_amplification: Option<f64>,
+        /// Forecast input: manifested bytes appended per time unit.
+        #[arg(long, requires = "economics")]
+        manifested_rate: Option<u64>,
+        /// Forecast input: metadata bytes appended per time unit.
+        #[arg(long, requires = "economics")]
+        metadata_rate: Option<u64>,
+        /// Forecast input: committed transactions per time unit.
+        #[arg(long, requires = "economics")]
+        transactions_rate: Option<u64>,
     },
 }
 
@@ -345,9 +368,30 @@ fn run(cli: &Cli) -> Result<()> {
     match &cli.command {
         Command::Doctor {
             capacity,
+            economics,
             backing,
             reserve,
-        } => doctor(cli.json, *capacity, backing.as_deref(), *reserve),
+            write_rate,
+            overwrite_ratio,
+            authority_amplification,
+            manifested_rate,
+            metadata_rate,
+            transactions_rate,
+        } => doctor(
+            cli.json,
+            *capacity,
+            *economics,
+            backing.as_deref(),
+            *reserve,
+            ForecastInputs {
+                write_bytes_per_unit: write_rate.unwrap_or(0),
+                overwrite_ratio: overwrite_ratio.unwrap_or(0.0),
+                authority_amplification: authority_amplification.unwrap_or(0.0),
+                manifested_bytes_per_unit: manifested_rate.unwrap_or(0),
+                metadata_bytes_per_unit: metadata_rate.unwrap_or(0),
+                transactions_per_unit: transactions_rate.unwrap_or(0),
+            },
+        ),
         Command::Init {
             backing,
             segment_size,
@@ -1558,7 +1602,17 @@ fn recover(backing: &Path, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn doctor(json: bool, capacity: bool, backing: Option<&Path>, reserve: Option<u64>) -> Result<()> {
+fn doctor(
+    json: bool,
+    capacity: bool,
+    economics: bool,
+    backing: Option<&Path>,
+    reserve: Option<u64>,
+    inputs: ForecastInputs,
+) -> Result<()> {
+    if economics {
+        return doctor_economics(backing, reserve, inputs, json);
+    }
     if capacity {
         return doctor_capacity(backing, reserve, json);
     }
@@ -1713,6 +1767,108 @@ fn doctor_capacity(backing: Option<&Path>, reserve: Option<u64>, json: bool) -> 
     }
     print_capacity_status(&status);
     Ok(())
+}
+
+/// `orfs doctor --economics` (Phase 75): the four-category storage accounting and
+/// the validated retained-growth forecast for a volume. Read-only.
+fn doctor_economics(
+    backing: Option<&Path>,
+    reserve: Option<u64>,
+    inputs: ForecastInputs,
+    json: bool,
+) -> Result<()> {
+    let backing = backing.ok_or_else(|| {
+        OrfsError::InvalidArgument("doctor --economics requires --backing <dir>".to_string())
+    })?;
+    let vol = Volume::open(backing, OpenMode::ReadOnly)?;
+    let report = vol.storage_economics(reserve, inputs);
+    if json {
+        let out = serde_json::json!({
+            "schema": "orfs.storage.economics.v1",
+            "orfs_version": orfs::VERSION,
+            "report": report,
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
+    print_storage_economics(&report);
+    Ok(())
+}
+
+fn print_storage_economics(r: &StorageEconomics) {
+    let acc = &r.accounting;
+    println!("OrFS storage economics — {}", r.capacity.volume);
+    println!("  accounting (four non-overlapping categories):");
+    for c in acc.categories() {
+        println!(
+            "    {:<26} {:>12} bytes  ({} file(s){}{})",
+            c.category.name(),
+            c.bytes,
+            c.file_count,
+            c.bytes_per_file
+                .map(|b| format!(", {b} bytes/file"))
+                .unwrap_or_default(),
+            if c.reclaimable {
+                ", reclaimable"
+            } else {
+                ", never reclaimable"
+            },
+        );
+    }
+    println!("    {:<26} {:>12} bytes", "total", acc.total_bytes);
+    println!(
+        "    {:<26} {:>12} bytes  (proved equal)",
+        "observed on-disk total", acc.observed_volume_bytes
+    );
+    println!(
+        "  categories disjoint & complete: {}",
+        yesno(acc.categories_disjoint_and_complete)
+    );
+    println!(
+        "  committed transactions:         {}",
+        acc.transaction_count
+    );
+    match acc.bytes_per_transaction {
+        Some(b) => println!("  bytes per transaction:          {b}"),
+        None => println!("  bytes per transaction:          unknown"),
+    }
+    match acc.overwrite_ratio {
+        Some(x) => println!("  overwrite ratio:                {x:.4}"),
+        None => println!("  overwrite ratio:                unmeasured (supply --overwrite-ratio)"),
+    }
+    let f = &r.forecast;
+    println!("  forecast:");
+    println!(
+        "    verdict:                      {}",
+        verdict_str(f.verdict)
+    );
+    println!(
+        "    retained authority / unit:    {} bytes (written bytes x amplification)",
+        f.retained_authority_bytes_per_unit
+    );
+    println!(
+        "    new live logical / unit:      {} bytes (written / (1 + overwrite ratio))",
+        f.new_logical_bytes_per_unit
+    );
+    println!(
+        "    total physical growth / unit: {} bytes",
+        f.total_physical_growth_bytes_per_unit
+    );
+    match f.units_to_full {
+        Some(u) => println!("    time to full:                 {u:.1} unit(s)"),
+        None => println!("    time to full:                 unknown"),
+    }
+    match f.transactions_to_full {
+        Some(t) => println!("    transactions to full:         {t}"),
+        None => println!("    transactions to full:         unknown"),
+    }
+    println!("  capacity: {} — {}", verdict_str(r.capacity.verdict), {
+        match r.capacity.verdict {
+            CapacityVerdict::Ok => "comfortable headroom above the reserve",
+            CapacityVerdict::Warn => "thin headroom: plan to grow or relocate",
+            CapacityVerdict::Exhausted => "no headroom: commits will be refused",
+        }
+    });
 }
 
 fn verdict_str(v: CapacityVerdict) -> &'static str {

@@ -290,6 +290,29 @@ The JSON form is a stable envelope with the schema `orfs.capacity.report.v1`:
               "degraded_reason": null, "policy": { … } } }
 ```
 
+### 10.3 Separated accounting and the growth forecast (`--economics`)
+
+`--capacity` answers "is there room for the next commit?". The **storage-economics**
+report answers the budgeting question — "what is filling the volume, and when does
+it fill?" — by accounting every byte beneath the volume root in **four
+non-overlapping categories** (permanent authoritative history; rebuildable
+manifestations; metadata; temporary construction space) and by projecting retained
+growth from the *written*-bytes rate and the overwrite ratio:
+
+```sh
+orfs doctor --economics --backing /path/to/volume \
+    [--reserve <bytes>] [--write-rate <bytes>] [--overwrite-ratio <rho>] \
+    [--authority-amplification <phi>] [--manifested-rate <bytes>] \
+    [--metadata-rate <bytes>] [--transactions-rate <count>] [--json]
+```
+
+The JSON schema is `orfs.storage.economics.v1`. The model, its assumptions, the
+worked numbers, and the operator procedure are in
+**`docs/STORAGE-ECONOMICS.md`**; the two report flags are independent, so
+`orfs doctor --capacity --economics …` (either or both) works. The forecast is
+validated by `tests/storage_economics.rs` — an overwrite still appends, so
+retained growth tracks written bytes, not live bytes.
+
 ---
 
 ## 11. The pre-flight refusal (`CapacityExhausted`)

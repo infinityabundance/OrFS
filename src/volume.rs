@@ -448,6 +448,18 @@ impl Volume {
         self.log.capacity_status(&self.root_dir, reserve_override)
     }
 
+    /// The storage-economics report (`orfs doctor --economics`, Phase 75): the
+    /// truthful four-category byte accounting plus the validated retained-growth
+    /// forecast. Read-only.
+    pub fn storage_economics(
+        &self,
+        reserve_override: Option<u64>,
+        inputs: crate::capacity::ForecastInputs,
+    ) -> crate::capacity::StorageEconomics {
+        self.log
+            .storage_economics(&self.root_dir, reserve_override, inputs)
+    }
+
     /// Whether the volume has latched into degraded/read-only mode.
     pub fn is_degraded(&self) -> bool {
         self.log.is_degraded()

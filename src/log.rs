@@ -26,8 +26,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::capacity::{
-    backing_available_bytes, backing_space, CapacityGovernor, CapacityPolicy, CapacityReport,
-    CapacityStatus, CapacityVerdict,
+    backing_available_bytes, backing_space, forecast_storage, storage_accounting, CapacityGovernor,
+    CapacityPolicy, CapacityReport, CapacityStatus, CapacityVerdict, ForecastInputs,
+    StorageEconomics,
 };
 use crate::error::{OrfsError, Result};
 use crate::failpoints::{self, Failpoint};
@@ -1305,6 +1306,51 @@ impl Log {
             degraded: self.is_degraded(),
             degraded_reason: self.capacity.degraded_reason().map(str::to_string),
             policy,
+        }
+    }
+
+    /// The storage-economics report for `volume` (`orfs doctor --economics`,
+    /// Phase 75): the truthful four-category byte accounting plus the validated
+    /// retained-growth forecast. Read-only: it never mutates the volume.
+    ///
+    /// `inputs` carries the operator's (or the workload's) rates. A zero
+    /// `write_bytes_per_unit` falls back to the sampled bytes-per-transaction (so
+    /// the unit is one transaction); a non-positive `authority_amplification`
+    /// falls back to `1.0`; a zero `transactions_per_unit` falls back to `1`. The
+    /// `overwrite_ratio` is recorded in the accounting when it is positive.
+    pub fn storage_economics(
+        &self,
+        volume: &Path,
+        reserve_override: Option<u64>,
+        inputs: ForecastInputs,
+    ) -> StorageEconomics {
+        let status = self.capacity_status(volume, reserve_override);
+        let overwrite = if inputs.overwrite_ratio > 0.0 {
+            Some(inputs.overwrite_ratio)
+        } else {
+            None
+        };
+        let accounting = storage_accounting(
+            volume,
+            self.transaction_count(),
+            status.bytes_per_transaction,
+            overwrite,
+        );
+        let mut fi = inputs;
+        if fi.write_bytes_per_unit == 0 {
+            fi.write_bytes_per_unit = status.bytes_per_transaction.unwrap_or(0);
+        }
+        if fi.transactions_per_unit == 0 {
+            fi.transactions_per_unit = 1;
+        }
+        if fi.authority_amplification <= 0.0 {
+            fi.authority_amplification = 1.0;
+        }
+        let forecast = forecast_storage(fi, status.free_bytes, status.reserve_bytes);
+        StorageEconomics {
+            capacity: status,
+            accounting,
+            forecast,
         }
     }
 

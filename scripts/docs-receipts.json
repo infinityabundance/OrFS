@@ -353,6 +353,16 @@
         {"group": 3, "label": "treap lookup_p50_ns @100k", "evidence": "evidence/performance/historical-index-integrated.json", "path": "scales[1].treap.lookup_p50_ns"},
         {"group": 4, "label": "treap lookup_p50_ns @1M", "evidence": "evidence/performance/historical-index-integrated.json", "path": "scales[2].treap.lookup_p50_ns"}
       ]
+    },
+    {
+      "id": "storage-econ-tolerance",
+      "doc": "docs/STORAGE-ECONOMICS.md",
+      "section": "§3.4",
+      "claim": "the validated forecast states a tolerance of 0.05 on the predicted-vs-actual retained growth",
+      "regex": "relative error [0-9.]+ ≤ tolerance ([0-9.]+)",
+      "fields": [
+        {"group": 1, "label": "predicted-vs-actual tolerance", "evidence": "evidence/performance/storage-economics.json", "path": "tolerance"}
+      ]
     }
   ]
 }

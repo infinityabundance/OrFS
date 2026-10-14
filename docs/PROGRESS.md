@@ -4217,3 +4217,98 @@ F2 **411/55 644 ns**, **643 MB/s**.
   it is the plain FIFO that a scan destroys.
 * `container-verify.sh` marks an environment-limited stage `SKIPPED` rather than
   passing it, so a green summary never overstates coverage.
+
+## Phase 75 — Storage economics: separated accounting + a validated retained-growth forecast
+
+**Complete.** The storage-economics half of the operational control plane lands:
+indefinite retention becomes **predictable and budgetable**, never reclaimed. Two
+field disciplines are adopted explicitly — Kafka tiered storage (KIP-405: metadata
+strongly consistent and separate from the data tier; idempotent copy/delete;
+never remove the local copy before the remote copy is verified and recorded) and
+RocksDB (write/read/space amplification as first-class, *measured* objectives).
+
+### Delivered
+
+* **Separated accounting (`src/capacity.rs`).** `StorageCategory` partitions every
+  regular file beneath a volume root into **four non-overlapping categories** —
+  **permanent authoritative history** (`or.log/`: segments + watermark + any
+  retained tail; never reclaimable), **rebuildable manifestations** (EKBLOOM
+  bodies, trigram index, global search directory, direct-page atlases,
+  suffix/image accelerators, passthrough images), **metadata** (append-only
+  catalogues, generation manifests, index snapshots/checkpoints, `volume.meta`),
+  and **temporary construction space** (scratch / `*.tmp`). A single recursive walk
+  assigns each file exactly once (disjoint by construction) and the report proves
+  it exhaustive against an independently measured on-disk total
+  (`categories_disjoint_and_complete`). Each category carries its byte total, file
+  count and bytes/file; the report carries the committed transaction count, the
+  sampled bytes/transaction, and the overwrite ratio.
+* **Validated forecast (`forecast_storage`).** Given a **written**-bytes rate `W`,
+  an overwrite ratio `ρ`, a framing amplification `φ`, and manifested/metadata
+  rates, the model predicts retained-authority growth `φ·W` (independent of `ρ`),
+  new/rewritten logical bytes, total physical growth, and time/transactions to
+  full against the live free space and the reserve, with a `verdict`. The
+  assumptions — above all *an overwrite still appends, so retained growth tracks
+  written bytes, not live bytes* — are returned with every forecast and documented.
+  All inputs are operator-exposeable.
+* **CLI.** `orfs doctor --economics --backing <dir>` (plus `--write-rate`,
+  `--overwrite-ratio`, `--authority-amplification`, `--manifested-rate`,
+  `--metadata-rate`, `--transactions-rate`; `--json` schema
+  `orfs.storage.economics.v1`). The existing `--capacity` report is unchanged; a
+  clap `ArgGroup` lets either/both flags share `--backing`/`--reserve`.
+* **Court (`tests/storage_economics.rs`).** A known workload (8 MiB written as new
+  content + 8 MiB written as content-neutral overwrites) run in an **authoritative**
+  and a **manifested** arm over the *same* history (roots asserted identical).
+  Calibration measures `φ = 1.007202` and `bytes_per_transaction = 66 008`;
+  the overwrite phase's retained growth is **predicted** as `φ·W = 8 449 024` B and
+  **measured** as `8 449 024` B — relative error **0.00 ≤ tolerance 0.05** — while
+  `live logical growth = 0`, so the naive live-bytes model is **falsified by 100 %**.
+  Also asserts the four categories are disjoint and sum correctly and that the
+  verdict degrades `ok → warn → exhausted` as the reserve is approached.
+* **Charts.** `scripts/render_charts.py` adds
+  `storage-economics-predicted-vs-actual.svg` and
+  `storage-economics-accounting.svg`; `--check` passes (26 charts).
+* **Docs.** `docs/STORAGE-ECONOMICS.md` (the model, its assumptions, the four
+  categories, the worked numbers, the operator procedure, and the forward
+  reference to tier relocation); `docs/CAPACITY.md` §10.3.
+
+### Results (from `evidence/performance/storage-economics.json`)
+
+Manifested arm, four categories: permanent_authoritative **33 798 810** B,
+rebuildable_manifestation **419 546 560** B, metadata **330 108** B,
+temporary_construction **0** B; total **453 675 478** = observed on-disk total
+(disjoint & complete). The authoritative arm over the same history has
+`rebuildable_manifestation = 0` — enabling the concealed plane added 419 MB of
+rebuildable bytes **without changing one authoritative byte**. Forecast (unit =
+one 64 KiB transaction, `ρ = 1`): retained **66 008** B/unit, new logical
+**32 768** B/unit, `transactions_to_full = 832 297`, verdict `ok`.
+
+### Docs
+
+`src/capacity.rs`, `src/log.rs`, `src/volume.rs`, `src/main.rs`;
+`tests/storage_economics.rs` (new); `scripts/container-storage-economics.sh`
+(new); `scripts/render_charts.py` + 2 chart files;
+`docs/STORAGE-ECONOMICS.md` (new); `docs/CAPACITY.md` §10.3;
+`docs/ORFS-SPEC.md` §4/§5; `README.md`; `docs/REPRODUCE.md`; this entry.
+Receipt: `evidence/performance/storage-economics.json` (new).
+
+### Test counts
+
+**499 (default; +1 ignored) / 509 (`--features failpoints`)** — +2 for the new
+`storage_economics` court (smoke + opt-in sweep); `fmt`/`clippy` clean. (The
+headline counts in the phase-74 record were stale by a few tests; these are
+directly re-measured from `sh scripts/container-test.sh` and
+`sh scripts/container-test.sh --features failpoints`.)
+
+### Notes, stated honestly
+
+* The four-category classification is by path; if a future on-disk area is added
+  it must be classified explicitly (the summation proof would otherwise fail
+  loudly — never be weakened).
+* The append-only log cannot infer the overwrite ratio from its own state, so
+  `ρ` is operator-/workload-supplied and is `null` when unmeasured.
+* The forecast is a **linear** extrapolation of the supplied/observed rates; it is
+  falsifiable (and falsified for the naive live-bytes variant) but is a bounded
+  surrogate, not a multi-day projection.
+* **Tier relocation is the next phase.** It must preserve identity, verify the
+  remote copy before removing the local one, and keep metadata consistent and
+  separate (KIP-405) — relocation moves a copy, it never withdraws authority.

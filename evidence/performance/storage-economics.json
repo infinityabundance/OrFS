@@ -1,0 +1,280 @@
+{
+  "accounting_table": {
+    "bytes_per_transaction": 66008,
+    "categories_disjoint_and_complete": true,
+    "metadata": 330108,
+    "observed_volume_bytes": 453675478,
+    "overwrite_ratio": 1.0,
+    "permanent_authoritative": 33798810,
+    "rebuildable_manifestation": 419546560,
+    "temporary_construction": 0,
+    "total_bytes": 453675478,
+    "transaction_count": 516
+  },
+  "all_ok": true,
+  "arms": {
+    "authoritative": {
+      "assessment": {
+        "accounting": {
+          "bytes_per_transaction": 66008,
+          "categories_disjoint_and_complete": true,
+          "metadata": {
+            "bytes": 44,
+            "bytes_per_file": 44,
+            "category": "metadata",
+            "file_count": 1,
+            "reclaimable": true
+          },
+          "observed_volume_bytes": 33798854,
+          "overwrite_ratio": 1.0,
+          "permanent_authoritative": {
+            "bytes": 33798810,
+            "bytes_per_file": 196504,
+            "category": "permanent_authoritative",
+            "file_count": 172,
+            "reclaimable": false
+          },
+          "rebuildable_manifestation": {
+            "bytes": 0,
+            "bytes_per_file": null,
+            "category": "rebuildable_manifestation",
+            "file_count": 0,
+            "reclaimable": true
+          },
+          "temporary_construction": {
+            "bytes": 0,
+            "bytes_per_file": null,
+            "category": "temporary_construction",
+            "file_count": 0,
+            "reclaimable": true
+          },
+          "total_bytes": 33798854,
+          "transaction_count": 516
+        },
+        "assessment": {
+          "authoritative_is_permanent": true,
+          "categories_disjoint_and_complete": true,
+          "manifested_adds_rebuildable_bytes": true,
+          "naive_live_model_is_wrong": true,
+          "overwrite_ratio_zero_live_growth": true,
+          "overwrite_still_appends": true,
+          "prediction_within_tolerance": true,
+          "verdict_degrades_ok_warn_exhausted": true
+        },
+        "forecast": {
+          "assumptions": [
+            "an overwrite still appends: retained authority grows with written bytes, not live bytes (non-withdrawal)",
+            "retained authority growth per unit = written bytes per unit x authority amplification",
+            "overwrite ratio rho = overwritten bytes / new logical bytes; new bytes = written / (1 + rho)",
+            "authority amplification >= 1 (record framing + transaction brackets); 1.0 is the pure-payload lower bound",
+            "manifested and metadata growth are supplied rates, not derived from authority",
+            "time-to-full = (free - reserve) / total physical growth per unit; the reserve is never consumed",
+            "the forecast is a linear extrapolation of the supplied/observed rates and is validated by tests/storage_economics.rs"
+          ],
+          "bytes_per_transaction": 66008,
+          "free_bytes": 63612465152,
+          "headroom_bytes": 63612465152,
+          "inputs": {
+            "authority_amplification": 1.0072021484375,
+            "manifested_bytes_per_unit": 0,
+            "metadata_bytes_per_unit": 0,
+            "overwrite_ratio": 1.0,
+            "transactions_per_unit": 1,
+            "write_bytes_per_unit": 65536
+          },
+          "new_logical_bytes_per_unit": 32768,
+          "reserve_bytes": 0,
+          "retained_authority_bytes_per_unit": 66008,
+          "rewritten_logical_bytes_per_unit": 32768,
+          "total_physical_growth_bytes_per_unit": 66008,
+          "transactions_to_full": 963708,
+          "units_to_full": 963708.4164343716,
+          "verdict": "ok"
+        },
+        "predicted_vs_actual": {
+          "calibration": {
+            "authoritative_growth": 8449024,
+            "authority_amplification_phi": 1.0072021484375,
+            "bytes_per_transaction": 66008.0,
+            "logical_bytes_written": 8388608,
+            "transactions": 128
+          },
+          "overwrite": {
+            "live_logical_growth": 0,
+            "logical_bytes_written": 8388608,
+            "measured_authority_growth": 8449024.0,
+            "naive_live_model_prediction": 0.0,
+            "naive_live_model_relative_error": 1.0,
+            "predicted_authority_growth": 8449024.0,
+            "relative_error": 0.0,
+            "tolerance": 0.05,
+            "transactions": 128,
+            "within_tolerance": true
+          }
+        },
+        "verdicts": {
+          "exhausted_reserve_above_free": "exhausted",
+          "ok_reserve_0": "ok",
+          "warn_reserve_3_4_free": "warn"
+        },
+        "wall_micros": 593892,
+        "workload": {
+          "initial_mib": 8,
+          "logical_bytes_written": 16777216,
+          "manifested": false,
+          "new_logical_bytes": 8388608,
+          "object_mib": 4,
+          "objects": 4,
+          "overwrite_mib": 8,
+          "overwrite_ratio_rho": 1.0,
+          "overwritten_logical_bytes": 8388608,
+          "write_len": 65536
+        }
+      },
+      "manifestation": "disabled"
+    },
+    "manifested": {
+      "assessment": {
+        "accounting": {
+          "bytes_per_transaction": 66008,
+          "categories_disjoint_and_complete": true,
+          "metadata": {
+            "bytes": 330108,
+            "bytes_per_file": 624,
+            "category": "metadata",
+            "file_count": 529,
+            "reclaimable": true
+          },
+          "observed_volume_bytes": 453675478,
+          "overwrite_ratio": 1.0,
+          "permanent_authoritative": {
+            "bytes": 33798810,
+            "bytes_per_file": 196504,
+            "category": "permanent_authoritative",
+            "file_count": 172,
+            "reclaimable": false
+          },
+          "rebuildable_manifestation": {
+            "bytes": 419546560,
+            "bytes_per_file": 1589191,
+            "category": "rebuildable_manifestation",
+            "file_count": 264,
+            "reclaimable": true
+          },
+          "temporary_construction": {
+            "bytes": 0,
+            "bytes_per_file": null,
+            "category": "temporary_construction",
+            "file_count": 0,
+            "reclaimable": true
+          },
+          "total_bytes": 453675478,
+          "transaction_count": 516
+        },
+        "assessment": {
+          "authoritative_is_permanent": true,
+          "categories_disjoint_and_complete": true,
+          "manifested_adds_rebuildable_bytes": true,
+          "naive_live_model_is_wrong": true,
+          "overwrite_ratio_zero_live_growth": true,
+          "overwrite_still_appends": true,
+          "prediction_within_tolerance": true,
+          "verdict_degrades_ok_warn_exhausted": true
+        },
+        "forecast": {
+          "assumptions": [
+            "an overwrite still appends: retained authority grows with written bytes, not live bytes (non-withdrawal)",
+            "retained authority growth per unit = written bytes per unit x authority amplification",
+            "overwrite ratio rho = overwritten bytes / new logical bytes; new bytes = written / (1 + rho)",
+            "authority amplification >= 1 (record framing + transaction brackets); 1.0 is the pure-payload lower bound",
+            "manifested and metadata growth are supplied rates, not derived from authority",
+            "time-to-full = (free - reserve) / total physical growth per unit; the reserve is never consumed",
+            "the forecast is a linear extrapolation of the supplied/observed rates and is validated by tests/storage_economics.rs"
+          ],
+          "bytes_per_transaction": 66008,
+          "free_bytes": 63155331072,
+          "headroom_bytes": 63155331072,
+          "inputs": {
+            "authority_amplification": 1.0072021484375,
+            "manifested_bytes_per_unit": 0,
+            "metadata_bytes_per_unit": 0,
+            "overwrite_ratio": 1.0,
+            "transactions_per_unit": 1,
+            "write_bytes_per_unit": 65536
+          },
+          "new_logical_bytes_per_unit": 32768,
+          "reserve_bytes": 0,
+          "retained_authority_bytes_per_unit": 66008,
+          "rewritten_logical_bytes_per_unit": 32768,
+          "total_physical_growth_bytes_per_unit": 66008,
+          "transactions_to_full": 956782,
+          "units_to_full": 956782.9819415829,
+          "verdict": "ok"
+        },
+        "predicted_vs_actual": {
+          "calibration": {
+            "authoritative_growth": 8449024,
+            "authority_amplification_phi": 1.0072021484375,
+            "bytes_per_transaction": 66008.0,
+            "logical_bytes_written": 8388608,
+            "transactions": 128
+          },
+          "overwrite": {
+            "live_logical_growth": 0,
+            "logical_bytes_written": 8388608,
+            "measured_authority_growth": 8449024.0,
+            "naive_live_model_prediction": 0.0,
+            "naive_live_model_relative_error": 1.0,
+            "predicted_authority_growth": 8449024.0,
+            "relative_error": 0.0,
+            "tolerance": 0.05,
+            "transactions": 128,
+            "within_tolerance": true
+          }
+        },
+        "verdicts": {
+          "exhausted_reserve_above_free": "exhausted",
+          "ok_reserve_0": "ok",
+          "warn_reserve_3_4_free": "warn"
+        },
+        "wall_micros": 4744532,
+        "workload": {
+          "initial_mib": 8,
+          "logical_bytes_written": 16777216,
+          "manifested": true,
+          "new_logical_bytes": 8388608,
+          "object_mib": 4,
+          "objects": 4,
+          "overwrite_mib": 8,
+          "overwrite_ratio_rho": 1.0,
+          "overwritten_logical_bytes": 8388608,
+          "write_len": 65536
+        }
+      },
+      "manifestation": "enabled (profile full, synchronous)"
+    }
+  },
+  "environment": {
+    "bench": {
+      "cgroup_memory_max": "8589934592",
+      "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "container_image": null,
+      "cores_visible": 8,
+      "cpu_max": "800000 100000",
+      "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+      "fuse_enable_uring": true,
+      "kernel_release": "7.2.9-2-cachyos",
+      "likely_container": true,
+      "machine": "x86_64",
+      "perf_counters_available": false,
+      "perf_event_open_error": "Operation not permitted (os error 1)",
+      "perf_event_paranoid": "2",
+      "ram_total_bytes": 134723346432
+    },
+    "profile": "release"
+  },
+  "generated_by": "tests/storage_economics.rs",
+  "note": "Single-run, single-host, BOUNDED measurements. The four-category accounting is a single walk that classifies each file, so the four totals are disjoint by construction and are proved to sum to the independently measured on-disk total. The forecast is validated: a calibration phase measures the framing amplification phi, the prediction predicts the overwrite phase's retained growth as phi x written bytes, and the measured growth must match within the stated tolerance. The crux is that an overwrite still appends, so retained growth tracks written bytes, not live bytes (the naive live-bytes model is falsified). Absolute bytes are host/build dependent; the shape and the byte counts are the point.",
+  "schema": "orfs.performance.storage-economics.v1",
+  "tolerance": 0.05
+}

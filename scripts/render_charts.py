@@ -389,6 +389,53 @@ def chart_endurance_amplification_ratio():
         xlog=False, ylog=True, xticks=ep)
 
 
+def chart_storage_economics_predicted_vs_actual():
+    d = load("storage-economics.json")
+    arms = [("authoritative", d["arms"]["authoritative"]["assessment"]),
+            ("manifested", d["arms"]["manifested"]["assessment"])]
+    groups = [name for name, _ in arms]
+    predicted = [a["predicted_vs_actual"]["overwrite"]["predicted_authority_growth"]
+                 for _, a in arms]
+    measured = [a["predicted_vs_actual"]["overwrite"]["measured_authority_growth"]
+                for _, a in arms]
+    cap = [
+        "source: evidence/performance/storage-economics.json (overwrite phase, 8 MiB written)",
+        "predicted = phi x written bytes (phi from the 8 MiB new-content calibration phase);",
+        "an overwrite still appends, so retained growth tracks written bytes, not live bytes",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return bar_chart(
+        "storage economics: predicted vs measured retained authority growth",
+        cap, "retained authority growth (bytes)", groups,
+        [{"name": "predicted", "values": predicted},
+         {"name": "measured", "values": measured}])
+
+
+def chart_storage_economics_accounting():
+    d = load("storage-economics.json")
+    arms = [("authoritative", d["arms"]["authoritative"]["assessment"]["accounting"]),
+            ("manifested", d["arms"]["manifested"]["assessment"]["accounting"])]
+    groups = [name for name, _ in arms]
+    cats = [
+        ("permanent_authoritative", "permanent_authoritative"),
+        ("rebuildable_manifestation", "rebuildable_manifestation"),
+        ("metadata", "metadata"),
+        ("temporary_construction", "temporary_construction"),
+    ]
+    series = [{"name": label,
+               "values": [acc[key]["bytes"] for _, acc in arms]}
+              for label, key in cats]
+    cap = [
+        "source: evidence/performance/storage-economics.json (four non-overlapping categories)",
+        "the four totals sum to the observed on-disk total of the volume's own files;",
+        "permanent authority is never reclaimable; the manifested arm adds rebuildable bytes",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return bar_chart(
+        "storage economics: four-category accounting by arm",
+        cap, "bytes", groups, series)
+
+
 def chart_manifestation_catalogue():
     d = load("manifestation-catalogue.json")
     cps = d["checkpoints"]
@@ -910,6 +957,10 @@ CHARTS = (
      "evidence/performance/endurance-amplification.json", "sh scripts/container-endurance-amplification.sh"),
     ("endurance-amplification-ratio.svg", chart_endurance_amplification_ratio,
      "evidence/performance/endurance-amplification.json", "sh scripts/container-endurance-amplification.sh"),
+    ("storage-economics-predicted-vs-actual.svg", chart_storage_economics_predicted_vs_actual,
+     "evidence/performance/storage-economics.json", "sh scripts/container-storage-economics.sh"),
+    ("storage-economics-accounting.svg", chart_storage_economics_accounting,
+     "evidence/performance/storage-economics.json", "sh scripts/container-storage-economics.sh"),
     ("manifestation-catalogue.svg", chart_manifestation_catalogue,
      "evidence/performance/manifestation-catalogue.json", "sh scripts/container-manifestation-catalogue.sh"),
     ("planner-cache.svg", chart_planner_cache,

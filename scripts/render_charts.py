@@ -436,6 +436,26 @@ def chart_storage_economics_accounting():
         cap, "bytes", groups, series)
 
 
+def chart_bounded_recovery():
+    d = load("bounded-recovery.json")
+    ev = d.get("evacuation", {})
+    dr = d.get("drop_rebuildable", {})
+    labels = ["relocate sealed (local footprint)", "drop rebuildable"]
+    values = [ev.get("local_authoritative_bytes_freed", 0), dr.get("dropped_bytes", 0)]
+    freed = ev.get("freed_bytes", 0)
+    cap = [
+        "source: evidence/performance/bounded-recovery.json (8-object x 4 x 32 KiB fixture)",
+        "bytes freed by each bounded action; not one authoritative byte is withdrawn;",
+        "relocation to a separate-filesystem tier increased the backing free space by "
+        + str(freed) + " bytes",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return bar_chart(
+        "bounded reclaim: derived bytes freed per action",
+        cap, "bytes freed", labels,
+        [{"name": "bytes freed", "values": values}])
+
+
 def chart_manifestation_catalogue():
     d = load("manifestation-catalogue.json")
     cps = d["checkpoints"]
@@ -961,6 +981,8 @@ CHARTS = (
      "evidence/performance/storage-economics.json", "sh scripts/container-storage-economics.sh"),
     ("storage-economics-accounting.svg", chart_storage_economics_accounting,
      "evidence/performance/storage-economics.json", "sh scripts/container-storage-economics.sh"),
+    ("bounded-recovery.svg", chart_bounded_recovery,
+     "evidence/performance/bounded-recovery.json", "sh scripts/container-bounded-recovery.sh"),
     ("manifestation-catalogue.svg", chart_manifestation_catalogue,
      "evidence/performance/manifestation-catalogue.json", "sh scripts/container-manifestation-catalogue.sh"),
     ("planner-cache.svg", chart_planner_cache,

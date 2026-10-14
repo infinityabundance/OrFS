@@ -376,3 +376,36 @@ segments move to a cold tier without withdrawing authority. Honest bounds:
 * **The measured numbers are bounded and host/build dependent.** The court's
   byte counts are deterministic for its fixed fixture, but the absolute footprint
   figures are single-run, single-host (see the receipt's `note`).
+
+## 17. Bounded reclaim is derived-only and local (Phase 77)
+
+`orfs reclaim` (`docs/CAPACITY.md` §14) frees local space under a byte-identity
+proof. Honest bounds:
+
+* **It never frees an authoritative byte.** The bounded actions move a verified
+  copy to a cold tier and/or drop *derived* structures. There is no path to
+  reclaim permanent authoritative history — that is non-withdrawal
+  (`docs/LIMITATIONS.md` §5). If nothing derived remains, the only remedies are a
+  larger/other backing device or a fresh volume.
+* **The cold tier is a local filesystem directory.** As in §16, there is no
+  object-store backend: `--tier-root` is a path. A reclaim whose tier is on the
+  **same** filesystem frees no *device* free space (the bytes merely move) — it
+  still shrinks the volume's local authoritative footprint. The measured
+  free-space increase in the receipt places the volume and tier on different
+  filesystems deliberately.
+* **A reclaim runs while the volume is unmounted.** It is an explicit operator
+  command, not an online controller; there is no background reclamation and no
+  automatic coordination with a mounted daemon. The internal ordering is
+  **relocate → drop rebuildable → drop derived metadata**, matching the decision
+  tree.
+* **Dropping is irreversible for the dropped derived bytes.** They rebuild on
+  demand (at a read- or mount-latency cost), but the *reclaim* itself does not
+  rebuild them; a subsequent read or open does.
+* **`src/expansion.rs` is not yet subordinate to the capacity governor.** The
+  autonomous expansion controller could, in principle, re-consume freed space by
+  manifesting again. Making its construction strictly subordinate to
+  `CapacityGovernor::optional_allowed` (so a reclaim is not immediately undone) is
+  a stated follow-up, not done here.
+* **The measured numbers are bounded and host/build dependent**, as in §16: the
+  receipt's `note` says so, and the byte-equality (not the absolute byte counts) is
+  the point.

@@ -4417,3 +4417,109 @@ failpoints` (the court adds `local_copy_survives_a_fault_between_copy_and_verifi
 * **Recall keeps the tier copy** (a redundant, verified copy); it restores the
   local copy and returns the segment to `Local`. Removing the tier copy after a
   recall is a stated follow-up, not done here.
+
+## Phase 77 — Bounded-space recovery: free space without withdrawing authority
+
+**Complete.** The backing fills monotonically (non-withdrawal), so at the reserve
+`init`/commits are refused and the volume latches read-only. This phase gives the
+operator a **documented, tested, bounded** set of actions that free space **without
+costing one authoritative byte** or losing the newest committed generation —
+including *during crash recovery* on a nearly-full disk. Two field disciplines are
+adopted and cited: **Apache Kafka tiered storage (KIP-405)** — freeing local space
+by relocating *verified* copies to a cheaper tier is the sanctioned way to survive a
+full local tier while retaining authority — and **RocksDB** — a hard space limit is
+first-class, and the discipline is to *measure* what can be freed, never assume it.
+
+### Delivered
+
+* **Reclaimable-space report (`src/capacity.rs`).** `doctor --capacity` (schema
+  bumped to **`orfs.capacity.report.v2`**, v1 fields unchanged) now carries a
+  `status.reclaimable` object: the active `head_segment` (never relocatable), the
+  **relocatable sealed bytes** (local authoritative bytes in sealed, non-head
+  segments a tier relocation could move), the **droppable rebuildable bytes**
+  (`RebuildableManifestation`), the **droppable derived metadata** (`index/`
+  accelerators), the **reclaimable total**, and a **recommended bounded action** with
+  the bytes it would free. The permanent authoritative history is measured but never
+  included (it is never reclaimable).
+* **A guided, bounded `orfs reclaim` (`src/reclaim.rs`).** *Reports by default*
+  (dry-run; `--json` schema `orfs.reclaim.report.v1`) and performs only with
+  `--apply`. The actions, in the decision-tree order, are
+  `--relocate-sealed` (Phase-76 machinery; needs `--tier-root`),
+  `--drop-rebuildable` (EKBLOOM bodies, trigram index, search directory, atlases,
+  suffix/image accelerators, `.or_passthrough`), and `--drop-derived-metadata`
+  (`index/` accelerators). It never touches `or.log/`, `volume.meta`, the generation
+  manifests/catalogue, or the relocation catalogue, and **afterwards re-captures the
+  committed authority and asserts it byte-identical** (root, BLAKE3 digest, committed
+  prefix bytes, commit watermark) — a violation is a hard error.
+* **Recovery fails closed, never loses authority (`src/log.rs`, `src/error.rs`,
+  `src/main.rs`).** A writable open that must quarantine an abandoned tail and
+  continue in a fresh segment now surfaces a space-class failure as the precise,
+  actionable `OrfsError::RecoverySpaceExhausted` (`ENOSPC`) **before** half-completing
+  the transition; the committed prefix stays byte-identical and a read-only open
+  serves all committed history at zero free. `orfs recover` reports the intact
+  committed boundary read-only and prints the remedy when it refuses.
+* **Court `tests/bounded_recovery.rs` (real runs) + `scripts/container-bounded-recovery.sh`.**
+  An edge `write + fsync + crash` (a real `SIGABRT` child) then the real `orfs
+  recover`; 100%-of-usable-capacity refusal with an intact history and a read-only
+  open at 0 free; a fail-closed recovery (the simulated device refuses segment
+  creation) that completes once the pressure is cleared; evacuation at the reserve
+  to a cold tier on a **separate filesystem** (measured free-space increase, commits
+  resume, every committed root byte-identical); an unavailable tier that cannot free
+  authority bytes; and a safe drop-rebuildable (authority byte-identical, reads still
+  identical). Receipt `evidence/performance/bounded-recovery.json`, schema
+  `orfs.performance.bounded-recovery.v1`.
+
+### Results (from `evidence/performance/bounded-recovery.json`)
+
+Edge crash: `edge_root = 1 070 270` recovered exactly (`newest_valid = true`),
+baseline prefix byte-identical, nothing quarantined. At 100% of usable capacity an
+oversized write was refused typed (`ENOSPC`) with the previous root intact and a
+read-only open at 0 free returned identical history; `orfs recover` selected the
+newest generation (1 068 918). A recovery that could not create its working set
+failed **closed** with the typed `RecoverySpaceExhausted` (`ENOSPC`, message names
+`orfs reclaim`) and a byte-identical committed prefix, then completed once cleared.
+Evacuation moved **10 of 11** sealed segments (**1 002 542** bytes) to a
+separate-filesystem tier: backing free space **66 007 040 → 67 026 944** B
+(**+1 019 904**), the local authoritative footprint dropped by exactly the
+relocated bytes, **commits resumed**, and all **41** committed boundaries were
+byte-identical. Dropping the rebuildable manifestations freed **1 312 480** bytes
+with authority byte-identical and a read still returning identical bytes. An
+unavailable tier refused the relocation typed (`TierUnavailable`), freed **0**
+authority bytes, left the volume read-only with its history fully readable.
+
+### Docs
+
+`src/reclaim.rs` (new), `src/capacity.rs`, `src/error.rs`, `src/log.rs`,
+`src/lib.rs`, `src/main.rs`; `tests/bounded_recovery.rs` (new);
+`scripts/container-bounded-recovery.sh` (new); `docs/CAPACITY.md` §10/§12/§14;
+`docs/RECOVERY.md` §6/§11; `docs/STORAGE-ECONOMICS.md` §5; `docs/TIERING.md`
+§8/§11; `docs/OPERATIONS.md` §5.2/§7; `docs/LIMITATIONS.md` §17;
+`docs/REPRODUCE.md`; `docs/RECEIPTS.md`; `scripts/docs-receipts.json`;
+`scripts/render_charts.py`; `README.md`; this entry. Receipt:
+`evidence/performance/bounded-recovery.json` (new).
+
+### Test counts
+
+**517 (default; +1 ignored) / 528 (`--features failpoints`)** — +5 default and
++5 with `--features failpoints` (2 `reclaim` unit tests + the 3-test
+`bounded_recovery` court); `fmt`/`clippy` clean.
+
+### Notes, stated honestly
+
+* The bounded reclaim frees **only derived** bytes; permanent authoritative history
+  is never reclaimable (non-withdrawal). If nothing derived remains, the only remedy
+  is a larger/other backing device or a fresh volume.
+* The cold tier is a **local filesystem directory** (no object-store backend) and a
+  reclaim runs **unmounted** — an explicit operator command, not an online
+  controller (`docs/LIMITATIONS.md` §17). When the tier is on the *same* filesystem
+  the device free space does not rise (the bytes merely move); the receipt measures
+  the local footprint and places volume and tier on different filesystems
+  deliberately.
+* **`src/expansion.rs` is not yet subordinate to the capacity governor.** The
+  autonomous expansion controller could in principle re-consume freed space by
+  manifesting again; making its construction strictly subordinate to
+  `CapacityGovernor::optional_allowed` (so a reclaim is not immediately undone) is
+  the stated next phase, not half-done here.
+* The absolute byte figures are single-run, single-host and bounded; the court's
+  counts are deterministic for its fixed fixture, and the **byte-equality and the
+  bookkeeping** are the point (the receipt's `note` says so).

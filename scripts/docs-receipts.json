@@ -447,6 +447,46 @@
       "fields": [
         {"group": 1, "label": "offline segments reported", "evidence": "evidence/performance/tier-relocation.json", "path": "assessment.tier_unavailable.unavailable_segments_reported"}
       ]
+    },
+    {
+      "id": "bounded-evac-free-space",
+      "doc": "docs/CAPACITY.md",
+      "section": "§14.4",
+      "claim": "bounded reclaim: relocating sealed segments to a separate-filesystem tier increased the backing free space by this many bytes",
+      "regex": "increased the volume's backing free space\\s+by \\*\\*([0-9][0-9 ]*) bytes\\*\\*",
+      "fields": [
+        {"group": 1, "label": "evacuation freed_bytes", "evidence": "evidence/performance/bounded-recovery.json", "path": "evacuation.freed_bytes"}
+      ]
+    },
+    {
+      "id": "bounded-evac-relocated",
+      "doc": "docs/CAPACITY.md",
+      "section": "§14.4",
+      "claim": "bounded reclaim: the local authoritative footprint dropped by exactly the relocated bytes",
+      "regex": "relocated \\*\\*([0-9][0-9 ]*) bytes\\*\\*\\), commits",
+      "fields": [
+        {"group": 1, "label": "evacuation relocated_bytes", "evidence": "evidence/performance/bounded-recovery.json", "path": "evacuation.relocated_bytes"}
+      ]
+    },
+    {
+      "id": "bounded-evac-boundaries",
+      "doc": "docs/CAPACITY.md",
+      "section": "§14.4",
+      "claim": "bounded reclaim: every committed boundary stayed byte-identical (count)",
+      "regex": "all \\*\\*([0-9][0-9 ]*)\\*\\* committed\\s+boundaries stayed byte-identical",
+      "fields": [
+        {"group": 1, "label": "evacuation boundaries_checked", "evidence": "evidence/performance/bounded-recovery.json", "path": "evacuation.boundaries_checked"}
+      ]
+    },
+    {
+      "id": "bounded-drop-rebuildable",
+      "doc": "docs/CAPACITY.md",
+      "section": "§14.4",
+      "claim": "bounded reclaim: dropping the rebuildable manifestations freed this many bytes with authority byte-identical",
+      "regex": "Dropping the rebuildable manifestations freed\\s+\\*\\*([0-9][0-9 ]*) bytes\\*\\*",
+      "fields": [
+        {"group": 1, "label": "drop_rebuildable dropped_bytes", "evidence": "evidence/performance/bounded-recovery.json", "path": "drop_rebuildable.dropped_bytes"}
+      ]
     }
   ]
 }

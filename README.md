@@ -27,11 +27,14 @@ but not yet wired rejects the request with its owning phase rather than
 pretending to work.
 
 Working today: `orfs doctor` (and `orfs doctor --capacity --backing <dir>`, a
-capacity report, and `orfs doctor --economics --backing <dir>`, the four-category
-storage accounting plus a validated retained-growth forecast), `orfs init`,
+capacity report that also names a bounded action to free derived space, and
+`orfs doctor --economics --backing <dir>`, the four-category storage accounting
+plus a validated retained-growth forecast), `orfs init`,
 `orfs inspect [--json]`,
 `orfs verify [--deep]`, `orfs recover`, `orfs tier relocate|list|verify|recall`
-(immutable relocation of sealed segments to a cold tier), and
+(immutable relocation of sealed segments to a cold tier), `orfs reclaim`
+(bounded-space recovery: relocate sealed segments and/or drop derived structures
+without withdrawing authority), and
 `orfs mount <backing> <mnt> --transport <fuse|fuse-uring> --backing-io <sync|uring> ...`
 (plus `orfs unmount`). `--transport fuse-uring` requests FUSE-over-`io_uring`
 (F2), which negotiates at runtime and falls back cleanly when the kernel does not
@@ -116,6 +119,7 @@ enable it (see `docs/FUSE_URING.md`).
 | 74 | F2 honest p99 **decision** + external comparison (reviewer items #3, #9): the F2 court records **p99.99**, the ring's **SQ/CQ counters**, and a **PMU** pass on the F2 daemon threads; `docs/PERFORMANCE.md` §31 states the call — F2 queue-affine matches F0's p50 and 93–110 % of its throughput (winning at 64 readers) but **loses p99 from 4 readers up**, so **use F0 for latency, `ORFS_F2_RINGS=8` for throughput**. Publishes the mounted **OrFS (F0/F2) vs ext4 vs tmpfs** head-to-head with the honest losses (rand 4 KiB p99 ~70–118× worse; seq read ~17–40× lower) and adds **p99.99** to the 64-thread scaling | complete |
 | 75 | Storage economics (separated accounting + a validated retained-growth forecast): `orfs doctor --economics` accounts every byte beneath a volume in **four non-overlapping categories** (permanent authoritative history / rebuildable manifestations / metadata / temporary construction space), proves they sum to the observed on-disk total, and predicts retained growth and time-to-full from a **written**-bytes rate and an overwrite ratio. The court `tests/storage_economics.rs` **falsifies** the naive live-bytes model (an overwrite still appends; prediction φ·W matches measurement within tolerance); `docs/STORAGE-ECONOMICS.md` forward-refs the tier-relocation phase | complete |
 | 76 | Immutable tier relocation: `orfs tier relocate\|list\|verify\|recall` moves **sealed** authoritative segments to a cheaper cold tier **without withdrawing authority** — the local copy is removed only after the tier copy is written, fsynced, read back and digest-verified, and only after a durable `Released` transition (Kafka KIP-405). The tier is **content-addressed** `(uuid, segment id, digest)` so copy/delete are idempotent and a crash converges; an append-only catalogue in the **Metadata** category is the strongly-consistent, separate state. The active head is never relocatable; an offline tier returns a typed `TierUnavailable` and refuses the open (never silently shortened). `tests/tier_relocation.rs` proves identity, verify-before-forget, a six-row crash matrix, catalogue fail-closed, and mixed local+remote recovery; `docs/TIERING.md` | complete |
+| 77 | Bounded-space recovery: `orfs doctor --capacity` (schema `orfs.capacity.report.v2`) reports the **relocatable sealed bytes**, the **droppable rebuildable bytes**, and a recommended bounded action; `orfs reclaim` (dry-run by default, `--apply` to act) relocates sealed segments and/or drops **derived** structures, then asserts the committed root, digest, committed bytes, and commit watermark **byte-identical** — it never touches the active head or an authoritative byte. Recovery under space pressure fails **closed** with the typed `RecoverySpaceExhausted` (`ENOSPC`) and an intact, fully-readable history; a read-only open serves all committed history at zero free. `tests/bounded_recovery.rs` proves an edge crash → newest generation, evacuation at the reserve (measured free-space increase, commits resume, committed roots byte-identical), an unavailable tier, a safe drop-rebuildable, and read-only-at-0-free; `docs/CAPACITY.md` §14, `docs/RECOVERY.md` §11 | complete |
 
 Honest non-claims: the **image pixel-surface pyramid is rejected, not merely
 unimplemented** — only descriptive geometry is implemented, and the decision and

@@ -141,6 +141,7 @@ so it is not expected to name HEAD.
 | `perf-s22-reader-scale64-noreplan` | `docs/PERFORMANCE.md` §22 | 64-thread reader scaling: the shared planner rebuilt no plan during the steady-state phase → `reader-scaling-64.json` `steady_state_counters.plan_builds_delta` |
 | `recovery-s9-fault-verify-recover-rows` | `docs/RECOVERY.md` §9 | fault-injection verify/recover court: the always-on matrix and the opt-in sweep row counts → `fault-injection-verify-recover.json` `runs.default.row_count` / `runs.sweep.row_count` |
 | `tier-reloc-*` (8 citations) | `docs/TIERING.md` §10 | the tier-relocation court's headline counts: segments relocated/total, bytes relocated, digest matches/mismatches, default boundaries checked, crash-matrix rows, offline segments reported, and the local/total authoritative byte footprint → `tier-relocation.json` `assessment.{relocation,identity,crash_matrix,tier_unavailable}.*` |
+| `bounded-evac-free-space`, `bounded-evac-relocated`, `bounded-evac-boundaries`, `bounded-drop-rebuildable` (4 citations) | `docs/CAPACITY.md` §14.4 | the bounded-reclaim court's headline numbers: the free space freed by relocating sealed segments, the bytes relocated, the committed boundaries checked, and the bytes freed by dropping rebuildable manifestations → `bounded-recovery.json` `evacuation.{freed_bytes,relocated_bytes,boundaries_checked}` and `drop_rebuildable.dropped_bytes` |
 
 ### `docs/ACCEPTANCE-AUDIT.md` is exempt from live comparison
 

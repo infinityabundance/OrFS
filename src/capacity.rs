@@ -205,6 +205,10 @@ pub struct CapacityStatus {
     pub degraded_reason: Option<String>,
     /// The capacity policy in force.
     pub policy: CapacityPolicy,
+    /// The **bounded reclaim** report (Phase 77): the derived bytes a
+    /// non-withdrawing action could free, and the recommended first action. The
+    /// permanent authoritative history is never included (it is never reclaimable).
+    pub reclaimable: Reclaimable,
 }
 
 /// The capacity governor: admission control for authoritative growth and a
@@ -775,6 +779,169 @@ pub fn storage_accounting(
     acc.bytes_per_transaction = bytes_per_transaction;
     acc.overwrite_ratio = overwrite_ratio;
     acc
+}
+
+// ---------------------------------------------------------------------------
+// Bounded-space reclamation (Phase 77)
+// ---------------------------------------------------------------------------
+//
+// When the backing reaches the reserve, the operator needs a *bounded*, tested
+// set of actions that free local space **without costing one authoritative byte**
+// and without losing the newest committed generation. Two field disciplines are
+// adopted here (and cited in the code):
+//
+// * **Apache Kafka tiered storage (KIP-405)** — freeing local space by relocating
+//   *verified* copies to a cheaper tier is the sanctioned way to survive a full
+//   local tier while retaining authority.
+// * **RocksDB** — a hard space limit is first-class, and the discipline is to
+//   *measure* what can be freed, never to assume it.
+//
+// The report below measures exactly the bytes a bounded action can free, split by
+// mechanism. **Permanent authoritative history is never included**: relocation
+// moves a sealed segment's bytes to the cold tier (total authority unchanged, the
+// local footprint drops) and dropping a rebuildable structure costs no authority.
+
+/// A bounded, non-authoritative action that frees local space **without
+/// withdrawing a single authoritative byte** (Phase 77).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RecommendedAction {
+    /// The stable machine name: `none`, `relocate_sealed`, `drop_rebuildable`,
+    /// `drop_derived_metadata`, or `grow_backing`.
+    pub action: String,
+    /// The bytes the action would free, when performed.
+    pub frees_bytes: u64,
+    /// A one-line operator instruction.
+    pub note: String,
+}
+
+/// The reclaimable space a bounded action can free on an almost-full volume
+/// (`orfs doctor --capacity` / `orfs reclaim`, Phase 77). Every byte reported here
+/// is **derived**: relocating a sealed segment moves a verified copy to the cold
+/// tier (the local footprint drops; the total authority is unchanged) and dropping
+/// a rebuildable structure costs no authoritative byte. The permanent
+/// authoritative history is *measured but never reclaimable*.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Reclaimable {
+    /// The active head segment id (never relocatable).
+    pub head_segment: u64,
+    /// Sealed (non-head) local segments `orfs tier relocate` could move.
+    pub sealed_segments_local: u64,
+    /// Local authoritative bytes in those sealed segments (the relocation target).
+    pub relocatable_sealed_bytes: u64,
+    /// `RebuildableManifestation` bytes (EKBLOOM bodies, trigram index, search
+    /// directory, atlases, suffix/image accelerators, passthrough images).
+    pub droppable_rebuildable_bytes: u64,
+    /// Derived metadata accelerators under `index/` (the committed-root directory,
+    /// checkpoints, and published snapshots): rebuildable on demand.
+    pub droppable_derived_metadata_bytes: u64,
+    /// The total a bounded reclaim could free
+    /// (`relocatable + droppable_rebuildable + droppable_derived_metadata`).
+    pub reclaimable_bytes: u64,
+    /// The recommended first action and the bytes it frees.
+    pub recommended_action: RecommendedAction,
+}
+
+/// Measure what a bounded reclaim could free on `volume_root` (Phase 77).
+/// Read-only: it never mutates the volume. `verdict` is the capacity verdict; when
+/// it is `ok` no action is recommended. Best-effort for the segment walk (a
+/// volume whose log directory is unreadable simply reports `0` relocatable bytes,
+/// never a fabricated number).
+pub fn reclaimable(volume_root: &Path, verdict: CapacityVerdict) -> Reclaimable {
+    let log_dir = crate::volume::Volume::log_dir(volume_root);
+    let ids = crate::segment::discover_segment_ids(&log_dir).unwrap_or_default();
+    // The active head is always local and never relocated, so the highest local
+    // segment id is the head: every other local segment is sealed and relocatable.
+    let head_segment = ids.last().copied().unwrap_or(0);
+    let mut relocatable_sealed_bytes = 0u64;
+    let mut sealed_segments_local = 0u64;
+    for &id in &ids {
+        if id == head_segment {
+            continue;
+        }
+        let Ok(name) = crate::segment::segment_file_name(id) else {
+            continue;
+        };
+        if let Ok(meta) = std::fs::metadata(log_dir.join(name)) {
+            relocatable_sealed_bytes = relocatable_sealed_bytes.saturating_add(meta.len());
+            sealed_segments_local += 1;
+        }
+    }
+    let droppable_rebuildable_bytes = storage_accounting(volume_root, 0, None, None)
+        .rebuildable_manifestation
+        .bytes;
+    let droppable_derived_metadata_bytes =
+        crate::manifestation::dir_bytes(&volume_root.join("index"));
+    let reclaimable_bytes = relocatable_sealed_bytes
+        .saturating_add(droppable_rebuildable_bytes)
+        .saturating_add(droppable_derived_metadata_bytes);
+    let recommended_action = recommend_action(
+        verdict,
+        relocatable_sealed_bytes,
+        droppable_rebuildable_bytes,
+        droppable_derived_metadata_bytes,
+    );
+    Reclaimable {
+        head_segment,
+        sealed_segments_local,
+        relocatable_sealed_bytes,
+        droppable_rebuildable_bytes,
+        droppable_derived_metadata_bytes,
+        reclaimable_bytes,
+        recommended_action,
+    }
+}
+
+/// The ordered bounded-action decision tree (`docs/CAPACITY.md` §14): relocate the
+/// most (a verified copy to the cold tier), then drop rebuildable manifestations,
+/// then drop derived metadata, then fall back to a larger backing.
+fn recommend_action(
+    verdict: CapacityVerdict,
+    relocatable: u64,
+    droppable_rebuildable: u64,
+    droppable_derived: u64,
+) -> RecommendedAction {
+    let instruction = |action: &str, frees: u64, note: &str| RecommendedAction {
+        action: action.to_string(),
+        frees_bytes: frees,
+        note: note.to_string(),
+    };
+    if verdict == CapacityVerdict::Ok && relocatable == 0 && droppable_rebuildable == 0 {
+        return instruction(
+            "none",
+            0,
+            "comfortable headroom above the reserve; no bounded action needed",
+        );
+    }
+    if relocatable > 0 {
+        return instruction(
+            "relocate_sealed",
+            relocatable,
+            "move sealed segments to a cold tier without withdrawing authority: \
+             `orfs reclaim --backing <dir> --tier-root <cold> --relocate-sealed --apply` \
+             (docs/TIERING.md)",
+        );
+    }
+    if droppable_rebuildable > 0 {
+        return instruction(
+            "drop_rebuildable",
+            droppable_rebuildable,
+            "drop rebuildable manifested structures (they rebuild on demand): \
+             `orfs reclaim --backing <dir> --drop-rebuildable --apply`",
+        );
+    }
+    if droppable_derived > 0 {
+        return instruction(
+            "drop_derived_metadata",
+            droppable_derived,
+            "drop derived metadata accelerators (rebuilt by a log scan on the next open): \
+             `orfs reclaim --backing <dir> --drop-derived-metadata --apply`",
+        );
+    }
+    instruction(
+        "grow_backing",
+        0,
+        "no derived bytes to free: grow or move the backing store (docs/CAPACITY.md §12)",
+    )
 }
 
 /// The documented inputs of the retained-growth forecast (Phase 75). Every field

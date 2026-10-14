@@ -222,6 +222,19 @@ cold tier, so `orfs tier list` reports the **local authoritative footprint befor
 and after** while the **total authority is unchanged**. The forecast continues to
 bound the non-withdrawn footprint (`docs/TIERING.md` §10).
 
+**Phase 77 makes the accounting *operable* under space pressure.**
+`orfs doctor --capacity` now reports, alongside free/reserve/verdict, the
+`status.reclaimable` object (schema `orfs.capacity.report.v2`): the
+**relocatable sealed bytes** (local authoritative bytes in sealed segments a tier
+relocation could move), the **droppable rebuildable bytes** (the
+`rebuildable_manifestation` category plus the derived `index/` metadata), the
+**reclaimable total**, and a **recommended bounded action** with the bytes it would
+free. The action itself is `orfs reclaim` (`docs/CAPACITY.md` §14): relocate sealed
+segments, drop rebuildable structures, and/or drop derived metadata, then assert
+the committed roots and the commit watermark byte-identical. The bounded action
+frees only derived bytes — the `permanent_authoritative` category is never
+reclaimable, which is exactly non-withdrawal.
+
 ## 6. Evidence and reproduction
 
 * Receipt: `evidence/performance/storage-economics.json` (schema

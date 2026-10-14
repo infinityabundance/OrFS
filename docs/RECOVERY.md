@@ -200,6 +200,7 @@ before (§2.4).
 | `evidence/recovery/enospc.json` | ENOSPC injection at record/rollover/watermark points |
 | `evidence/recovery/device-error.json` | EIO / short write / failed fsync injection |
 | `evidence/recovery/fault-enospc.json` | ENOSPC at the edge (Phase 72): fill a volume to ~90/95/99/100% of its usable capacity, then `write + fsync` (clean commit or a typed refusal) or `write + fsync + crash` and the real `orfs recover` |
+| `evidence/performance/bounded-recovery.json` | Bounded recovery under space pressure (Phase 77): edge crash → newest generation; recovery fails **closed** with the typed `RecoverySpaceExhausted`; evacuation frees space and commits resume; an unavailable tier cannot free authority bytes; drop-rebuildable is safe; read-only at 0 free |
 
 ---
 
@@ -432,3 +433,76 @@ local `or.log/<id>.seg` if present, else the tier copy when the catalogue says
   (e.g. `Copied`) inconsistent with the missing local copy; removing the catalogue
   leaves non-contiguous local ids. In every case the open is refused rather than
   recovering a shorter history.
+
+---
+
+## 11. Recovery under space pressure (Phase 77)
+
+Recovery must never *need* free space it does not have, and must never lose
+authority when it does. This section states the exact precedence at or below the
+reserve (`docs/CAPACITY.md` §14.3).
+
+### 11.1 What recovery needs, and when
+
+`scan_log_with` validates framing/transaction structure **without writing a single
+byte**. Only a writable open that finds an abandoned tail acts, and it does so in
+this order:
+
+1. **Quarantine** every canonical segment at or above the committed root — a
+   `rename` into `or.log/quarantine/`, never a truncation. A rename needs no free
+   space and no authoritative byte is rewritten; the moved segments hold only
+   bytes at or beyond the committed root, so no committed byte is withdrawn. A tail
+   that begins **inside** the committed segment is retained in place (§9.1).
+2. **Continue in a fresh empty segment** whose id is the committed root. This is
+   the one step that *creates* anything: an empty file plus its directory entry.
+3. **Persist the commit watermark** (36 bytes) at the next durability point.
+
+A **read-only** open performs none of these: `OpenMode::ReadOnly` writes nothing
+and serves all committed history even at zero free space.
+
+### 11.2 The precedence at or below the reserve
+
+| Backing state | Writable recovery | Read-only open | Committed history |
+|---|---|---|---|
+| Ample space | completes (quarantine + fresh segment + watermark) | serves | intact |
+| A tail must be quarantined and creation/watermark fails with `ENOSPC` | refused with the typed [`OrfsError::RecoverySpaceExhausted`] (`ENOSPC`), whose message names the remedy | serves | byte-identical `[0, R)`; tail retained in `quarantine/` |
+| A device error (`EIO`, short write, failed `fsync`) | refused with the underlying typed error (`NoSpace`/`Io`) | serves | byte-identical `[0, R)` |
+| No abandoned tail | completes with **no new segment and no watermark change** | serves | intact |
+
+Two invariants are absolute:
+
+* **The newest committed generation is never dropped.** `scan_log_with` advances
+the committed root only on a complete `TX_COMMIT`/`VOLUME_GENESIS`, and
+`watermark::validate` refuses an open whose surviving bytes are short of the
+certified root — so recovery can neither shorten committed history nor expose a
+longer one.
+* **An abandoned tail is never mistaken for committed, or vice versa.** A tail
+survives only in `quarantine/` (outside the discoverable `or.log/*.seg` namespace)
+or in the final segment beyond the committed root; a torn or uncommitted tail is
+always `TailInfo`, never part of the committed prefix. The `RetainedTail`
+disposition reports the kind and the abandoned byte count explicitly.
+
+### 11.3 The operator procedure
+
+When `orfs recover` is refused with `RecoverySpaceExhausted`:
+
+1. The committed history is intact and fully readable — run `orfs verify --deep`
+   and `orfs inspect` (both read-only) to confirm.
+2. Free space with `orfs reclaim` (`docs/CAPACITY.md` §14): relocate sealed
+   segments to a cold tier and/or drop rebuildable structures. A reclaim proves the
+   committed authority byte-identical.
+3. Re-run `orfs recover`; it now completes and selects the newest committed
+   generation.
+4. If no derived bytes can be freed, grow or move the backing store
+   (`docs/CAPACITY.md` §12).
+
+### 11.4 Measured results
+
+`tests/bounded_recovery.rs` (receipt `evidence/performance/bounded-recovery.json`,
+schema `orfs.performance.bounded-recovery.v1`) proves each row: an edge crash
+after `fsync` recovered the newest committed generation; a recovery that could not
+create its working set failed **closed** with the typed `RecoverySpaceExhausted`
+and a byte-identical committed prefix, then completed once the pressure was
+cleared; and a read-only open at 0 free returned identical history.
+
+[`OrfsError::RecoverySpaceExhausted`]: ../src/error.rs

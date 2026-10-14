@@ -257,6 +257,7 @@ volume takes no write path. It contains:
 | `verdict` | `ok` / `warn` / `exhausted` (below). |
 | `degraded`, `degraded_reason` | Whether the volume has latched read-only, and why. |
 | `policy` | The capacity policy in force (reserve, quotas, explicit bound). |
+| `reclaimable` | The **bounded-reclaim** report (Phase 77): `relocatable_sealed_bytes`, `droppable_rebuildable_bytes`, `droppable_derived_metadata_bytes`, `reclaimable_bytes`, and the `recommended_action` with the bytes it would free (§14). Every byte here is derived; permanent authority is never included. |
 
 ### 10.1 The verdict
 
@@ -275,10 +276,12 @@ what you want kept free, and `warn`/`exhausted` track it.
 
 ### 10.2 `--json`
 
-The JSON form is a stable envelope with the schema `orfs.capacity.report.v1`:
+The JSON form is a stable envelope. Phase 77 added the `status.reclaimable`
+object, so the schema is **`orfs.capacity.report.v2`** (v1 is v2 without the
+`reclaimable` object; every v1 field keeps its name and meaning):
 
 ```json
-{ "schema": "orfs.capacity.report.v1", "orfs_version": "0.2.0",
+{ "schema": "orfs.capacity.report.v2", "orfs_version": "0.2.0",
   "status": { "volume": "…", "verdict": "ok", "reserve_bytes": 0,
               "free_bytes": 104472592479, "headroom_bytes": 104472592479,
               "physical_bytes": 8287, "authoritative_bytes": 8287,
@@ -287,7 +290,15 @@ The JSON form is a stable envelope with the schema `orfs.capacity.report.v1`:
               "estimated_transactions_remaining": null,
               "mount_point": "/backing", "device": "/dev/nvme0n1p1",
               "filesystem": "ext4", "degraded": false,
-              "degraded_reason": null, "policy": { … } } }
+              "degraded_reason": null, "policy": { … },
+              "reclaimable": {
+                "head_segment": 0, "sealed_segments_local": 0,
+                "relocatable_sealed_bytes": 0,
+                "droppable_rebuildable_bytes": 0,
+                "droppable_derived_metadata_bytes": 0,
+                "reclaimable_bytes": 0,
+                "recommended_action": { "action": "none", "frees_bytes": 0,
+                                        "note": "comfortable headroom …" } } } }
 ```
 
 ### 10.3 Separated accounting and the growth forecast (`--economics`)
@@ -351,10 +362,14 @@ larger/other device**. In order:
    with the reserve you want to keep free. `ok` needs no action; `warn` means the
    growth curve is about to meet the reserve; `exhausted` means commits are being
    refused now.
-2. **Free backing space that is *not* OrFS history.** Optional (manifested)
-   structures are derived and rebuildable; removing `.or_bloom/` frees physical
-   space without touching authoritative history. A volume's authoritative `or.log/`
-   must **never** be trimmed by hand (non-withdrawal; see §7).
+2. **Free backing space that is *not* OrFS history.** The bounded, tested way is
+   `orfs reclaim` (§14): relocate sealed segments to a cold tier and/or drop
+   derived (rebuildable) structures, then prove the committed authority
+   byte-identical. Optional (manifested) structures are derived and rebuildable;
+   removing `.or_bloom/` by hand frees physical space too, but `orfs reclaim
+   --drop-rebuildable` also drops the `index/` accelerators and never touches the
+   relocation catalogue or the generation manifests. A volume's authoritative
+   `or.log/` must **never** be trimmed by hand (non-withdrawal; see §7).
 3. **Relocate the volume to a larger device.** OrFS is path-based: stop the mount,
    copy the whole backing directory (`volume.meta`, `or.log/`, `index/`,
    `.or_bloom/`) to the larger filesystem, and mount from the new path. The bytes
@@ -387,3 +402,88 @@ reserve, or a device error), the volume latches **read-only**:
 This is the *only* failure mode when the store is full: an orderly, typed refusal,
 never a partial transaction, a silent truncation, or a reclamation of committed
 history.
+
+---
+
+## 14. The bounded-space operator procedure (Phase 77)
+
+Non-withdrawal means the backing store fills monotonically (§9): committed history
+is never reclaimed, so the operator must *free space elsewhere*, and the honest
+question is **which derived bytes can be freed without costing one authoritative
+byte**. `orfs doctor --capacity` now measures exactly that (`status.reclaimable`,
+§10), and `orfs reclaim` performs it under a byte-identity proof.
+
+### 14.1 What can be freed (and what each action costs)
+
+| Action | Frees | Costs | Never touches |
+|---|---|---|---|
+| **`--relocate-sealed`** | Local authoritative bytes in **sealed** (non-head) segments, moved to a **cold tier** as a verified copy (`docs/TIERING.md`). This is the largest and cheapest win, and the Kafka KIP-405 sanctioned way to survive a full local tier. | A second tier (a cheaper local device, a network mount, an object-store FUSE mount); a **recall** is needed to read a released segment locally. Total authority is unchanged. | The active head; the committed root, watermark, and total authority. |
+| **`--drop-rebuildable`** | The `RebuildableManifestation` category: EKBLOOM bodies, trigram index, global search directory, direct-page atlases, suffix/image accelerators, `.or_passthrough` images. | Read latency only: they rebuild on demand, and an absent structure falls back to the authoritative extent read. | `or.log/`, `index/`, `volume.meta`, the generation manifests/catalogue, the relocation catalogue. |
+| **`--drop-derived-metadata`** | The `index/` accelerators (committed-root directory, checkpoints, published snapshots). | Mount latency only: the next open falls back to a full log scan (`docs/RECOVERY.md` §8.1). | The authoritative log; `volume.meta`. |
+| *(none)* | Nothing (permanent authoritative history is never reclaimable). | — | — |
+
+### 14.2 The decision tree
+
+```text
+orfs doctor --capacity --backing <dir>          # read status.reclaimable + recommended_action
+        │
+        ├─ verdict ok ──────────────────────────► no action
+        │
+        └─ verdict warn / exhausted
+                │
+                ├─ relocatable_sealed_bytes > 0 ─► orfs reclaim --backing <dir> --tier-root <cold> \
+                │                                          --relocate-sealed --apply        (frees the most)
+                │
+                ├─ droppable_rebuildable_bytes > 0 ─► orfs reclaim --backing <dir> \
+                │                                          --drop-rebuildable --apply
+                │
+                ├─ droppable_derived_metadata_bytes > 0 ─► orfs reclaim --backing <dir> \
+                │                                          --drop-derived-metadata --apply
+                │
+                └─ nothing derived to free ─────────► grow or move the backing store (§12);
+                                                       the volume stays read-only (EROFS)
+```
+
+`orfs reclaim` **reports by default** (dry-run); nothing is performed without
+`--apply`. After every action it re-captures the committed authority and asserts it
+is byte-identical — the committed root, its BLAKE3 digest, the committed prefix
+bytes, and the durable commit watermark. A violation is a hard error.
+
+```sh
+# report only (the default), human or JSON (schema `orfs.reclaim.report.v1`)
+orfs reclaim --backing <dir> [--reserve <bytes>] [--json]
+
+# perform (relocate needs a cold tier; --drop-rebuildable is the always-safe action)
+orfs reclaim --backing <dir> --tier-root <cold> --relocate-sealed --apply
+orfs reclaim --backing <dir> --drop-rebuildable --apply
+orfs reclaim --backing <dir> --drop-derived-metadata --apply
+```
+
+### 14.3 Recovery on a nearly-full disk
+
+Recovery itself must obey the same discipline. `orfs recover` (and
+`Volume::open(ReadWrite)`) either completes **without appending new authoritative
+bytes** — quarantining an abandoned tail is a rename, and the fresh segment is empty
+— or, when the backing cannot accept that working set, fails **closed** with the
+typed `OrfsError::RecoverySpaceExhausted` (errno `ENOSPC`), whose message names the
+remedy (`orfs reclaim`, or a larger backing). The committed prefix `[0, R)` is left
+byte-identical, the tail is retained under `or.log/quarantine/` (never discovered as
+committed), and a later recovery with the pressure relieved completes and selects
+the newest committed generation. A **read-only open** (`OpenMode::ReadOnly`) needs
+no free space and serves all committed history. The full precedence is in
+`docs/RECOVERY.md` §11.
+
+### 14.4 Measured results
+
+From `evidence/performance/bounded-recovery.json` (schema
+`orfs.performance.bounded-recovery.v1`; the same 8-object × 4 × 32 KiB fixture as
+`docs/TIERING.md` §10): at the reserve, relocating **10 of 11** sealed segments to
+a cold tier on a **separate filesystem** increased the volume's backing free space
+by **1 019 904 bytes** (the local authoritative footprint dropped by exactly the
+relocated **1 002 542 bytes**), commits **resumed**, and all **41** committed
+boundaries stayed byte-identical. Dropping the rebuildable manifestations freed
+**1 312 480 bytes** with authority byte-identical. At 100% of usable capacity an
+oversized write was refused with a typed `ENOSPC` and the history stayed intact;
+an edge crash recovered the newest generation; a recovery that could not create its
+working set failed **closed** with the typed error and an intact prefix; and a
+read-only open at zero free returned identical history.

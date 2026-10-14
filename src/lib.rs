@@ -139,6 +139,7 @@ pub mod powerloss {
 pub mod query;
 pub mod radix;
 pub mod readpath;
+pub mod reclaim;
 pub mod record;
 pub mod searchdir;
 pub mod segment;

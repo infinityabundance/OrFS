@@ -185,6 +185,14 @@ orfs tier verify   --backing <dir>
 orfs tier recall   --backing <dir> [--segment <id>]
 ```
 
+> **Bounded reclaim wrapper (Phase 77).** `orfs reclaim --backing <dir>
+> --tier-root <cold> --relocate-sealed --apply` performs the same relocation as a
+> *bounded action* in the operator's decision tree, measures the freed free space,
+> and proves the committed authority byte-identical afterwards
+> (`docs/CAPACITY.md` §14). It reports by default (dry-run); nothing moves without
+> `--apply`. `orfs tier relocate` remains the direct command for per-segment
+> control.
+
 1. **Provision the cold tier.** A directory on a cheaper device (or an
    object-store mount). `--tier-root` must exist; `relocate` canonicalises it and
    records it in the catalogue.
@@ -236,6 +244,10 @@ From `evidence/performance/tier-relocation.json` (schema
 * Court: `tests/tier_relocation.rs` (`tier_relocation_smoke` is always-on;
   `tier_relocation_sweep` is opt-in behind `ORFS_TIER_RELOCATION=1`).
 * Regenerate: `sh scripts/container-tier-relocation.sh`.
+* The bounded-reclaim wrapper and its separate-filesystem free-space measurement
+  are proven by `tests/bounded_recovery.rs` (receipt
+  `evidence/performance/bounded-recovery.json`, schema
+  `orfs.performance.bounded-recovery.v1`; `sh scripts/container-bounded-recovery.sh`).
 * The full mapping (doc claim → receipt → command) is in `docs/REPRODUCE.md`.
 
 [`SegmentSource`]: https://docs.rs/orfs/latest/orfs/segment/trait.SegmentSource.html

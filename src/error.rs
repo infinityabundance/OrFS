@@ -94,6 +94,22 @@ pub enum OrfsError {
     )]
     CapacityExhausted { needed: u64, admissible: u64 },
 
+    /// The **recovery working set** could not be made durable because the backing
+    /// store is at or below its reserve (Phase 77). A writable recovery must
+    /// quarantine an abandoned tail and continue in a fresh segment; when the
+    /// backing cannot accept that working set the open is refused **before**
+    /// mutating anything, leaving committed history intact and fully readable
+    /// read-only.
+    ///
+    /// The remedy is to free space with `orfs reclaim` (relocate sealed segments
+    /// to a cold tier and/or drop rebuildable structures) or to move the volume to
+    /// a larger backing, then re-run `orfs recover`. Maps to `ENOSPC`.
+    #[error(
+        "recovery needs {needed} byte(s) of working space but only {admissible} are \
+         admissible: free space with `orfs reclaim` (or a larger backing) and re-run `orfs recover`"
+    )]
+    RecoverySpaceExhausted { needed: u64, admissible: u64 },
+
     /// Committed state failed an integrity or structural check.
     #[error("corrupt committed state: {0}")]
     Corrupt(String),
@@ -204,6 +220,7 @@ impl OrfsError {
             OrfsError::DirectoryCycle => libc::EINVAL,
             OrfsError::NoSpace(_) => libc::ENOSPC,
             OrfsError::CapacityExhausted { .. } => libc::ENOSPC,
+            OrfsError::RecoverySpaceExhausted { .. } => libc::ENOSPC,
             OrfsError::Corrupt(_) => libc::EIO,
             OrfsError::Unsupported(_) => libc::EOPNOTSUPP,
             OrfsError::Compatibility(_) => libc::EPROTONOSUPPORT,

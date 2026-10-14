@@ -207,6 +207,37 @@ withdraws authority: the committed root and watermark are unchanged.
 * A crash or an interrupted relocation is **idempotent and convergent**: re-run the
   same command. A fault in the relocation catalogue **fails closed**.
 
+### 5.2 The bounded reclaim — free space without withdrawing authority
+
+When the verdict is `warn`/`exhausted`, `orfs doctor --capacity` reports the
+**reclaimable** bytes and a recommended action; `orfs reclaim` performs it. It
+**reports by default** (dry-run); nothing happens without `--apply`. It never
+touches the active head or an authoritative byte, and it proves the committed root,
+digest, committed bytes, and commit watermark **byte-identical** afterwards
+(`docs/CAPACITY.md` §14):
+
+```sh
+orfs reclaim --backing <dir> [--reserve <B>] [--json]                     # report (dry-run)
+orfs reclaim --backing <dir> --tier-root <cold> --relocate-sealed --apply   # frees the most
+orfs reclaim --backing <dir> --drop-rebuildable --apply                     # derived, no tier needed
+orfs reclaim --backing <dir> --drop-derived-metadata --apply                # index/ accelerators
+```
+
+Decision tree: **relocate sealed → drop rebuildable → drop derived metadata →
+grow the backing**. `--drop-rebuildable` frees EKBLOOM bodies, the trigram index,
+the search directory, atlases and passthrough images (they rebuild on demand, at a
+read-latency cost); `--drop-derived-metadata` frees the `index/` accelerators
+(rebuilt by a full log scan on the next open). Neither touches `or.log/`,
+`volume.meta`, the generation manifests/catalogue, or the relocation catalogue. If
+nothing derived remains, the only remedy is a larger/other device (§5.1, §5).
+
+**Recovery under space pressure.** If `orfs recover` is refused at the reserve with
+the typed `RecoverySpaceExhausted`, the committed history is intact and fully
+readable — run `orfs verify --deep` (read-only) to confirm, free space with
+`orfs reclaim`, and re-run `orfs recover` (`docs/RECOVERY.md` §11). A **read-only**
+open (`orfs mount --read-only`, `orfs inspect`, `orfs verify`) needs no free space
+and serves all committed history even at zero headroom.
+
 ---
 
 ## 6. Where the security model lives
@@ -231,7 +262,12 @@ confidentiality/encryption, host-level DoS). Two operator-facing points:
 # Health
 orfs doctor                                             # capability probe
 orfs doctor --capacity --backing <dir> [--reserve <B>]  # capacity report + verdict
-orfs doctor --capacity --backing <dir> --json           # machine-readable (orfs.capacity.report.v1)
+orfs doctor --capacity --backing <dir> --json           # machine-readable (orfs.capacity.report.v2)
+
+# Bounded reclaim (frees derived space; never withdraws authority)
+orfs reclaim --backing <dir> [--json]                                  # report (dry-run)
+orfs reclaim --backing <dir> --tier-root <cold> --relocate-sealed --apply
+orfs reclaim --backing <dir> --drop-rebuildable --apply
 
 # Mount lifecycle
 orfs mount <backing> <mnt> --transport <fuse|fuse-uring> --backing-io <sync|uring>

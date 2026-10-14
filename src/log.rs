@@ -26,9 +26,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::capacity::{
-    backing_available_bytes, backing_space, forecast_storage, storage_accounting, CapacityGovernor,
-    CapacityPolicy, CapacityReport, CapacityStatus, CapacityVerdict, ForecastInputs,
-    StorageEconomics,
+    backing_available_bytes, backing_space, forecast_storage, reclaimable, storage_accounting,
+    CapacityGovernor, CapacityPolicy, CapacityReport, CapacityStatus, CapacityVerdict,
+    ForecastInputs, StorageEconomics,
 };
 use crate::error::{OrfsError, Result};
 use crate::failpoints::{self, Failpoint};
@@ -652,6 +652,22 @@ fn quarantine_after(dir: &Path, extents: &[SegmentExtent], committed: u64) -> Re
     Ok(())
 }
 
+/// The minimum working set a writable recovery must be able to make durable
+/// (Phase 77): quarantining the abandoned tail (a rename, never a truncation) and
+/// creating one fresh empty segment at the committed root, plus the commit
+/// watermark. One filesystem block is a conservative, documented floor
+/// (`docs/CAPACITY.md` §14).
+pub const RECOVERY_WORKING_SET_BYTES: u64 = 4096;
+
+/// Whether a recovery failure is an *out-of-space* failure (an `ENOSPC`-class
+/// error) rather than an unrelated fault. Only these are surfaced as the precise
+/// [`OrfsError::RecoverySpaceExhausted`]; every other fault keeps its own typed
+/// error, so recovery never masks a device error as exhaustion.
+fn recovery_needs_space(e: &OrfsError) -> bool {
+    matches!(e, OrfsError::NoSpace(_))
+        || matches!(e, OrfsError::Io(io) if io.raw_os_error() == Some(libc::ENOSPC))
+}
+
 /// A read-only iterator over validated canonical records.
 pub struct RecordReader {
     reader: Option<(u64, ReadAt)>,
@@ -1198,10 +1214,30 @@ impl Log {
         if mode == OpenMode::ReadWrite {
             if scan.physical_end > committed {
                 // Retain the abandoned tail, then continue in a fresh segment.
-                quarantine_after(dir, &scan.extents, committed)?;
+                //
+                // Recovery is the only open-time step that *creates* anything
+                // (quarantining the tail aside — renames, never truncation — and a
+                // fresh empty segment). When the backing cannot accept that working
+                // set, refuse with a precise, typed, actionable error rather than
+                // half-completing the transition (Phase 77, `docs/CAPACITY.md` §14).
+                // Committed history is untouched and fully readable read-only, the
+                // tail is retained under `or.log/quarantine/` (never discovered as
+                // committed), and a later recovery can still complete.
+                let seg = match (|| -> Result<Segment> {
+                    quarantine_after(dir, &scan.extents, committed)?;
+                    Segment::create(dir, committed)
+                })() {
+                    Ok(seg) => seg,
+                    Err(e) if recovery_needs_space(&e) => {
+                        return Err(OrfsError::RecoverySpaceExhausted {
+                            needed: RECOVERY_WORKING_SET_BYTES,
+                            admissible: backing_available_bytes(dir).unwrap_or(0),
+                        })
+                    }
+                    Err(e) => return Err(e),
+                };
                 quarantined = true;
                 locator = SegmentLocator::from_extents(truncate_extents(&scan.extents, committed))?;
-                let seg = Segment::create(dir, committed)?;
                 locator.push(SegmentExtent {
                     id: committed,
                     valid_len: 0,
@@ -1384,6 +1420,10 @@ impl Log {
             degraded: self.is_degraded(),
             degraded_reason: self.capacity.degraded_reason().map(str::to_string),
             policy,
+            // Phase 77: measure what a bounded, non-withdrawing reclaim could
+            // free, so the report names the action rather than leaving the
+            // operator to guess (RocksDB's "measure, don't assume").
+            reclaimable: reclaimable(volume, verdict),
         }
     }
 

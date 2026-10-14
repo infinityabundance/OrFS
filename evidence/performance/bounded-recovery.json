@@ -1,0 +1,120 @@
+{
+  "all_ok": true,
+  "drop_rebuildable": {
+    "all_ok": true,
+    "authority_byte_identical": true,
+    "category": "rebuildable_manifestation",
+    "dropped_bytes": 1312480,
+    "kind": "drop_rebuildable",
+    "permanent_authoritative_unchanged": true,
+    "read_returns_identical_bytes_after_drop": true,
+    "rebuildable_bytes_after": 0,
+    "rebuildable_bytes_before": 1312480,
+    "watermark_byte_identical": true
+  },
+  "environment": {
+    "bench": {
+      "cgroup_memory_max": "8589934592",
+      "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "container_image": null,
+      "cores_visible": 8,
+      "cpu_max": "800000 100000",
+      "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+      "fuse_enable_uring": true,
+      "kernel_release": "7.2.9-2-cachyos",
+      "likely_container": true,
+      "machine": "x86_64",
+      "perf_counters_available": false,
+      "perf_event_open_error": "Operation not permitted (os error 1)",
+      "perf_event_paranoid": "2",
+      "ram_total_bytes": 134723346432
+    },
+    "profile": "release"
+  },
+  "evacuation": {
+    "all_ok": true,
+    "at_reserve_write_refused_typed": true,
+    "boundaries_checked": 41,
+    "commits_resumed": true,
+    "committed_root": 1068918,
+    "committed_root_byte_equality": true,
+    "free_bytes_after": 67026944,
+    "free_bytes_before": 66007040,
+    "free_space_increased": true,
+    "freed_bytes": 1019904,
+    "kind": "evacuation",
+    "local_authoritative_bytes_freed": 1002542,
+    "measured": true,
+    "relocated_bytes": 1002542,
+    "relocated_segments": 10,
+    "resumed_root": 1073342,
+    "tier_on_separate_filesystem": true
+  },
+  "generated_by": "tests/bounded_recovery.rs",
+  "note": "Single-run, single-host, BOUNDED measurements. A bounded reclaim frees local space WITHOUT withdrawing one authoritative byte: relocating a sealed segment moves a verified copy to the cold tier (the local footprint drops; the committed root, the commit watermark, and the total authority are unchanged) and dropping a rebuildable structure costs no authority. At the reserve, recovery of a nearly-full volume either completes without appending new authoritative bytes or fails with the typed `RecoverySpaceExhausted` and leaves the committed prefix byte-identical. Absolute bytes are host/build dependent; the byte-equality and the bookkeeping are the point.",
+  "read_only_at_zero_free": {
+    "all_ok": true,
+    "committed_history_byte_identical": true,
+    "committed_root": 1068918,
+    "kind": "read_only_at_zero_free",
+    "open_succeeded": true,
+    "wrote_nothing": true
+  },
+  "recovery_at_100_percent": {
+    "all_ok": true,
+    "authoritative_capacity_bytes": 1068918,
+    "authoritative_used_bytes": 1068918,
+    "committed_history_byte_identical": true,
+    "errno": "ENOSPC",
+    "headroom_bytes": 0,
+    "kind": "full_capacity",
+    "oversized_write_refused_typed": true,
+    "previous_root_intact": true,
+    "read_only_open_at_zero_free_ok": true,
+    "recover_selected_newest_generation": true,
+    "recovered_root": 1068918
+  },
+  "recovery_at_the_edge": {
+    "all_ok": true,
+    "baseline_prefix_byte_identical": true,
+    "baseline_root": 1068918,
+    "crash_seam": "real child process, SIGABRT after fsync",
+    "crashed_by_sigabrt": true,
+    "edge_root": 1070270,
+    "kind": "crash",
+    "level_pct": 99,
+    "newest_valid_generation_selected": true,
+    "quarantined": false,
+    "recovered_root": 1070270,
+    "silently_repaired_or_truncated": false
+  },
+  "recovery_fails_closed_at_the_reserve": {
+    "all_ok": true,
+    "baseline_root": 1068918,
+    "committed_prefix_byte_identical": true,
+    "kind": "fail_closed",
+    "recovered_root": 1068918,
+    "recovery_completes_when_pressure_cleared": true,
+    "refusal_errno": "ENOSPC",
+    "refusal_is_actionable": true,
+    "refusal_is_typed": true,
+    "trigger": "simulated device ENOSPC on segment creation during recovery"
+  },
+  "schema": "orfs.performance.bounded-recovery.v1",
+  "tier_unavailable": {
+    "all_ok": true,
+    "authority_bytes_freed_by_drop": 0,
+    "committed_history_byte_identical": true,
+    "committed_history_fully_readable": true,
+    "kind": "tier_unavailable",
+    "relocation_error": "cold tier unavailable: tier root /mnt/1tb_kingston/OrFS/target/.tmp/.tmpvvl4Si/no-such-tier is not usable: No such file or directory (os error 2)",
+    "relocation_refused_typed": true,
+    "volume_stays_read_only": true
+  },
+  "workload": {
+    "chunk_bytes": 32768,
+    "chunks_per_object": 4,
+    "objects": 8,
+    "segment_size": 131072
+  }
+}

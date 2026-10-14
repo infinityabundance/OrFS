@@ -58,6 +58,7 @@ reported `SKIPPED (reason)` and is **not** counted as a pass. See
 | `evidence/performance/endurance-amplification.json` | `tests/endurance_amplification.rs` | `sh scripts/container-endurance-amplification.sh` |
 | `evidence/performance/storage-economics.json` | `tests/storage_economics.rs` | `sh scripts/container-storage-economics.sh` |
 | `evidence/performance/tier-relocation.json` | `tests/tier_relocation.rs` | `sh scripts/container-tier-relocation.sh` |
+| `evidence/performance/bounded-recovery.json` | `tests/bounded_recovery.rs` | `sh scripts/container-bounded-recovery.sh` |
 | `evidence/performance/historical-fast.json` | `tests/historical_fast.rs` | `sh scripts/container-historical-fast.sh` |
 | `evidence/performance/historical-index-integrated.json` | `tests/historical_index_integration.rs` | `sh scripts/container-historical-integrate.sh` |
 | `evidence/performance/group-commit-adaptive.json` | `tests/group_commit_adaptive.rs` | `sh scripts/container-group-commit.sh` |
@@ -131,6 +132,7 @@ image → receipt → command mapping:
 | `endurance-amplification-ratio.svg` | `PERFORMANCE.md` §30 | `evidence/performance/endurance-amplification.json` | `sh scripts/container-endurance-amplification.sh` |
 | `storage-economics-predicted-vs-actual.svg` | `STORAGE-ECONOMICS.md` §3.4 | `evidence/performance/storage-economics.json` | `sh scripts/container-storage-economics.sh` |
 | `storage-economics-accounting.svg` | `STORAGE-ECONOMICS.md` §2.1 | `evidence/performance/storage-economics.json` | `sh scripts/container-storage-economics.sh` |
+| `bounded-recovery.svg` | `CAPACITY.md` §14.4 | `evidence/performance/bounded-recovery.json` | `sh scripts/container-bounded-recovery.sh` |
 | `manifestation-catalogue.svg` | `PERFORMANCE.md` §14 | `evidence/performance/manifestation-catalogue.json` | `sh scripts/container-manifestation-catalogue.sh` |
 | `planner-cache.svg` | `PERFORMANCE.md` §17 | `evidence/performance/planner-cache.json` | `sh scripts/container-planner-cache.sh` |
 | `microarch.svg` | `PERFORMANCE.md` §18 | `evidence/performance/microarch.json` | `sh scripts/container-microarch.sh` |

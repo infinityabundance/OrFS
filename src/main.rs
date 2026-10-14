@@ -317,6 +317,38 @@ enum Command {
         #[command(subcommand)]
         cmd: TierCommand,
     },
+
+    /// Bounded reclaim of local space without withdrawing authority (Phase 77).
+    ///
+    /// Reports what a bounded action would free; performs nothing unless `--apply`
+    /// is given. A reclaim relocates sealed segments to a cold tier and/or drops
+    /// derived (rebuildable) structures, then proves the committed authority
+    /// byte-identical. It never touches the active head or an authoritative byte.
+    Reclaim {
+        /// Backing volume directory.
+        #[arg(long)]
+        backing: PathBuf,
+        /// Cold-tier root directory (needed for `--relocate-sealed`).
+        #[arg(long)]
+        tier_root: Option<PathBuf>,
+        /// Relocate every sealed (non-head) segment to the cold tier.
+        #[arg(long)]
+        relocate_sealed: bool,
+        /// Drop rebuildable manifested structures (EKBLOOM, trigram, atlases, …).
+        #[arg(long)]
+        drop_rebuildable: bool,
+        /// Drop derived metadata accelerators under `index/`.
+        #[arg(long)]
+        drop_derived_metadata: bool,
+        /// Perform the selected actions. Without it the command only reports
+        /// (dry-run is the default). With `--apply` and no action flag, only
+        /// `--drop-rebuildable` (the always-safe action) is performed.
+        #[arg(long)]
+        apply: bool,
+        /// Judge the recommendation against this reserve in bytes.
+        #[arg(long)]
+        reserve: Option<u64>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -576,6 +608,24 @@ fn run(cli: &Cli) -> Result<()> {
             TierCommand::Verify { backing } => tier_verify(backing, cli.json),
             TierCommand::Recall { backing, segment } => tier_recall(backing, *segment, cli.json),
         },
+        Command::Reclaim {
+            backing,
+            tier_root,
+            relocate_sealed,
+            drop_rebuildable,
+            drop_derived_metadata,
+            apply,
+            reserve,
+        } => reclaim_cmd(
+            backing,
+            tier_root.as_deref(),
+            *relocate_sealed,
+            *drop_rebuildable,
+            *drop_derived_metadata,
+            *apply,
+            *reserve,
+            cli.json,
+        ),
     }
 }
 
@@ -1624,8 +1674,49 @@ fn recover(backing: &Path, json: bool) -> Result<()> {
     let scan = before.expect("scan present");
     let tail = scan.tail;
 
-    // Opening read-write performs quarantine if a tail is present.
-    let mut vol = Volume::open(backing, OpenMode::ReadWrite)?;
+    // Opening read-write performs quarantine if a tail is present. Phase 77: at or
+    // below the reserve this can be refused with a typed, actionable error; the
+    // committed history is still fully readable, so report it read-only and refuse
+    // rather than half-completing the recovery.
+    let mut vol = match Volume::open(backing, OpenMode::ReadWrite) {
+        Ok(v) => v,
+        Err(e) if is_space_refusal(&e) => {
+            let (root, records) = match Volume::open(backing, OpenMode::ReadOnly) {
+                Ok(v) => (
+                    Some(v.log.committed_end_offset()),
+                    Some(v.log.committed_record_count()),
+                ),
+                Err(_) => (None, None),
+            };
+            let remedy = "free space with `orfs reclaim --backing <dir> ".to_string()
+                + "[--tier-root <cold> --relocate-sealed] [--drop-rebuildable] --apply`, "
+                + "or move the volume to a larger backing, then re-run `orfs recover`";
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "volume": backing.display().to_string(),
+                        "refused": true,
+                        "error": e.to_string(),
+                        "committed_root_read_only": root,
+                        "committed_records_read_only": records,
+                        "remedy": remedy,
+                    }))
+                    .unwrap()
+                );
+            } else {
+                println!("recover {}: refused: {e}", backing.display());
+                if let Some(r) = root {
+                    println!(
+                        "  committed history is intact and fully readable read-only; committed root R: {r}"
+                    );
+                }
+                println!("  remedy: {remedy}");
+            }
+            return Err(e);
+        }
+        Err(e) => return Err(e),
+    };
     vol.sync()?;
     let root = vol.log.committed_end_offset();
     let quarantined = tail.is_some();
@@ -1853,6 +1944,127 @@ fn tier_recall(backing: &Path, segment: Option<u64>, json: bool) -> Result<()> {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// reclaim (Phase 77, bounded-space recovery)
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::too_many_arguments)]
+fn reclaim_cmd(
+    backing: &Path,
+    tier_root: Option<&Path>,
+    relocate_sealed: bool,
+    drop_rebuildable: bool,
+    drop_derived_metadata: bool,
+    apply: bool,
+    reserve: Option<u64>,
+    json: bool,
+) -> Result<()> {
+    let plan = orfs::reclaim::plan(backing, reserve);
+
+    if !apply {
+        // Dry-run is the default: report what a bounded action would free.
+        if json {
+            let out = serde_json::json!({
+                "schema": "orfs.reclaim.report.v1",
+                "volume": backing.display().to_string(),
+                "applied": false,
+                "plan": plan,
+            });
+            println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        } else {
+            print_reclaim_plan(backing, &plan);
+            println!("  (dry-run: nothing changed; pass --apply to perform an action)");
+        }
+        return Ok(());
+    }
+
+    if relocate_sealed && tier_root.is_none() {
+        return Err(OrfsError::InvalidArgument(
+            "orfs reclaim --relocate-sealed requires --tier-root <dir>".to_string(),
+        ));
+    }
+    // With `--apply` and no action selector, perform only the always-safe drop
+    // (the action that needs no external tier).
+    let drop_rebuildable = drop_rebuildable || (!relocate_sealed && !drop_derived_metadata);
+    let tier = if relocate_sealed { tier_root } else { None };
+    let outcome = orfs::reclaim::apply(backing, tier, drop_rebuildable, drop_derived_metadata)?;
+
+    if json {
+        let out = serde_json::json!({
+            "schema": "orfs.reclaim.report.v1",
+            "volume": backing.display().to_string(),
+            "applied": true,
+            "plan": plan,
+            "outcome": outcome,
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else {
+        println!("applying bounded reclaim to {}", backing.display());
+        for a in &outcome.actions {
+            println!("  {a}");
+        }
+        match (outcome.free_bytes_before, outcome.free_bytes_after) {
+            (Some(b), Some(a)) => println!(
+                "  backing free:        {b} -> {a} bytes (+{})",
+                outcome.freed_bytes
+            ),
+            _ => println!("  backing free:        unreadable"),
+        }
+        println!(
+            "  local authority:     {} -> {} bytes",
+            outcome.local_authoritative_bytes_before, outcome.local_authoritative_bytes_after
+        );
+        println!(
+            "  committed root:      {} ({})",
+            outcome.committed_root_after,
+            if outcome.committed_root_unchanged {
+                "unchanged"
+            } else {
+                "CHANGED"
+            }
+        );
+        println!(
+            "  authority unchanged: {}",
+            yesno(outcome.authority_unchanged)
+        );
+    }
+    if outcome.authority_checked && !outcome.authority_unchanged {
+        return Err(OrfsError::Corrupt(
+            "bounded reclaim changed authoritative history".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn print_reclaim_plan(backing: &Path, plan: &orfs::capacity::Reclaimable) {
+    println!("OrFS bounded reclaim — {}", backing.display());
+    println!(
+        "  active head segment:            {} (never relocatable)",
+        plan.head_segment
+    );
+    println!(
+        "  relocatable sealed bytes:       {} ({} sealed local segment(s))",
+        plan.relocatable_sealed_bytes, plan.sealed_segments_local
+    );
+    println!(
+        "  droppable rebuildable bytes:    {}",
+        plan.droppable_rebuildable_bytes
+    );
+    println!(
+        "  droppable derived metadata:     {}",
+        plan.droppable_derived_metadata_bytes
+    );
+    println!(
+        "  reclaimable (bounded):          {}",
+        plan.reclaimable_bytes
+    );
+    println!(
+        "  recommended action:             {} (frees {} bytes)",
+        plan.recommended_action.action, plan.recommended_action.frees_bytes
+    );
+    println!("    {}", plan.recommended_action.note);
+}
+
 fn doctor(
     json: bool,
     capacity: bool,
@@ -2009,7 +2221,7 @@ fn doctor_capacity(backing: Option<&Path>, reserve: Option<u64>, json: bool) -> 
     let status = vol.capacity_status(reserve);
     if json {
         let out = serde_json::json!({
-            "schema": "orfs.capacity.report.v1",
+            "schema": "orfs.capacity.report.v2",
             "orfs_version": orfs::VERSION,
             "status": status,
         });
@@ -2196,6 +2408,32 @@ fn print_capacity_status(s: &CapacityStatus) {
         }
     };
     println!("  => {}: {}", verdict_str(s.verdict), note);
+    println!("  bounded reclaim (no authoritative byte is withdrawn):");
+    println!(
+        "    active head segment:        {} (never relocatable)",
+        s.reclaimable.head_segment
+    );
+    println!(
+        "    relocatable sealed bytes:   {} ({} sealed local segment(s))",
+        s.reclaimable.relocatable_sealed_bytes, s.reclaimable.sealed_segments_local
+    );
+    println!(
+        "    droppable rebuildable:      {} bytes",
+        s.reclaimable.droppable_rebuildable_bytes
+    );
+    println!(
+        "    droppable derived metadata: {} bytes (index/ accelerators)",
+        s.reclaimable.droppable_derived_metadata_bytes
+    );
+    println!(
+        "    reclaimable (bounded):      {} bytes",
+        s.reclaimable.reclaimable_bytes
+    );
+    println!(
+        "    recommended action:         {} (frees {} bytes)",
+        s.reclaimable.recommended_action.action, s.reclaimable.recommended_action.frees_bytes
+    );
+    println!("      {}", s.reclaimable.recommended_action.note);
 }
 
 fn yesno(b: bool) -> &'static str {
@@ -2204,6 +2442,17 @@ fn yesno(b: bool) -> &'static str {
     } else {
         "no"
     }
+}
+
+/// Whether an error is a *typed refusal* an operator can act on by freeing space
+/// (`ENOSPC`-class): the Phase-68 capacity guard, the Phase-77 recovery
+/// working-set refusal, or an out-of-space/device store failure. Used by `recover`
+/// to still report the intact committed boundary read-only before refusing.
+fn is_space_refusal(e: &OrfsError) -> bool {
+    matches!(
+        e,
+        OrfsError::CapacityExhausted { .. } | OrfsError::RecoverySpaceExhausted { .. }
+    ) || e.is_authoritative_store_failure()
 }
 
 fn tri(v: Option<bool>) -> &'static str {

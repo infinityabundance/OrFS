@@ -1,0 +1,185 @@
+{
+  "all_ok": true,
+  "description": "Phase 79 sustained adversarial concurrency court. Native Rust equivalents of fsx/fsstress/fs_mark (NOT the real tools, which are unavailable; evidence/correctness/xfstests.json records ran:false) plus rename/link/unlink race storms, and one arm through a real OrFS FUSE mount. Every number is from a real run.",
+  "environment": {
+    "bench": {
+      "cgroup_memory_max": "8589934592",
+      "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "container_image": "sha256:a41df86df391732ab467b5bedc8b4a17c0df437fa180b5230417a6a8339d97ac",
+      "cores_visible": 8,
+      "cpu_max": "800000 100000",
+      "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+      "fuse_enable_uring": true,
+      "kernel_release": "7.2.9-2-cachyos",
+      "likely_container": true,
+      "machine": "x86_64",
+      "perf_counters_available": true,
+      "perf_event_open_error": null,
+      "perf_event_paranoid": "2",
+      "ram_total_bytes": 134723346432
+    },
+    "profile": "debug",
+    "toolchain": "1.99.0-x86_64-unknown-linux-gnu"
+  },
+  "generated_by": "tests/adversarial_concurrency.rs",
+  "in_process": {
+    "all_ok": true,
+    "config": {
+      "fsmark_file_bytes": 256,
+      "fsmark_files": 4000,
+      "fsstress_ops_per_thread": 400,
+      "fsstress_threads": 64,
+      "fsx_files": 2,
+      "fsx_ops": 20000,
+      "storm_ops_per_thread": 400,
+      "storm_threads": 64
+    },
+    "courts": [
+      {
+        "name": "fsx-equivalent",
+        "report": {
+          "appends": 1978,
+          "bytes_written": 4601532,
+          "files": 2,
+          "fsyncs": 2012,
+          "mismatches": 0,
+          "ops": 20000,
+          "ops_per_s": 3022.201466118649,
+          "reads_verified": 8104,
+          "reopen_digest_equal": true,
+          "seconds": 6.617692508,
+          "truncates": 1984,
+          "writes": 7957
+        }
+      },
+      {
+        "name": "fsstress-equivalent",
+        "report": {
+          "creates": 2043,
+          "duplicate_inodes": 0,
+          "links": 980,
+          "mismatches": 0,
+          "model_files": 183,
+          "model_names": 392,
+          "model_symlinks": 93,
+          "ops_per_s": 101052.26592930092,
+          "ops_per_thread": 400,
+          "orphans": 0,
+          "read_verifies": 5314,
+          "renames": 2221,
+          "reopen_digest_equal": true,
+          "seconds": 0.25333425,
+          "stats": 2588,
+          "symlinks": 1009,
+          "threads": 64,
+          "total_ops": 25600,
+          "truncates": 1672,
+          "unlinks": 2474,
+          "writes": 3271
+        }
+      },
+      {
+        "name": "fs_mark-equivalent",
+        "report": {
+          "bytes_written": 1024000,
+          "dir_empty_after_unlink": true,
+          "file_bytes": 256,
+          "files": 4000,
+          "files_per_s": 38128.46214776903,
+          "mismatches": 0,
+          "seconds": 0.104908506,
+          "verified": 4000
+        }
+      },
+      {
+        "name": "rename-link-unlink-storm",
+        "report": {
+          "all_names_resolve": true,
+          "names_at_end": 13,
+          "ok_creates": 3713,
+          "ok_links": 8,
+          "ok_renames": 2335,
+          "ok_unlinks": 2732,
+          "ops_per_thread": 400,
+          "refusals": 16812,
+          "reopen_digest_equal": true,
+          "threads": 64
+        }
+      }
+    ],
+    "model_checked": "every fsx read vs a byte-exact shadow model; the fsstress final namespace vs an independent op-log-replay model (exact name sets, exact nlink, byte-exact files, no orphans, no duplicate inodes)"
+  },
+  "mounted": {
+    "all_ok": true,
+    "claim": "the transport — not only OrfsCore — is exercised adversarially: every mounted read is byte-exact, and the shared append/read arm proves a reader never observes a torn committed version",
+    "dirs_empty_at_end": true,
+    "latency_ns": {
+      "create": {
+        "mean_ns": 1371807.74625,
+        "p50_ns": 782309,
+        "p95_ns": 4714780,
+        "p999_ns": 15436816,
+        "p99_ns": 8140200,
+        "samples": 3200
+      },
+      "fsync": {
+        "mean_ns": 5823579.105769231,
+        "p50_ns": 4366407,
+        "p95_ns": 10903397,
+        "p999_ns": 13575463,
+        "p99_ns": 11518311,
+        "samples": 208
+      },
+      "read": {
+        "mean_ns": 1225728.425,
+        "p50_ns": 670518,
+        "p95_ns": 4554119,
+        "p999_ns": 11266199,
+        "p99_ns": 7974570,
+        "samples": 3200
+      },
+      "rename": {
+        "mean_ns": 1361758.4109375,
+        "p50_ns": 760598,
+        "p95_ns": 4634539,
+        "p999_ns": 11639748,
+        "p99_ns": 8510034,
+        "samples": 3200
+      },
+      "unlink": {
+        "mean_ns": 1147713.5853125,
+        "p50_ns": 647575,
+        "p95_ns": 4400821,
+        "p999_ns": 11355405,
+        "p99_ns": 7900741,
+        "samples": 3200
+      },
+      "write": {
+        "mean_ns": 1152665.484375,
+        "p50_ns": 648467,
+        "p95_ns": 4394639,
+        "p999_ns": 11184765,
+        "p99_ns": 7801464,
+        "samples": 3200
+      }
+    },
+    "mismatches": 0,
+    "ops_per_thread": 200,
+    "ran": true,
+    "reads_verified": 6400,
+    "seconds": 2.737239136,
+    "shared_readers": 4,
+    "shared_rows": 300,
+    "shared_torn_reads": 0,
+    "threads": 16,
+    "transport": "F0",
+    "write_latency_note": "`write` is the client `write_all`; durability is the separate `fsync` sample"
+  },
+  "schema": "orfs.correctness.adversarial-concurrency.v1",
+  "tools": {
+    "fs_mark": "native Rust equivalent (not the real fs_mark)",
+    "fsstress": "native Rust equivalent (not the real fsstress)",
+    "fsx": "native Rust equivalent (not the real fsx)",
+    "xfstests": "not runnable in this environment; see evidence/correctness/xfstests.json"
+  }
+}

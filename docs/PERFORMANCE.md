@@ -2790,3 +2790,55 @@ p99.99, F2 SQ/CQ counters, PMU); `evidence/performance/external-comparison.json`
 (ext4/tmpfs floor); `evidence/performance/reader-scaling-64.json` (p99.99).
 Charts: `f2-decision-tail.svg`, `f2-decision-throughput.svg`,
 `external-comparison.svg`, `external-comparison-throughput.svg`.
+
+## 32. Phase 79 — sustained adversarial concurrency (native equivalents) and a mounted transport arm
+
+The reviewer's P0 ask was *"full filesystem correctness under adversarial
+concurrent workloads … extend the existing POSIX court to sustained … `fsx`,
+`fsstress`, `fs_mark`, and custom rename/link/unlink races."* The real tools are
+**not runnable here** (`evidence/correctness/xfstests.json` records `ran:false`
+with the blockers); every court is a **native Rust equivalent**, labelled as such
+(`docs/POSIX-COMPAT.md` §6, `docs/LIMITATIONS.md` §18).
+
+The court lives in `tests/adversarial_concurrency.rs` and is run by
+`scripts/container-adversarial-concurrency.sh` (one container at a time). It is a
+**new** file rather than an extension of the Phase-11 `tests/concurrency_stress.rs`
+so the always-on gate stays cheap and the receipt/runner/mounted arm stay
+cohesive.
+
+**What it proves (all receipts from real runs).**
+
+* **`fsx`-equivalent** — a deterministic randomized `write`/`read`/`truncate`/
+  append/`fsync` loop where **every read is verified against a byte-exact shadow
+  model** (the model is the authority); bounded always-on smoke + sustained opt-in.
+* **`fsstress`-equivalent** — `N` workers (8/16/32/64) over one shared namespace,
+  then a full reconciliation against an **independent expected-state model** built
+  by replaying the recorded successful operations (exact name sets, exact `nlink`,
+  byte-exact files, **0 orphans**, **0 duplicate inodes**).
+* **`fs_mark`-equivalent** — many small files created, each verified byte-exact,
+  then unlinked; files/s reported.
+* **rename/link/unlink race storm** — a shared name pool at higher concurrency than
+  Phase 11; a lost race is a typed refusal, never a corruption.
+* **Mounted arm** (`docker_run_kmount`, a **real OrFS FUSE mount** with
+  `--direct-io`) — per-thread create/write/read-verify/rename/unlink with
+  client-observed p50/p95/p99/p99.9 latency, plus one writer appending rows to a
+  shared file while readers verify every complete row they observe. This exercises
+  the **transport**, not only `OrfsCore`.
+
+**Results (this run; release for the in-process sweep, debug for the mounted arm;
+one host under external load).** In `evidence/correctness/adversarial-concurrency.json`:
+`fsx` 20 000 ops / 8 104 verified reads / **0** mismatches; `fsstress` 64×400 =
+25 600 ops / **0** mismatches / **0** orphans / **0** duplicate inodes (the model
+reconciled 392 names); `fs_mark` 4 000 files / **0** mismatches; storm 64 threads
+with 8 788 successful rename/link/unlink/create operations against 16 812 typed
+refusals; mounted arm 16 threads / 6 400 byte-exact reads / **0** mismatches /
+**0** torn reads. `all_ok = true`.
+
+**Latency is host/load-sensitive and deliberately not over-claimed.** The mounted
+`write` latency is the client `write_all`; durability is the separate `fsync`
+sample. The deterministic, load-independent result is the **zero
+mismatches / orphans / duplicate inodes / torn reads**, not the absolute times.
+
+**Provenance.** `evidence/correctness/adversarial-concurrency.json` (schema
+`orfs.correctness.adversarial-concurrency.v1`); chart
+`adversarial-concurrency.svg`.

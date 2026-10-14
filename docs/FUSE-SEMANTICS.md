@@ -347,7 +347,10 @@ is recorded here and in `evidence/correctness/posix-results.json`.
 
 The custom mounted model court (§33 of the design directive) is joined by two
 standard suites, so POSIX behaviour is measured against an external oracle rather
-than only against OrFS's own model.
+than only against OrFS's own model. The **explicit, row-by-row compatibility
+contract** — every operation supported / deviated / refused, with its typed error
+and its proving test — is `docs/POSIX-COMPAT.md`; the courts below are what it
+cites.
 
 ### 11.1 pjdfstest
 

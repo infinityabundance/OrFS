@@ -416,3 +416,39 @@ proof. Honest bounds:
   receipt's `note` says so, and the byte-equality (not the absolute byte counts) is
   the point. For the subordination court the **refusal and cancelation** counts
   (not the byte totals) are the deterministic result.
+
+## 18. Adversarial concurrency is a native equivalent, not the real tools (Phase 79)
+
+The reviewer's P0 ask was sustained filesystem correctness under adversarial
+concurrent workloads, extending the POSIX court to `fsx`, `fsstress`, `fs_mark`
+and custom rename/link/unlink races. Honest bounds:
+
+* **The real tools are not runnable here.** `fsx`/`fsstress` ship with `xfsprogs`
+  / `xfstests`, which do not configure or start in this environment (`make` needs
+  `libtool` + `acl`/`attr`/`uuid` dev libraries; `./check` refuses to begin without
+  `fsstress`; there is no `FSTYP` for OrFS). `evidence/correctness/xfstests.json`
+  records `ran:false` with the exact attempted commands. Every court in
+  `tests/adversarial_concurrency.rs` is a **native Rust equivalent**, labelled as
+  such in the code, in `docs/POSIX-COMPAT.md` §6, and in the receipt's `tools`
+  field — never a run of the real tool.
+* **The in-process courts serialise mutations.** `OrfsCore`/`Namespace` is `&mut`
+  and the court shares one `Mutex<Namespace>`, so the in-process `fsstress`
+  equivalent exercises *real* OS-thread contention on the commit path but not
+  lock-free mutation concurrency (OrFS serialises commits by design). Genuine
+  transport-level concurrency is exercised by the **mounted arm**.
+* **The mounted arm uses a `direct_io` mount.** On a cached (write-through) mount
+  a client read of an *actively appended* file can transiently observe a
+  client-side page-cache artefact (a zero-filled page the kernel fetched beyond
+  the then-committed EOF before OrFS's invalidation notification arrived) — a
+  documented FUSE client-cache coherence property, not a commit-atomicity defect.
+  The court mounts with `--direct-io` so every read is served by the daemon and a
+  concurrent reader observes exactly the committed bytes. The court records this
+  explicitly rather than smoothing it over.
+* **Latency is host/load-sensitive.** The mounted p50/p95/p99/p99.9 figures are a
+  single run on one host under external load; the deterministic, load-independent
+  result is **zero mismatches / orphans / duplicate inodes / torn reads**, not the
+  absolute times (the receipt says so).
+* **Scope of the `fs_mark` equivalent.** `fs_mark`'s full sweep (millions of
+  files) is bounded here to thousands (`ORFS_FSMARK_FILES`, default 4 000) because
+  each file is a full authoritative transaction; the parameters are honoured
+  verbatim if a larger bounded run is wanted.

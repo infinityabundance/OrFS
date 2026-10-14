@@ -964,6 +964,34 @@ def chart_planner_mounted_paired():
         xlog=True, ylog=True, xticks=sizes)
 
 
+def chart_adversarial_concurrency():
+    # This receipt lives under evidence/correctness/ (not evidence/performance/),
+    # so it is loaded by its project-relative path rather than via `load`.
+    path = os.path.join(ROOT, "evidence", "correctness", "adversarial-concurrency.json")
+    with open(path, "r") as fh:
+        d = json.load(fh)
+    lat = d["mounted"]["latency_ns"]
+    ops = ["create", "write", "fsync", "read", "rename", "unlink"]
+
+    def vals(key):
+        return [lat[o][key] / 1000.0 for o in ops]  # ns -> us
+
+    series = [
+        {"name": "p50", "values": vals("p50_ns")},
+        {"name": "p95", "values": vals("p95_ns")},
+        {"name": "p99", "values": vals("p99_ns")},
+        {"name": "p99.9", "values": vals("p999_ns")},
+    ]
+    cap = [
+        "source: evidence/correctness/adversarial-concurrency.json (the mounted arm, a real FUSE mount)",
+        "client-observed latency per operation, microseconds; direct-I/O mount; one run on one host",
+        "latency is host/load-sensitive; the receipt records this exact run (the zero-mismatch result is the point)",
+    ]
+    return bar_chart(
+        "adversarial concurrency: mounted client latency (us)",
+        cap, "latency (us)", ops, series)
+
+
 # --------------------------------------------------------------------------
 # registry: file name -> (builder, source receipt, generating command)
 # --------------------------------------------------------------------------
@@ -1023,6 +1051,8 @@ CHARTS = (
      "evidence/performance/baseline-passthrough.json", "sh scripts/container-baseline-passthrough.sh"),
     ("planner-mounted-paired.svg", chart_planner_mounted_paired,
      "evidence/performance/planner-mounted-paired.json", "sh scripts/container-planner-mounted.sh"),
+    ("adversarial-concurrency.svg", chart_adversarial_concurrency,
+     "evidence/correctness/adversarial-concurrency.json", "sh scripts/container-adversarial-concurrency.sh"),
 )
 
 

@@ -4621,3 +4621,108 @@ clean.
 * Cancellation is a **library/controller API** (`ExpansionOptions::cancel`),
   exercised by the court; the mounted daemon does not currently drive the
   expansion controller, so there is no separate CLI `--cancel` surface yet.
+
+## Phase 79 — Sustained adversarial concurrency + explicit compatibility exceptions
+
+**Complete.** The reviewer's P0 ask was *"full filesystem correctness under
+adversarial concurrent workloads … extend the existing POSIX court to sustained
+pjdfstest, xfstests cases that fit OrFS semantics, fsx, fsstress, fs_mark, and
+custom rename/link/unlink races"* — and to *"establish explicit compatibility
+exceptions instead of silently treating every POSIX variation as supported."*
+
+### Delivered
+
+* **Sustained adversarial courts (`tests/adversarial_concurrency.rs`, new;
+  `scripts/container-adversarial-concurrency.sh`).** A new file rather than an
+  extension of `tests/concurrency_stress.rs` (Phase 11): it owns a distinct
+  receipt, runner and **mounted arm**, and keeps the always-on subset cheap while
+  the sustained runs are opt-in. Every court is a **native Rust equivalent**, named
+  and labelled as such (the real `fsx`/`fsstress`/`fs_mark`/`xfstests` are not
+  runnable here — `evidence/correctness/xfstests.json` records `ran:false`):
+  * **`fsx`-equivalent** — a deterministic randomized
+    `write`/`read`/`truncate`/append/`fsync` loop where **every read is verified
+    against a byte-exact shadow model**; bounded always-on smoke + sustained opt-in.
+  * **`fsstress`-equivalent** — `N` workers (8/16/32/64) over one shared namespace,
+    then a reconciliation against an **independent expected-state model** built by
+    replaying the recorded successful operations (exact name sets, exact `nlink`,
+    byte-exact files, **0 orphans**, **0 duplicate inodes**).
+  * **`fs_mark`-equivalent** — thousands of small files created, each verified
+    byte-exact, then unlinked; files/s reported.
+  * **rename/link/unlink race storm** — a shared name pool at higher concurrency
+    than Phase 11; a lost race is a typed refusal, never a corruption.
+* **A real-mount arm.** `adversarial_mounted_fsstress` runs through a real OrFS
+  FUSE mount (`fuse::spawn` via `docker_run_kmount`, `--direct-io`) so the
+  **transport** — not only `OrfsCore` — is exercised adversarially: per-thread
+  create/write/read-verify/rename/unlink with client-observed p50/p95/p99/p99.9
+  latency, plus a shared append/read arm proving a reader never observes a torn
+  committed row.
+* **Deadlock safety.** Every multi-threaded court runs through a bounded watchdog
+  (`run_bounded`) that **fails rather than hangs**; all memory is bounded by the
+  configured op/file counts.
+* **`docs/POSIX-COMPAT.md` (new) — the explicit compatibility matrix.** It states
+  the whole POSIX/FUSE surface: every operation **supported** as POSIX requires,
+  every **deliberate deviation** (with reason and code/doc reference), every
+  **unsupported/refused** operation (with the exact typed error), and the
+  OrFS-specific semantics that differ **by design** — each row citing the test or
+  receipt that proves it. It reconciles `scripts/posix/pjdfstest-expected.tsv` and
+  `evidence/correctness/pjdfstest.json`, explaining every pjdfstest deviation by
+  either the mechanical special-node (`EOPNOTSUPP`) rule or an explicitly listed
+  exception, and states **0 unclassified failures**.
+* **`evidence/correctness/adversarial-concurrency.json`** (schema
+  `orfs.correctness.adversarial-concurrency.v1`): per-court configuration, the
+  models checked, exact outcomes, the mounted latency percentiles, and
+  environment/commit fields consistent with the other receipts.
+* **Runner + docs.** `scripts/container-adversarial-concurrency.sh` (smoke →
+  sustained receipt → mounted merge, one container at a time); a new gate **O**
+  (`docs/GATES.md`); `docs/LIMITATIONS.md` §18; `docs/PERFORMANCE.md` §32 + the
+  `adversarial-concurrency.svg` chart; `docs/REPRODUCE.md`; `docs/RECEIPTS.md`;
+  `scripts/docs-receipts.json`; `README.md`.
+
+### Results (from `evidence/correctness/adversarial-concurrency.json`, `all_ok=true`)
+
+`fsx`-equivalent: 20 000 ops (7 957 writes, 1 984 truncates, 1 978 appends,
+2 012 fsyncs), 8 104 verified reads, **0** mismatches, synced reopen digest equal.
+`fsstress`-equivalent: 64 workers × 400 ops = 25 600 ops, **0** mismatches,
+**0** orphans, **0** duplicate inodes; the independent model reconciled **392**
+names (183 files, 93 symlinks, the rest directories) against the live namespace.
+`fs_mark`-equivalent: 4 000 files, **0** mismatches, the directory empty after
+unlink. rename/link/unlink storm: 64 threads, 8 788 successful
+create/link/rename/unlink operations against 16 812 typed refusals, every name
+resolves, reopened digest equal. Mounted arm (real `/dev/fuse`, transport F0):
+16 threads, 6 400 byte-exact reads, **0** mismatches, **0** torn reads, every
+worker directory empty at the end.
+
+### Docs
+
+`tests/adversarial_concurrency.rs` (new);
+`scripts/container-adversarial-concurrency.sh` (new); `docs/POSIX-COMPAT.md` (new);
+`docs/GATES.md` (gate O); `docs/ACCEPTANCE-AUDIT-HEAD.md` (post-audit note);
+`docs/LIMITATIONS.md` §18; `docs/FUSE-SEMANTICS.md` §11; `docs/PERFORMANCE.md` §32;
+`docs/REPRODUCE.md`; `docs/RECEIPTS.md`; `scripts/docs-receipts.json`;
+`scripts/render_charts.py`; `docs/charts/adversarial-concurrency.svg` (new);
+`README.md`; this entry. Receipt:
+`evidence/correctness/adversarial-concurrency.json` (new).
+
+### Test counts
+
+**529 (default; +1 ignored) / 540 (`--features failpoints`)** — +3 default and +3
+with `--features failpoints` (the `adversarial_concurrency` court's smoke, sustained
+and mounted tests; the sustained and mounted bodies are opt-in behind `ORFS_STRESS`
+/ `ORFS_FUSE_TEST`); `fmt`/`clippy` clean.
+
+### Notes, stated honestly
+
+* The real `fsx`/`fsstress`/`fs_mark`/`xfstests` are **not run**; every court is a
+  labelled native equivalent (`docs/LIMITATIONS.md` §18).
+* The in-process courts share one `Mutex<Namespace>`, so they exercise real
+  OS-thread contention on the commit path but not lock-free mutation concurrency
+  (OrFS serialises commits by design). Transport-level concurrency is the mounted
+  arm.
+* The mounted arm uses `--direct-io`: on a cached write-through mount a client read
+  of an *actively appended* file can transiently observe a client-side page-cache
+  artefact (a zero page fetched beyond the then-committed EOF before OrFS's
+  invalidation notification arrived) — a documented FUSE client-cache coherence
+  property, not a commit-atomicity defect; the court records this explicitly.
+* The mounted latency figures are single-run, single-host and load-sensitive; the
+  deterministic result is **zero** mismatches / orphans / duplicate inodes / torn
+  reads, not the absolute times (the receipt says so).

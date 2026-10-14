@@ -149,3 +149,25 @@ verdict.
    into the standard re-run set.
 4. **Host hygiene:** the pre-existing wedged kmount containers remain; a single
    container is not a sufficient trigger, concurrency is.
+
+---
+
+## Post-audit note (Phase 79, not a re-run)
+
+The gate table and the diff above are this run's point-in-time record at
+`6021808` and are **left unedited** (an independent audit must not be rewritten).
+Phase 79 adds a **new** gate **O — sustained adversarial concurrency + explicit
+compatibility exceptions** (defined in `docs/GATES.md`):
+
+* `tests/adversarial_concurrency.rs` (+ `scripts/container-adversarial-concurrency.sh`)
+  runs native Rust equivalents of `fsx`/`fsstress`/`fs_mark` and rename/link/unlink
+  race storms, each reconciled against an independent model, plus a **real-mount**
+  arm (`docker_run_kmount`) with p50/p95/p99/p99.9 client latency; the receipt
+  `evidence/correctness/adversarial-concurrency.json` has `all_ok=true` with 0
+  mismatches / 0 orphans / 0 duplicate inodes / 0 torn reads.
+* `docs/POSIX-COMPAT.md` is the explicit compatibility matrix; it reconciles the
+  `pjdfstest` court to **0 unclassified** deviations (its numbers are checked by
+  `scripts/docs-receipts.json`).
+
+The gate verdicts A–N above are **not** re-verified by this note; only gate O is
+new. `xfstests` remains `ran:false` (assessed, not runnable), as recorded in §3.

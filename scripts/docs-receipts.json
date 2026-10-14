@@ -521,6 +521,56 @@
         {"group": 1, "label": "cancelation bound_objects", "evidence": "evidence/performance/expansion-controller.json", "path": "subordination.cancelation.bound_objects"},
         {"group": 2, "label": "cancelation resumed_constructed", "evidence": "evidence/performance/expansion-controller.json", "path": "subordination.cancelation.resumed_constructed"}
       ]
+    },
+    {
+      "id": "posix-compat-pjdfstest-unclassified",
+      "doc": "docs/POSIX-COMPAT.md",
+      "section": "§6",
+      "claim": "pjdfstest reconciliation: zero unclassified OrFS assertion failures",
+      "regex": "Unclassified: (\\d+)\\.",
+      "fields": [
+        {"group": 1, "label": "gate unclassified_failures", "evidence": "evidence/correctness/pjdfstest.json", "path": "gate.unclassified_failures"}
+      ]
+    },
+    {
+      "id": "posix-compat-pjdfstest-unsupported",
+      "doc": "docs/POSIX-COMPAT.md",
+      "section": "§6",
+      "claim": "pjdfstest: assertions mechanically explained by the special-node (EOPNOTSUPP) rule",
+      "regex": "mechanically explain \\*\\*([0-9][0-9\\s]*?)\\*\\*\\s+assertions",
+      "fields": [
+        {"group": 1, "label": "unsupported assertions_covered", "evidence": "evidence/correctness/pjdfstest.json", "path": "deviations.unsupported_node_types.assertions_covered"}
+      ]
+    },
+    {
+      "id": "posix-compat-pjdfstest-totals",
+      "doc": "docs/POSIX-COMPAT.md",
+      "section": "§6",
+      "claim": "pjdfstest court totals: OrFS vs reference ext4 (files and assertions)",
+      "regex": "\\*\\*([0-9]+)\\*\\* test files, \\*\\*([0-9][0-9\\s]*?)\\*\\*\\s+assertions; OrFS fails\\s+\\*\\*([0-9]+)\\*\\* files / \\*\\*([0-9][0-9\\s]*?)\\*\\*\\s+assertions, the reference ext4 fails \\*\\*([0-9]+)\\*\\* files / \\*\\*([0-9][0-9\\s]*?)\\*\\*\\s+assertions",
+      "fields": [
+        {"group": 1, "label": "orfs files_total", "evidence": "evidence/correctness/pjdfstest.json", "path": "orfs.summary.files_total"},
+        {"group": 2, "label": "orfs assertions_total", "evidence": "evidence/correctness/pjdfstest.json", "path": "orfs.summary.assertions_total"},
+        {"group": 3, "label": "orfs files_failed", "evidence": "evidence/correctness/pjdfstest.json", "path": "orfs.summary.files_failed"},
+        {"group": 4, "label": "orfs assertions_failed", "evidence": "evidence/correctness/pjdfstest.json", "path": "orfs.summary.assertions_failed"},
+        {"group": 5, "label": "reference files_failed", "evidence": "evidence/correctness/pjdfstest.json", "path": "reference.summary.files_failed"},
+        {"group": 6, "label": "reference assertions_failed", "evidence": "evidence/correctness/pjdfstest.json", "path": "reference.summary.assertions_failed"}
+      ]
+    },
+    {
+      "id": "posix-compat-adversarial-zero",
+      "doc": "docs/POSIX-COMPAT.md",
+      "section": "§6",
+      "claim": "adversarial concurrency receipt: zero mismatches / orphans / duplicate inodes / torn reads",
+      "regex": "the `fsx` arm reports \\*\\*([0-9]+)\\*\\* byte mismatches, the `fsstress` arm \\*\\*([0-9]+)\\*\\*\\s+mismatches with \\*\\*([0-9]+)\\*\\* orphans and \\*\\*([0-9]+)\\*\\* duplicate inodes, and the mounted arm\\s+\\*\\*([0-9]+)\\*\\* mismatches with \\*\\*([0-9]+)\\*\\* torn reads",
+      "fields": [
+        {"group": 1, "label": "fsx mismatches", "evidence": "evidence/correctness/adversarial-concurrency.json", "path": "in_process.courts[name=fsx-equivalent].report.mismatches"},
+        {"group": 2, "label": "fsstress mismatches", "evidence": "evidence/correctness/adversarial-concurrency.json", "path": "in_process.courts[name=fsstress-equivalent].report.mismatches"},
+        {"group": 3, "label": "fsstress orphans", "evidence": "evidence/correctness/adversarial-concurrency.json", "path": "in_process.courts[name=fsstress-equivalent].report.orphans"},
+        {"group": 4, "label": "fsstress duplicate_inodes", "evidence": "evidence/correctness/adversarial-concurrency.json", "path": "in_process.courts[name=fsstress-equivalent].report.duplicate_inodes"},
+        {"group": 5, "label": "mounted mismatches", "evidence": "evidence/correctness/adversarial-concurrency.json", "path": "mounted.mismatches"},
+        {"group": 6, "label": "mounted shared_torn_reads", "evidence": "evidence/correctness/adversarial-concurrency.json", "path": "mounted.shared_torn_reads"}
+      ]
     }
   ]
 }

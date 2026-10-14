@@ -13,5 +13,8 @@ docker build -f "$ORFS_PROJECT_DIR/Dockerfile.kmount" -t "$ORFS_KMOUNT_IMAGE" "$
 echo "building $ORFS_POSIX_IMAGE (vendors commit-pinned pjdfstest)"
 docker build -f "$ORFS_PROJECT_DIR/Dockerfile.posix" -t "$ORFS_POSIX_IMAGE" "$ORFS_PROJECT_DIR"
 
+echo "building $ORFS_APP_IMAGE (end-to-end application workloads)"
+docker build -f "$ORFS_PROJECT_DIR/Dockerfile.appworkload" -t "$ORFS_APP_IMAGE" "$ORFS_PROJECT_DIR"
+
 echo "done:"
 docker image ls

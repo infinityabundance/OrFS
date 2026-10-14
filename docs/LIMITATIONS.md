@@ -497,3 +497,35 @@ qualifies OrFS's durability *relative to the model*, and states the honest bound
   mode × class × profile sweep runs only under `ORFS_DQ_SWEEP=1`, one container at
   a time, and its numbers (matrix size, refusals, residual rows) are the
   deterministic result, not a timing claim.
+
+## 20. Application workloads: OrFS is slower, and cannot host a git repository (Phase 81)
+
+Phase 81 drives five **real applications** (`git`, `sqlite3`, `tar`, `make`/`gcc`,
+and an in-process metadata-heavy tree) end to end against a real OrFS mount and
+against external baselines, and publishes the results honestly
+(`docs/APPLICATIONS.md`, `evidence/performance/application-workloads.json`).
+
+* **OrFS loses every workload.** Against the same-device host filesystem
+  baseline, the completed workloads are **2.9×** (SQLite), **22.7×** (tar
+  extraction), **1.2×** (`make -j` source build) and **40.3×** (a 50 000-file
+  metadata tree) slower. The mechanism is the FUSE round-trip plus
+  authoritative-commit cost already documented in `docs/PERFORMANCE.md`
+  §20/§31.2 and `docs/FUSE-SEMANTICS.md`. This is the application-layer
+  quantification of the standing position that OrFS is **not yet a faster
+  general-purpose replacement** for ext4/tmpfs.
+* **OrFS currently cannot host a `git` repository.** `git` writes a loose object
+  by creating a file with mode `0444` and writing through the returned
+  descriptor. OrFS documents **per-write** permission enforcement
+  (`docs/FUSE-SEMANTICS.md` §5/§6), so it refuses that write with `EACCES` and
+  `git` aborts (`fatal: unable to write loose object file: Permission denied`).
+  POSIX checks permission at `open`, not on every write; the court's `0444`-create
+  probe confirms the mechanism on every arm (ok on ext4/tmpfs, refused on OrFS).
+  This is an **application-level limitation**, not a micro-benchmark artefact,
+  and it is **not** fixed here — relaxing per-write enforcement would change
+  documented semantics and needs its own phase plus a POSIX-court re-validation.
+* **The image-extraction workload is synthetic.** It is a bounded OCI-layer-like
+  tarball extracted with `tar`, **not** a real `docker pull`.
+* **The tmpfs arm is a RAM reference floor**, not the headline comparator; the
+  headline baseline is on the **same device** as the OrFS backing, so the
+  comparison isolates the filesystem stack. Wall-clock is host/load-sensitive;
+  the verdict booleans are the machine-readable, non-drifting result.

@@ -584,6 +584,72 @@
         {"group": 3, "label": "detected_refusals", "evidence": "evidence/recovery/durability-qualification.json", "path": "detected_refusals"},
         {"group": 4, "label": "residual_window_undetectable", "evidence": "evidence/recovery/durability-qualification.json", "path": "residual_window_undetectable"}
       ]
+    },
+    {
+      "id": "applications-s2-git",
+      "doc": "docs/APPLICATIONS.md",
+      "section": "§2",
+      "claim": "bounded git workload: 1200 files across 60 directories",
+      "regex": "over\\s+\\*\\*([0-9]+) files across ([0-9]+)\\s+directories\\*\\*",
+      "fields": [
+        {"group": 1, "label": "scale.git_files", "evidence": "evidence/performance/application-workloads.json", "path": "scale.git_files"},
+        {"group": 2, "label": "scale.git_dirs", "evidence": "evidence/performance/application-workloads.json", "path": "scale.git_dirs"}
+      ]
+    },
+    {
+      "id": "applications-s2-sqlite",
+      "doc": "docs/APPLICATIONS.md",
+      "section": "§2",
+      "claim": "bounded SQLite workload: 20000 bulk rows and 200 fsync'd inserts",
+      "regex": "bulk\\s+transaction of \\*\\*([0-9]+) rows\\*\\*, \\*\\*([0-9]+)\\*\\* individual fsync'd inserts",
+      "fields": [
+        {"group": 1, "label": "scale.sqlite_bulk_rows", "evidence": "evidence/performance/application-workloads.json", "path": "scale.sqlite_bulk_rows"},
+        {"group": 2, "label": "scale.sqlite_fsync_rows", "evidence": "evidence/performance/application-workloads.json", "path": "scale.sqlite_fsync_rows"}
+      ]
+    },
+    {
+      "id": "applications-s2-tar",
+      "doc": "docs/APPLICATIONS.md",
+      "section": "§2",
+      "claim": "synthetic layer: 2000 small files and 4 large files",
+      "regex": "\\*\\*([0-9]+) small files\\*\\* of 1 KiB and \\*\\*([0-9]+) large files\\*\\*",
+      "fields": [
+        {"group": 1, "label": "scale.tar_small", "evidence": "evidence/performance/application-workloads.json", "path": "scale.tar_small"},
+        {"group": 2, "label": "scale.tar_large", "evidence": "evidence/performance/application-workloads.json", "path": "scale.tar_large"}
+      ]
+    },
+    {
+      "id": "applications-s2-make",
+      "doc": "docs/APPLICATIONS.md",
+      "section": "§2",
+      "claim": "source build: 120 translation units",
+      "regex": "\\*\\*([0-9]+) translation units\\*\\*, built\\s+with `make -j",
+      "fields": [
+        {"group": 1, "label": "scale.make_tus", "evidence": "evidence/performance/application-workloads.json", "path": "scale.make_tus"}
+      ]
+    },
+    {
+      "id": "applications-s2-metadata",
+      "doc": "docs/APPLICATIONS.md",
+      "section": "§2",
+      "claim": "metadata-heavy tree: 50000 files (250 directories x 200 files)",
+      "regex": "\\*\\*([0-9]+) files\\*\\* \\(([0-9]+) directories . ([0-9]+) files\\)",
+      "fields": [
+        {"group": 1, "label": "metadata-tree config.files", "evidence": "evidence/performance/application-workloads.json", "path": "workloads[workload=metadata-tree].config.files"},
+        {"group": 2, "label": "metadata-tree config.dirs", "evidence": "evidence/performance/application-workloads.json", "path": "workloads[workload=metadata-tree].config.dirs"},
+        {"group": 3, "label": "metadata-tree config.files_per_dir", "evidence": "evidence/performance/application-workloads.json", "path": "workloads[workload=metadata-tree].config.files_per_dir"}
+      ]
+    },
+    {
+      "id": "applications-s2-metadata-samples",
+      "doc": "docs/APPLICATIONS.md",
+      "section": "§2",
+      "claim": "metadata-tree per-op latency sample counts (50000 create/stat/rename/unlink; 250 readdir)",
+      "regex": "contributes \\*\\*([0-9]+) samples\\*\\* and\\s+`readdir` contributes \\*\\*([0-9]+)\\*\\*",
+      "fields": [
+        {"group": 1, "label": "metadata-tree orfs create samples", "evidence": "evidence/performance/application-workloads.json", "path": "workloads[workload=metadata-tree].arms.orfs.latency_ns.create.samples"},
+        {"group": 2, "label": "metadata-tree orfs readdir samples", "evidence": "evidence/performance/application-workloads.json", "path": "workloads[workload=metadata-tree].arms.orfs.latency_ns.readdir.samples"}
+      ]
     }
   ]
 }

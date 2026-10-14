@@ -145,6 +145,7 @@ so it is not expected to name HEAD.
 | `bounded-evac-free-space`, `bounded-evac-relocated`, `bounded-evac-boundaries`, `bounded-drop-rebuildable` (4 citations) | `docs/CAPACITY.md` §14.4 | the bounded-reclaim court's headline numbers: the free space freed by relocating sealed segments, the bytes relocated, the committed boundaries checked, and the bytes freed by dropping rebuildable manifestations → `bounded-recovery.json` `evacuation.{freed_bytes,relocated_bytes,boundaries_checked}` and `drop_rebuildable.dropped_bytes` |
 | `expansion-governor-refusal`, `expansion-reclaim-not-undone`, `expansion-cancel-bound` (5 citations) | `docs/CAPACITY.md` §15 | the Phase-78 subordination court's **deterministic** counts (not the host-sensitive times): the governor-refusal constructed/planned/refused, the reclaim-not-undone dropped bytes and refusals, and the cancelation bound + resumed constructions → `expansion-controller.json` `subordination.*` |
 | `posix-compat-pjdfstest-unclassified`, `posix-compat-pjdfstest-unsupported`, `posix-compat-pjdfstest-totals`, `posix-compat-adversarial-zero` (10 value checks) | `docs/POSIX-COMPAT.md` §6 | the compatibility matrix's reconciliation: `pjdfstest` zero unclassified failures, the mechanically-unsupported assertion count, the court totals (OrFS vs reference ext4), and the adversarial-concurrency receipt's zero mismatches / orphans / duplicate inodes / torn reads → `correctness/pjdfstest.json` `gate.*` / `deviations.*` / `{orfs,reference}.summary.*` and `correctness/adversarial-concurrency.json` |
+| `applications-s2-git`, `applications-s2-sqlite`, `applications-s2-tar`, `applications-s2-make`, `applications-s2-metadata`, `applications-s2-metadata-samples` (10 value checks) | `docs/APPLICATIONS.md` §2 | the Phase-81 application court's **deterministic** bounded configuration and sample counts (1200 git files / 60 dirs; 20000+200 SQLite rows; 2000+4 tar members; 120 translation units; 50000 metadata files = 250×200; 50000 create/stat/rename/unlink and 250 readdir latency samples) → `performance/application-workloads.json` `scale.*` and `workloads[workload=metadata-tree].config.*` / `.arms.orfs.latency_ns.*.samples` |
 
 ### `docs/ACCEPTANCE-AUDIT.md` is exempt from live comparison
 
@@ -235,6 +236,15 @@ numbers were not curated in this first pass:
   `docs/MIGRATION.md`.
 * `docs/PROGRESS.md`, `README.md` — out of scope by construction (this check
   governs docs against receipts, not the reverse index of phases).
+* `docs/APPLICATIONS.md` §4/§4.1/§6 (Phase 81) — the application court's
+  **wall-clock times, ratios and per-operation latencies** are single-run and
+  host/load-sensitive, so they are deliberately **not** curated (the same policy
+  as §31.2's external comparators and §22's reader-scaling aggregates). The
+  deterministic facts that *are* curated are the §2 bounded configuration and the
+  per-op sample counts. The non-drifting result is the receipt's machine-readable
+  `verdict.per_workload` booleans, and the committed figure
+  `application-workloads.svg` is gated by
+  `python3 scripts/render_charts.py --check`.
 
 Adding coverage is a one-line mapping edit — see §5.
 

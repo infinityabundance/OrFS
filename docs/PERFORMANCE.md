@@ -2842,3 +2842,56 @@ mismatches / orphans / duplicate inodes / torn reads**, not the absolute times.
 **Provenance.** `evidence/correctness/adversarial-concurrency.json` (schema
 `orfs.correctness.adversarial-concurrency.v1`); chart
 `adversarial-concurrency.svg`.
+
+## 33. Phase 81 — end-to-end application workloads with a real baseline
+
+The reviewer's P0 was *"end-to-end filesystem workloads … measure application
+throughput and latency rather than only filesystem operations."* Phase 81 runs
+five **real applications** against a real OrFS mount and against external
+baselines on the same machine, in the same container, and publishes the losses
+as losses. The full definition, baseline contract, tables and honest reading live
+in **`docs/APPLICATIONS.md`**; this section is the summary and the headline
+numbers.
+
+**Court.** `tests/application_workloads.rs` (bounded always-on smoke + an opt-in
+`ORFS_APP_SWEEP=1` sweep), run by
+`scripts/container-application-workloads.sh` in the `Dockerfile.appworkload`
+image (pinned Rust base + `git`/`sqlite3`/`tar`/`gcc`/`make`). The mount is
+`fuse::spawn` with `MountOptions::default()` (F0, sync backing, page cache on,
+writes enabled); each workload runs **3 order-balanced trials** and the median is
+reported. Receipt:
+`evidence/performance/application-workloads.json`
+(schema `orfs.performance.application-workloads.v1`).
+
+**Headline (one run, release; the baseline is the same-device host filesystem; ratio = baseline ÷ OrFS, so < 1 is a loss).**
+
+| workload | OrFS (s) | host_fs (s) | tmpfs (s) | host_fs/OrFS | verdict |
+|---|---:|---:|---:|---:|---|
+| git repository | **did not complete** | 0.132 | 0.102 | — | **loss — refused** |
+| sqlite database | 0.862 | 0.293 | 0.040 | **0.34×** | **loss — 2.9× slower** |
+| image-extraction analogue | 0.383 | 0.0168 | 0.0094 | **0.044×** | **loss — 22.7× slower** |
+| source build | 0.160 | 0.134 | 0.135 | **0.84×** | **loss — 1.2× slower** |
+| metadata tree (50 000 files) | 24.80 | 0.615 | 0.246 | **0.025×** | **loss — 40.3× slower** |
+
+**How this reads, honestly.**
+
+1. **Every workload is a loss.** `verdict.orfs_faster_than_baseline = false` for
+   all five, machine-readable in the receipt. No speedup is claimed — this is the
+   application-layer form of the §31.2 external-comparison result, now with real
+   programs rather than the `src/bench.rs` harness.
+2. **`git` does not run on OrFS at all.** `git` creates a loose object with mode
+   `0444` and writes through the returned descriptor; OrFS's documented
+   **per-write** permission enforcement (`docs/FUSE-SEMANTICS.md` §5/§6) refuses
+   that write with `EACCES`. The court's `0444`-create probe proves the mechanism
+   (ok on ext4/tmpfs, refused on OrFS). Recorded honestly as a loss; see
+   `docs/LIMITATIONS.md` §20.
+3. **The metadata tree is the worst case** — ~36–59× the native cost on
+   mutating metadata operations (create/rename/unlink) and ~29× on `stat`,
+   because every operation is a daemon round trip that extends the authoritative
+   log. Cross-referenced in `docs/APPLICATIONS.md` §4.1/§5.
+4. **The tmpfs column is a RAM floor**, not the comparator. The headline
+   comparison is against the **same device** as the OrFS backing, so it isolates
+   the filesystem stack rather than conflating it with device speed.
+
+**Provenance.** `evidence/performance/application-workloads.json`; chart
+`application-workloads.svg`; `docs/APPLICATIONS.md`.

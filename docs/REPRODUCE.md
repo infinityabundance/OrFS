@@ -74,6 +74,7 @@ reported `SKIPPED (reason)` and is **not** counted as a pass. See
 | `evidence/performance/reader-scaling-64.json` | `tests/reader_scale_64.rs` | `sh scripts/container-reader-scale64.sh` |
 | `evidence/correctness/posix-extras.json` | `tests/posix_extras.rs` | `sh -c '. scripts/lib.sh && docker_run cargo test -p orfs --test posix_extras'` |
 | `evidence/correctness/adversarial-concurrency.json` | `tests/adversarial_concurrency.rs` | `sh scripts/container-adversarial-concurrency.sh` |
+| `evidence/performance/application-workloads.json` | `tests/application_workloads.rs` | `sh scripts/container-application-workloads.sh` |
 | `evidence/security/fault-injection.json` | `tests/fs_fault_injection.rs` | `sh scripts/container-fault-injection.sh` |
 | `evidence/recovery/fault-injection-verify-recover.json` | `tests/verify_recover_faults.rs` | `sh scripts/container-fault-verify.sh` |
 | `evidence/recovery/capacity-guard.json` | `tests/capacity_guard.rs` | `sh -c '. scripts/lib.sh && docker_run cargo test -p orfs --test capacity_guard'` |
@@ -156,6 +157,7 @@ image → receipt → command mapping:
 | `baseline-passthrough.svg` | `PERFORMANCE.md` §29 | `evidence/performance/baseline-passthrough.json` | `sh scripts/container-baseline-passthrough.sh` |
 | `planner-mounted-paired.svg` | `PERFORMANCE.md` §29 | `evidence/performance/planner-mounted-paired.json` | `sh scripts/container-planner-mounted.sh` |
 | `adversarial-concurrency.svg` | `PERFORMANCE.md` §32 | `evidence/correctness/adversarial-concurrency.json` | `sh scripts/container-adversarial-concurrency.sh` |
+| `application-workloads.svg` | `PERFORMANCE.md` §33 | `evidence/performance/application-workloads.json` | `sh scripts/container-application-workloads.sh` |
 
 The **chart command** is the same for every row: `python3 scripts/render_charts.py`
 (generate) or `python3 scripts/render_charts.py --check` (drift check). The

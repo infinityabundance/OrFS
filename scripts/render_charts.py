@@ -992,6 +992,38 @@ def chart_adversarial_concurrency():
         cap, "latency (us)", ops, series)
 
 
+def chart_application_workloads():
+    d = load("application-workloads.json")
+    by = {x["workload"]: x for x in d["workloads"]}
+    order = [
+        ("git", "git-repository"),
+        ("sqlite", "sqlite-database"),
+        ("image-tar", "image-extraction-analogue"),
+        ("build", "source-build"),
+        ("metadata", "metadata-tree"),
+    ]
+
+    def ratio(name, key):
+        v = by.get(name, {}).get("comparison", {}).get(key)
+        return v if isinstance(v, (int, float)) and v == v else None
+
+    series = [
+        {"name": "host_fs time / OrFS time",
+         "values": [ratio(n, "ratio_host_fs_over_orfs") for _, n in order]},
+        {"name": "tmpfs time / OrFS time",
+         "values": [ratio(n, "ratio_tmpfs_over_orfs") for _, n in order]},
+    ]
+    cap = [
+        "source: evidence/performance/application-workloads.json (real OrFS mount; order-balanced trials; one host)",
+        "bar = baseline wall-clock / OrFS wall-clock; 1.0 = equal, < 1 = OrFS slower; git has no bar (did not complete on OrFS)",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return bar_chart(
+        "end-to-end applications: baseline time / OrFS time",
+        cap, "baseline / OrFS (1.0 = equal)", [label for label, _ in order], series,
+        ymin=0.0, ymax=1.0)
+
+
 # --------------------------------------------------------------------------
 # registry: file name -> (builder, source receipt, generating command)
 # --------------------------------------------------------------------------
@@ -1053,6 +1085,8 @@ CHARTS = (
      "evidence/performance/planner-mounted-paired.json", "sh scripts/container-planner-mounted.sh"),
     ("adversarial-concurrency.svg", chart_adversarial_concurrency,
      "evidence/correctness/adversarial-concurrency.json", "sh scripts/container-adversarial-concurrency.sh"),
+    ("application-workloads.svg", chart_application_workloads,
+     "evidence/performance/application-workloads.json", "sh scripts/container-application-workloads.sh"),
 )
 
 

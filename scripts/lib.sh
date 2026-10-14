@@ -19,6 +19,10 @@ ORFS_KMOUNT_IMAGE="${ORFS_KMOUNT_IMAGE:-orfs-kmount:1.99.0}"
 # Standard POSIX suite image (Phase 24): pinned rust base + build tooling + the
 # commit-pinned pjdfstest suite. See Dockerfile.posix.
 ORFS_POSIX_IMAGE="${ORFS_POSIX_IMAGE:-orfs-posix:1.99.0}"
+# End-to-end application-workload image (Phase 81): pinned rust base + the real
+# user-space tools the application courts drive (git/sqlite3/tar/gcc/make). See
+# Dockerfile.appworkload.
+ORFS_APP_IMAGE="${ORFS_APP_IMAGE:-orfs-app:1.99.0}"
 
 # Image-ID digest for machine-generated evidence. The derived images are built
 # locally (not pulled), so they have no RepoDigests; the image config `.Id` is a
@@ -284,6 +288,45 @@ docker_run_kmount_root() {
         -e RUSTUP_TOOLCHAIN=1.99.0 \
         -e ORFS_IMAGE_DIGEST="$(_orfs_image_digest "$ORFS_KMOUNT_IMAGE")" \
         "$ORFS_KMOUNT_IMAGE" "$@"
+}
+
+# docker_run_app: runs the end-to-end application-workload court (Phase 81).
+# Like docker_run_kmount it needs `/dev/fuse`, SYS_ADMIN and an unconfined
+# AppArmor/seccomp profile so a real OrFS volume can be mounted, and it uses a
+# dedicated image (Dockerfile.appworkload) that carries the real applications
+# (git, sqlite3, tar, gcc, make) the court drives against the mount. It also
+# provisions a bounded in-container tmpfs (`/orfs-app-tmpfs`) so the court can
+# include a tmpfs reference arm without touching the host. One container at a
+# time. Does not `exec`, so the caller can inspect the exit status and the receipt
+# the container wrote to the bind-mounted project tree.
+ORFS_APP_TMPFS="${ORFS_APP_TMPFS:-/orfs-app-tmpfs}"
+docker_run_app() {
+    _orfs_write_kmount_passwd
+    docker run --rm \
+        --memory="$ORFS_MEM_LIMIT" \
+        --memory-swap="$ORFS_MEMSWAP_LIMIT" \
+        --cpus="$ORFS_CPUS" \
+        --pids-limit="$ORFS_PIDS" \
+        --device /dev/fuse \
+        --cap-add SYS_ADMIN \
+        --security-opt apparmor=unconfined \
+        --security-opt seccomp=unconfined \
+        --ulimit core=0 \
+        --tmpfs "$ORFS_APP_TMPFS:rw,exec,size=2g" \
+        -v "$ORFS_PARENT_DIR":"$ORFS_PARENT_DIR" \
+        -v "$ORFS_KMOUNT_PASSWD:/etc/passwd:ro" \
+        -w "$ORFS_PROJECT_DIR" \
+        -u "$(id -u):$(id -g)" \
+        -e HOME=/tmp \
+        -e TMPDIR="$ORFS_TMP_DIR" \
+        -e CARGO_HOME="$ORFS_CARGO_HOME" \
+        -e RUSTUP_HOME=/usr/local/rustup \
+        -e CARGO_TARGET_DIR="$ORFS_TARGET_DIR" \
+        -e CARGO_TERM_COLOR=never \
+        -e RUSTUP_TOOLCHAIN=1.99.0 \
+        -e ORFS_APP_TMPFS="$ORFS_APP_TMPFS" \
+        -e ORFS_IMAGE_DIGEST="$(_orfs_image_digest "$ORFS_APP_IMAGE")" \
+        "$ORFS_APP_IMAGE" "$@"
 }
 
 # docker_run_dm_probe: for the Phase 62 device-mapper fault-target probe. Runs as

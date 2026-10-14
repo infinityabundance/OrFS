@@ -4830,3 +4830,103 @@ the residual window, and the opt-in sweep); `fmt`/`clippy` clean.
   closed.
 * **The generation manifest/catalogue is out of the log-device's scope** (it lives
   outside the log directory); it is covered by the manifestation courts.
+
+## Phase 81 — End-to-end application workloads with a real baseline
+
+**Complete.** The reviewer's P0 was *"end-to-end filesystem workloads. Mount and
+run real workloads … Measure application throughput and latency rather than only
+filesystem operations."* The point was not to look good: it was to measure OrFS
+**honestly** against a real baseline on the *same* machine and **publish the
+losses as losses** at the application layer.
+
+### Delivered
+
+* **A dedicated application-workload image** (`Dockerfile.appworkload` →
+  `orfs-app:1.99.0`, `ORFS_APP_IMAGE`, `docker_run_app` in `scripts/lib.sh`). It is
+  derived from the *same pinned Rust base* as the other images (the `FROM` digest
+  is kept in sync) and adds only the tools the workloads need (`git`, `sqlite3`,
+  `tar`, `gzip`, `make`, `gcc`, `coreutils`, `file`, `fuse3`, `util-linux`,
+  `procps`, `jq`). It also provisions a bounded in-container tmpfs so the court
+  can include a RAM reference arm. `Dockerfile.posix`/`Dockerfile.kmount` are
+  **untouched** (their digests are cited in committed receipts).
+* **The court** (`tests/application_workloads.rs`, bounded always-on smoke + an
+  opt-in `ORFS_APP_SWEEP=1` sweep) drives five **real applications** against a
+  real OrFS mount (`fuse::spawn`, `MountOptions::default()`) and external
+  baselines in the **same container**:
+  * **git** — init/add/commit×2/`clone --no-local`/`checkout`/`gc` over a bounded
+    nested tree;
+  * **sqlite3** — WAL + `synchronous=FULL`, a bulk transaction, fsync'd inserts,
+    indexed queries, `VACUUM`;
+  * **image-extraction analogue** — extract a bounded **synthetic** OCI-layer-like
+    tarball with `tar` (**not** a real `docker pull`);
+  * **source build** — a generated C project with many translation units, built
+    with `make -j`;
+  * **metadata-heavy tree** — a bounded 50 000-file tree exercised in process with
+    create/stat/readdir/rename/unlink, recording per-operation latency.
+* **The baseline contract.** The primary baseline is a directory on the **same
+  bind-mounted host filesystem as the OrFS backing volume**, so the arms share the
+  storage device and differ only in the filesystem stack; a clearly-labelled
+  **tmpfs** arm is a RAM reference floor, never the headline comparator. Trials are
+  **order-balanced** and each arm's median is reported beside every trial.
+* **A `0444`-create probe** on every arm proves (rather than infers) the mechanism
+  behind the git finding.
+* **Receipt + verdict.** `evidence/performance/application-workloads.json` (schema
+  `orfs.performance.application-workloads.v1`) records the configuration, per-arm
+  wall-clock and throughput, the paired ratio with direction, latency percentiles
+  where measured, the tool versions, the trial count and order-balancing, the
+  environment/commit fields, and a **machine-readable
+  `verdict.orfs_faster_than_baseline` per workload** so the docs cannot drift into
+  an unfounded claim.
+* **Docs.** `docs/APPLICATIONS.md` (new); `scripts/container-application-workloads.sh`
+  (new); a chart `docs/charts/application-workloads.svg`;
+  `docs/PERFORMANCE.md` §33; `docs/LIMITATIONS.md` §20; `docs/GATES.md` gate **P**;
+  `docs/REPRODUCE.md`; `docs/RECEIPTS.md`; `scripts/docs-receipts.json`; `README.md`.
+
+### Results (from `evidence/performance/application-workloads.json`)
+
+Against the same-device host filesystem baseline (ratio = baseline ÷ OrFS; `< 1`
+is a loss): git **did not complete on OrFS** (refused); SQLite **0.34×** (2.9×
+slower); image-extraction analogue **0.044×** (22.7× slower); source build
+**0.84×** (1.2× slower); metadata tree (50 000 files) **0.025×** (40.3× slower).
+`verdict.orfs_faster_than_baseline = false` for **all five**. On the metadata tree
+the per-op p50 is create 146.4 µs / stat 12.73 µs / rename 183.3 µs / unlink
+112.4 µs vs host 4.11 / 0.44 / 4.84 / 1.92 µs — the FUSE round-trip plus
+authoritative-commit cost. **OrFS currently cannot host a `git` repository**: git
+creates loose objects with mode `0444` and writes through the returned descriptor,
+which OrFS's documented **per-write** permission enforcement refuses (`EACCES`);
+the `0444`-create probe confirms it (ok on ext4/tmpfs, refused on OrFS).
+
+### Docs
+
+`docs/APPLICATIONS.md` (new); `tests/application_workloads.rs` (new);
+`Dockerfile.appworkload` (new); `scripts/container-application-workloads.sh` (new);
+`docs/charts/application-workloads.svg` (new);
+`evidence/performance/application-workloads.json` (new); `scripts/lib.sh`;
+`scripts/container-image-build.sh`; `docs/PERFORMANCE.md` §33;
+`docs/LIMITATIONS.md` §20; `docs/GATES.md` (gate P); `docs/REPRODUCE.md`;
+`docs/RECEIPTS.md`; `scripts/docs-receipts.json`; `scripts/render_charts.py`;
+`README.md`; this entry.
+
+### Test counts
+
+**542 (default; +1 ignored) / 553 (`--features failpoints`)** — +2 default and +2
+with `--features failpoints` (the `application_workloads_smoke` and
+`application_workloads_sweep` tests; both skip without `ORFS_FUSE_TEST=1`, and the
+sweep is additionally gated on `ORFS_APP_SWEEP=1`); `fmt`/`clippy` clean.
+
+### Notes, stated honestly
+
+* **Every workload is a loss, and that is the deliverable.** This is the
+  application-layer quantification of the standing position that OrFS is not yet a
+  faster general-purpose replacement for ext4/tmpfs (`docs/PERFORMANCE.md`
+  §31.2). No speedup is claimed without a measured external baseline in the same
+  container.
+* **git is not measured on OrFS at all** — it is refused (§20 of
+  `docs/LIMITATIONS.md`). Relaxing per-write permission enforcement is a semantics
+  change deferred to its own phase; it is **not** done here.
+* **The image-extraction workload is synthetic** (a bounded OCI-layer-like tarball,
+  not a real `docker pull`).
+* **Single host, single run.** The direction (OrFS slower everywhere, and git
+  refused) is large enough to be robust; the absolute seconds are host/load
+  sensitive, which is why the receipt's machine-readable verdict booleans — not
+  any quoted second — are the non-drifting result.

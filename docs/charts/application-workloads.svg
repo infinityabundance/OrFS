@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="monospace"><rect x="0" y="0" width="760" height="440" fill="#ffffff"/><text x="380.0" y="22.0" fill="#111111" font-size="14" text-anchor="middle" font-weight="bold">end-to-end applications: baseline time / OrFS time</text>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="344.0" fill="#111111" font-size="11" text-anchor="end">0</text>
+<line x1="84.0" y1="284.4" x2="736.0" y2="284.4" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="288.4" fill="#111111" font-size="11" text-anchor="end">0.20</text>
+<line x1="84.0" y1="228.8" x2="736.0" y2="228.8" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="232.8" fill="#111111" font-size="11" text-anchor="end">0.40</text>
+<line x1="84.0" y1="173.2" x2="736.0" y2="173.2" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="177.2" fill="#111111" font-size="11" text-anchor="end">0.60</text>
+<line x1="84.0" y1="117.6" x2="736.0" y2="117.6" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="121.6" fill="#111111" font-size="11" text-anchor="end">0.80</text>
+<line x1="84.0" y1="62.0" x2="736.0" y2="62.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="66.0" fill="#111111" font-size="11" text-anchor="end">1</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<text x="26.0" y="201.0" fill="#111111" font-size="12" text-anchor="middle" transform="rotate(-90 26.0 201.0)">baseline / OrFS (1.0 = equal)</text>
+<text x="149.2" y="358.0" fill="#111111" font-size="11" text-anchor="middle">git</text>
+<rect x="232.7" y="245.4" width="41.7" height="94.6" fill="#1f77b4"/>
+<rect x="284.8" y="327.3" width="41.7" height="12.7" fill="#d62728"/>
+<text x="279.6" y="358.0" fill="#111111" font-size="11" text-anchor="middle">sqlite</text>
+<rect x="363.1" y="327.8" width="41.7" height="12.2" fill="#1f77b4"/>
+<rect x="415.2" y="333.1" width="41.7" height="6.9" fill="#d62728"/>
+<text x="410.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">image-tar</text>
+<rect x="493.5" y="107.4" width="41.7" height="232.6" fill="#1f77b4"/>
+<rect x="545.6" y="104.9" width="41.7" height="235.1" fill="#d62728"/>
+<text x="540.4" y="358.0" fill="#111111" font-size="11" text-anchor="middle">build</text>
+<rect x="623.9" y="333.1" width="41.7" height="6.9" fill="#1f77b4"/>
+<rect x="676.0" y="337.2" width="41.7" height="2.8" fill="#d62728"/>
+<text x="670.8" y="358.0" fill="#111111" font-size="11" text-anchor="middle">metadata</text>
+<rect x="84.0" y="35.0" width="10" height="10" fill="#1f77b4"/>
+<text x="99.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">host_fs time / OrFS time</text>
+<rect x="287.0" y="35.0" width="10" height="10" fill="#d62728"/>
+<text x="302.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">tmpfs time / OrFS time</text>
+<text x="84.0" y="370.0" fill="#555555" font-size="10" text-anchor="start">source: evidence/performance/application-workloads.json (real OrFS mount; order-balanced trials; one host)</text>
+<text x="84.0" y="386.0" fill="#555555" font-size="10" text-anchor="start">bar = baseline wall-clock / OrFS wall-clock; 1.0 = equal, &lt; 1 = OrFS slower; git has no bar (did not complete on OrFS)</text>
+<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">regenerate: python3 scripts/render_charts.py --check</text>
+</svg>

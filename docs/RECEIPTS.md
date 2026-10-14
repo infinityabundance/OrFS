@@ -236,7 +236,8 @@ numbers were not curated in this first pass:
   `docs/MIGRATION.md`.
 * `docs/PROGRESS.md`, `README.md` — out of scope by construction (this check
   governs docs against receipts, not the reverse index of phases).
-* `docs/APPLICATIONS.md` §4/§4.1/§6 (Phase 81) — the application court's
+* `docs/APPLICATIONS.md` §4/§4.1/§6 (Phase 81; §6's `git` blocker was resolved
+  in Phase 82) — the application court's
   **wall-clock times, ratios and per-operation latencies** are single-run and
   host/load-sensitive, so they are deliberately **not** curated (the same policy
   as §31.2's external comparators and §22's reader-scaling aggregates). The

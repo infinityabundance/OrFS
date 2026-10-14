@@ -284,6 +284,13 @@ which **Phase 25 has now closed**, each verified against the reference:
   (`fd_truncate_permission`). A `SETATTR` carrying an already-open writable
   handle no longer re-checks the inode's write permission (Linux checks it at
   `open`).
+* **`write`/`read` re-checking the inode's mode** (Phase 82; found at the
+  application layer, not by pjdfstest). The same principle is now applied to the
+  plain data path: `write`/`read` honour the **open file description's** access
+  mode, so a `0444`-created file is writable through the creating descriptor (the
+  `git` loose-object pattern) and an open descriptor keeps its rights after a later
+  `chmod`. Access is still decided at `open`/`create` — a conformance correction,
+  not a relaxation (`docs/FUSE-SEMANTICS.md` §6, `docs/LIMITATIONS.md` §20).
 * **Supplementary-group `chgrp`** (`supplementary_group_chgrp`). A non-root owner
   may now `chgrp` to its effective or a supplementary group, read from the
   kernel's `/proc/<pid>/status`; a group whose membership cannot be confirmed is
@@ -498,7 +505,7 @@ qualifies OrFS's durability *relative to the model*, and states the honest bound
   a time, and its numbers (matrix size, refusals, residual rows) are the
   deterministic result, not a timing claim.
 
-## 20. Application workloads: OrFS is slower, and cannot host a git repository (Phase 81)
+## 20. Application workloads: OrFS is slower, but `git` runs (Phase 81; `git` blocker resolved in Phase 82)
 
 Phase 81 drives five **real applications** (`git`, `sqlite3`, `tar`, `make`/`gcc`,
 and an in-process metadata-heavy tree) end to end against a real OrFS mount and
@@ -506,23 +513,26 @@ against external baselines, and publishes the results honestly
 (`docs/APPLICATIONS.md`, `evidence/performance/application-workloads.json`).
 
 * **OrFS loses every workload.** Against the same-device host filesystem
-  baseline, the completed workloads are **2.9×** (SQLite), **22.7×** (tar
-  extraction), **1.2×** (`make -j` source build) and **40.3×** (a 50 000-file
-  metadata tree) slower. The mechanism is the FUSE round-trip plus
+  baseline, the completed workloads are **8.9×** (`git`), **2.9×** (SQLite),
+  **29.6×** (tar extraction), **1.4×** (`make -j` source build) and **52.1×**
+  (a 50 000-file metadata tree) slower. The mechanism is the FUSE round-trip plus
   authoritative-commit cost already documented in `docs/PERFORMANCE.md`
   §20/§31.2 and `docs/FUSE-SEMANTICS.md`. This is the application-layer
   quantification of the standing position that OrFS is **not yet a faster
   general-purpose replacement** for ext4/tmpfs.
-* **OrFS currently cannot host a `git` repository.** `git` writes a loose object
-  by creating a file with mode `0444` and writing through the returned
-  descriptor. OrFS documents **per-write** permission enforcement
-  (`docs/FUSE-SEMANTICS.md` §5/§6), so it refuses that write with `EACCES` and
-  `git` aborts (`fatal: unable to write loose object file: Permission denied`).
-  POSIX checks permission at `open`, not on every write; the court's `0444`-create
-  probe confirms the mechanism on every arm (ok on ext4/tmpfs, refused on OrFS).
-  This is an **application-level limitation**, not a micro-benchmark artefact,
-  and it is **not** fixed here — relaxing per-write enforcement would change
-  documented semantics and needs its own phase plus a POSIX-court re-validation.
+* **`git` now runs on OrFS (the Phase 81 blocker was fixed in Phase 82).** The
+  Phase 81 court found that `git` wrote a loose object by creating a file with
+  mode `0444` and writing through the returned descriptor, and OrFS **re-checked
+  the inode's write bit on every `write`**, so the write was refused with `EACCES`
+  and `git` aborted (`fatal: unable to write loose object file: Permission
+  denied`). That was a POSIX-conformance defect, not a security feature: the
+  permission was already enforced at `open`/`create`. Phase 82 makes `write` (and
+  `read`) honour the **open file description's** access mode, so the `0444`-create
+  probe now reports `ok` on OrFS, the `git` workload **completes** (OrFS median
+  **1.083 s** vs `host_fs` **0.122 s**), and the `0444` loose-object pattern is a
+  mounted conformance check (`fuse_integration` `write_through_created_fd`). Access
+  is still decided at `open`/`create`; see `docs/SECURITY.md` and
+  `docs/THREAT-MODEL.md` — the threat model is unchanged.
 * **The image-extraction workload is synthetic.** It is a bounded OCI-layer-like
   tarball extracted with `tar`, **not** a real `docker pull`.
 * **The tmpfs arm is a RAM reference floor**, not the headline comparator; the

@@ -2643,4 +2643,51 @@ mod tests {
         bad[30] ^= 0xFF;
         assert!(IndexCheckpointPayload::decode(&bad).is_err());
     }
+
+    /// The engine never enforces the access mask: permission is decided by the
+    /// transport at `open`/`create` (POSIX), and the open file description then
+    /// carries the right. A `0444` file — the mode `git` uses for a loose object —
+    /// is therefore writable through the descriptor the create returned. This is
+    /// the engine half of the Phase 82 conformance correction
+    /// (`docs/FUSE-SEMANTICS.md` §6); the mask stays correct — a non-owner may
+    /// still not *open* it for writing — so no security is relaxed.
+    #[test]
+    fn engine_does_not_recheck_permission_on_write() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut ns = Namespace::init(
+            dir.path(),
+            crate::log::DEFAULT_SEGMENT_SIZE,
+            DurabilityMode::Ordered,
+        )
+        .expect("init");
+        let root_ino = ns.root_inode();
+        let f = ns
+            .create(root_ino, b"obj", 0o444, 1000, 1000)
+            .expect("create");
+        let st = ns.getattr(f, ns.root()).expect("getattr");
+        assert_eq!(st.mode & 0o777, 0o444);
+        // The class mask still denies a non-owner (and, at 0444, the owner) write
+        // *access* — that is what `open`/`create` consult.
+        assert!(!crate::inode::has_permission_grouped(
+            1000,
+            1000,
+            &[],
+            &st,
+            0o2
+        ));
+        assert!(!crate::inode::has_permission_grouped(
+            3000,
+            3000,
+            &[],
+            &st,
+            0o2
+        ));
+        // ...but a write through an already-open descriptor succeeds, because the
+        // transport is the only place the mask is applied.
+        assert_eq!(ns.write_at(f, 0, b"hello").expect("write"), 5);
+        assert_eq!(
+            ns.read_at(f, ns.root(), 0, 5).expect("read"),
+            b"hello".to_vec()
+        );
+    }
 }

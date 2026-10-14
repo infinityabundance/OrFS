@@ -144,6 +144,36 @@ fn apply_ops(root: &Path) -> Result<Vec<(String, String)>, String> {
     io_err(fs::remove_file(&hl))?;
     out.push(("unlink-exists".into(), format!("{}", hl.exists())));
 
+    // Phase 82: POSIX decides access at `open`/`create`, so a file created with
+    // mode `0444` is writable through the descriptor the create returned (the
+    // `git` loose-object pattern), and an already-open descriptor keeps its rights
+    // after a later chmod. Byte-identical across F0/F1/F2 is the transport-
+    // neutrality proof for the conformance correction (docs/FUSE-SEMANTICS.md §6).
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        let obj = root.join("loose-obj");
+        let mut h = io_err(
+            OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o444)
+                .open(&obj),
+        )?;
+        io_err(h.write_all(b"git object"))?;
+        io_err(h.sync_all())?;
+        out.push((
+            "create-0444-write".into(),
+            io_err(fs::read_to_string(&obj))?,
+        ));
+        out.push((
+            "create-0444-mode".into(),
+            format!(
+                "{:o}",
+                io_err(fs::metadata(&obj))?.permissions().mode() & 0o777
+            ),
+        ));
+    }
+
     Ok(out)
 }
 

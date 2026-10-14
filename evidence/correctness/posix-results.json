@@ -19,7 +19,7 @@
   },
   "generated_by": "tests/fuse_integration.rs",
   "mounted": true,
-  "mountpoint": "/mnt/1tb_kingston/OrFS/target/fuse-it/it-525-1791764735995458490/mnt",
+  "mountpoint": "/mnt/1tb_kingston/OrFS/target/fuse-it/it-17-1792011518980440802/mnt",
   "notes": [
     "readdirplus is negotiated (FUSE_DO_READDIRPLUS) and exercised by ordinary readdir(3) calls",
     "POSIX record locks and flock are delegated to the kernel (ENOSYS); see docs/FUSE-SEMANTICS.md",
@@ -136,6 +136,20 @@
     {
       "kind": "reference",
       "matched": true,
+      "name": "access_decided_at_open",
+      "orfs": "ok:open_w=Some(PermissionDenied) create=Some(PermissionDenied) wrote_after_chmod0=true read_after_chmod0=Some('a')",
+      "reference": "ok:open_w=Some(PermissionDenied) create=Some(PermissionDenied) wrote_after_chmod0=true read_after_chmod0=Some('a')"
+    },
+    {
+      "kind": "reference",
+      "matched": true,
+      "name": "write_through_created_fd",
+      "orfs": "ok:content=\"git loose object\" mode=444",
+      "reference": "ok:content=\"git loose object\" mode=444"
+    },
+    {
+      "kind": "reference",
+      "matched": true,
       "name": "pwrite",
       "orfs": "ok:n0=2 n1=2 n2=2 n3=2 nv=5 nb=200000 size=200064 head=[65, 66, 50, 80, 80, 81, 81, 81, 56, 57, 43, 43, 0, 0, 0, 90, 90] probe=[178, 209, 240, 20, 51, 82, 113, 144]",
       "reference": "ok:n0=2 n1=2 n2=2 n3=2 nv=5 nb=200000 size=200064 head=[65, 66, 50, 80, 80, 81, 81, 81, 56, 57, 43, 43, 0, 0, 0, 90, 90] probe=[178, 209, 240, 20, 51, 82, 113, 144]"
@@ -209,6 +223,13 @@
       "name": "utimens_now_omit",
       "orfs": "ok:atime_now=true mtime_fixed=true atime_kept=true mtime2=true",
       "reference": "atime_now=true mtime_fixed=true atime_kept=true mtime2=true"
+    },
+    {
+      "kind": "semantic",
+      "matched": true,
+      "name": "git_loose_object_write_via_created_fd",
+      "orfs": "ok:content=\"git loose object\" mode=444",
+      "reference": "create(0444) then write through the returned fd succeeds"
     }
   ],
   "posix33_coverage": {
@@ -222,7 +243,8 @@
       {
         "checks": [
           "create_write_read",
-          "append_and_seek"
+          "append_and_seek",
+          "access_decided_at_open"
         ],
         "operation": "open"
       },
@@ -235,7 +257,9 @@
       {
         "checks": [
           "create_write_read",
-          "append_and_seek"
+          "append_and_seek",
+          "write_through_created_fd",
+          "git_loose_object_write_via_created_fd"
         ],
         "operation": "write"
       },
@@ -429,8 +453,8 @@
   },
   "summary": {
     "failed": 0,
-    "passed": 26,
-    "total": 26
+    "passed": 29,
+    "total": 29
   },
   "transport": "fuse (traditional /dev/fuse)"
 }

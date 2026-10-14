@@ -23,8 +23,14 @@ requires the privilege the kernel demands for FUSE:
 * **Within a mounted view**, access is enforced by the ordinary POSIX rule
   (`src/inode.rs::has_permission_grouped`, shared by both transports): owner/group/
   other bits, the caller's supplementary groups, `default_permissions` handling, and
-  symlink-safe resolution. A query (`orfs query`) runs under an explicit
-  `Credential` and applies the same read rule.
+  symlink-safe resolution. The rule is applied **at `open`/`create`**, the POSIX
+  gate; `read`/`write` then honour the **open file description's** access mode (a
+  descriptor opened while permitted keeps its rights after a later `chmod`, and a
+  `0444`-created file is writable through the creating descriptor). The Phase 82
+  correction that made `write`/`read` trust the descriptor was a **conformance fix,
+  not a relaxation**: access is still decided at `open`/`create`
+  (`docs/SECURITY.md` §3.7, `docs/FUSE-SEMANTICS.md` §6). A query (`orfs query`)
+  runs under an explicit `Credential` and applies the same read rule.
 
 ## 2. What integrity mechanisms exist — and what they are not
 

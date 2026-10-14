@@ -1473,7 +1473,7 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
 
     fn read(
         &self,
-        req: &Request,
+        _req: &Request,
         ino: INodeNo,
         fh: FileHandle,
         offset: u64,
@@ -1482,20 +1482,23 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         _lock_owner: Option<LockOwner>,
         reply: ReplyData,
     ) {
-        let handle = match self.inner.handle(fh.0) {
-            Some(h) if !h.is_dir => h,
-            _ => return reply.error(Errno::EBADF),
-        };
+        // POSIX decides read access at `open`, and the resulting open file
+        // description then carries the right for its whole lifetime; the kernel
+        // never issues `READ` on a write-only descriptor. So trust the
+        // descriptor's access mode rather than re-reading the inode's mode,
+        // which would wrongly deny a read through a descriptor that was opened
+        // while permitted and then had its permission tightened
+        // (docs/FUSE-SEMANTICS.md §6). A missing, directory, or write-only handle
+        // is `EBADF`, exactly as the kernel would report a non-readable fd.
+        let readable = self
+            .inner
+            .handle(fh.0)
+            .is_some_and(|h| !h.is_dir && handle_is_readable(h.flags));
+        if !readable {
+            return reply.error(Errno::EBADF);
+        }
         let view = self.read_view();
         let root = view.root();
-        let st = match view.getattr(ino.0, root) {
-            Ok(st) => st,
-            Err(e) => return reply.error(errno(&e)),
-        };
-        if !has_permission_grouped(req.uid(), req.gid(), &caller_groups(req.pid()), &st, 0o4) {
-            return reply.error(Errno::EACCES);
-        }
-        let _ = handle;
         match view.read_at(ino.0, root, offset, size) {
             Ok(data) => {
                 let mut m = self.inner.metrics.lock();
@@ -1524,20 +1527,28 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         if let Err(e) = self.ensure_writable() {
             return reply.error(errno(&e));
         }
+        // POSIX checks write permission at `open`/`create`, not on every `write`;
+        // the open file description then carries the access right. Trust the
+        // descriptor's access mode instead of re-reading the inode's mode, which
+        // would wrongly deny a write through the descriptor that `create(0444)`
+        // returned — the `git` loose-object pattern (docs/FUSE-SEMANTICS.md §6).
+        // The kernel rejects a write on a read-only fd with `EBADF` before it ever
+        // reaches the daemon, so the descriptor check is a defensive re-check, not
+        // the security gate: `open`/`create` remains the gate (see `open`/`create`
+        // and `check_create_uid`). A missing, directory, or read-only handle is
+        // `EBADF`, exactly as the kernel reports a non-writable fd.
         let handle = match self.inner.handle(fh.0) {
-            Some(h) if !h.is_dir => h,
+            Some(h) if !h.is_dir && handle_is_writable(h.flags) => h,
             _ => return reply.error(Errno::EBADF),
         };
-        // Everything that depends on the authoritative state — the permission
-        // check, the O_APPEND end-of-file and the killpriv decision — is resolved
-        // *inside* the job, under the core lock, so it observes the same state the
-        // write commits against. Routing through `Inner::mutate` lets a write
-        // share a group-commit batch's durability barrier; concurrency therefore
-        // never resolves a stale append offset or a stale owner/mode.
+        // Everything that depends on the authoritative state — the O_APPEND
+        // end-of-file and the killpriv decision — is resolved *inside* the job,
+        // under the core lock, so it observes the same state the write commits
+        // against. Routing through `Inner::mutate` lets a write share a
+        // group-commit batch's durability barrier; concurrency therefore never
+        // resolves a stale append offset or a stale owner/mode.
         let ino_raw = ino.0;
         let uid = req.uid();
-        let gid = req.gid();
-        let groups = caller_groups(req.pid());
         let append = handle.flags & libc::O_APPEND != 0;
         // The kernel's precise signal (FUSE_HANDLE_KILLPRIV(_V2)). The non-owner
         // fallback is applied inside the job against the authoritative mode.
@@ -1548,9 +1559,6 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
         let res = self.inner.mutate(move |core| {
             let root = core.root();
             let st = core.getattr(ino_raw, root)?;
-            if !has_permission_grouped(uid, gid, &groups, &st, 0o2) {
-                return Err(OrfsError::PermissionDenied);
-            }
             // O_APPEND: honour the authoritative end-of-file rather than the
             // possibly-stale offset the kernel supplied.
             let effective = if append { st.size } else { offset };
@@ -2200,6 +2208,25 @@ fn acc_mask(mode: fuser::OpenAccMode) -> u32 {
         fuser::OpenAccMode::O_WRONLY => 0o2,
         fuser::OpenAccMode::O_RDWR => 0o4 | 0o2,
     }
+}
+
+/// Whether an open file description created with these raw flags is writable.
+///
+/// POSIX evaluates access permission at `open`/`create`; the resulting open file
+/// description then carries the right for its lifetime. `write`/`read` therefore
+/// decide from the descriptor's access mode — recorded when the handle was
+/// registered — and never re-read the inode's mode
+/// (`docs/FUSE-SEMANTICS.md` §6). Both transports share this predicate so a
+/// mounted write decision cannot differ between them.
+pub(crate) fn handle_is_writable(flags: i32) -> bool {
+    (flags & libc::O_ACCMODE) != libc::O_RDONLY
+}
+
+/// As [`handle_is_writable`], for reads: a descriptor is readable unless it was
+/// opened write-only. The kernel never issues `READ` on a write-only fd, so this
+/// is a defensive re-check of the same open-time decision.
+pub(crate) fn handle_is_readable(flags: i32) -> bool {
+    (flags & libc::O_ACCMODE) != libc::O_WRONLY
 }
 
 /// Whether the process that issued the FUSE request (identified by `pid`) is a
@@ -2998,6 +3025,25 @@ mod tests {
             0o4
         ));
         assert!(crate::inode::perm_class_groups(2000, 2000, &[100], &st) == 3);
+    }
+
+    #[test]
+    fn open_file_description_carries_the_access_mode() {
+        // POSIX decides access at `open`/`create`; the resulting open file
+        // description carries the right. These predicates are the transport's
+        // whole per-write/per-read decision, shared by both transports.
+        assert!(!handle_is_writable(libc::O_RDONLY));
+        assert!(handle_is_writable(libc::O_WRONLY));
+        assert!(handle_is_writable(libc::O_RDWR));
+        // `O_APPEND`/`O_TRUNC`/`O_CREAT` are orthogonal to the access mode.
+        assert!(handle_is_writable(
+            libc::O_WRONLY | libc::O_APPEND | libc::O_CREAT | libc::O_TRUNC
+        ));
+
+        assert!(handle_is_readable(libc::O_RDONLY));
+        assert!(handle_is_readable(libc::O_RDWR));
+        assert!(!handle_is_readable(libc::O_WRONLY));
+        assert!(!handle_is_readable(libc::O_WRONLY | libc::O_APPEND));
     }
 
     #[test]

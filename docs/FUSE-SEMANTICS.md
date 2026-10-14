@@ -122,9 +122,9 @@ are stable, so an unlinked child still resolves).
 | `symlink` | Stores the target immutably. |
 | `rename` | One atomic transaction. Flags map to `Ordinary`, `RENAME_NOREPLACE`, or `RENAME_EXCHANGE`; `RENAME_WHITEOUT` → `EOPNOTSUPP`; combined flags → `EINVAL`. |
 | `link` | Hard link; adjusts `nlink`. |
-| `open` | Enforces access-mode permission; honours `O_TRUNC`; allocates a file handle. |
-| `read` | Enforces read permission; resolves logical extents. Clamped to EOF. |
-| `write` | Enforces write permission; appends an immutable `DATA_EXTENT` and advances the file's `mtime`/`ctime` in the same transaction (§5.1). For `O_APPEND` the *authoritative* end-of-file is used as the offset. Clears `S_ISUID`/`S_ISGID` when the kernel flags the write `FUSE_WRITE_KILL_SUIDGID` (§5.2). Requests an inode invalidation. |
+| `open` | Enforces access-mode permission **at open** (the POSIX gate) and records it in the file handle's access mode; honours `O_TRUNC`; allocates a file handle. |
+| `read` | Honours the **open file description's** read access (decided at `open`); resolves logical extents. Clamped to EOF. |
+| `write` | Honours the **open file description's** write access (decided at `open`/`create`); appends an immutable `DATA_EXTENT` and advances the file's `mtime`/`ctime` in the same transaction (§5.1). For `O_APPEND` the *authoritative* end-of-file is used as the offset. Clears `S_ISUID`/`S_ISGID` when the kernel flags the write `FUSE_WRITE_KILL_SUIDGID` (§5.2). Requests an inode invalidation. |
 | `flush` | **Not** a durability barrier — returns `ok` because nothing is buffered (§8). |
 | `fsync` | Durably flushes the authoritative log (`sync()`), i.e. it *is* the durability barrier. `fdatasync(2)` arrives as `fsync` with the `datasync` hint and is served by the same full `sync()` (a strictly stronger guarantee). |
 | `fsyncdir` | Same durability hook as `fsync`. |
@@ -185,12 +185,21 @@ Verified by pjdfstest `chmod/12.t` (§11.1).
 
 ## 6. Permission enforcement
 
-OrFS enforces permissions in the daemon, not via `default_permissions`. The
-checks are applied consistently at `lookup` (execute on parent),
-`open`/`read`/`write` (access mode on the inode), `opendir`/`readdir` (read on
-the directory), and every namespace mutation (write+execute on the parent,
-sticky-bit rules for `unlink`). Root bypasses read/write and needs at least one
-execute bit to execute a regular file.
+OrFS enforces permissions in the daemon, not via `default_permissions`. Access
+is decided **at `open`/`create`** — the POSIX rule — and the resulting **open file
+description then carries the right for its lifetime**: `read`/`write` honour the
+descriptor's access mode and never re-read the inode's mode (shared by both
+transports as `handle_is_readable`/`handle_is_writable` in `src/fuse.rs`). This is
+why a file created with mode `0444` is writable through the descriptor the
+`create` returned — the `git` loose-object pattern — and why a descriptor opened
+while permitted keeps reading/writing after a later `chmod`. Checks are applied
+at `lookup` (execute on parent), `open`/`create` (access mode on the inode),
+`opendir` (read on the directory), and every namespace mutation (write+execute on
+the parent, sticky-bit rules for `unlink`). Operations with **no open file
+description** to trust (`getattr`, the `setxattr`/`getxattr`/`listxattr`/
+`removexattr` accessors; `readdir` is served from the snapshot taken at `opendir`)
+apply the uniform inode-mode rule (§8). Root bypasses read/write and needs at
+least one execute bit to execute a regular file.
 
 Every one of these decisions uses the kernel's `in_group_p` rule: a caller
 matches the **group** class when its effective group **or any supplementary
@@ -395,6 +404,14 @@ mutations (§5.1), `setuid`/`setgid` clearing on a non-owner write and truncate
 (§5.2), `utimensat(UTIME_NOW)` permitted with only write permission (§6),
 truncation through an already-open writable descriptor not re-checked (§6), and
 non-root supplementary-group `chgrp` (§6). See `docs/LIMITATIONS.md` §12.
+
+Phase 82 corrected the analogous defect on the plain data path (found at the
+application layer in Phase 81): `write`/`read` now honour the **open file
+description** — the access mode decided at `open`/`create` — instead of
+re-reading the inode's mode on every call (§6). A file created with mode `0444`
+is therefore writable through the descriptor the `create` returned (the `git`
+loose-object pattern), and a descriptor opened while permitted keeps its rights
+after a later `chmod`, exactly as POSIX requires.
 
 ### 11.2 xfstests
 

@@ -353,6 +353,94 @@ fn s_perm_mode(root: &Path) -> Outcome {
     Ok(format!("{mode:o}"))
 }
 
+/// Phase 82 / POSIX: permission is decided at `open`/`create`, and the resulting
+/// open file description then carries the right. `git` writes a loose object by
+/// creating a file with mode `0444` and writing through the descriptor the create
+/// returned, so this scenario is the `git` blocker. Compared against the reference
+/// filesystem (both arms succeed under any uid: the descriptor is `O_WRONLY`).
+fn s_write_through_created_fd(root: &Path) -> Outcome {
+    use std::os::unix::fs::OpenOptionsExt;
+    let d = scratch(root, "s_write_through_created_fd");
+    let f = d.join("obj");
+    let mut h = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o444)
+        .open(&f)
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    h.write_all(b"git loose object")
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    h.sync_all().map_err(|e| format!("{:?}", e.kind()))?;
+    drop(h);
+    let got = fs::read_to_string(&f).map_err(|e| format!("{:?}", e.kind()))?;
+    let mode = fs::metadata(&f)
+        .map_err(|e| format!("{:?}", e.kind()))?
+        .mode()
+        & 0o777;
+    Ok(format!("content={got:?} mode={mode:o}"))
+}
+
+/// Phase 82 / POSIX: `open`/`create` is the gate, and an *already-open* descriptor
+/// keeps its rights after the mode is tightened. (1) `open(O_WRONLY)` on a file the
+/// caller may not write is refused; (2) `create` in a directory the caller may not
+/// write is refused; (3) a descriptor opened while permitted keeps its write right
+/// after `chmod 000`; (4) likewise for read. Compared against the reference
+/// filesystem, so the outcome string must match under any uid.
+fn s_access_decided_at_open(root: &Path) -> Outcome {
+    use std::os::unix::fs::PermissionsExt;
+    let d = scratch(root, "s_access_decided_at_open");
+
+    // (1) open(O_WRONLY) on a file whose mode denies the caller write -> EACCES.
+    let ro = d.join("ro");
+    fs::write(&ro, b"x").map_err(|e| format!("{:?}", e.kind()))?;
+    fs::set_permissions(&ro, fs::Permissions::from_mode(0o400))
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    let open_w = OpenOptions::new()
+        .write(true)
+        .open(&ro)
+        .err()
+        .map(|e| e.kind());
+
+    // (2) create in a directory without write permission -> EACCES.
+    let nw = d.join("nw");
+    fs::create_dir(&nw).map_err(|e| format!("{:?}", e.kind()))?;
+    fs::set_permissions(&nw, fs::Permissions::from_mode(0o500))
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    let create = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(nw.join("new"))
+        .err()
+        .map(|e| e.kind());
+
+    // (3) a descriptor opened while permitted keeps its write right after 000.
+    let wh = d.join("wheld");
+    fs::write(&wh, b"abcd").map_err(|e| format!("{:?}", e.kind()))?;
+    let mut w = OpenOptions::new()
+        .write(true)
+        .open(&wh)
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    fs::set_permissions(&wh, fs::Permissions::from_mode(0o000))
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    let wrote = w.write_all(b"Z").is_ok();
+
+    // (4) a descriptor opened while permitted keeps its read right after 000.
+    let rh = d.join("rheld");
+    fs::write(&rh, b"abcd").map_err(|e| format!("{:?}", e.kind()))?;
+    let mut r = OpenOptions::new()
+        .read(true)
+        .open(&rh)
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    fs::set_permissions(&rh, fs::Permissions::from_mode(0o000))
+        .map_err(|e| format!("{:?}", e.kind()))?;
+    let mut buf = [0u8; 1];
+    let read = r.read_exact(&mut buf).ok().map(|()| buf[0] as char);
+
+    Ok(format!(
+        "open_w={open_w:?} create={create:?} wrote_after_chmod0={wrote} read_after_chmod0={read:?}"
+    ))
+}
+
 // ---------------------------------------------------------------------------
 // Semantic-only scenarios
 // ---------------------------------------------------------------------------
@@ -1020,6 +1108,18 @@ fn run_all(rec: &mut Recorder, orfs_root: &Path, ref_root: &Path) {
     rec.compare("rmdir_nonempty", orfs_root, ref_root, s_rmdir_nonempty);
     rec.compare("unlink_dir", orfs_root, ref_root, s_unlink_dir);
     rec.compare("perm_mode", orfs_root, ref_root, s_perm_mode);
+    rec.compare(
+        "access_decided_at_open",
+        orfs_root,
+        ref_root,
+        s_access_decided_at_open,
+    );
+    rec.compare(
+        "write_through_created_fd",
+        orfs_root,
+        ref_root,
+        s_write_through_created_fd,
+    );
     rec.compare("pwrite", orfs_root, ref_root, s_pwrite);
     rec.compare("append_pwrite", orfs_root, ref_root, s_append_pwrite);
     rec.compare("chown", orfs_root, ref_root, s_chown);
@@ -1064,6 +1164,16 @@ fn run_all(rec: &mut Recorder, orfs_root: &Path, ref_root: &Path) {
         &fmt_outcome(&utn),
         ok,
     );
+
+    // Phase 82: the `git` loose-object pattern must succeed through a real mount.
+    let wfd = s_write_through_created_fd(orfs_root);
+    let ok = matches!(&wfd, Ok(s) if s.contains("mode=444") && s.contains("git loose object"));
+    rec.assert_semantic(
+        "git_loose_object_write_via_created_fd",
+        "create(0444) then write through the returned fd succeeds",
+        &fmt_outcome(&wfd),
+        ok,
+    );
 }
 
 fn write_evidence(rec: &Recorder, mountpoint: &Path) -> std::io::Result<()> {
@@ -1085,9 +1195,9 @@ fn write_evidence(rec: &Recorder, mountpoint: &Path) -> std::io::Result<()> {
                      and the court check(s) that prove it.",
             "covered": [
                 {"operation": "create", "checks": ["create_write_read"]},
-                {"operation": "open", "checks": ["create_write_read", "append_and_seek"]},
+                {"operation": "open", "checks": ["create_write_read", "append_and_seek", "access_decided_at_open"]},
                 {"operation": "read", "checks": ["create_write_read"]},
-                {"operation": "write", "checks": ["create_write_read", "append_and_seek"]},
+                {"operation": "write", "checks": ["create_write_read", "append_and_seek", "write_through_created_fd", "git_loose_object_write_via_created_fd"]},
                 {"operation": "pread", "checks": ["pwrite", "mmap_readonly"]},
                 {"operation": "pwrite", "checks": ["pwrite", "append_pwrite"]},
                 {"operation": "pwritev", "checks": ["pwrite"]},

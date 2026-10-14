@@ -4,13 +4,13 @@
       "fs_type": "fuseblk",
       "id": "orfs",
       "kind": "real OrFS FUSE mount (fuse::spawn; the same code path as `orfs mount`)",
-      "root": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-107-1792010722037718966/mnt"
+      "root": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-220-1792014003771660163/mnt"
     },
     {
       "fs_type": "ext2/ext3",
       "id": "host_fs",
       "kind": "external baseline: the same bind-mounted host filesystem as the OrFS backing",
-      "root": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-107-1792010722037718966/hostfs"
+      "root": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-220-1792014003771660163/hostfs"
     },
     {
       "fs_type": "tmpfs",
@@ -92,39 +92,45 @@
       "arms": {
         "host_fs": {
           "detail": {
-            "clone": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-107-1792010722037718966/hostfs/git-repository-t0/clone",
+            "clone": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-220-1792014003771660163/hostfs/git-repository-t0/clone",
             "dirs": 60,
             "files": 1200,
-            "repo": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-107-1792010722037718966/hostfs/git-repository-t0/repo"
+            "repo": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-220-1792014003771660163/hostfs/git-repository-t0/repo"
           },
           "failures": [],
           "latency_ns": null,
           "ops": 1200,
-          "ops_per_s_median": 9073.487925353867,
-          "seconds_median": 0.132253441,
+          "ops_per_s_median": 9875.047160550746,
+          "seconds_median": 0.121518407,
           "seconds_trials": [
-            0.132253441,
-            0.132156024,
-            0.141025951
+            0.120183646,
+            0.121518407,
+            0.13236396
           ],
           "status": "ok",
           "trials": 3,
           "trials_ok": 3
         },
         "orfs": {
-          "failures": [
-            {
-              "error": "`git` exited 128: fatal: unable to write loose object file: Permission denied"
-            },
-            {
-              "error": "`git` exited 128: fatal: unable to write loose object file: Permission denied"
-            },
-            {
-              "error": "`git` exited 128: fatal: unable to write loose object file: Permission denied"
-            }
+          "detail": {
+            "clone": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-220-1792014003771660163/mnt/git-repository-t0/clone",
+            "dirs": 60,
+            "files": 1200,
+            "repo": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-220-1792014003771660163/mnt/git-repository-t0/repo"
+          },
+          "failures": [],
+          "latency_ns": null,
+          "ops": 1200,
+          "ops_per_s_median": 1108.007789556989,
+          "seconds_median": 1.083024877,
+          "seconds_trials": [
+            0.790242478,
+            1.083024877,
+            1.320786382
           ],
-          "status": "error",
-          "trials": 3
+          "status": "ok",
+          "trials": 3,
+          "trials_ok": 3
         },
         "tmpfs": {
           "detail": {
@@ -136,12 +142,12 @@
           "failures": [],
           "latency_ns": null,
           "ops": 1200,
-          "ops_per_s_median": 11779.714971537705,
-          "seconds_median": 0.101870037,
+          "ops_per_s_median": 12930.782276768094,
+          "seconds_median": 0.09280181,
           "seconds_trials": [
-            0.097771144,
-            0.10280837,
-            0.101870037
+            0.09280181,
+            0.090163258,
+            0.093076883
           ],
           "status": "ok",
           "trials": 3,
@@ -149,13 +155,13 @@
         }
       },
       "comparison": {
-        "direction": "orfs_unavailable",
-        "host_fs_seconds_median": 0.132253441,
+        "direction": "orfs_slower",
+        "host_fs_seconds_median": 0.121518407,
         "orfs_faster_than_baseline": false,
-        "orfs_seconds_median": null,
-        "ratio_host_fs_over_orfs": null,
-        "ratio_tmpfs_over_orfs": null,
-        "tmpfs_seconds_median": 0.101870037
+        "orfs_seconds_median": 1.083024877,
+        "ratio_host_fs_over_orfs": 0.11220278460879712,
+        "ratio_tmpfs_over_orfs": 0.08568760697082307,
+        "tmpfs_seconds_median": 0.09280181
       },
       "config": {
         "commits": 2,
@@ -166,13 +172,18 @@
       "per_arm": {
         "host_fs": {
           "orfs_faster_than_arm": false,
-          "ratio_arm_over_orfs": null,
-          "seconds_median": 0.132253441
+          "ratio_arm_over_orfs": 0.11220278460879712,
+          "seconds_median": 0.121518407
+        },
+        "orfs": {
+          "orfs_faster_than_arm": false,
+          "ratio_arm_over_orfs": 1.0,
+          "seconds_median": 1.083024877
         },
         "tmpfs": {
           "orfs_faster_than_arm": false,
-          "ratio_arm_over_orfs": null,
-          "seconds_median": 0.101870037
+          "ratio_arm_over_orfs": 0.08568760697082307,
+          "seconds_median": 0.09280181
         }
       },
       "primary_baseline": "host_fs",
@@ -183,7 +194,7 @@
       ],
       "verdict": {
         "orfs_faster_than_baseline": false,
-        "reason": "the OrFS arm produced no time: {\"error\":\"`git` exited 128: fatal: unable to write loose object file: Permission denied\"}"
+        "reason": "OrFS median 1.0830s vs host_fs median 0.1215s (0.11x the baseline's time — OrFS slower); tmpfs median 0.0928s"
       },
       "workload": "git-repository"
     },
@@ -192,7 +203,7 @@
         "host_fs": {
           "detail": {
             "bulk_rows": 20000,
-            "db": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-107-1792010722037718966/hostfs/sqlite-database-t0/data.db",
+            "db": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-220-1792014003771660163/hostfs/sqlite-database-t0/data.db",
             "db_bytes": 561152,
             "fsync_rows": 200,
             "rows": 20200
@@ -200,12 +211,12 @@
           "failures": [],
           "latency_ns": null,
           "ops": 20200,
-          "ops_per_s_median": 68838.7392690629,
-          "seconds_median": 0.293439424,
+          "ops_per_s_median": 70047.94428078578,
+          "seconds_median": 0.288373916,
           "seconds_trials": [
-            0.293439424,
-            0.294980634,
-            0.286485258
+            0.288373916,
+            0.300843549,
+            0.285884589
           ],
           "status": "ok",
           "trials": 3,
@@ -214,7 +225,7 @@
         "orfs": {
           "detail": {
             "bulk_rows": 20000,
-            "db": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-107-1792010722037718966/mnt/sqlite-database-t0/data.db",
+            "db": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-220-1792014003771660163/mnt/sqlite-database-t0/data.db",
             "db_bytes": 561152,
             "fsync_rows": 200,
             "rows": 20200
@@ -222,12 +233,12 @@
           "failures": [],
           "latency_ns": null,
           "ops": 20200,
-          "ops_per_s_median": 23436.705276697154,
-          "seconds_median": 0.861895892,
+          "ops_per_s_median": 24024.280431591105,
+          "seconds_median": 0.840816026,
           "seconds_trials": [
-            0.880601994,
-            0.861705788,
-            0.861895892
+            0.84532858,
+            0.840816026,
+            0.835804033
           ],
           "status": "ok",
           "trials": 3,
@@ -244,12 +255,12 @@
           "failures": [],
           "latency_ns": null,
           "ops": 20200,
-          "ops_per_s_median": 511503.4984433708,
-          "seconds_median": 0.039491421,
+          "ops_per_s_median": 503988.1555797464,
+          "seconds_median": 0.040080307,
           "seconds_trials": [
-            0.041199941,
-            0.039166698,
-            0.039491421
+            0.039805365,
+            0.040080307,
+            0.040216511
           ],
           "status": "ok",
           "trials": 3,
@@ -258,12 +269,12 @@
       },
       "comparison": {
         "direction": "orfs_slower",
-        "host_fs_seconds_median": 0.293439424,
+        "host_fs_seconds_median": 0.288373916,
         "orfs_faster_than_baseline": false,
-        "orfs_seconds_median": 0.861895892,
-        "ratio_host_fs_over_orfs": 0.340458084002563,
-        "ratio_tmpfs_over_orfs": 0.04581924727400835,
-        "tmpfs_seconds_median": 0.039491421
+        "orfs_seconds_median": 0.840816026,
+        "ratio_host_fs_over_orfs": 0.34296910035347017,
+        "ratio_tmpfs_over_orfs": 0.04766834332436951,
+        "tmpfs_seconds_median": 0.040080307
       },
       "config": {
         "bulk_rows": 20000,
@@ -276,18 +287,18 @@
       "per_arm": {
         "host_fs": {
           "orfs_faster_than_arm": false,
-          "ratio_arm_over_orfs": 0.340458084002563,
-          "seconds_median": 0.293439424
+          "ratio_arm_over_orfs": 0.34296910035347017,
+          "seconds_median": 0.288373916
         },
         "orfs": {
           "orfs_faster_than_arm": false,
           "ratio_arm_over_orfs": 1.0,
-          "seconds_median": 0.861895892
+          "seconds_median": 0.840816026
         },
         "tmpfs": {
           "orfs_faster_than_arm": false,
-          "ratio_arm_over_orfs": 0.04581924727400835,
-          "seconds_median": 0.039491421
+          "ratio_arm_over_orfs": 0.04766834332436951,
+          "seconds_median": 0.040080307
         }
       },
       "primary_baseline": "host_fs",
@@ -298,7 +309,7 @@
       ],
       "verdict": {
         "orfs_faster_than_baseline": false,
-        "reason": "OrFS median 0.8619s vs host_fs median 0.2934s (0.34x the baseline's time — OrFS slower); tmpfs median 0.0395s"
+        "reason": "OrFS median 0.8408s vs host_fs median 0.2884s (0.34x the baseline's time — OrFS slower); tmpfs median 0.0401s"
       },
       "workload": "sqlite-database"
     },
@@ -308,18 +319,18 @@
           "detail": {
             "bytes": 18825216,
             "large_files": 4,
-            "layer": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-107-1792010722037718966/layer.tar",
+            "layer": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-220-1792014003771660163/layer.tar",
             "small_files": 2000
           },
           "failures": [],
           "latency_ns": null,
           "ops": 2004,
-          "ops_per_s_median": 119036.21296623927,
-          "seconds_median": 0.016835213,
+          "ops_per_s_median": 137324.36494676353,
+          "seconds_median": 0.014593186,
           "seconds_trials": [
-            0.016835213,
-            0.015739113,
-            0.025503275
+            0.014516604,
+            0.014749387,
+            0.014593186
           ],
           "status": "ok",
           "trials": 3,
@@ -329,18 +340,18 @@
           "detail": {
             "bytes": 18825216,
             "large_files": 4,
-            "layer": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-107-1792010722037718966/layer.tar",
+            "layer": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-220-1792014003771660163/layer.tar",
             "small_files": 2000
           },
           "failures": [],
           "latency_ns": null,
           "ops": 2004,
-          "ops_per_s_median": 5236.670335915861,
-          "seconds_median": 0.382685919,
+          "ops_per_s_median": 4637.206141241839,
+          "seconds_median": 0.432156764,
           "seconds_trials": [
-            0.336725832,
-            0.382685919,
-            0.410209904
+            0.412070961,
+            0.432156764,
+            0.460150059
           ],
           "status": "ok",
           "trials": 3,
@@ -350,18 +361,18 @@
           "detail": {
             "bytes": 18825216,
             "large_files": 4,
-            "layer": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-107-1792010722037718966/layer.tar",
+            "layer": "/mnt/1tb_kingston/OrFS/target/application-workloads-it/app-220-1792014003771660163/layer.tar",
             "small_files": 2000
           },
           "failures": [],
           "latency_ns": null,
           "ops": 2004,
-          "ops_per_s_median": 212338.97098245978,
-          "seconds_median": 0.00943774,
+          "ops_per_s_median": 216753.8621449763,
+          "seconds_median": 0.00924551,
           "seconds_trials": [
-            0.010932974,
-            0.00943774,
-            0.008890085
+            0.009265716,
+            0.009228547,
+            0.00924551
           ],
           "status": "ok",
           "trials": 3,
@@ -370,12 +381,12 @@
       },
       "comparison": {
         "direction": "orfs_slower",
-        "host_fs_seconds_median": 0.016835213,
+        "host_fs_seconds_median": 0.014593186,
         "orfs_faster_than_baseline": false,
-        "orfs_seconds_median": 0.382685919,
-        "ratio_host_fs_over_orfs": 0.04399224576642968,
-        "ratio_tmpfs_over_orfs": 0.024661842862318643,
-        "tmpfs_seconds_median": 0.00943774
+        "orfs_seconds_median": 0.432156764,
+        "ratio_host_fs_over_orfs": 0.03376826933108005,
+        "ratio_tmpfs_over_orfs": 0.021393880115225965,
+        "tmpfs_seconds_median": 0.00924551
       },
       "config": {
         "kind": "synthetic OCI-layer-like tarball (NOT a real docker pull)",
@@ -387,18 +398,18 @@
       "per_arm": {
         "host_fs": {
           "orfs_faster_than_arm": false,
-          "ratio_arm_over_orfs": 0.04399224576642968,
-          "seconds_median": 0.016835213
+          "ratio_arm_over_orfs": 0.03376826933108005,
+          "seconds_median": 0.014593186
         },
         "orfs": {
           "orfs_faster_than_arm": false,
           "ratio_arm_over_orfs": 1.0,
-          "seconds_median": 0.382685919
+          "seconds_median": 0.432156764
         },
         "tmpfs": {
           "orfs_faster_than_arm": false,
-          "ratio_arm_over_orfs": 0.024661842862318643,
-          "seconds_median": 0.00943774
+          "ratio_arm_over_orfs": 0.021393880115225965,
+          "seconds_median": 0.00924551
         }
       },
       "primary_baseline": "host_fs",
@@ -409,7 +420,7 @@
       ],
       "verdict": {
         "orfs_faster_than_baseline": false,
-        "reason": "OrFS median 0.3827s vs host_fs median 0.0168s (0.04x the baseline's time — OrFS slower); tmpfs median 0.0094s"
+        "reason": "OrFS median 0.4322s vs host_fs median 0.0146s (0.03x the baseline's time — OrFS slower); tmpfs median 0.0092s"
       },
       "workload": "image-extraction-analogue"
     },
@@ -424,12 +435,12 @@
           "failures": [],
           "latency_ns": null,
           "ops": 120,
-          "ops_per_s_median": 897.2923105346537,
-          "seconds_median": 0.133735683,
+          "ops_per_s_median": 1077.3771167901573,
+          "seconds_median": 0.111381612,
           "seconds_trials": [
-            0.136521183,
-            0.133735683,
-            0.114155092
+            0.111381612,
+            0.113436234,
+            0.110935599
           ],
           "status": "ok",
           "trials": 3,
@@ -444,12 +455,12 @@
           "failures": [],
           "latency_ns": null,
           "ops": 120,
-          "ops_per_s_median": 750.6289801710722,
-          "seconds_median": 0.15986593,
+          "ops_per_s_median": 790.1399385239522,
+          "seconds_median": 0.151871832,
           "seconds_trials": [
-            0.194771854,
-            0.15986593,
-            0.158632984
+            0.150037,
+            0.156677688,
+            0.151871832
           ],
           "status": "ok",
           "trials": 3,
@@ -464,12 +475,12 @@
           "failures": [],
           "latency_ns": null,
           "ops": 120,
-          "ops_per_s_median": 887.4712291996435,
-          "seconds_median": 0.135215651,
+          "ops_per_s_median": 1080.848017141529,
+          "seconds_median": 0.111023935,
           "seconds_trials": [
-            0.145177083,
-            0.135215651,
-            0.123151345
+            0.111023935,
+            0.110176913,
+            0.111728759
           ],
           "status": "ok",
           "trials": 3,
@@ -478,12 +489,12 @@
       },
       "comparison": {
         "direction": "orfs_slower",
-        "host_fs_seconds_median": 0.133735683,
+        "host_fs_seconds_median": 0.111381612,
         "orfs_faster_than_baseline": false,
-        "orfs_seconds_median": 0.15986593,
-        "ratio_host_fs_over_orfs": 0.8365489945230982,
-        "ratio_tmpfs_over_orfs": 0.8458065517774801,
-        "tmpfs_seconds_median": 0.135215651
+        "orfs_seconds_median": 0.151871832,
+        "ratio_host_fs_over_orfs": 0.7333921671531558,
+        "ratio_tmpfs_over_orfs": 0.7310370431298938,
+        "tmpfs_seconds_median": 0.111023935
       },
       "config": {
         "build": "make -j<cpus>",
@@ -493,18 +504,18 @@
       "per_arm": {
         "host_fs": {
           "orfs_faster_than_arm": false,
-          "ratio_arm_over_orfs": 0.8365489945230982,
-          "seconds_median": 0.133735683
+          "ratio_arm_over_orfs": 0.7333921671531558,
+          "seconds_median": 0.111381612
         },
         "orfs": {
           "orfs_faster_than_arm": false,
           "ratio_arm_over_orfs": 1.0,
-          "seconds_median": 0.15986593
+          "seconds_median": 0.151871832
         },
         "tmpfs": {
           "orfs_faster_than_arm": false,
-          "ratio_arm_over_orfs": 0.8458065517774801,
-          "seconds_median": 0.135215651
+          "ratio_arm_over_orfs": 0.7310370431298938,
+          "seconds_median": 0.111023935
         }
       },
       "primary_baseline": "host_fs",
@@ -515,7 +526,7 @@
       ],
       "verdict": {
         "orfs_faster_than_baseline": false,
-        "reason": "OrFS median 0.1599s vs host_fs median 0.1337s (0.84x the baseline's time — OrFS slower); tmpfs median 0.1352s"
+        "reason": "OrFS median 0.1519s vs host_fs median 0.1114s (0.73x the baseline's time — OrFS slower); tmpfs median 0.1110s"
       },
       "workload": "source-build"
     },
@@ -529,48 +540,48 @@
           "failures": [],
           "latency_ns": {
             "create": {
-              "mean_ns": 4475.30774,
-              "p50_ns": 4108,
-              "p95_ns": 6151,
-              "p99_ns": 9428,
+              "mean_ns": 4151.29566,
+              "p50_ns": 3938,
+              "p95_ns": 5541,
+              "p99_ns": 8075,
               "samples": 50000
             },
             "readdir": {
-              "mean_ns": 26890.628,
-              "p50_ns": 24855,
-              "p95_ns": 39531,
-              "p99_ns": 50702,
+              "mean_ns": 22149.62,
+              "p50_ns": 21220,
+              "p95_ns": 25047,
+              "p99_ns": 51125,
               "samples": 250
             },
             "rename": {
-              "mean_ns": 5146.28932,
-              "p50_ns": 4839,
-              "p95_ns": 6232,
-              "p99_ns": 9557,
+              "mean_ns": 4897.15192,
+              "p50_ns": 4749,
+              "p95_ns": 5881,
+              "p99_ns": 8646,
               "samples": 50000
             },
             "stat": {
-              "mean_ns": 469.46446,
-              "p50_ns": 441,
-              "p95_ns": 551,
-              "p99_ns": 632,
+              "mean_ns": 452.38152,
+              "p50_ns": 431,
+              "p95_ns": 481,
+              "p99_ns": 571,
               "samples": 50000
             },
             "unlink": {
-              "mean_ns": 2190.85648,
-              "p50_ns": 1924,
-              "p95_ns": 2975,
-              "p99_ns": 4147,
+              "mean_ns": 2089.07532,
+              "p50_ns": 1874,
+              "p95_ns": 2866,
+              "p99_ns": 3537,
               "samples": 50000
             }
           },
           "ops": 50000,
-          "ops_per_s_median": 81268.79231109325,
-          "seconds_median": 0.615242316,
+          "ops_per_s_median": 82107.14805798556,
+          "seconds_median": 0.608960379,
           "seconds_trials": [
-            0.647303241,
-            0.614980301,
-            0.615242316
+            0.608960379,
+            0.617213233,
+            0.601423556
           ],
           "status": "ok",
           "trials": 3,
@@ -584,48 +595,48 @@
           "failures": [],
           "latency_ns": {
             "create": {
-              "mean_ns": 151646.3585,
-              "p50_ns": 146356,
-              "p95_ns": 181349,
-              "p99_ns": 222093,
+              "mean_ns": 184139.0295,
+              "p50_ns": 178844,
+              "p95_ns": 216614,
+              "p99_ns": 253423,
               "samples": 50000
             },
             "readdir": {
-              "mean_ns": 358452.904,
-              "p50_ns": 364312,
-              "p95_ns": 433047,
-              "p99_ns": 469554,
+              "mean_ns": 333903.912,
+              "p50_ns": 336488,
+              "p95_ns": 370822,
+              "p99_ns": 390880,
               "samples": 250
             },
             "rename": {
-              "mean_ns": 188527.31592,
-              "p50_ns": 183263,
-              "p95_ns": 222314,
-              "p99_ns": 262507,
+              "mean_ns": 262555.19872,
+              "p50_ns": 256309,
+              "p95_ns": 303136,
+              "p99_ns": 342048,
               "samples": 50000
             },
             "stat": {
-              "mean_ns": 14002.4203,
-              "p50_ns": 12733,
-              "p95_ns": 19486,
-              "p99_ns": 27540,
+              "mean_ns": 14060.20686,
+              "p50_ns": 13105,
+              "p95_ns": 19476,
+              "p99_ns": 26920,
               "samples": 50000
             },
             "unlink": {
-              "mean_ns": 115515.97544,
-              "p50_ns": 112405,
-              "p95_ns": 142769,
-              "p99_ns": 173555,
+              "mean_ns": 151722.87574,
+              "p50_ns": 147756,
+              "p95_ns": 183432,
+              "p99_ns": 211886,
               "samples": 50000
             }
           },
           "ops": 50000,
-          "ops_per_s_median": 2016.3666169965104,
-          "seconds_median": 24.797077862,
+          "ops_per_s_median": 1576.0161081411513,
+          "seconds_median": 31.725564061,
           "seconds_trials": [
-            23.656507826,
-            24.797077862,
-            25.335908151
+            30.797112802,
+            31.725564061,
+            32.612623197
           ],
           "status": "ok",
           "trials": 3,
@@ -639,48 +650,48 @@
           "failures": [],
           "latency_ns": {
             "create": {
-              "mean_ns": 1603.60254,
-              "p50_ns": 1303,
-              "p95_ns": 2234,
-              "p99_ns": 5681,
+              "mean_ns": 1637.81956,
+              "p50_ns": 1273,
+              "p95_ns": 2154,
+              "p99_ns": 5600,
               "samples": 50000
             },
             "readdir": {
-              "mean_ns": 13907.512,
-              "p50_ns": 12934,
-              "p95_ns": 16380,
-              "p99_ns": 34372,
+              "mean_ns": 12944.32,
+              "p50_ns": 12683,
+              "p95_ns": 14477,
+              "p99_ns": 16009,
               "samples": 250
             },
             "rename": {
-              "mean_ns": 1266.6029,
-              "p50_ns": 1012,
-              "p95_ns": 1683,
-              "p99_ns": 4749,
+              "mean_ns": 1258.12528,
+              "p50_ns": 1011,
+              "p95_ns": 1613,
+              "p99_ns": 4729,
               "samples": 50000
             },
             "stat": {
-              "mean_ns": 347.31728,
+              "mean_ns": 327.46574,
               "p50_ns": 301,
-              "p95_ns": 361,
-              "p99_ns": 441,
+              "p95_ns": 351,
+              "p99_ns": 421,
               "samples": 50000
             },
             "unlink": {
-              "mean_ns": 885.5506,
+              "mean_ns": 867.84324,
               "p50_ns": 761,
-              "p95_ns": 1192,
-              "p99_ns": 1593,
+              "p95_ns": 1142,
+              "p99_ns": 1472,
               "samples": 50000
             }
           },
           "ops": 50000,
-          "ops_per_s_median": 203598.64928909845,
-          "seconds_median": 0.245581197,
+          "ops_per_s_median": 217045.06933485204,
+          "seconds_median": 0.230366901,
           "seconds_trials": [
-            0.231087082,
-            0.245581197,
-            0.293867908
+            0.231199895,
+            0.230366901,
+            0.227893672
           ],
           "status": "ok",
           "trials": 3,
@@ -689,12 +700,12 @@
       },
       "comparison": {
         "direction": "orfs_slower",
-        "host_fs_seconds_median": 0.615242316,
+        "host_fs_seconds_median": 0.608960379,
         "orfs_faster_than_baseline": false,
-        "orfs_seconds_median": 24.797077862,
-        "ratio_host_fs_over_orfs": 0.024811081346920363,
-        "ratio_tmpfs_over_orfs": 0.009903634547856872,
-        "tmpfs_seconds_median": 0.245581197
+        "orfs_seconds_median": 31.725564061,
+        "ratio_host_fs_over_orfs": 0.01919462733047481,
+        "ratio_tmpfs_over_orfs": 0.007261238935171158,
+        "tmpfs_seconds_median": 0.230366901
       },
       "config": {
         "dirs": 250,
@@ -712,18 +723,18 @@
       "per_arm": {
         "host_fs": {
           "orfs_faster_than_arm": false,
-          "ratio_arm_over_orfs": 0.024811081346920363,
-          "seconds_median": 0.615242316
+          "ratio_arm_over_orfs": 0.01919462733047481,
+          "seconds_median": 0.608960379
         },
         "orfs": {
           "orfs_faster_than_arm": false,
           "ratio_arm_over_orfs": 1.0,
-          "seconds_median": 24.797077862
+          "seconds_median": 31.725564061
         },
         "tmpfs": {
           "orfs_faster_than_arm": false,
-          "ratio_arm_over_orfs": 0.009903634547856872,
-          "seconds_median": 0.245581197
+          "ratio_arm_over_orfs": 0.007261238935171158,
+          "seconds_median": 0.230366901
         }
       },
       "primary_baseline": "host_fs",
@@ -734,14 +745,14 @@
       ],
       "verdict": {
         "orfs_faster_than_baseline": false,
-        "reason": "OrFS median 24.7971s vs host_fs median 0.6152s (0.02x the baseline's time — OrFS slower); tmpfs median 0.2456s"
+        "reason": "OrFS median 31.7256s vs host_fs median 0.6090s (0.02x the baseline's time — OrFS slower); tmpfs median 0.2304s"
       },
       "workload": "metadata-tree"
     }
   ],
   "write_semantics_probe": {
     "host_fs": "ok (write via the created fd succeeded)",
-    "orfs": "refused: Permission denied (os error 13)",
+    "orfs": "ok (write via the created fd succeeded)",
     "tmpfs": "ok (write via the created fd succeeded)"
   }
 }

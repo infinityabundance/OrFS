@@ -1081,25 +1081,21 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         let fh = get_u64(req.op, 0);
         let offset = get_u64(req.op, 8);
         let size = get_u32(req.op, 16);
-        match self.fs.inner.handle(fh) {
-            Some(h) if !h.is_dir => {}
-            _ => return Reply::Err(libc::EBADF),
+        // POSIX decides read access at `open`; trust the descriptor's access mode
+        // (recorded when the handle was registered) rather than re-reading the
+        // inode's mode (docs/FUSE-SEMANTICS.md §6). The kernel never issues `READ`
+        // on a write-only fd, so this is a defensive re-check of the open-time
+        // decision; a missing/directory/write-only handle is `EBADF`.
+        let readable = self
+            .fs
+            .inner
+            .handle(fh)
+            .is_some_and(|h| !h.is_dir && crate::fuse::handle_is_readable(h.flags));
+        if !readable {
+            return Reply::Err(libc::EBADF);
         }
         let view = self.read_view();
         let root = view.root();
-        let st = match view.getattr(req.nodeid, root) {
-            Ok(st) => st,
-            Err(e) => return Reply::Err(errno(&e)),
-        };
-        if !has_permission_grouped(
-            req.uid,
-            req.gid,
-            &crate::fuse::caller_groups(req.pid),
-            &st,
-            0o4,
-        ) {
-            return Reply::Err(libc::EACCES);
-        }
         match view.read_at(req.nodeid, root, offset, size) {
             Ok(data) => {
                 let mut m = self.fs.inner.metrics.lock();
@@ -1125,29 +1121,30 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
         let size = get_u32(req.op, 16) as usize;
         let write_flags = get_u32(req.op, 20);
         let handle = match self.fs.inner.handle(fh) {
-            Some(h) if !h.is_dir => h,
+            Some(h) if !h.is_dir && crate::fuse::handle_is_writable(h.flags) => h,
             _ => return Reply::Err(libc::EBADF),
         };
         let nodeid = req.nodeid;
         let actor_uid = req.uid;
-        let actor_gid = req.gid;
-        let groups = crate::fuse::caller_groups(req.pid);
         let append = handle.flags & libc::O_APPEND != 0;
         let kill_flag = write_flags & FUSE_WRITE_KILL_SUIDGID != 0;
         // The payload is owned by the kernel for the duration of this call; the
         // job outlives the call, so it must own its bytes.
         let data = req.payload[..size.min(req.payload.len())].to_vec();
-        // Everything that depends on the authoritative state — the permission
-        // check, the O_APPEND end-of-file and the killpriv decision — is resolved
-        // *inside* the job, under the core lock, so a concurrent append can never
-        // observe a stale end-of-file. Routing through `Inner::mutate` also lets a
-        // write share a group-commit batch's durability barrier.
+        // POSIX checks write permission at `open`/`create`, not on every `write`:
+        // the open file description carries the access right, so the write is
+        // permitted iff the handle is open for writing (checked above). The
+        // kernel rejects a write on a read-only fd with `EBADF` before it reaches
+        // the daemon; `open`/`create` remains the security gate
+        // (docs/FUSE-SEMANTICS.md §6). Everything else that depends on the
+        // authoritative state — the O_APPEND end-of-file and the killpriv
+        // decision — is resolved *inside* the job, under the core lock, so a
+        // concurrent append can never observe a stale end-of-file. Routing
+        // through `Inner::mutate` also lets a write share a group-commit batch's
+        // durability barrier.
         let res = self.fs.inner.mutate(move |core| {
             let root = core.root();
             let st = core.getattr(nodeid, root)?;
-            if !has_permission_grouped(actor_uid, actor_gid, &groups, &st, 0o2) {
-                return Err(OrfsError::PermissionDenied);
-            }
             let effective = if append { st.size } else { offset };
             let kill_setid = kill_flag
                 || (actor_uid != 0

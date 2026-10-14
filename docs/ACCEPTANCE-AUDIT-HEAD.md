@@ -27,7 +27,7 @@ tree. **Supersedes (does not replace):** the phase-40 audit at `2187a3e`
 | **B** Valid historical roots | **PASS** | yes (default suite) | `evidence/correctness/committed-roots.json`: **24** roots, all `is_transaction_boundary=true`, all 4 invariants true |
 | **C** Log-only reconstruction | **PASS** | yes (default suite) | `log-replay.json` `distinct_replays_agree=true`; `namespace-rebuild.json` `rebuild_equals_live=true` |
 | **D** Transaction atomicity | **PASS** | yes (default suite) | `tests/transaction_model.rs` + proptests; `tests/concurrency_stress.rs` |
-| **E** Real FUSE functionality | **PASS** | yes (kmount + POSIX) | `fuse_integration.rs` **2/2**; `posix-results.json` **26/26**; re-run pjdfstest identical (**238/46/3777** vs ext4 **238/2/28**, `unclassified=0`) |
+| **E** Real FUSE functionality | **PASS** | yes (kmount + POSIX) | `fuse_integration.rs` **2/2**; `posix-results.json` **29/29**; re-run pjdfstest identical (**238/46/3777** vs ext4 **238/2/28**, `unclassified=0`) |
 | **F** Correct `io_uring` execution | **PASS** | yes (uring) | `uring_integration.rs` **7/7** `ORFS_REQUIRE_URING=1`; `uring-equivalence.json` digests/roots equal; `backing-uring.json` `io_uring_available=true`, `orphan_completions=0` |
 | **G** Real historical snapshots | **PASS** | yes (kmount) | `snapshot_fuse.rs` **1/1**; `snapshot-equivalence.json` **9/9** roots, `all_verified=true` |
 | **H** Concealed manifestation | **PASS** | yes (default suite) | `tests/manifestation.rs`; `manifested-generation.json` `all_ok=true`, published 2/recovered 2/rejected 0 |

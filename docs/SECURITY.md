@@ -143,9 +143,21 @@ directory can never be the parent of a new mutation.
   `/proc/<pid>/status`, and the typed query API carries them on its
   `Credential`. `inode::has_permission` is the group-less form, retained for
   callers with only effective ids.
-* **Every** mutating FUSE handler checks permission before acting
-  (`check_create`, `check_dir_write`, per-inode `0o2` for writes and xattrs).
-  Both transports route these through the supplementary-group-aware rule
+* **Access is decided at `open`/`create`**, exactly as POSIX requires (`open`
+  enforces the access-mode mask; `check_create`/`check_dir_write` gate creation).
+  `read`/`write` then trust the resulting **open file description's** access mode
+  (`handle_is_readable`/`handle_is_writable`, shared by `src/fuse.rs` and
+  `src/fuse_native.rs`) rather than re-reading the inode's mode; the kernel already
+  rejects a `write` on a read-only fd and a `read` on a write-only fd with `EBADF`.
+  The per-inode `0o2` mask still gates the descriptor-less writers (`setxattr`/
+  `removexattr`). Phase 82 corrected `write`/`read` to this rule: it is a
+  **conformance fix** — a `0444`-created file is writable through the creating
+  descriptor (the `git` loose-object pattern) and an open descriptor keeps its
+  rights after a later `chmod` — and **not** a relaxation, because access is still
+  decided at `open`/`create` (`docs/FUSE-SEMANTICS.md` §6, `docs/POSIX-COMPAT.md` §2).
+* Every other mutating FUSE handler checks permission before acting
+  (`check_create`, `check_dir_write`). Both transports route these through the
+  supplementary-group-aware rule
   (`src/fuse.rs` and `src/fuse_native.rs` share `crate::fuse::caller_groups`).
 * **Reading an xattr now requires read permission** (`0o4`) on the inode,
   symmetric with reading contents; no attribute namespace bypasses the check.

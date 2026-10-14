@@ -14,18 +14,20 @@
 <line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
 <line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
 <text x="26.0" y="201.0" fill="#111111" font-size="12" text-anchor="middle" transform="rotate(-90 26.0 201.0)">baseline / OrFS (1.0 = equal)</text>
+<rect x="102.3" y="308.8" width="41.7" height="31.2" fill="#1f77b4"/>
+<rect x="154.4" y="316.2" width="41.7" height="23.8" fill="#d62728"/>
 <text x="149.2" y="358.0" fill="#111111" font-size="11" text-anchor="middle">git</text>
-<rect x="232.7" y="245.4" width="41.7" height="94.6" fill="#1f77b4"/>
-<rect x="284.8" y="327.3" width="41.7" height="12.7" fill="#d62728"/>
+<rect x="232.7" y="244.7" width="41.7" height="95.3" fill="#1f77b4"/>
+<rect x="284.8" y="326.7" width="41.7" height="13.3" fill="#d62728"/>
 <text x="279.6" y="358.0" fill="#111111" font-size="11" text-anchor="middle">sqlite</text>
-<rect x="363.1" y="327.8" width="41.7" height="12.2" fill="#1f77b4"/>
-<rect x="415.2" y="333.1" width="41.7" height="6.9" fill="#d62728"/>
+<rect x="363.1" y="330.6" width="41.7" height="9.4" fill="#1f77b4"/>
+<rect x="415.2" y="334.1" width="41.7" height="5.9" fill="#d62728"/>
 <text x="410.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">image-tar</text>
-<rect x="493.5" y="107.4" width="41.7" height="232.6" fill="#1f77b4"/>
-<rect x="545.6" y="104.9" width="41.7" height="235.1" fill="#d62728"/>
+<rect x="493.5" y="136.1" width="41.7" height="203.9" fill="#1f77b4"/>
+<rect x="545.6" y="136.8" width="41.7" height="203.2" fill="#d62728"/>
 <text x="540.4" y="358.0" fill="#111111" font-size="11" text-anchor="middle">build</text>
-<rect x="623.9" y="333.1" width="41.7" height="6.9" fill="#1f77b4"/>
-<rect x="676.0" y="337.2" width="41.7" height="2.8" fill="#d62728"/>
+<rect x="623.9" y="334.7" width="41.7" height="5.3" fill="#1f77b4"/>
+<rect x="676.0" y="338.0" width="41.7" height="2.0" fill="#d62728"/>
 <text x="670.8" y="358.0" fill="#111111" font-size="11" text-anchor="middle">metadata</text>
 <rect x="84.0" y="35.0" width="10" height="10" fill="#1f77b4"/>
 <text x="99.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">host_fs time / OrFS time</text>

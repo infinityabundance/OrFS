@@ -1,4 +1,4 @@
-# OrFS — End-to-End Application Workloads (Phase 81)
+# OrFS — End-to-End Application Workloads (Phase 81; the `git` blocker resolved in Phase 82)
 
 This document records the **application layer**: five real programs driven end to
 end against a **real OrFS FUSE mount** and against external baselines on the same
@@ -69,10 +69,10 @@ a **reference floor** only. It is *not* the headline comparator, because RAM
 speed is not a filesystem property.
 
 The court also runs a small **semantics probe** on every arm: create a file with
-mode `0444` and write through the descriptor the create returned. POSIX checks
-the permission at `open`, not per write, so this succeeds on `host_fs` and
-`tmpfs`; on OrFS it is refused (see §6). The probe turns the git finding into
-evidence rather than an inference.
+mode `0444` and write through the descriptor the create returned (the `git`
+loose-object pattern). POSIX checks the permission at `open`, not per write, so
+this succeeds on every arm — including OrFS since Phase 82 (§6). The probe keeps
+the semantics machine-checked rather than inferred.
 
 ## 4. Results (one run; release; one host under external load)
 
@@ -80,11 +80,11 @@ evidence rather than an inference.
 
 | workload | OrFS (s) | host_fs (s) | tmpfs (s) | host_fs/OrFS | tmpfs/OrFS | verdict |
 |---|---:|---:|---:|---:|---:|---|
-| git repository | **did not complete** | 0.132 | 0.102 | — | — | **loss — refused** (§6) |
-| sqlite database | 0.862 | 0.293 | 0.040 | **0.34×** | 0.046× | **loss — 2.9× slower** |
-| image-extraction analogue | 0.383 | 0.0168 | 0.0094 | **0.044×** | 0.025× | **loss — 22.7× slower** |
-| source build | 0.160 | 0.134 | 0.135 | **0.84×** | 0.85× | **loss — 1.2× slower** |
-| metadata tree (50 000 files) | 24.80 | 0.615 | 0.246 | **0.025×** | 0.0099× | **loss — 40.3× slower** |
+| git repository | 1.083 | 0.1215 | 0.0928 | **0.112×** | 0.086× | **loss — 8.9× slower** |
+| sqlite database | 0.841 | 0.2884 | 0.0401 | **0.343×** | 0.048× | **loss — 2.9× slower** |
+| image-extraction analogue | 0.432 | 0.0146 | 0.0092 | **0.034×** | 0.021× | **loss — 29.6× slower** |
+| source build | 0.152 | 0.1114 | 0.1110 | **0.733×** | 0.731× | **loss — 1.4× slower** |
+| metadata tree (50 000 files) | 31.73 | 0.6090 | 0.2304 | **0.019×** | 0.0073× | **loss — 52.1× slower** |
 
 **Every workload is a loss.** `verdict.orfs_faster_than_baseline = false` for all
 five, top-level and machine-readable in the receipt
@@ -93,8 +93,9 @@ five, top-level and machine-readable in the receipt
 ![End-to-end applications: baseline time / OrFS time](charts/application-workloads.svg)
 
 *Figure 81.1 — baseline wall-clock divided by OrFS wall-clock per workload
-(1.0 = equal, below 1.0 = OrFS slower). git has no bar: it did not complete on
-OrFS. Source: `evidence/performance/application-workloads.json`; regenerate with
+(1.0 = equal, below 1.0 = OrFS slower). All five workloads, including `git`,
+now complete on OrFS; the source is
+`evidence/performance/application-workloads.json`; regenerate with
 `python3 scripts/render_charts.py --check`.*
 
 ### 4.1 Metadata latency (per operation; p50/p99, µs)
@@ -105,15 +106,15 @@ each.)
 
 | op | OrFS p50 | OrFS p99 | host_fs p50 | host_fs p99 | tmpfs p50 | tmpfs p99 |
 |---|---:|---:|---:|---:|---:|---:|
-| create | 146.4 | 222.1 | 4.11 | 9.43 | 1.30 | 5.68 |
-| stat | 12.73 | 27.54 | 0.44 | 0.63 | 0.30 | 0.44 |
-| readdir (per dir) | 364.3 | 469.6 | 24.9 | 50.7 | 12.9 | 34.4 |
-| rename | 183.3 | 262.5 | 4.84 | 9.56 | 1.01 | 4.75 |
-| unlink | 112.4 | 173.6 | 1.92 | 4.15 | 0.76 | 1.59 |
+| create | 178.8 | 253.4 | 3.94 | 8.08 | 1.27 | 5.60 |
+| stat | 13.11 | 26.92 | 0.43 | 0.57 | 0.30 | 0.42 |
+| readdir (per dir) | 336.5 | 390.9 | 21.2 | 51.1 | 12.7 | 16.0 |
+| rename | 256.3 | 342.0 | 4.75 | 8.65 | 1.01 | 4.73 |
+| unlink | 147.8 | 211.9 | 1.87 | 3.54 | 0.76 | 1.47 |
 
-The **mutating** metadata operations (create/rename/unlink) cost **~36–59×** the
-native filesystem; `stat` costs **~29×**; a directory read of 200 entries costs
-**~15×** host and **~28×** tmpfs.
+The **mutating** metadata operations (create/rename/unlink) cost **~50–90×** the
+native filesystem; `stat` costs **~30×**; a directory read of 200 entries costs
+**~16×** host and **~27×** tmpfs.
 
 ## 5. Why (honest reading)
 
@@ -139,9 +140,10 @@ authoritative reads; kernel passthrough vs the daemon; indexed search vs a scan)
 None of them is restated here as a win, because the application layer does not
 exhibit them.
 
-## 6. Headline finding — OrFS cannot currently host a git repository
+## 6. Headline finding — the `git` blocker was resolved in Phase 82
 
-The git workload **fails on the OrFS arm** with:
+Phase 81 discovered, and recorded honestly, that the git workload **failed on the
+OrFS arm** with:
 
 ```
 fatal: unable to write loose object file: Permission denied
@@ -149,25 +151,36 @@ fatal: unable to write loose object file: Permission denied
 
 **Mechanism (proven, not guessed).** `git` writes a loose object by creating a
 file with mode **`0444`** and writing through the descriptor the create returned.
-POSIX checks the permission at `open`, so the write succeeds on ext4/tmpfs. OrFS
-**re-checks the write bit on every `write`** — documented, intentional semantics
-(`docs/FUSE-SEMANTICS.md` §5 and §6: *"`write` | Enforces write permission"*;
-*"the checks are applied … at `open`/`read`/`write`"*). A freshly created `0444`
-file therefore refuses the write, and `git` aborts. The court's `0444`-create
-probe proves the mechanism on every arm:
+POSIX decides permission at `open`, so the write succeeds on ext4/tmpfs. OrFS
+**re-checked the inode's write bit on every `write`**, so a freshly created `0444`
+file refused the write and `git` aborted. This was a **POSIX-conformance defect,
+not a security feature** — the permission had already been enforced at
+`open`/`create`, so re-checking at `write` granted *less* access than POSIX (the
+same principle `setattr` already applied to `ftruncate` through a writable
+descriptor).
 
-| arm | create(0444) then write through the fd |
-|---|---|
-| `host_fs` | ok (POSIX) |
-| `tmpfs` | ok (POSIX) |
-| **OrFS** | **refused: Permission denied (os error 13)** |
+**Phase 82 fixes it at the root.** `write` (and `read`) now honour the **open file
+description's** access mode — the decision made at `open`/`create` — instead of
+re-reading the inode's mode; the two transports share the predicates
+(`src/fuse.rs` `handle_is_writable`/`handle_is_readable`). Access is still decided
+at `open`/`create`, so the **threat model is unchanged** (`docs/SECURITY.md`,
+`docs/THREAT-MODEL.md`).
 
-This is a real, previously-unrecorded **application-level limitation**, not a
-micro-benchmark artefact: `git` is a mainstream workload and OrFS currently
-cannot run it. It is recorded honestly as a loss and indexed in
-`docs/LIMITATIONS.md` §20. It is **not** fixed here: changing per-write
-permission enforcement would change documented FUSE semantics and require its own
-phase (with a POSIX-court re-validation).
+The court's `0444`-create probe and the real `git` workload now both succeed on
+OrFS:
+
+| arm | create(0444) then write through the fd | git workload |
+|---|---|---|
+| `host_fs` | ok (POSIX) | complete (0.122 s) |
+| `tmpfs` | ok (POSIX) | complete (0.093 s) |
+| **OrFS** | **ok (POSIX-compliant since Phase 82)** | **complete (1.083 s)** |
+
+The conformance is proven through **real mounts on both transports**: the
+traditional transport by `tests/fuse_integration.rs` (`write_through_created_fd`,
+`access_decided_at_open`, and the semantic `git_loose_object_write_via_created_fd`),
+and the native F2 transport by `tests/fuse_uring.rs` (the same `create(0444)`-then-
+write step is part of the F0/F1/F2 equivalence transcript). See
+`docs/POSIX-COMPAT.md` §2.
 
 ## 7. Honesty and limitations
 
@@ -182,8 +195,6 @@ phase (with a POSIX-court re-validation).
 * **The image-extraction workload is synthetic.** It is a bounded
   OCI-layer-like tarball extracted with `tar`, **not** a real `docker pull`
   (`docs/LIMITATIONS.md` §20).
-* **git is not measured on OrFS at all** — it is refused (§6), so the git row has
-  no OrFS time. The other four rows have full order-balanced trials.
 * **The tmpfs arm is a RAM floor**, reported for context, never as the headline
   comparator.
 
@@ -198,4 +209,5 @@ phase (with a POSIX-court re-validation).
   (`python3 scripts/render_charts.py --check`).
 * Cross-references: `docs/PERFORMANCE.md` §20/§31.2 (external comparators),
   `docs/FUSE-SEMANTICS.md` §5/§6 (operation and permission semantics),
-  `docs/LIMITATIONS.md` §7/§20, `docs/REPRODUCE.md`.
+  `docs/POSIX-COMPAT.md` §2 (access decided at `open`), `docs/SECURITY.md`,
+  `docs/THREAT-MODEL.md`, `docs/LIMITATIONS.md` §7/§20, `docs/REPRODUCE.md`.

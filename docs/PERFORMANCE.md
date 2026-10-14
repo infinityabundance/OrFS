@@ -525,7 +525,9 @@ target**, not a standing claim; the recorded result lists what is covered:
   `fallocate`, `rename`, `unlink`, `link`, `symlink`, `mkdir`, `rmdir`, `stat`,
   `chmod`, `chown`, `fchown`, `lchown`, `utimens`, `utimensat`, `futimens`,
   `xattr`, `readdir`, `fsync`, `fdatasync`, `mmap` (read-only + shared-writable),
-  `SEEK_DATA`, `SEEK_HOLE` — **26/26** checks.
+  `SEEK_DATA`, `SEEK_HOLE` — **29/29** checks (26/26 before Phase 82 added the
+  `write_through_created_fd`, `access_decided_at_open` and
+  `git_loose_object_write_via_created_fd` checks).
 * **Not yet covered**: none — every §33 operation is served by an applicable
   check.
 * **Delegated to the kernel**: POSIX record locks and `flock` (return `ENOSYS`).
@@ -2867,11 +2869,11 @@ reported. Receipt:
 
 | workload | OrFS (s) | host_fs (s) | tmpfs (s) | host_fs/OrFS | verdict |
 |---|---:|---:|---:|---:|---|
-| git repository | **did not complete** | 0.132 | 0.102 | — | **loss — refused** |
-| sqlite database | 0.862 | 0.293 | 0.040 | **0.34×** | **loss — 2.9× slower** |
-| image-extraction analogue | 0.383 | 0.0168 | 0.0094 | **0.044×** | **loss — 22.7× slower** |
-| source build | 0.160 | 0.134 | 0.135 | **0.84×** | **loss — 1.2× slower** |
-| metadata tree (50 000 files) | 24.80 | 0.615 | 0.246 | **0.025×** | **loss — 40.3× slower** |
+| git repository | 1.083 | 0.1215 | 0.0928 | **0.112×** | **loss — 8.9× slower** |
+| sqlite database | 0.841 | 0.2884 | 0.0401 | **0.343×** | **loss — 2.9× slower** |
+| image-extraction analogue | 0.432 | 0.0146 | 0.0092 | **0.034×** | **loss — 29.6× slower** |
+| source build | 0.152 | 0.1114 | 0.1110 | **0.733×** | **loss — 1.4× slower** |
+| metadata tree (50 000 files) | 31.73 | 0.6090 | 0.2304 | **0.019×** | **loss — 52.1× slower** |
 
 **How this reads, honestly.**
 
@@ -2879,14 +2881,16 @@ reported. Receipt:
    all five, machine-readable in the receipt. No speedup is claimed — this is the
    application-layer form of the §31.2 external-comparison result, now with real
    programs rather than the `src/bench.rs` harness.
-2. **`git` does not run on OrFS at all.** `git` creates a loose object with mode
-   `0444` and writes through the returned descriptor; OrFS's documented
-   **per-write** permission enforcement (`docs/FUSE-SEMANTICS.md` §5/§6) refuses
-   that write with `EACCES`. The court's `0444`-create probe proves the mechanism
-   (ok on ext4/tmpfs, refused on OrFS). Recorded honestly as a loss; see
-   `docs/LIMITATIONS.md` §20.
-3. **The metadata tree is the worst case** — ~36–59× the native cost on
-   mutating metadata operations (create/rename/unlink) and ~29× on `stat`,
+2. **`git` now runs on OrFS (fixed in Phase 82).** Phase 81 found that `git`
+   creates a loose object with mode `0444` and writes through the returned
+   descriptor, and OrFS's then-documented **per-write** permission enforcement
+   refused that write with `EACCES`. Phase 82 makes `write` (and `read`) honour the
+   **open file description's** access mode, so the `0444`-create probe reports `ok`
+   on OrFS and the `git` workload **completes (1.083 s)**. It was a POSIX-
+   conformance defect, not a security feature — access is still decided at
+   `open`/`create` (`docs/LIMITATIONS.md` §20, `docs/POSIX-COMPAT.md` §2).
+3. **The metadata tree is the worst case** — ~50–90× the native cost on
+   mutating metadata operations (create/rename/unlink) and ~30× on `stat`,
    because every operation is a daemon round trip that extends the authoritative
    log. Cross-referenced in `docs/APPLICATIONS.md` §4.1/§5.
 4. **The tmpfs column is a RAM floor**, not the comparator. The headline

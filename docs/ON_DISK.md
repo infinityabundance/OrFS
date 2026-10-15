@@ -822,3 +822,65 @@ them:
 * The typed payload layouts of the non-genesis record types are defined in
   `docs/TRANSACTIONS.md` and `docs/NAMESPACE.md`, not in this document (§2.2);
   this specification covers framing only.
+
+---
+
+## 11. The encrypted volume (Phase 85, opt-in)
+
+An **encrypted volume** is a **distinct volume kind** created by
+`orfs init --key-file <path>`. It **does not change the unencrypted `or.log`
+format**: an ordinary volume carries `volume.meta` and no `crypto.meta`, while an
+encrypted volume carries `crypto.meta` and no `volume.meta`, so the two layouts
+never overlap and a reader can tell them apart without a key. See
+`docs/ERASURE.md` for the design and `docs/MIGRATION.md` §6 for the compatibility
+statement.
+
+| Artifact | Field | Width | Current value | Source |
+|---|---|---|---|---|
+| `crypto.meta` | `crypto_format_version` | `u16` | `1` (`CRYPTO_FORMAT_VERSION`) | `src/encvol.rs` |
+| Sealed frame | `FRAME_VERSION` | `u16` | `1` | `src/encvol.rs` |
+| Sealed blob | version byte | `u8` | `1` (`SEALED_VERSION`) | `src/keyring.rs` |
+
+### 11.1 Directory layout
+
+```text
+   <volume>/crypto.meta          plaintext identity (schema + CRC32C); NO key bytes
+   <volume>/or.log/NNNN…seg      the sealed authoritative store (all ciphertext)
+   <operator>/<key-file>         master key + wrapped epoch keys (0600); never in the volume
+```
+
+`crypto.meta` is a JSON envelope `{schema, crc32c, meta}` with
+`schema = "orfs.crypto-meta.v1"`; `crc32c` is the CRC32C of the canonical
+re-serialization of `meta` (`{volume_uuid, segment_size, created_at_unix_secs,
+crypto_format_version}`). It is a **plaintext** identity: a reader that does not
+have the key can still discover that a volume is encrypted and check a key file's
+UUID binding.
+
+### 11.2 Frame wire format (byte-exact)
+
+Frames are appended contiguously through the same `Segment` I/O seam the
+unencrypted log uses (`Segment::append` / `write_at` / `read_exact_at`). All
+integers are little-endian.
+
+```text
+   FRAME  := MAGIC(4) ‖ FRAME_VERSION(2) ‖ epoch(8) ‖ SEALED
+   SEALED := version(1) ‖ nonce(24) ‖ le64(ct_len) ‖ ct(ct_len) ‖ tag(32)
+```
+
+* `MAGIC = 0x4546524F` (little-endian bytes spelling `ORFE`).
+* The frame's associated data (authenticated, not encrypted) is the fixed header
+  `MAGIC ‖ FRAME_VERSION ‖ epoch`, so a frame's **epoch binding is
+  authenticated** and an epoch swap is rejected.
+* The nonce is derived deterministically from the frame's ordinal within its
+  epoch (frames are append-only and never rewritten, so an ordinal is never
+  reused under one epoch key).
+* The sealed encoding is **fully authenticated** (the header, including the
+  length, is covered by the tag) and its framing is validated with **checked
+  arithmetic**; a trailing partial frame is refused rather than guessed.
+* A frame's total encoded length is `14 + 65 + ct_len` bytes.
+
+A reader MUST refuse a frame whose `MAGIC`/`FRAME_VERSION`/sealed version it does
+not implement (`Compatibility`), and MUST return a typed fail-closed error
+(`KeyUnavailable`/`KeyDestroyed`, `ENOKEY`) rather than any plaintext when the
+covering epoch key is unavailable or was destroyed; a tampered frame is
+`CryptoAuthFailed` (`EBADMSG`). It MUST never fabricate a plaintext prefix.

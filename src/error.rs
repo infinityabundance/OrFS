@@ -187,6 +187,27 @@ pub enum OrfsError {
     /// The write path must be discarded; see `docs/TRANSACTIONS.md`.
     #[error("injected failpoint: {0}")]
     Failpoint(&'static str),
+
+    /// The key material needed to open some content is **not available**: the key
+    /// file is missing or malformed, the volume's UUID does not match the keyring,
+    /// or an epoch's wrapped key does not authenticate under the master key
+    /// (Phase 85, `docs/ERASURE.md`). The read **fails closed** — no plaintext is
+    /// served or fabricated. Maps to `ENOKEY`.
+    #[error("key material unavailable: {0}")]
+    KeyUnavailable(String),
+
+    /// The data key for an epoch was **deliberately destroyed** (cryptographic
+    /// erasure, Phase 85). The epoch's ciphertext bytes are retained and unchanged
+    /// (non-withdrawal is not weakened), but are now cryptographically
+    /// inaccessible: the read **fails closed**. Maps to `ENOKEY`.
+    #[error("data key for epoch {0} was destroyed (crypto-erasure)")]
+    KeyDestroyed(u64),
+
+    /// An authenticated-encryption operation rejected its input: a wrong key, a
+    /// tampered ciphertext, tampered associated data or header, or a truncated
+    /// sealing. Never a fabricated plaintext. Maps to `EBADMSG`.
+    #[error("authenticated decryption failed: {0}")]
+    CryptoAuthFailed(String),
 }
 
 impl OrfsError {
@@ -250,6 +271,11 @@ impl OrfsError {
             // A completion that was never observed is transient, not fatal.
             OrfsError::InFlight(_) => libc::EAGAIN,
             OrfsError::Failpoint(_) => libc::EIO,
+            // Missing or destroyed key material: fail closed, do not serve data.
+            OrfsError::KeyUnavailable(_) => libc::ENOKEY,
+            OrfsError::KeyDestroyed(_) => libc::ENOKEY,
+            // An AEAD rejection is a message-integrity failure, never success.
+            OrfsError::CryptoAuthFailed(_) => libc::EBADMSG,
         }
     }
 }

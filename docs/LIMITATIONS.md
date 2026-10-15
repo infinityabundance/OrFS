@@ -572,3 +572,39 @@ kernel vs **8.0 µs/op** daemon user-space work).
   invalidates it, so the `read` column is not a clean cross-transport comparison
   (the metadata ops are). The immutable read-only arm negotiated FUSE passthrough but
   registered no backing, so it is daemon-served and labelled, not a zero-copy claim.
+
+## 22. Crypto-erasure is a key-lifecycle layer with real limits (Phase 85)
+
+Phase 85 adds an **opt-in encrypted volume** whose authoritative store is sealed
+under an operator-held keyring, so that **destroying an epoch key** renders that
+epoch's content cryptographically inaccessible while the ciphertext bytes remain
+unwithdrawn (`docs/ERASURE.md`). The mechanism is real and tested end to end
+(`tests/crypto_erasure.rs`, `evidence/security/crypto-erasure.json`), but it is
+**not** a total erasure or confidentiality story. Stated plainly:
+
+* **Mount is not wired.** `orfs mount` on a directory carrying `crypto.meta`
+  refuses with a typed `Unsupported` error; the encrypted store is operated with
+  `orfs crypt` / `orfs key`. Sealing inserts per-frame overhead, so a record's
+  logical and physical offsets diverge and the namespace/read path cannot yet
+  resolve an encrypted volume. A single-segment sealed store is used in this
+  phase; the encrypted store has no capacity guard/reserve.
+* **Key management is out of scope.** Custody, backup, escrow, rotation policy,
+  and the legal adequacy of key destruction are the operator's. OrFS supplies a
+  mechanism and a typed error, not a key-management service.
+* **Metadata leaks.** `crypto.meta` (uuid, segment size, versions), the frame
+  count and per-frame epoch/offsets, and the commit watermark are plaintext. The
+  mechanism hides content, not shape or timing.
+* **The AEAD is a construction, not a standardised primitive.** It is a
+  real, textbook encrypt-then-MAC over BLAKE3's keyed mode (the crate's only
+  crypto dependency, kept because the build is network-isolated against a frozen
+  `Cargo.lock`), **not** XChaCha20-Poly1305; the swap-in point is named in
+  `docs/ERASURE.md` §3.
+* **Key material is not `mlock`ed or explicitly zeroised on drop.** It lives in
+  process memory while a volume is open; a core dump or memory compromise could
+  expose a *live* key.
+* **No freshness.** A principal who can replace the whole backing store (or the
+  key file) can substitute an older ciphertext; the content authenticates as
+  *content OrFS wrote under that key*, not as the newest state.
+* **The default (unencrypted) path makes no confidentiality or erasure promise**
+  and is byte-for-byte unchanged; all of the above applies only to a volume
+  created with `--key-file`.

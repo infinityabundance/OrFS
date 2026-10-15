@@ -138,3 +138,24 @@ one deterministic builder (`build_mini_volume` in `tests/format_compat.rs`).
 
 A fixture is never edited by hand and never regenerated silently: if a change
 stops reading a frozen fixture, `tests/format_compat.rs` is expected to fail.
+
+## 6. The encrypted volume is a new, opt-in format (Phase 85)
+
+The encrypted volume (`orfs init --key-file`, `docs/ERASURE.md`) is a **distinct
+volume kind**, not a change to `or.log`:
+
+* It carries `crypto.meta` and no `volume.meta`; the ordinary volume carries
+  `volume.meta` and no `crypto.meta`. The two layouts never overlap.
+* The **unencrypted** `or.log` format is **unchanged**: `LOG_FORMAT_VERSION` stays
+  `1`, the frozen `legacy_v0`/`current_v1` fixtures still read byte-identically
+  (`tests/format_compat.rs`), and the whole pre-existing suite and receipts are
+  unaffected.
+* The encrypted store has its **own** version fields
+  (`crypto_format_version`, `FRAME_VERSION`, the sealed version byte; see
+  `docs/ON_DISK.md` §11), so a future change to the sealed layout is detectable
+  without reinterpreting old bytes.
+* There is no in-place conversion between the two kinds: an unencrypted volume is
+  **not** encrypted in place (the historical plaintext bytes cannot be made
+  unreadable without rewriting them, which non-withdrawal forbids), and an
+  encrypted volume is not decoded to plaintext. Moving data between them means
+  creating the target volume and re-writing the content through it.

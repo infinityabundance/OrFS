@@ -1,0 +1,73 @@
+{
+  "default_path_anchor": {
+    "note": "tests/format_compat.rs independently pins the same unencrypted on-disk format against the pre-existing frozen fixtures; the only pre-existing source files changed in Phase 85 are src/lib.rs (two module declarations), src/error.rs (three new opt-in error variants) and src/main.rs (new opt-in CLI surface).",
+    "pinned": "896be1e365543853892085625ee3db1745f4427a8f509838e99a3a14d21c7a23",
+    "unencrypted_genesis_committed_digest": "896be1e365543853892085625ee3db1745f4427a8f509838e99a3a14d21c7a23"
+  },
+  "digests": {
+    "authoritative_ciphertext_bytes": 335,
+    "ciphertext_blake3_after_destruction": "ef4f60407f71c4fca4991139b3847c8a3f8c0202085926d5d374c59837ee62a7",
+    "ciphertext_blake3_before_destruction": "ef4f60407f71c4fca4991139b3847c8a3f8c0202085926d5d374c59837ee62a7",
+    "relocated_ciphertext_blake3_before_destruction": "ef4f60407f71c4fca4991139b3847c8a3f8c0202085926d5d374c59837ee62a7",
+    "relocated_ciphertext_bytes_before": 335
+  },
+  "environment": {
+    "bench": {
+      "cgroup_memory_max": "8589934592",
+      "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "container_image": "sha256:8116ee721b96b0e99437e90579782878492bef26204c8438d326ad3714ccdcd7",
+      "cores_visible": 8,
+      "cpu_max": "800000 100000",
+      "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+      "fuse_enable_uring": true,
+      "kernel_release": "7.2.9-2-cachyos",
+      "likely_container": true,
+      "machine": "x86_64",
+      "perf_counters_available": false,
+      "perf_event_open_error": "Operation not permitted (os error 1)",
+      "perf_event_paranoid": "2",
+      "ram_total_bytes": 134723346432
+    },
+    "profile": "release",
+    "toolchain": "1.99.0-x86_64-unknown-linux-gnu"
+  },
+  "git_commit": "8e19e246088384db36d0916575d27c8d31610098",
+  "not_wired": [
+    "mounting an encrypted volume through FUSE (`orfs mount` refuses with a typed Unsupported error; the sealed store is not yet resolved by the namespace/read path)"
+  ],
+  "phase": 85,
+  "properties": {
+    "ciphertext_bytes_retained_unchanged": true,
+    "crypto_erasure_covers_relocated_tier_copy": true,
+    "default_path_unchanged": true,
+    "epoch_destruction_makes_content_inaccessible": true,
+    "key_correct_read_identical": true,
+    "mount_of_encrypted_volume_refused_honestly": true,
+    "no_key_material_in_authoritative_area": true,
+    "recover_without_key_refused": true,
+    "relocated_ciphertext_unchanged": true,
+    "round_trip_with_correct_key": true,
+    "tamper_rejected_aead": true,
+    "verify_without_key_refused": true,
+    "wrong_key_refused": true
+  },
+  "schema": "orfs.security.crypto-erasure.v1",
+  "title": "Retention contract, access control, and a real crypto-erasure mechanism",
+  "volume": {
+    "epochs": {
+      "0": "destroyed",
+      "1": "live"
+    },
+    "frames": 3,
+    "key_file": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmpgI48LF/orfs.keys",
+    "kind": "encrypted",
+    "tier_root": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmpgI48LF/cold-tier",
+    "uuid": "9c2d035e-eb25-4f3e-989b-f5c1a82983df"
+  },
+  "wired": [
+    "encrypted volume create/open/append/read (library + `orfs crypt`)",
+    "epoch rotation and epoch-key destruction (`orfs key rotate|destroy`)",
+    "sealed-store verification (`orfs crypt verify`, `orfs verify --key-file`)",
+    "ciphertext relocation to a cold tier (`orfs crypt relocate`)"
+  ]
+}

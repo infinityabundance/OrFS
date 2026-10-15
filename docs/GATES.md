@@ -28,6 +28,16 @@ container (`scripts/lib.sh`, Docker-only).
 | **O** Sustained adversarial concurrency + explicit compatibility exceptions | Native Rust equivalents of `fsx`/`fsstress`/`fs_mark`, custom rename/link/unlink storms, and a **real-mount** arm — all deadlock-bounded (a watchdog fails rather than hangs) — plus the explicit POSIX compatibility matrix | `scripts/container-adversarial-concurrency.sh` | `evidence/correctness/adversarial-concurrency.json` `all_ok=true` with **0** mismatches, **0** orphans, **0** duplicate inodes and **0** torn reads, and every mounted read byte-exact; `docs/POSIX-COMPAT.md` reconciles `pjdfstest` with **0** unclassified deviations |
 | **P** End-to-end application workloads against a real baseline | Five real applications (`git`, `sqlite3`, `tar`, `make`/`gcc`, metadata tree) driven against a real OrFS mount **and** an external baseline on the same device in the same container, order-balanced, bounded | `scripts/container-application-workloads.sh` | `evidence/performance/application-workloads.json` `ran=true` with a per-workload `verdict.orfs_faster_than_baseline` and an external baseline measured in the same container. **This gate does not require a win** — it requires an *honest* result: the losses (every workload slower on OrFS) are published, not hidden. Phase 81 recorded that `git` was refused; **Phase 82 fixed that** (all five workloads, including `git`, now complete). See `docs/APPLICATIONS.md` |
 
+## Additional (non-lettered) acceptance evidence
+
+These are real, receipt-backed courts that are **not** part of the audited A–P gate
+set (no audit verdict is claimed for them). They are recorded here so they can be
+run and judged independently.
+
+| Court | Meaning | Command(s) | Acceptance criterion |
+|---|---|---|---|
+| **Retention & crypto-erasure** (Phase 85) | Logical deletion is not secure erasure; the only erasure primitive on an **opt-in encrypted volume** is **epoch-key destruction**, which renders the epoch's content cryptographically inaccessible **without withdrawing any ciphertext byte**. | `scripts/container-crypto-erasure.sh` | `evidence/security/crypto-erasure.json` records every property `true`: `round_trip_with_correct_key`, `key_correct_read_identical`, `tamper_rejected_aead`, `epoch_destruction_makes_content_inaccessible`, `ciphertext_bytes_retained_unchanged`, `relocated_ciphertext_unchanged`, `crypto_erasure_covers_relocated_tier_copy`, `verify_without_key_refused`, `recover_without_key_refused`, `wrong_key_refused`, `mount_of_encrypted_volume_refused_honestly`, `no_key_material_in_authoritative_area`, `default_path_unchanged`. See `docs/RETENTION.md`, `docs/ERASURE.md` |
+
 ## How to read a verdict honestly
 
 * A gate is PASS only when its **acceptance criterion** holds on the audited tree; the
@@ -43,3 +53,7 @@ container (`scripts/lib.sh`, Docker-only).
 1. Define the criterion as a command plus an artifact under `evidence/`.
 2. Add it to the table above and to the audit's per-gate verdict table.
 3. Do not record a PASS without a committed artifact that the criterion reads.
+
+A court that is real but is **not** part of the audited gate set goes in the
+"Additional (non-lettered) acceptance evidence" table above — it must never be
+listed as a lettered gate with a verdict, because that would fabricate an audit.

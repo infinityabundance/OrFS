@@ -14,7 +14,9 @@ use clap::{Parser, Subcommand};
 use orfs::bench::{BenchConfig, BenchParams, Workload};
 use orfs::capacity::{CapacityStatus, CapacityVerdict, ForecastInputs, StorageEconomics};
 use orfs::commit::DurabilityMode;
+use orfs::encvol::{self, EncryptedVolume};
 use orfs::fuse::{self, BackingIo, F2Servicing, MountOptions, StatfsMode, Transport};
+use orfs::keyring::Keyring;
 use orfs::log::{OpenMode, TailInfo, DEFAULT_SEGMENT_SIZE};
 use orfs::manifestation::{ManifestationConfig, ManifestationProfile, ManifestationStatus};
 use orfs::namespace::SnapshotRootPayload;
@@ -59,6 +61,13 @@ enum Command {
         /// framed genesis record plus this many bytes kept free (Phase 68).
         #[arg(long, default_value_t = 0)]
         reserve: u64,
+        /// Create an **opt-in encrypted volume** whose authoritative store is
+        /// sealed under the keyring at this operator-supplied path (the file is
+        /// created 0600; it must live outside the volume). The default
+        /// (unencrypted) volume is byte-for-byte unchanged when this is omitted.
+        /// See `docs/ERASURE.md`.
+        #[arg(long)]
+        key_file: Option<PathBuf>,
     },
 
     /// Mount a backing volume through FUSE.
@@ -165,12 +174,31 @@ enum Command {
         /// Perform deep verification (record checksums, replay equivalence).
         #[arg(long)]
         deep: bool,
+        /// Key file for an **encrypted** volume (`orfs init --key-file`). Required
+        /// to verify an encrypted volume; refused with a typed error otherwise.
+        #[arg(long)]
+        key_file: Option<PathBuf>,
     },
 
     /// Recover a backing volume (read-only analysis by default).
     Recover {
         /// Backing directory.
         backing: PathBuf,
+        /// Key file for an **encrypted** volume (`orfs init --key-file`).
+        #[arg(long)]
+        key_file: Option<PathBuf>,
+    },
+
+    /// Keyring lifecycle for an encrypted volume (`docs/ERASURE.md`).
+    Key {
+        #[command(subcommand)]
+        cmd: KeyCommand,
+    },
+
+    /// Operate on an encrypted volume's sealed store (`docs/ERASURE.md`).
+    Crypt {
+        #[command(subcommand)]
+        cmd: CryptCommand,
     },
 
     /// Historical snapshot operations.
@@ -421,6 +449,106 @@ enum TierCommand {
     },
 }
 
+/// Keyring lifecycle for an encrypted volume (`docs/ERASURE.md`).
+#[derive(Subcommand, Debug)]
+enum KeyCommand {
+    /// Report the keyring's epochs and their state.
+    Status {
+        /// Encrypted volume directory.
+        backing: PathBuf,
+        /// Operator-supplied key file.
+        #[arg(long)]
+        key_file: PathBuf,
+    },
+    /// Rotate to a fresh epoch data key; subsequent writes use the new epoch.
+    Rotate {
+        /// Encrypted volume directory.
+        backing: PathBuf,
+        /// Operator-supplied key file.
+        #[arg(long)]
+        key_file: PathBuf,
+    },
+    /// Destroy an epoch's data key (**crypto-erasure**). No ciphertext byte is
+    /// touched; that epoch's content becomes cryptographically inaccessible.
+    Destroy {
+        /// Encrypted volume directory.
+        backing: PathBuf,
+        /// Operator-supplied key file.
+        #[arg(long)]
+        key_file: PathBuf,
+        /// The epoch to destroy (rotate past the active epoch first).
+        #[arg(long)]
+        epoch: u64,
+    },
+}
+
+/// Operations on an encrypted volume's sealed store.
+#[derive(Subcommand, Debug)]
+enum CryptCommand {
+    /// Append a sealed frame to the store (the authenticated write path).
+    Append {
+        /// Encrypted volume directory.
+        backing: PathBuf,
+        /// Operator-supplied key file.
+        #[arg(long)]
+        key_file: PathBuf,
+        /// Payload as hex.
+        #[arg(long, conflicts_with = "text")]
+        hex: Option<String>,
+        /// Payload as a UTF-8 string.
+        #[arg(long, conflicts_with = "hex")]
+        text: Option<String>,
+    },
+    /// Read and open the sealed frame at an offset (fails closed on a destroyed
+    /// epoch key).
+    Read {
+        /// Encrypted volume directory.
+        backing: PathBuf,
+        /// Operator-supplied key file.
+        #[arg(long)]
+        key_file: PathBuf,
+        /// Frame offset, as printed by `crypt append` / `crypt list`.
+        #[arg(long)]
+        offset: u64,
+    },
+    /// Verify the sealed store: which frames open and which epochs were destroyed.
+    Verify {
+        /// Encrypted volume directory.
+        backing: PathBuf,
+        /// Operator-supplied key file.
+        #[arg(long)]
+        key_file: PathBuf,
+    },
+    /// List every frame, its epoch, and its lengths.
+    List {
+        /// Encrypted volume directory.
+        backing: PathBuf,
+        /// Operator-supplied key file.
+        #[arg(long)]
+        key_file: PathBuf,
+    },
+    /// Report the BLAKE3 digest of the sealed store (the ciphertext).
+    Digest {
+        /// Encrypted volume directory.
+        backing: PathBuf,
+        /// Operator-supplied key file.
+        #[arg(long)]
+        key_file: PathBuf,
+    },
+    /// Relocate the sealed store's **ciphertext** to a cold tier (crypto-erasure
+    /// covers the relocated copy too).
+    Relocate {
+        /// Encrypted volume directory.
+        backing: PathBuf,
+        /// Operator-supplied key file.
+        #[arg(long)]
+        key_file: PathBuf,
+        /// Tier root to copy the ciphertext into.
+        #[arg(long)]
+        tier_root: PathBuf,
+    },
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
@@ -475,7 +603,11 @@ fn run(cli: &Cli) -> Result<()> {
             backing,
             segment_size,
             reserve,
-        } => init(backing, *segment_size, *reserve, cli.json),
+            key_file,
+        } => match key_file {
+            Some(key) => init_encrypted(backing, key, *segment_size, *reserve, cli.json),
+            None => init(backing, *segment_size, *reserve, cli.json),
+        },
         Command::Mount {
             backing,
             mountpoint,
@@ -530,8 +662,14 @@ fn run(cli: &Cli) -> Result<()> {
         Command::Unmount { mountpoint } => unmount_cmd(mountpoint, cli.json),
         Command::Inspect { backing } => inspect(backing, cli.json),
         Command::Stat { path } => stat_cmd(path, cli.json),
-        Command::Verify { backing, deep } => verify(backing, *deep, cli.json),
-        Command::Recover { backing } => recover(backing, cli.json),
+        Command::Verify {
+            backing,
+            deep,
+            key_file,
+        } => verify(backing, *deep, key_file.as_deref(), cli.json),
+        Command::Recover { backing, key_file } => recover(backing, key_file.as_deref(), cli.json),
+        Command::Key { cmd } => key_cmd(cli.json, cmd),
+        Command::Crypt { cmd } => crypt_cmd(cli.json, cmd),
         Command::Snapshot { cmd } => match cmd {
             SnapshotCommand::List { backing } => snapshot_list(backing, cli.json),
             SnapshotCommand::Inspect { backing, root } => {
@@ -1098,6 +1236,13 @@ struct MountArgs<'a> {
 }
 
 fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
+    if encvol::is_encrypted_volume(args.backing) {
+        return Err(OrfsError::Unsupported(
+            "mounting an encrypted volume is not wired in this phase; the sealed store \
+             is operated with `orfs crypt` / `orfs key` (see docs/ERASURE.md)"
+                .into(),
+        ));
+    }
     let transport = Transport::parse(args.transport)?;
     let backing_io = BackingIo::parse(args.backing_io)?;
     let f2_servicing = F2Servicing::parse(args.f2_servicing)?;
@@ -1450,6 +1595,408 @@ fn init(backing: &Path, segment_size: Option<u64>, reserve: u64, json: bool) -> 
 }
 
 // ---------------------------------------------------------------------------
+// encrypted volume: init / key / crypt (Phase 85, docs/ERASURE.md)
+// ---------------------------------------------------------------------------
+
+/// Create an **opt-in encrypted volume**. The authoritative store is sealed under
+/// the operator's keyring; the default (unencrypted) path is untouched.
+fn init_encrypted(
+    backing: &Path,
+    key_file: &Path,
+    segment_size: Option<u64>,
+    reserve: u64,
+    json: bool,
+) -> Result<()> {
+    if reserve != 0 {
+        // Refuse explicitly rather than silently ignoring the flag: the encrypted
+        // store has no capacity guard/reserve in this phase (docs/ERASURE.md §8).
+        return Err(OrfsError::Unimplemented(
+            "--reserve is not supported for an encrypted volume yet (docs/ERASURE.md §8)",
+        ));
+    }
+    let segment_size = segment_size.unwrap_or(DEFAULT_SEGMENT_SIZE);
+    let uuid = encvol::random_uuid()?;
+    let created = encvol::now_unix_secs();
+    let vol = EncryptedVolume::init(backing, key_file, segment_size, uuid, created)?;
+    if json {
+        let out = serde_json::json!({
+            "schema": "orfs.crypt.init.v1",
+            "encrypted": true,
+            "volume": backing.display().to_string(),
+            "uuid": vol.uuid_hex(),
+            "segment_size": segment_size,
+            "created_at_unix_secs": created,
+            "key_file": key_file.display().to_string(),
+            "active_epoch": vol.active_epoch(),
+            "frames": vol.frame_count(),
+            "physical_bytes": vol.physical_len(),
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
+    println!(
+        "initialized OrFS **encrypted** volume at {}",
+        backing.display()
+    );
+    println!("  uuid:            {}", vol.uuid_hex());
+    println!("  key file:        {}", key_file.display());
+    println!("  active epoch:    {}", vol.active_epoch());
+    println!("  sealed frames:   {}", vol.frame_count());
+    println!("  physical bytes:  {} (all ciphertext)", vol.physical_len());
+    println!("  note: `orfs mount` does not yet serve encrypted volumes (docs/ERASURE.md)");
+    Ok(())
+}
+
+/// Verify an encrypted volume (honest about key requirements).
+fn verify_encrypted(backing: &Path, key_file: Option<&Path>, json: bool) -> Result<()> {
+    let key_file = key_file.ok_or_else(|| {
+        OrfsError::KeyUnavailable(format!(
+            "{} is an encrypted volume: `orfs verify --key-file <path>` is required \
+             (docs/ERASURE.md)",
+            backing.display()
+        ))
+    })?;
+    let vol = EncryptedVolume::open_unverified(backing, key_file)?;
+    let report = vol.verify()?;
+    if json {
+        let out = serde_json::json!({
+            "schema": "orfs.crypt.verify.v1",
+            "encrypted": true,
+            "volume": backing.display().to_string(),
+            "uuid": vol.uuid_hex(),
+            "key_file": key_file.display().to_string(),
+            "active_epoch": vol.active_epoch(),
+            "live_epochs": vol.keyring().live_epochs(),
+            "destroyed_epochs": vol.keyring().destroyed_epochs(),
+            "ciphertext_digest": vol.ciphertext_digest()?,
+            "physical_bytes": vol.physical_len(),
+            "report": report,
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else {
+        println!("verifying encrypted volume {}", backing.display());
+        println!("  uuid:             {}", vol.uuid_hex());
+        println!("  active epoch:     {}", vol.active_epoch());
+        println!("  live epochs:      {:?}", vol.keyring().live_epochs());
+        println!("  destroyed epochs: {:?}", vol.keyring().destroyed_epochs());
+        println!("  frames:           {}", report.frames);
+        println!("  readable frames:  {}", report.readable);
+        println!(
+            "  inaccessible (epoch key destroyed): {}",
+            report.unreadable_destroyed.len()
+        );
+        println!(
+            "  ciphertext bytes: {} (retained, unwithdrawn)",
+            vol.physical_len()
+        );
+        println!("result: {}", if report.ok { "PASS" } else { "FAIL" });
+    }
+    if report.ok {
+        Ok(())
+    } else {
+        Err(OrfsError::Corrupt(
+            "encrypted volume verification failed".to_string(),
+        ))
+    }
+}
+
+/// Recover an encrypted volume: read-only analysis; the sealed store has no
+/// tail to quarantine (each frame is a complete authenticated unit).
+fn recover_encrypted(backing: &Path, key_file: Option<&Path>, json: bool) -> Result<()> {
+    let key_file = key_file.ok_or_else(|| {
+        OrfsError::KeyUnavailable(format!(
+            "{} is an encrypted volume: `orfs recover --key-file <path>` is required \
+             (docs/ERASURE.md)",
+            backing.display()
+        ))
+    })?;
+    let vol = EncryptedVolume::open_unverified(backing, key_file)?;
+    let report = vol.verify()?;
+    if json {
+        let out = serde_json::json!({
+            "schema": "orfs.crypt.recover.v1",
+            "encrypted": true,
+            "volume": backing.display().to_string(),
+            "read_only": true,
+            "frames": report.frames,
+            "readable": report.readable,
+            "unreadable_destroyed": report.unreadable_destroyed,
+            "ciphertext_digest": vol.ciphertext_digest()?,
+            "policy": "no plaintext is fabricated; a destroyed epoch key is never \
+                       reconstructed (docs/ERASURE.md)",
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
+    println!(
+        "recover {}: encrypted volume (read-only; {} frame(s), {} readable)",
+        backing.display(),
+        report.frames,
+        report.readable
+    );
+    println!("  no plaintext is fabricated; a destroyed epoch key is never reconstructed.");
+    Ok(())
+}
+
+fn key_cmd(json: bool, cmd: &KeyCommand) -> Result<()> {
+    match cmd {
+        KeyCommand::Status { backing, key_file } => key_status(backing, key_file, json),
+        KeyCommand::Rotate { backing, key_file } => key_rotate(backing, key_file, json),
+        KeyCommand::Destroy {
+            backing,
+            key_file,
+            epoch,
+        } => key_destroy(backing, key_file, *epoch, json),
+    }
+}
+
+/// Load the keyring for a volume directory, checking the UUID binding.
+fn load_volume_keyring(backing: &Path, key_file: &Path) -> Result<Keyring> {
+    if !encvol::is_encrypted_volume(backing) {
+        return Err(OrfsError::InvalidArgument(format!(
+            "{} is not an encrypted volume (no crypto.meta)",
+            backing.display()
+        )));
+    }
+    let meta = encvol::read_crypto_meta(backing)?;
+    let uuid = meta.volume_uuid;
+    let kr = Keyring::load(key_file)?;
+    if kr.volume_uuid() != uuid {
+        return Err(OrfsError::KeyUnavailable(format!(
+            "key file is bound to volume {} but {} is volume {uuid}",
+            kr.volume_uuid(),
+            backing.display()
+        )));
+    }
+    Ok(kr)
+}
+
+fn key_status(backing: &Path, key_file: &Path, json: bool) -> Result<()> {
+    let kr = load_volume_keyring(backing, key_file)?;
+    if json {
+        let epochs: Vec<serde_json::Value> = kr
+            .epochs()
+            .iter()
+            .map(|e| {
+                serde_json::json!({
+                    "epoch": e.epoch,
+                    "created_at_unix_secs": e.created_unix_secs,
+                    "state": if e.is_live() { "live" } else { "destroyed" },
+                    "destroyed_at_unix_secs": e.destroyed_unix_secs,
+                })
+            })
+            .collect();
+        let out = serde_json::json!({
+            "schema": "orfs.crypt.key-status.v1",
+            "volume": backing.display().to_string(),
+            "uuid": kr.volume_uuid(),
+            "active_epoch": kr.active_epoch(),
+            "live_epochs": kr.live_epochs(),
+            "destroyed_epochs": kr.destroyed_epochs(),
+            "epochs": epochs,
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
+    println!("keyring for {} ({})", backing.display(), kr.volume_uuid());
+    println!("  active epoch:     {}", kr.active_epoch());
+    println!("  live epochs:      {:?}", kr.live_epochs());
+    println!("  destroyed epochs: {:?}", kr.destroyed_epochs());
+    for e in kr.epochs() {
+        println!(
+            "    epoch {}: {}",
+            e.epoch,
+            if e.is_live() { "live" } else { "destroyed" }
+        );
+    }
+    Ok(())
+}
+
+fn key_rotate(backing: &Path, key_file: &Path, json: bool) -> Result<()> {
+    let mut kr = load_volume_keyring(backing, key_file)?;
+    let previous = kr.active_epoch();
+    let epoch = kr.rotate(encvol::now_unix_secs())?;
+    if json {
+        let out = serde_json::json!({
+            "schema": "orfs.crypt.key-rotate.v1",
+            "volume": backing.display().to_string(),
+            "previous_epoch": previous,
+            "active_epoch": epoch,
+            "live_epochs": kr.live_epochs(),
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
+    println!(
+        "rotated {previous} -> {epoch} (live epochs {:?})",
+        kr.live_epochs()
+    );
+    Ok(())
+}
+
+fn key_destroy(backing: &Path, key_file: &Path, epoch: u64, json: bool) -> Result<()> {
+    let mut kr = load_volume_keyring(backing, key_file)?;
+    kr.destroy_epoch(epoch, encvol::now_unix_secs())?;
+    if json {
+        let out = serde_json::json!({
+            "schema": "orfs.crypt.key-destroy.v1",
+            "volume": backing.display().to_string(),
+            "destroyed_epoch": epoch,
+            "active_epoch": kr.active_epoch(),
+            "live_epochs": kr.live_epochs(),
+            "note": "ciphertext bytes were not touched: crypto-erasure renders the \
+                     epoch's content inaccessible without withdrawing it",
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
+    println!(
+        "destroyed epoch {epoch} data key; live epochs now {:?}",
+        kr.live_epochs()
+    );
+    println!("  no ciphertext byte was touched (docs/ERASURE.md).");
+    Ok(())
+}
+
+fn crypt_cmd(json: bool, cmd: &CryptCommand) -> Result<()> {
+    match cmd {
+        CryptCommand::Append {
+            backing,
+            key_file,
+            hex,
+            text,
+        } => {
+            let payload = match (hex, text) {
+                (Some(h), None) => decode_hex(h)?,
+                (None, Some(t)) => t.as_bytes().to_vec(),
+                (None, None) => {
+                    return Err(OrfsError::InvalidArgument(
+                        "crypt append requires --hex <hex> or --text <string>".into(),
+                    ))
+                }
+                (Some(_), Some(_)) => {
+                    return Err(OrfsError::InvalidArgument(
+                        "crypt append accepts only one of --hex / --text".into(),
+                    ))
+                }
+            };
+            let mut vol = EncryptedVolume::open(backing, key_file)?;
+            let offset = vol.append(&payload)?;
+            vol.sync()?;
+            if json {
+                let out = serde_json::json!({
+                    "schema": "orfs.crypt.append.v1",
+                    "volume": backing.display().to_string(),
+                    "offset": offset,
+                    "plaintext_len": payload.len(),
+                    "epoch": vol.active_epoch(),
+                    "frames": vol.frame_count(),
+                    "physical_bytes": vol.physical_len(),
+                });
+                println!("{}", serde_json::to_string_pretty(&out).unwrap());
+                return Ok(());
+            }
+            println!(
+                "appended sealed frame at offset {offset} (epoch {}, {} plaintext bytes)",
+                vol.active_epoch(),
+                payload.len()
+            );
+            Ok(())
+        }
+        CryptCommand::Read {
+            backing,
+            key_file,
+            offset,
+        } => {
+            let vol = EncryptedVolume::open_unverified(backing, key_file)?;
+            let pt = vol.read_at(*offset)?;
+            if json {
+                let out = serde_json::json!({
+                    "schema": "orfs.crypt.read.v1",
+                    "volume": backing.display().to_string(),
+                    "offset": offset,
+                    "plaintext_len": pt.len(),
+                    "plaintext_hex": hex_string(&pt),
+                    "plaintext_utf8": String::from_utf8_lossy(&pt).to_string(),
+                });
+                println!("{}", serde_json::to_string_pretty(&out).unwrap());
+                return Ok(());
+            }
+            println!("offset {offset}: {} bytes", pt.len());
+            println!("  hex:  {}", hex_string(&pt));
+            println!("  utf8: {}", String::from_utf8_lossy(&pt));
+            Ok(())
+        }
+        CryptCommand::Verify { backing, key_file } => {
+            verify_encrypted(backing, Some(key_file), json)
+        }
+        CryptCommand::List { backing, key_file } => {
+            let vol = EncryptedVolume::open_unverified(backing, key_file)?;
+            let report = vol.verify()?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report).unwrap());
+                return Ok(());
+            }
+            for f in &report.detail {
+                println!(
+                    "  offset {:<8} epoch {:<3} total {:<8} plaintext {}",
+                    f.offset,
+                    f.epoch,
+                    f.total_len,
+                    match f.plaintext_len {
+                        Some(n) => n.to_string(),
+                        None => "<epoch key destroyed>".to_string(),
+                    }
+                );
+            }
+            Ok(())
+        }
+        CryptCommand::Digest { backing, key_file } => {
+            let vol = EncryptedVolume::open_unverified(backing, key_file)?;
+            let digest = vol.ciphertext_digest()?;
+            if json {
+                let out = serde_json::json!({
+                    "schema": "orfs.crypt.digest.v1",
+                    "volume": backing.display().to_string(),
+                    "ciphertext_blake3": digest,
+                    "physical_bytes": vol.physical_len(),
+                });
+                println!("{}", serde_json::to_string_pretty(&out).unwrap());
+                return Ok(());
+            }
+            println!("ciphertext BLAKE3: {digest}");
+            println!("physical bytes:    {}", vol.physical_len());
+            Ok(())
+        }
+        CryptCommand::Relocate {
+            backing,
+            key_file,
+            tier_root,
+        } => {
+            let vol = EncryptedVolume::open_unverified(backing, key_file)?;
+            let rel = vol.relocate(tier_root)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&rel).unwrap());
+                return Ok(());
+            }
+            println!(
+                "relocated {} ciphertext bytes to {} (blake3 {})",
+                rel.bytes, rel.path, rel.digest
+            );
+            Ok(())
+        }
+    }
+}
+
+fn hex_string(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
+// ---------------------------------------------------------------------------
 // inspect
 // ---------------------------------------------------------------------------
 
@@ -1496,6 +2043,32 @@ fn tail_json(tail: Option<TailInfo>) -> serde_json::Value {
 }
 
 fn inspect(backing: &Path, json: bool) -> Result<()> {
+    if encvol::is_encrypted_volume(backing) {
+        let meta = encvol::read_crypto_meta(backing)?;
+        if json {
+            let out = serde_json::json!({
+                "schema": "orfs.crypt.inspect.v1",
+                "encrypted": true,
+                "volume": backing.display().to_string(),
+                "uuid": meta.volume_uuid,
+                "segment_size": meta.segment_size,
+                "created_at_unix_secs": meta.created_at_unix_secs,
+                "crypto_format_version": meta.crypto_format_version,
+                "note": "use `orfs crypt verify --key-file <path>` (needs the key)",
+            });
+            println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        } else {
+            println!(
+                "OrFS **encrypted** volume {} (uuid {})",
+                backing.display(),
+                meta.volume_uuid
+            );
+            println!("  segment size:          {} bytes", meta.segment_size);
+            println!("  crypto format version: {}", meta.crypto_format_version);
+            println!("  use `orfs crypt verify --key-file <path>` to inspect the store.");
+        }
+        return Ok(());
+    }
     let vol = Volume::open(backing, OpenMode::ReadOnly)?;
     let log = &vol.log;
     let log_dir = Volume::log_dir(backing);
@@ -1595,7 +2168,10 @@ fn inspect(backing: &Path, json: bool) -> Result<()> {
 // verify
 // ---------------------------------------------------------------------------
 
-fn verify(backing: &Path, deep: bool, json: bool) -> Result<()> {
+fn verify(backing: &Path, deep: bool, key_file: Option<&Path>, json: bool) -> Result<()> {
+    if encvol::is_encrypted_volume(backing) {
+        return verify_encrypted(backing, key_file, json);
+    }
     let vol = Volume::open(backing, OpenMode::ReadOnly)?;
     let mut report = vol.verify(deep)?;
     if deep {
@@ -1651,7 +2227,10 @@ fn verify(backing: &Path, deep: bool, json: bool) -> Result<()> {
 // recover
 // ---------------------------------------------------------------------------
 
-fn recover(backing: &Path, json: bool) -> Result<()> {
+fn recover(backing: &Path, key_file: Option<&Path>, json: bool) -> Result<()> {
+    if encvol::is_encrypted_volume(backing) {
+        return recover_encrypted(backing, key_file, json);
+    }
     let before = match orfs::tiering::scan_volume(backing) {
         Ok(s) => Some(s),
         Err(e) => {

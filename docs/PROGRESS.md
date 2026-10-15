@@ -5227,3 +5227,127 @@ clippy -p orfs --all-targets -- -D warnings`, `check-all.sh --fast`,
   cycles→ns conversion is a same-CPU-class measurement, not simultaneous.
 * The mounted courts were run one container at a time; the ~11 pre-existing wedged
   `orfs-kmount:1.99.0` containers were left untouched and Docker was not restarted.
+
+## Phase 85 — Retention contract, access control, and a real crypto-erasure mechanism
+
+**Complete.** The standing operational requirement was that OrFS *"explicitly
+documents that logical deletion does not erase physical history"*, that a
+secure-delete promise *"would contradict that behaviour unless a separate
+cryptographic key-lifecycle design makes old content inaccessible"*, and that
+*"threat model + security model — who can mount, what AUTH prevents, what it
+doesn't"* be stated precisely. This phase delivers **both** a referable contract
+**and** a real, tested mechanism.
+
+### Delivered
+
+* **`docs/RETENTION.md` — the retention and access-control contract.** What
+  `unlink`/`rmdir`/`truncate`/overwrite do to logical vs. **physical** state
+  (logical delete; every authoritative byte retained — invariant I1); who can
+  **mount / read / write / relocate / administer**, what the mount options and the
+  OS access model do and do **not** enforce, and what `AUTH`/authorisation
+  prevents — precisely: **nothing cryptographic; there is no `AUTH` record type**,
+  and CRC32C/BLAKE3 are integrity checks, not a MAC. It states the **secure-delete
+  position** (non-withdrawal forbids erasing committed plaintext history; a
+  defensible "delete" story requires cryptographic key destruction), exactly what
+  key destruction does and does not guarantee, and a **matrix of retention
+  guarantees per data category** (authoritative records, watermark, identity,
+  manifests, relocation catalogue, tier copies, temporary construction, key
+  material) that an operator can put in front of an auditor.
+* **`docs/ERASURE.md` — the crypto-erasure design.** A key hierarchy (volume
+  master key → per-epoch data keys), **envelope encryption**, epoch rotation, and
+  **key destruction as the erasure primitive**; the threat model (what it protects
+  and does not); the exact integration points (`Segment` seam, keyring, tier
+  copies); failure modes (lost key = permanent inaccessibility; destroyed key =
+  intentional, irreversible; **never** silent data loss); what non-withdrawal
+  means for **ciphertext** (bytes are never overwritten or truncated); and the
+  honest limits (metadata leaks, key management out of scope, AEAD is a
+  construction not a standardised primitive, no `mlock`/zeroisation, single-segment
+  store, **no mount**).
+* **`src/keyring.rs` — the key lifecycle (real, tested).** A volume master key
+  (KEK) that wraps independent, **random** per-epoch data keys (envelope
+  encryption) with an AEAD; a versioned, fully-authenticated, checked sealing
+  (`version ‖ nonce ‖ le64(len) ‖ ct ‖ tag`, no unauthenticated byte, checked
+  arithmetic); `rotate`; `destroy_epoch` (typed tombstone); and typed, fail-closed
+  errors `KeyUnavailable`/`KeyDestroyed`/`CryptoAuthFailed` (`ENOKEY`/`EBADMSG`).
+  Key material lives only at the operator's key path — **never in the volume**.
+  The AEAD is a real **encrypt-then-MAC over BLAKE3's keyed mode** (the crate's
+  only crypto dependency — the build is network-isolated against a frozen
+  `Cargo.lock`); the swap-in to XChaCha20-Poly1305 is named, not pretended.
+* **`src/encvol.rs` — the opt-in encrypted volume.** A distinct volume kind
+  (`crypto.meta` + no `volume.meta`) whose authoritative store is sealed in
+  append-only frames written through the **existing `Segment` I/O seam**; `init` /
+  `open` / `append` / `read` / `rotate` / `destroy_epoch` / `verify` /
+  `relocate` (a byte-verbatim **ciphertext** copy to a cold tier).
+* **A real operator surface.** `orfs init <dir> --key-file <p>`, `orfs crypt
+  append|read|list|verify|digest|relocate`, `orfs key status|rotate|destroy
+  --epoch <n>`; `orfs inspect`/`verify`/`recover` recognise an encrypted volume
+  (verify/recover **require** the key and refuse with a typed error otherwise);
+  `orfs mount` on an encrypted volume **refuses honestly**.
+* **The default path is byte-for-byte unchanged.** Encrypted volumes are a
+  parallel kind selected only by `--key-file`; the unencrypted `or.log` format,
+  `LOG_FORMAT_VERSION`, every existing test and receipt are unaffected. The only
+  pre-existing source files touched are `src/lib.rs` (two module declarations),
+  `src/error.rs` (three new opt-in error variants) and `src/main.rs` (new opt-in
+  CLI surface) — **no unencrypted I/O path was modified**.
+* **The court.** `tests/crypto_erasure.rs` drives the **real `orfs` binary** end
+  to end on a dedicated encrypted volume (init → append → read → rotate → destroy
+  → verify → digest → relocate) and proves every property before writing the
+  receipt; `scripts/container-crypto-erasure.sh` (bounded smoke + opt-in release
+  sweep, one container at a time); `evidence/security/crypto-erasure.json`
+  (schema `orfs.security.crypto-erasure.v1`).
+
+### Demonstrated properties (all `true` in the receipt)
+
+`round_trip_with_correct_key`, `key_correct_read_identical`,
+`tamper_rejected_aead`, `epoch_destruction_makes_content_inaccessible`,
+`ciphertext_bytes_retained_unchanged` (bytes and BLAKE3 digest identical before and
+after destruction), `relocated_ciphertext_unchanged`,
+`crypto_erasure_covers_relocated_tier_copy` (the tier copy is inaccessible too),
+`verify_without_key_refused`, `recover_without_key_refused`, `wrong_key_refused`,
+`mount_of_encrypted_volume_refused_honestly`,
+`no_key_material_in_authoritative_area`, `default_path_unchanged`.
+
+### Wired vs. specified-but-not-wired
+
+* **Wired and tested:** encrypted-volume create/open/append/read, epoch rotation,
+  epoch-key destruction (crypto-erasure), sealed-store verification, ciphertext
+  relocation to a cold tier, and the honest key requirements on
+  `inspect`/`verify`/`recover`/`mount`.
+* **Implemented but not on the default path:** everything above (opt-in by design).
+* **Not wired:** **mounting** an encrypted volume through FUSE. Sealing inserts
+  per-frame overhead, so a record's logical and physical offsets diverge and the
+  namespace/read/planner path cannot yet resolve an encrypted volume; `orfs mount`
+  refuses with a typed `Unsupported` error. Also not wired: a capacity
+  guard/reserve for the encrypted store, and segment rollover (a single-segment
+  sealed store). Stated plainly in `docs/ERASURE.md` §6 and §8.
+
+### Runner and docs
+
+`scripts/container-crypto-erasure.sh`; new `docs/RETENTION.md`, `docs/ERASURE.md`;
+reconciled `docs/SECURITY.md` §2, `docs/THREAT-MODEL.md` §4/§5/§6, `docs/ON_DISK.md`
+§11, `docs/MIGRATION.md` §6, `docs/LIMITATIONS.md` §22, `docs/GATES.md`
+(additional non-lettered acceptance evidence), `README.md`, `docs/REPRODUCE.md`,
+`docs/RECEIPTS.md`, `scripts/docs-receipts.json` (citation
+`security-erasure-s5-shape`). **No chart is added**: the receipt is a
+property/boolean table, not a measurement curve, so there is nothing to plot;
+`python3 scripts/render_charts.py --check` is unaffected.
+
+### Test counts
+
+**561 (default; +1 ignored) / 572 (`--features failpoints`)** — +13 in both (the
+`src/keyring.rs` unit tests, the `src/encvol.rs` unit tests, and the
+`tests/crypto_erasure.rs` smoke + sweep). `cargo fmt -p orfs --check`,
+`cargo clippy -p orfs --all-targets -- -D warnings`, `check-all.sh --fast`,
+`check-docs-receipts.sh` and `render_charts.py --check` are all clean.
+
+### Notes, stated honestly
+
+* The crypto-erasure *mechanism* is real and end to end, but the **mount** of an
+  encrypted volume is a deliberate, documented gap — not a silent one.
+* Key custody, backup/escrow, rotation policy, and the legal adequacy of key
+  destruction are **out of scope**; OrFS supplies a mechanism and a typed error.
+* The AEAD is a real encrypt-then-MAC over BLAKE3's keyed mode, **not** a
+  standardised AEAD; the swap-in point is named.
+* The mounted courts were not touched by this phase (no `src/` I/O path on the
+  unencrypted side changed); the ~11 pre-existing wedged `orfs-kmount:1.99.0`
+  containers were left untouched and Docker was not restarted.

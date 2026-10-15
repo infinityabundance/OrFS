@@ -45,11 +45,16 @@ overwrite, or reclaim the underlying historical bytes**. Consequently:
   log, byte-for-byte, forever (by design — this is invariant I1).
 * **OrFS is inappropriate for any workflow that requires reliable physical
   deletion** (for example, "right to erasure", secret destruction, or
-  declassification) **unless a separately specified data-retention and
-  cryptographic policy is applied on top of it.** Cryptographic key destruction
-  in particular changes the *effective* recoverability of the retained bytes and
-  may not satisfy the strongest non-withdrawal interpretation
-  (research OrFS §31).
+  declassification) **on the plaintext path**, because the plaintext history is
+  retained by construction. A defensible "delete" story requires a
+  **separately specified** data-retention and cryptographic policy applied on top
+  of it; **Phase 85 provides exactly that** as an **opt-in** encrypted volume
+  whose erasure primitive is **epoch-key destruction** (`docs/ERASURE.md`), with
+  the precise contract in `docs/RETENTION.md`. Cryptographic key destruction
+  changes the *effective* recoverability of the retained bytes — the ciphertext
+  is never overwritten, truncated, or withdrawn, but becomes cryptographically
+  inaccessible — and the strongest non-withdrawal interpretation is preserved
+  because **no authoritative byte is touched** (research OrFS §31).
 * Revoking a namespace path **does not** make the underlying historical bytes
   unrecoverable: any party who can read the backing store, or who can mount an
   earlier committed root, can still read them.

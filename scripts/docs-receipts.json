@@ -672,6 +672,17 @@
         {"group": 1, "label": "F0 allocs/op before", "evidence": "evidence/performance/transport-ceiling.json", "path": "reductions.end_to_end.before.f0_allocs_per_op"},
         {"group": 2, "label": "F0 allocs/op after", "evidence": "evidence/performance/transport-ceiling.json", "path": "reductions.end_to_end.after.f0_allocs_per_op"}
       ]
+    },
+    {
+      "id": "security-erasure-s5-shape",
+      "doc": "docs/ERASURE.md",
+      "section": "§5",
+      "claim": "encrypted store shape: sealed frames and authoritative ciphertext bytes (crypto-erasure court)",
+      "regex": "holds \\*\\*([0-9]+) sealed frames\\*\\*[\\s\\S]*?comprising \\*\\*([0-9]+) bytes\\*\\*",
+      "fields": [
+        {"group": 1, "label": "sealed frames", "evidence": "evidence/security/crypto-erasure.json", "path": "volume.frames"},
+        {"group": 2, "label": "authoritative ciphertext bytes", "evidence": "evidence/security/crypto-erasure.json", "path": "digests.authoritative_ciphertext_bytes"}
+      ]
     }
   ]
 }

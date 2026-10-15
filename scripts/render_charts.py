@@ -237,17 +237,39 @@ def line_chart(title, caption_lines, xlabel, ylabel, series,
     return "\n".join(parts)
 
 
-def bar_chart(title, caption_lines, ylabel, groups, series, ymin=None, ymax=None):
+def bar_chart(title, caption_lines, ylabel, groups, series, ymin=None, ymax=None, log=False):
     allv = [v for s in series for v in s["values"] if v is not None]
-    ylo = ymin if ymin is not None else 0.0
-    yhi = ymax if ymax is not None else max(allv)
-    if yhi == ylo:
-        yhi = ylo + 1.0
-    ys = Scale(ylo, yhi, PY1, PY0, False)
+    if log:
+        # A decade-based logarithmic axis, for comparisons whose values span
+        # multiple orders of magnitude. `log=False` (the default) is byte-for-byte
+        # the original linear axis.
+        pos = [v for v in allv if v > 0]
+        lo_exp = int(math.floor(math.log10(min(pos)))) if pos else 0
+        hi_exp = int(math.ceil(math.log10(max(pos)))) if pos else 1
+        if hi_exp <= lo_exp:
+            hi_exp = lo_exp + 1
+        floor_val = 10.0 ** lo_exp
+
+        def ypos(v):
+            frac = (math.log10(max(v, floor_val)) - lo_exp) / float(hi_exp - lo_exp)
+            return PY1 - frac * PLOT_H
+
+        ticks = [(10.0 ** e) for e in range(lo_exp, hi_exp + 1)]
+    else:
+        ylo = ymin if ymin is not None else 0.0
+        yhi = ymax if ymax is not None else max(allv)
+        if yhi == ylo:
+            yhi = ylo + 1.0
+        ys = Scale(ylo, yhi, PY1, PY0, False)
+
+        def ypos(v):
+            return ys.pos(v)
+
+        ticks = lin_ticks(ylo, yhi)
     parts = [svg_header(title)]
     # y ticks / gridlines + y label (no x tick helper needed for categories)
-    for t in lin_ticks(ylo, yhi):
-        y = ys.pos(t)
+    for t in ticks:
+        y = ypos(t)
         parts.append(line(PX0, y, PX1, y, GRID, 1))
         parts.append(text(PX0 - 8, y + 4, compact(t), TEXT, 11, "end"))
     parts.append(line(PX0, PY0, PX0, PY1, AXIS, 1.5))
@@ -266,7 +288,7 @@ def bar_chart(title, caption_lines, ylabel, groups, series, ymin=None, ymax=None
             col = PALETTE[si % len(PALETTE)]
             x = gx + si * bw + bw * 0.1
             w = bw * 0.8
-            y = ys.pos(v)
+            y = ypos(v)
             h = PY1 - y
             parts.append('<rect x="{:.1f}" y="{:.1f}" width="{:.1f}" height="{:.1f}" fill="{}"/>'.format(
                 x, y, w, h, col))
@@ -1157,6 +1179,69 @@ def chart_transport_ceiling_reduction():
         cap, "allocs per op", ops, series)
 
 
+def chart_oss_worm_append():
+    d = load("oss-worm-compare.json")
+
+    def ops(system, writers, anchor=False):
+        rows = d["anchors"]["ext4_plain_directory"] if anchor else d["rows"]
+        for r in rows:
+            if (r["system"] == system and r["workload"] == "append"
+                    and r["writers"] == writers and r["block_size"] == 4096):
+                return r["ops_per_second"]
+        return None
+
+    groups = ["4 KiB + fsync, 1 writer", "4 KiB + fsync, 64 writers"]
+    series = [
+        {"name": "OrFS-Rust (--durability sync)",
+         "values": [ops("OrFS-Rust", 1), ops("OrFS-Rust", 64)]},
+        {"name": "SeaweedFS 3.99 (weed mount; NOT a barrier)",
+         "values": [ops("SeaweedFS", 1), ops("SeaweedFS", 64)]},
+        {"name": "ext4 plain dir (anchor, same device)",
+         "values": [ops("ext4-plain", 1, True), ops("ext4-plain", 64, True)]},
+    ]
+    cap = [
+        "source: evidence/performance/oss-worm-compare.json (one shared driver; same machine/device/caps; one run)",
+        "bar = ops/s of write(2)+fsync(2) per 4 KiB record (log axis); higher is better; NOT a ranking",
+        "the same device's bare 4 KiB write+fsync is ~854 ops/s; SeaweedFS's Fsync is a flush, not a durability barrier",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return bar_chart(
+        "Phase 87: per-record durable append throughput (4 KiB + fsync)",
+        cap, "ops/s (log)", groups, series, log=True)
+
+
+def chart_oss_worm_reads():
+    d = load("oss-worm-compare.json")
+
+    def ops(system, bs, readers, anchor=False):
+        rows = d["anchors"]["ext4_plain_directory"] if anchor else d["rows"]
+        for r in rows:
+            if (r["system"] == system and r["workload"] == "read"
+                    and r["block_size"] == bs and r["readers"] == readers):
+                return r["ops_per_second"]
+        return None
+
+    groups = ["4 KiB", "64 KiB", "1 MiB"]
+    blocks = [4096, 65536, 1048576]
+    series = [
+        {"name": "OrFS-Rust (direct-io, daemon-served)",
+         "values": [ops("OrFS-Rust", b, 1) for b in blocks]},
+        {"name": "SeaweedFS 3.99 (client chunk cache)",
+         "values": [ops("SeaweedFS", b, 1) for b in blocks]},
+        {"name": "ext4 plain dir (anchor, same device)",
+         "values": [ops("ext4-plain", b, 1, True) for b in blocks]},
+    ]
+    cap = [
+        "source: evidence/performance/oss-worm-compare.json (1 reader per arm; one run; same machine/device/caps)",
+        "bar = random pread ops/s (log axis); higher is better; NOT a ranking -- the read paths differ",
+        "SeaweedFS serves warm reads from an in-process chunk cache, so some of its bars are cache hits, not backing reads",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return bar_chart(
+        "Phase 87: uniform random read throughput, 1 reader",
+        cap, "ops/s (log)", groups, series, log=True)
+
+
 # --------------------------------------------------------------------------
 # registry: file name -> (builder, source receipt, generating command)
 # --------------------------------------------------------------------------
@@ -1230,6 +1315,10 @@ CHARTS = (
      "evidence/performance/transport-ceiling.json", "sh scripts/container-transport-ceiling.sh"),
     ("transport-ceiling-reduction.svg", chart_transport_ceiling_reduction,
      "evidence/performance/transport-ceiling.json", "sh scripts/container-transport-ceiling.sh"),
+    ("oss-worm-append.svg", chart_oss_worm_append,
+     "evidence/performance/oss-worm-compare.json", "sh scripts/container-oss-worm-compare.sh"),
+    ("oss-worm-reads.svg", chart_oss_worm_reads,
+     "evidence/performance/oss-worm-compare.json", "sh scripts/container-oss-worm-compare.sh"),
 )
 
 

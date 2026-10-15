@@ -5455,3 +5455,121 @@ all clean.
   the unencrypted mount.
 * The ~11 pre-existing wedged `orfs-kmount:1.99.0` containers were left untouched
   and Docker was not restarted; every mount attempt is bounded.
+
+## Phase 87 — A same-machine open-source WORM comparison, owned by this repository
+
+The sibling Go repository had published a same-machine head-to-head
+(`OrFS-GO`/`OrFS-Rust`/`SeaweedFS`) at its own `evidence/oss-compare.json`; this
+repository had **none** of it. Phase 87 adds the comparison this repository owns,
+plus the **historical-retention** axis the reviewer asked for, and publishes the
+losses as losses.
+
+### Delivered
+
+* **A shared bounded driver, in-crate.** `tests/oss_worm_compare.rs` drives one
+  workload function that only ever sees a mount-point directory, against
+  **OrFS-Rust** and **SeaweedFS 3.99**, plus a **plain-ext4 anchor** on the same
+  device. Workload: a **4 KiB record written with `write(2)+fsync(2)`** (one
+  durability barrier per record) at **1 and 64 writers**, and uniform random
+  `pread` at **4 KiB / 64 KiB / 1 MiB** at **1 and 64 readers** over a 64 MiB
+  deterministic file. Every arm records `ops`, `bytes`, `ops_per_second`,
+  `bytes_per_second`, mean/min/p50/p95/p99/p99.9/max latency,
+  `error_rate`/`errors`, elapsed, an out-of-window byte-exact read-back check, and
+  an append byte cross-check.
+* **OrFS-Rust mounted through the real code path** — the `orfs` binary this crate
+  builds (`CARGO_BIN_EXE_orfs`), i.e. exactly the `orfs mount` path — as a separate
+  daemon with `--direct-io --durability sync --backing-io sync` and group commit
+  **off** (the equal-durability setting), the command line recorded verbatim.
+* **SeaweedFS 3.99 staged deterministically** from the pinned image
+  (`chrislusf/seaweedfs:3.99`, digest recorded) into `target/oss-worm/weed` by
+  `scripts/container-oss-worm-compare.sh`, then run as `weed server` (master +
+  volume + filer on loopback) + `weed mount`, with its Go heap bounded
+  (`GOGC=50 GOMEMLIMIT=700MiB`). If it cannot be staged or mounted, the court still
+  measures OrFS-Rust and records SeaweedFS as **SKIPPED with the reason**.
+* **The retention axis.** A dedicated OrFS volume is driven through its mount for
+  **1 024 committed epochs** (4 KiB + `fsync` each). After unmount the court proves
+  every committed root is **enumerated**, **opened** as a historical view
+  (`Snapshot::open_dir`), **enumerated** through its root directory
+  (`Snapshot::readdir`) and **read back byte-exact**, with the earlier roots
+  byte-exact prefixes of the later ones (**non-withdrawal**): 1 026 roots
+  enumerated/opened, 1 024 read back. It measures historical-root access latency
+  and records total physical amplification from the **existing** four-category
+  accounting (`Volume::storage_economics` == `orfs doctor --economics`) — no second
+  accounting is invented (≈1.1154 observed/logical for the retention volume).
+* **A device baseline.** The receipt records the same device's own 4 KiB
+  `write(2)+fsync(2)` cost (taken on a quiet device before the arms) and the
+  container `TMPDIR`'s, with a load caveat, so an absolute append number is always
+  interpretable — a per-record durable append cannot beat its own barrier.
+* **OpenZFS and Btrfs are probed, not assumed.** Both attempt the real operation
+  (a bounded `modprobe zfs` / `losetup -f`) and record the **concrete** reason they
+  cannot run: no ZFS kernel module/userspace/`CAP_SYS_MODULE`, and for btrfs no
+  `mkfs.btrfs`/`btrfs` userspace and no loop device node. `measured: false` for
+  both; no ZFS/Btrfs number is implied anywhere.
+* **The receipt** `evidence/performance/oss-worm-compare.json`
+  (schema `orfs.performance.oss-worm-compare.v1`) carries a `comparability` block
+  (caps, kernel, backing filesystem, exact mount commands, per-system durability
+  contract, the driver uid, and a `not_comparable` list), the rows, the retention
+  and amplification blocks, the probe blocks, and **no ranking**.
+
+### The result, published honestly
+
+One run on this host (the receipt's `device_baseline` is ~1.13 ms p50 for a bare
+4 KiB `write+fsync` on the same device):
+
+| arm | 4 KiB + fsync, 1 writer | 4 KiB + fsync, 64 writers | 1 MiB read, 1 reader |
+|---|---:|---:|---:|
+| OrFS-Rust (`--durability sync`, group commit off) | 244.8 ops/s | 255.4 ops/s (p50 **249.8 ms**) | 9 466.8 ops/s |
+| SeaweedFS 3.99 (`weed mount`; **not** a barrier) | 271.6 ops/s | 2 923.7 ops/s | 23 220.7 ops/s |
+| ext4 plain directory (anchor, same device) | 849.5 ops/s | 3 764.0 ops/s | 56 788.8 ops/s |
+
+**The losses:** OrFS-Rust does **not** scale per-record durable appends at 64
+writers with group commit off — the commit path takes one serialized barrier per
+transaction (255.4 ops/s at a 249.8 ms p50), while the same device in a plain
+directory reaches a few thousand ops/s with 64 native writers — and it **loses**
+the 1 MiB read throughput against the anchor and against SeaweedFS's FUSE client.
+SeaweedFS's append rows are
+`not_comparable` — its `Fsync` is a flush-to-server, **not** a stable-storage
+barrier — and `weed mount` is not its fast path. `docs/OSS-COMPARISON.md` states
+all of this, and §6 records explicitly that **internal group-commit throughput is
+never a durable file append**.
+
+### Runner, docs and charts
+
+New `scripts/container-oss-worm-compare.sh` (bounded smoke + the release sweep, in
+the **root** kernel-mount container, one container at a time). New
+`docs/OSS-COMPARISON.md` (the side-by-side, the interpretation, the retention/space
+economics, the probe results, and the sibling repository's `oss-compare.json`
+cited as clearly-attributed **external corroboration of the method**, never as a
+number to tabulate). Reconciled `docs/PERFORMANCE.md` §6 (the internal commit-path
+figure carries **no `fsync`**, and must never be read as durable appends/s) and §36,
+`docs/REPRODUCE.md`, `docs/RECEIPTS.md`, `docs/GATES.md`, `docs/LIMITATIONS.md` §23,
+`README.md`, `scripts/docs-receipts.json` (10 new deterministic citations) and
+`scripts/render_charts.py` (two new charts, plus an **additive** optional
+logarithmic axis in `bar_chart`; every existing chart's bytes are unchanged).
+
+### Test counts
+
+**563 (default; +1 ignored) / 574 (`--features failpoints`)** — **+2** (`+1`
+always-on bounded smoke, `+1` opt-in sweep). `cargo fmt -p orfs --check`,
+`cargo clippy -p orfs --all-targets -- -D warnings`, `check-all.sh --fast`,
+`check-docs-receipts.sh` and `render_charts.py --check` are all clean.
+
+### Notes, stated honestly
+
+* **This is one run on one host.** Absolute values move between runs (the device
+  baseline itself moves by an order of magnitude with load), so the receipt is
+  data, not a leaderboard. The document and this row quote the committed receipt.
+* **Cross-receipt numbers are not compared.** The sibling Go repository's
+  `oss-compare.json` was produced on a different run, with different container caps
+  and with its volumes on a different path; it is cited for its *method*. This
+  court records its own device baseline instead of importing the sibling's numbers.
+* **`weed mount` is not SeaweedFS's fast path**, and its 4 KiB read rows are
+  unstable between runs (its client chunk cache is warm to a different degree) by
+  more than an order of magnitude; no SeaweedFS 4 KiB comparison is drawn.
+* **ZFS and Btrfs did not run.** The arms are recorded `measured: false` with the
+  concrete probed reason; the sibling repository ran OpenZFS **inside a KVM
+  micro-VM guest** (real out-of-tree kernel module) and Btrfs on a **loop-mounted
+  image** — different environments from this container.
+* The ~11 pre-existing wedged `orfs-kmount:1.99.0` containers were left untouched
+  and Docker was not restarted; every mount attempt and every container is bounded,
+  and SeaweedFS's heap is bounded inside the shared cap.

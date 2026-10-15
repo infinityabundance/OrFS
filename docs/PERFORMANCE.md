@@ -491,6 +491,13 @@ Trigram `plan` is candidate generation only; candidates are still verified.
 Naive scan is a byte-by-byte substring search, the honest baseline for an
 index-backed lookup.
 
+**Honesty note on "commits/s".** The *commit path (ordered)* row above is the
+**internal** ordered commit path with **no `fsync` in the timed loop** —
+`mechanisms.json` records that verbatim. It is a throughput of the engine's path,
+**not** a rate of durable file appends, and **not** a FUSE rate; it must never be
+quoted as durable appends/s. The durable, per-record `sync` append rate through a
+real mount is a different measurement and is reported in §36 (Phase 87).
+
 ---
 
 ## 7. Tooling: what was used and what is unavailable (§32, §36)
@@ -3181,3 +3188,62 @@ The cache-miss counter is too load-sensitive here to justify any change on its o
 **Provenance.** `evidence/performance/transport-ceiling.json`;
 `scripts/container-transport-ceiling.sh`; charts `transport-ceiling-latency.svg`,
 `transport-ceiling-decomposition.svg`, `transport-ceiling-reduction.svg`.
+
+## 36. Phase 87 — a same-machine open-source WORM comparison, owned by this repository
+
+Phase 87 adds the comparison the reviewer asked for but that this repository did
+not own: a **same-machine, same-device, same-container-caps** head-to-head between
+**OrFS-Rust** and **SeaweedFS 3.99**, driven by one shared bounded driver, plus a
+**plain-directory anchor** on the same device.
+
+Provenance: `tests/oss_worm_compare.rs`; `scripts/container-oss-worm-compare.sh`;
+receipt `evidence/performance/oss-worm-compare.json`
+(schema `orfs.performance.oss-worm-compare.v1`); charts `oss-worm-append.svg`,
+`oss-worm-reads.svg`; full narrative and the honest side-by-side in
+`docs/OSS-COMPARISON.md`. The court runs in the **root** kernel-mount container
+(`docker_run_kmount_root`) with `/dev/fuse` + `CAP_SYS_ADMIN`.
+
+**What runs.** The identical workload on every arm: a **4 096**-byte record written
+with `write(2)+fsync(2)` — one durability barrier per record — from 1 and 64
+concurrent writers, and uniform random `pread` at 4 KiB / 64 KiB / 1 MiB from 1
+and 64 readers over a 64 MiB file. OrFS-Rust is mounted through the real
+`orfs mount` code path as a separate daemon with `--direct-io --durability sync
+--backing-io sync` and **group commit off**; SeaweedFS is staged from the pinned
+image and run as `weed server` + `weed mount` with its Go heap bounded.
+
+**Headline (one run, this host; the loss is published as a loss).**
+
+| arm | 4 KiB + fsync, 1 writer | 4 KiB + fsync, 64 writers | 1 MiB read, 1 reader |
+|---|---:|---:|---:|
+| OrFS-Rust (`--durability sync`, group commit off) | 244.8 ops/s | 255.4 ops/s (p50 **249.8 ms**) | 9 466.8 ops/s |
+| SeaweedFS 3.99 (`weed mount`; **not** a barrier) | 271.6 ops/s | 2 923.7 ops/s | 23 220.7 ops/s |
+| ext4 plain directory (anchor, same device) | 849.5 ops/s | 3 764.0 ops/s | 56 788.8 ops/s |
+
+The same device's bare 4 KiB `write+fsync` (recorded in the receipt as
+`device_baseline`, taken on a quiet device before the arms) is on the order of
+milliseconds and is load-sensitive, so the anchor's 1-writer rate is essentially
+the barrier alone; OrFS-Rust's 1-writer rate is ≈3.5× that barrier (FUSE request +
+commit path on top), and with group commit off its 64-writer rate does **not**
+scale against the plain-directory anchor's (a few thousand ops/s with the same 64
+native writers) — every `sync` transaction takes its own serialized barrier.
+OrFS-Rust also **loses** the 1 MiB read throughput. Both are
+recorded as losses with their mechanisms named (see `docs/OSS-COMPARISON.md` §2,
+§3 and the receipt's `not_comparable`). The receipt carries **no ranking**.
+
+**The retention axis.** A dedicated OrFS volume is driven through its mount for
+N committed epochs (4 KiB + `fsync` each); after unmount the court proves every
+committed root is enumerated, opened as a historical view, and (where the file
+exists) read back byte-exact, with the earlier roots a byte-exact prefix of the
+later ones (**non-withdrawal**). Space economics reuse the existing four-category
+accounting (`Volume::storage_economics`, i.e. `orfs doctor --economics`). See
+`docs/OSS-COMPARISON.md` §4.
+
+**ZFS / Btrfs.** Both are **probed** and neither ran in the container; the receipt
+records the concrete probed reason for each (`docs/OSS-COMPARISON.md` §7). No ZFS
+or Btrfs number is implied anywhere.
+
+**Group commit is not a durable append.** This section's append rows are real
+per-record `fsync` through a real mount (group commit **off**). The internal
+commit-path figure in §6 carries no `fsync` and the group-commit courts (§10/§11)
+amortise one barrier across prepared transactions; neither is a durable file
+append. See `docs/OSS-COMPARISON.md` §6.

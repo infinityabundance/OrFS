@@ -1,0 +1,1148 @@
+{
+  "amplification": {
+    "benchmark_volume": {
+      "accounting": {
+        "bytes_per_transaction": 4568,
+        "categories_disjoint_and_complete": true,
+        "metadata": {
+          "bytes": 44,
+          "bytes_per_file": 44,
+          "category": "metadata",
+          "file_count": 1,
+          "reclaimable": true
+        },
+        "observed_volume_bytes": 79026068,
+        "overwrite_ratio": null,
+        "permanent_authoritative": {
+          "bytes": 79026024,
+          "bytes_per_file": 7184184,
+          "category": "permanent_authoritative",
+          "file_count": 11,
+          "reclaimable": false
+        },
+        "rebuildable_manifestation": {
+          "bytes": 0,
+          "bytes_per_file": null,
+          "category": "rebuildable_manifestation",
+          "file_count": 0,
+          "reclaimable": true
+        },
+        "temporary_construction": {
+          "bytes": 0,
+          "bytes_per_file": null,
+          "category": "temporary_construction",
+          "file_count": 0,
+          "reclaimable": true
+        },
+        "total_bytes": 79026068,
+        "transaction_count": 3181
+      },
+      "append_bytes": 10403840,
+      "authoritative_over_logical": 1.019523509333386,
+      "categories_disjoint_and_complete": true,
+      "logical_bytes_written": 77512704,
+      "observed_over_logical": 1.019524076982271,
+      "observed_volume_bytes": 79026068,
+      "read_file_bytes": 67108864,
+      "total_bytes": 79026068,
+      "transaction_count": 3181
+    },
+    "method": "the existing four-category storage accounting (Volume::storage_economics == `orfs doctor --economics`); no second accounting is invented. Authoritative = `permanent_authoritative`; manifested/derived = `rebuildable_manifestation`.",
+    "retention_volume": {
+      "accounting": {
+        "bytes_per_transaction": 4568,
+        "categories_disjoint_and_complete": true,
+        "metadata": {
+          "bytes": 44,
+          "bytes_per_file": 44,
+          "category": "metadata",
+          "file_count": 1,
+          "reclaimable": true
+        },
+        "observed_volume_bytes": 4678463,
+        "overwrite_ratio": null,
+        "permanent_authoritative": {
+          "bytes": 4678419,
+          "bytes_per_file": 2339209,
+          "category": "permanent_authoritative",
+          "file_count": 2,
+          "reclaimable": false
+        },
+        "rebuildable_manifestation": {
+          "bytes": 0,
+          "bytes_per_file": null,
+          "category": "rebuildable_manifestation",
+          "file_count": 0,
+          "reclaimable": true
+        },
+        "temporary_construction": {
+          "bytes": 0,
+          "bytes_per_file": null,
+          "category": "temporary_construction",
+          "file_count": 0,
+          "reclaimable": true
+        },
+        "total_bytes": 4678463,
+        "transaction_count": 1025
+      },
+      "authoritative_over_logical": 1.115422010421753,
+      "categories_disjoint_and_complete": true,
+      "logical_bytes_written": 4194304,
+      "observed_over_logical": 1.1154325008392334,
+      "observed_volume_bytes": 4678463,
+      "total_bytes": 4678463,
+      "transaction_count": 1025
+    }
+  },
+  "anchors": {
+    "ext4_plain_directory": [
+      {
+        "block_size": 4096,
+        "bytes": 51483418624,
+        "bytes_per_second": 12867483240.282473,
+        "elapsed_seconds": 4.001048042,
+        "error_rate": 0.0,
+        "errors": {},
+        "max_ns": 94066,
+        "mean_ns": 272,
+        "min_ns": 130,
+        "notes": [
+          "64 reads verified byte-exact"
+        ],
+        "observed_bytes": null,
+        "ops": 12569194,
+        "ops_per_second": 3141475.400459588,
+        "p50_ns": 261,
+        "p95_ns": 401,
+        "p99_9_ns": 912,
+        "p99_ns": 481,
+        "readers": 1,
+        "sample_buffer_truncated": true,
+        "sampled": 1000000,
+        "system": "ext4-plain",
+        "verify_ok": true,
+        "workload": "read",
+        "writers": 0
+      },
+      {
+        "block_size": 4096,
+        "bytes": 427517407232,
+        "bytes_per_second": 105288951638.28629,
+        "elapsed_seconds": 4.060420401,
+        "error_rate": 0.0,
+        "errors": {},
+        "max_ns": 18389661,
+        "mean_ns": 1086,
+        "min_ns": 150,
+        "notes": [
+          "64 reads verified byte-exact"
+        ],
+        "observed_bytes": null,
+        "ops": 104374367,
+        "ops_per_second": 25705310.458565988,
+        "p50_ns": 251,
+        "p95_ns": 511,
+        "p99_9_ns": 1784,
+        "p99_ns": 1172,
+        "readers": 64,
+        "sample_buffer_truncated": true,
+        "sampled": 1000000,
+        "system": "ext4-plain",
+        "verify_ok": true,
+        "workload": "read",
+        "writers": 0
+      },
+      {
+        "block_size": 65536,
+        "bytes": 176640622592,
+        "bytes_per_second": 44154560503.518036,
+        "elapsed_seconds": 4.000506869,
+        "error_rate": 0.0,
+        "errors": {},
+        "max_ns": 150852,
+        "mean_ns": 1454,
+        "min_ns": 651,
+        "notes": [
+          "64 reads verified byte-exact"
+        ],
+        "observed_bytes": null,
+        "ops": 2695322,
+        "ops_per_second": 673745.1248705755,
+        "p50_ns": 1252,
+        "p95_ns": 2285,
+        "p99_9_ns": 5340,
+        "p99_ns": 3296,
+        "readers": 1,
+        "sample_buffer_truncated": true,
+        "sampled": 1000000,
+        "system": "ext4-plain",
+        "verify_ok": true,
+        "workload": "read",
+        "writers": 0
+      },
+      {
+        "block_size": 65536,
+        "bytes": 1209682624512,
+        "bytes_per_second": 289551543842.5024,
+        "elapsed_seconds": 4.177779916,
+        "error_rate": 0.0,
+        "errors": {},
+        "max_ns": 68503162,
+        "mean_ns": 11178,
+        "min_ns": 721,
+        "notes": [
+          "64 reads verified byte-exact"
+        ],
+        "observed_bytes": null,
+        "ops": 18458292,
+        "ops_per_second": 4418205.930213965,
+        "p50_ns": 1763,
+        "p95_ns": 2375,
+        "p99_9_ns": 1631004,
+        "p99_ns": 5149,
+        "readers": 64,
+        "sample_buffer_truncated": true,
+        "sampled": 1000000,
+        "system": "ext4-plain",
+        "verify_ok": true,
+        "workload": "read",
+        "writers": 0
+      },
+      {
+        "block_size": 1048576,
+        "bytes": 238198718464,
+        "bytes_per_second": 59547355631.578094,
+        "elapsed_seconds": 4.00015611,
+        "error_rate": 0.0,
+        "errors": {},
+        "max_ns": 570544,
+        "mean_ns": 17555,
+        "min_ns": 12283,
+        "notes": [
+          "64 reads verified byte-exact"
+        ],
+        "observed_bytes": null,
+        "ops": 227164,
+        "ops_per_second": 56788.7836757451,
+        "p50_ns": 14487,
+        "p95_ns": 28793,
+        "p99_9_ns": 114383,
+        "p99_ns": 38161,
+        "readers": 1,
+        "sample_buffer_truncated": false,
+        "sampled": 227164,
+        "system": "ext4-plain",
+        "verify_ok": true,
+        "workload": "read",
+        "writers": 0
+      },
+      {
+        "block_size": 1048576,
+        "bytes": 689447108608,
+        "bytes_per_second": 170170734710.55722,
+        "elapsed_seconds": 4.051502215,
+        "error_rate": 0.0,
+        "errors": {},
+        "max_ns": 122638638,
+        "mean_ns": 429558,
+        "min_ns": 12463,
+        "notes": [
+          "64 reads verified byte-exact"
+        ],
+        "observed_bytes": null,
+        "ops": 657508,
+        "ops_per_second": 162287.45909743998,
+        "p50_ns": 41537,
+        "p95_ns": 188171,
+        "p99_9_ns": 54868984,
+        "p99_ns": 7039023,
+        "readers": 64,
+        "sample_buffer_truncated": true,
+        "sampled": 583178,
+        "system": "ext4-plain",
+        "verify_ok": true,
+        "workload": "read",
+        "writers": 0
+      },
+      {
+        "block_size": 4096,
+        "bytes": 17403904,
+        "bytes_per_second": 3479643.072935229,
+        "elapsed_seconds": 5.001634833,
+        "error_rate": 0.0,
+        "errors": {},
+        "max_ns": 6296858,
+        "mean_ns": 1177063,
+        "min_ns": 1104200,
+        "notes": [],
+        "observed_bytes": 17403904,
+        "ops": 4249,
+        "ops_per_second": 849.5222346033274,
+        "p50_ns": 1134267,
+        "p95_ns": 1700914,
+        "p99_9_ns": 1905776,
+        "p99_ns": 1797785,
+        "readers": 0,
+        "sample_buffer_truncated": false,
+        "sampled": 4249,
+        "system": "ext4-plain",
+        "verify_ok": true,
+        "workload": "append",
+        "writers": 1
+      },
+      {
+        "block_size": 4096,
+        "bytes": 77729792,
+        "bytes_per_second": 15417448.805527559,
+        "elapsed_seconds": 5.0416766729999996,
+        "error_rate": 0.0,
+        "errors": {},
+        "max_ns": 79661673,
+        "mean_ns": 16940247,
+        "min_ns": 1278115,
+        "notes": [],
+        "observed_bytes": 77729792,
+        "ops": 18977,
+        "ops_per_second": 3764.0255872870016,
+        "p50_ns": 3563008,
+        "p95_ns": 57009167,
+        "p99_9_ns": 79574750,
+        "p99_ns": 63109519,
+        "readers": 0,
+        "sample_buffer_truncated": false,
+        "sampled": 18977,
+        "system": "ext4-plain",
+        "verify_ok": true,
+        "workload": "append",
+        "writers": 64
+      }
+    ],
+    "note": "The identical bounded driver workload in a plain directory on the same device, with no FUSE and no WORM contract. Not a system and not ranked; it only makes the device + host-filesystem-stack cost visible."
+  },
+  "comparability": {
+    "arms": {
+      "OrFS-Rust": {
+        "failed": 0,
+        "mounted": true,
+        "ran": 8
+      },
+      "SeaweedFS": {
+        "failed": 0,
+        "mounted": true,
+        "ran": 8
+      },
+      "anchors": {
+        "ext4-plain": {
+          "failed": 0,
+          "ran": 8
+        }
+      },
+      "expected_per_system": 8,
+      "failed": []
+    },
+    "container": {
+      "backing_filesystem": "ext4",
+      "caps": {
+        "cpus": "8",
+        "memory": "8g",
+        "memory_swap": "8g",
+        "pids_limit": "2048"
+      },
+      "driver": {
+        "note": "The driver and both daemons run as this uid. Root is used because the OrFS volume root inode is committed `0755 root:root`; the setting is identical for both arms (the sibling Go court ran as root too), so it is symmetric and changes no comparison.",
+        "root": true,
+        "uid": 0
+      },
+      "environment": {
+        "cgroup_memory_max": "8589934592",
+        "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+        "container_image": "sha256:a41df86df391732ab467b5bedc8b4a17c0df437fa180b5230417a6a8339d97ac",
+        "cores_visible": 8,
+        "cpu_max": "800000 100000",
+        "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+        "fuse_enable_uring": true,
+        "kernel_release": "7.2.9-2-cachyos",
+        "likely_container": true,
+        "machine": "x86_64",
+        "perf_counters_available": true,
+        "perf_event_open_error": null,
+        "perf_event_paranoid": "2",
+        "ram_total_bytes": 134723346432
+      },
+      "kernel": "Linux 7.2.9-2-cachyos"
+    },
+    "differences": [
+      "FUSE userspace libraries differ: OrFS-Rust serves the classical `/dev/fuse` transport through the `fuser` crate; SeaweedFS's `weed mount` uses hanwen/go-fuse/v2. Same wire protocol, independent daemons.",
+      "Backing I/O differs: OrFS-Rust writes its authoritative log locally (`--backing-io sync`); SeaweedFS's client PUTs data over loopback HTTP to a co-located volume server that writes its own `.dat` files.",
+      "Durability is NOT equal for SeaweedFS: OrFS-Rust takes one fsync per 4 KiB record (`--durability sync`, group commit OFF), while `weed mount`'s Fsync flushes the client's dirty pages to the co-located server and commits filer metadata; it is not a documented stable-storage barrier.",
+      "OrFS-Rust is mounted `--direct-io` (FOPEN_DIRECT_IO); `weed mount` exposes no such knob. Recorded, not removed.",
+      "The system arms run strictly sequentially and each system's daemon(s) and volume are released before the next system starts, so no two systems compete for the shared memory cap. All systems run in the same container caps.",
+      "Within each system the read arms run before the append arms, on a quiet volume: OrFS's append arms retain their whole history (non-withdrawal), so measuring appends first would evict the read file from the backing page cache and make every `--direct-io` read a backing I/O. All systems are measured in the same order.",
+      "`weed mount` is not SeaweedFS's fast path: its 4 KiB append+fsync rate is a legitimate result of per-record fsync through its FUSE client, not a bug.",
+      "Read caching shape differs. OrFS is mounted `--direct-io`, so every read goes through the daemon (served from the backing file's page cache); the plain-ext4 anchor serves reads from the client's own page cache; and `weed mount` serves its warm reads from an in-process chunk cache. The SeaweedFS 4 KiB read rows therefore include client cache hits (a ~271 ns p50 is not a backing read), which is why its read shape is not the same data path as the others'.",
+      "OrFS-Rust's per-record durable commit is serialized when group commit is off (this court's contract): at 64 writers the append arm does not scale (one fsync barrier per transaction, taken under the commit lock), while the same device in a plain directory sustains 64 concurrent native writers far higher. This is a measured property of the equal-durability OrFS setting, not a device limit.",
+      "Host-level variance (page cache state, scheduler, backing-device write cache) is not controlled beyond the shared container; run-to-run variance is expected and unquantified here."
+    ],
+    "not_comparable": [
+      {
+        "axis": "append durability",
+        "reason": "The driver issues write(2)+fsync(2) per 4 KiB record on both, but only OrFS-Rust implements fsync as a durable barrier (one fsync of the authoritative log per record). SeaweedFS 3.99's FUSE client implements Fsync as a flush of dirty pages to the co-located volume server plus a filer metadata commit, with no fsync of the volume `.dat` or the filer store. The SeaweedFS append rows are therefore NOT equal-durability with the OrFS rows and must not be read as such.",
+        "systems": [
+          "SeaweedFS",
+          "OrFS-Rust"
+        ]
+      },
+      {
+        "axis": "data path",
+        "reason": "SeaweedFS is a client/server filesystem: even co-located, the FUSE client's data crosses the loopback network stack (HTTP) to the volume server and its metadata crosses gRPC to the filer, unlike the local in-process OrFS daemon.",
+        "systems": [
+          "SeaweedFS",
+          "OrFS-Rust"
+        ]
+      },
+      {
+        "axis": "historical retention",
+        "reason": "OrFS retains every committed transition as an enumerable, readable historical root (non-withdrawal); `weed mount` exposes no snapshot or historical-root interface. The retention axis is not comparable and is recorded, never faked.",
+        "systems": [
+          "SeaweedFS",
+          "OrFS-Rust"
+        ]
+      },
+      {
+        "axis": "read-path caching shape",
+        "reason": "The identical pread workload crosses three different read paths: OrFS (direct-io, daemon-served from the backing page cache), the plain ext4 anchor (client page cache), and `weed mount` (an in-process client chunk cache that answers warm reads without a backing round trip). The rows are published as measured; a cache hit and a backing read are not the same operation.",
+        "systems": [
+          "SeaweedFS",
+          "OrFS-Rust",
+          "ext4-plain"
+        ]
+      },
+      {
+        "axis": "filesystem-native retained snapshots",
+        "reason": "The ZFS and Btrfs arms did not run in this container (see the `probes` block for each concrete reason). No ZFS or Btrfs measurement is implied.",
+        "systems": [
+          "OpenZFS",
+          "Btrfs",
+          "OrFS-Rust",
+          "SeaweedFS"
+        ]
+      },
+      {
+        "axis": "the plain-directory anchor",
+        "reason": "`anchors` holds the same bounded workload in a plain directory on the same device, with no FUSE and no WORM contract. It exists only to make the device's own cost visible; it is not a WORM system and is not ranked against the `rows`.",
+        "systems": [
+          "ext4-plain",
+          "OrFS-Rust",
+          "SeaweedFS"
+        ]
+      }
+    ],
+    "not_ranked": true,
+    "note": "Two mounted storage systems driven by one shared driver on the same machine and device. Durability is equal-by-construction for OrFS-Rust (one fsync per record) but NOT for SeaweedFS (flush-to-server, not a stable-storage barrier) — its append rows are published but must not be read as equal-durability. No row is a ranking.",
+    "same_device": true,
+    "same_machine": true,
+    "segment_size_bytes": 8388608,
+    "systems": [
+      "OrFS-Rust",
+      "SeaweedFS"
+    ],
+    "workload": {
+      "append_durability": "write(2)+fsync(2) per record (one durability barrier per record)",
+      "append_record_bytes": 4096,
+      "append_seconds_per_arm": 5.0,
+      "append_writers": [
+        1,
+        64
+      ],
+      "bounded": true,
+      "max_append_mib_per_writer": 1024,
+      "read_block_sizes": [
+        4096,
+        65536,
+        1048576
+      ],
+      "read_file_bytes": 67108864,
+      "read_readers": [
+        1,
+        64
+      ],
+      "read_seconds_per_arm": 4.0,
+      "seed": 1
+    }
+  },
+  "device_baseline": {
+    "container_tmp": {
+      "filesystem": "ext4",
+      "is_a_filesystem_comparator": false,
+      "latency_ns": {
+        "max_ns": 1735508,
+        "mean_ns": 1170262,
+        "min_ns": 1112616,
+        "p50_ns": 1136370,
+        "p95_ns": 1244322,
+        "p99_9_ns": 1735508,
+        "p99_ns": 1732282,
+        "samples": 64,
+        "truncated": false
+      },
+      "measured": true,
+      "note": "A device baseline only. A per-record durable append cannot be faster than its durable barrier, so compare an append arm's mean latency against this, not against another system's.",
+      "operation": "write(2) of 4096 bytes + fsync(2), 64 samples, outside any mount",
+      "path": "/mnt/1tb_kingston/OrFS/target/.tmp"
+    },
+    "evidence_volume_device": {
+      "filesystem": "ext4",
+      "is_a_filesystem_comparator": false,
+      "latency_ns": {
+        "max_ns": 1749975,
+        "mean_ns": 1205383,
+        "min_ns": 1111865,
+        "p50_ns": 1131131,
+        "p95_ns": 1700192,
+        "p99_9_ns": 1749975,
+        "p99_ns": 1733444,
+        "samples": 64,
+        "truncated": false
+      },
+      "measured": true,
+      "note": "A device baseline only. A per-record durable append cannot be faster than its durable barrier, so compare an append arm's mean latency against this, not against another system's.",
+      "operation": "write(2) of 4096 bytes + fsync(2), 64 samples, outside any mount",
+      "path": "/mnt/1tb_kingston/OrFS/target/oss-worm/court-107"
+    },
+    "load_caveat": "This is a single-run figure on a shared host: a raw fsync stalls when the drive's write queue is saturated, so it moves materially between runs. It is recorded, not curated; read it as an order of magnitude, not a constant.",
+    "note": "`evidence_volume_device` is where THIS court's OrFS and SeaweedFS volumes live. `container_tmp` is the container's own writable layer (TMPDIR) — the path the sibling Go court used — recorded so the two receipts' absolute append numbers are not confused with each other."
+  },
+  "generated_at_unix": 1792064632,
+  "generated_by": "tests/oss_worm_compare.rs::oss_worm_compare_sweep",
+  "note": "A same-machine open-source WORM comparison: a shared, bounded driver (this test) drove MOUNTED storage implementations on the same machine, the same device and the same container caps. This receipt is data, not a leaderboard: rows are keyed by {system, workload, writers, readers, block_size} and are never ranked across incomparable coordinates. Durability is a per-system property recorded in the comparability block, not a claim this note makes for every row. A local FUSE read, an internal transaction path, and a distributed object store are different interfaces. Read the comparability block, including `not_comparable`, before drawing any conclusion.",
+  "notes": [
+    "Every row is one bounded arm of the shared driver against a MOUNTED filesystem on this machine.",
+    "OrFS-Rust is mounted through the real `orfs mount` code path (`fuse::spawn`) as a separate daemon process, with `--direct-io --durability sync --backing-io sync` and group commit OFF.",
+    "SeaweedFS 3.99 is staged from the pinned image (digest recorded) and run as `weed server` + `weed mount` on loopback with GOGC/GOMEMLIMIT bounded; `weed mount` is not its fast path.",
+    "The retention axis enumerates every committed transaction boundary of a dedicated OrFS volume and opens/reads a bounded sample of them as historical views; total physical amplification comes from the existing four-category accounting.",
+    "The evidence volumes live on the bind-mounted host drive (the recorded backing filesystem); `device_baseline` records that device's own 4 KiB write+fsync cost, because a per-record durable append cannot be faster than its barrier.",
+    "The ZFS and Btrfs arms are recorded as `measured: false` with a concrete probed reason, never implied.",
+    "The receipt carries no ranking: two rows are comparable only at the same {workload, writers, readers, block_size} under the listed configuration differences."
+  ],
+  "probes": {
+    "Btrfs": {
+      "axis": "retained snapshots",
+      "measured": false,
+      "probe": {
+        "dev_loop0_present": false,
+        "dev_loop_control_present": false,
+        "in_proc_filesystems": true,
+        "losetup_free": "exit exit status: 1; stdout=; stderr=losetup: cannot find an unused loop device: No such device",
+        "tools": {
+          "btrfs": null,
+          "losetup": "/usr/sbin/losetup",
+          "mkfs.btrfs": null
+        }
+      },
+      "ran": false,
+      "reason": "Btrfs retained snapshots cannot run in this container: the host kernel lists btrfs=true, but `mkfs.btrfs`=not found, `btrfs`=not found, `/dev/loop-control` present=false, `/dev/loop0` present=false, losetup -f=exit exit status: 1; stdout=; stderr=losetup: cannot find an unused loop device: No such device. A btrfs filesystem must be created on a block/loop device; the container has neither the userspace tools nor a loop device node, so no btrfs arm ran and none is implied.",
+      "system": "Btrfs"
+    },
+    "OpenZFS": {
+      "axis": "retained snapshots (read-only snapshot per epoch)",
+      "measured": false,
+      "probe": {
+        "in_proc_filesystems": false,
+        "modprobe_zfs": null,
+        "sys_module_zfs_present": false,
+        "tools": {
+          "modprobe": null,
+          "zfs": null,
+          "zpool": null
+        }
+      },
+      "ran": false,
+      "reason": "OpenZFS cannot run in this container: /proc/filesystems lists zfs=false, /sys/module/zfs present=false, `zpool`=not found, `zfs`=not found, `modprobe`=not found, modprobe zfs=not attempted. The sibling Go repository ran OpenZFS on the host with a real out-of-tree kernel module and a KVM guest; a plain container here has neither the module nor the userspace nor CAP_SYS_MODULE.",
+      "system": "OpenZFS"
+    }
+  },
+  "results_summary": {
+    "anchor_arms_ran": 8,
+    "anchors": [
+      "ext4-plain"
+    ],
+    "arms_failed": [],
+    "arms_ran": 16,
+    "fs_native_arms_ran": 0,
+    "systems": [
+      "OrFS-Rust",
+      "SeaweedFS"
+    ]
+  },
+  "retention": {
+    "axis": "historical retention (non-withdrawal)",
+    "daemon_stderr": "orfs: mounting /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/ret-vol at /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/ret-mnt (transport=fuse, durability=Sync, backing_io=Sync, direct_io=true, readahead_kb=128); run `orfs unmount /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/ret-mnt`\norfs: synchronous backing I/O (io_uring not requested)\n [2m2026-10-15T11:42:38.313327Z [0m  [33m WARN [0m  [2mfuser::session [0m [2m: [0m Failed to umount filesystem: Invalid argument (os error 22)",
+    "systems": [
+      {
+        "accounting": {
+          "bytes_per_transaction": 4568,
+          "categories_disjoint_and_complete": true,
+          "metadata": {
+            "bytes": 44,
+            "bytes_per_file": 44,
+            "category": "metadata",
+            "file_count": 1,
+            "reclaimable": true
+          },
+          "observed_volume_bytes": 4678463,
+          "overwrite_ratio": null,
+          "permanent_authoritative": {
+            "bytes": 4678419,
+            "bytes_per_file": 2339209,
+            "category": "permanent_authoritative",
+            "file_count": 2,
+            "reclaimable": false
+          },
+          "rebuildable_manifestation": {
+            "bytes": 0,
+            "bytes_per_file": null,
+            "category": "rebuildable_manifestation",
+            "file_count": 0,
+            "reclaimable": true
+          },
+          "temporary_construction": {
+            "bytes": 0,
+            "bytes_per_file": null,
+            "category": "temporary_construction",
+            "file_count": 0,
+            "reclaimable": true
+          },
+          "total_bytes": 4678463,
+          "transaction_count": 1025
+        },
+        "all_roots_are_valid_boundaries": true,
+        "amplification": {
+          "authoritative_over_logical": 1.115422010421753,
+          "categories_disjoint_and_complete": true,
+          "logical_bytes_written": 4194304,
+          "metadata_bytes": 44,
+          "method": "the existing four-category storage accounting (Volume::storage_economics == `orfs doctor --economics`); no second accounting is invented",
+          "observed_over_logical": 1.1154325008392334,
+          "observed_volume_bytes": 4678463,
+          "permanent_authoritative_bytes": 4678419,
+          "rebuildable_manifestation_bytes": 0,
+          "temporary_construction_bytes": 0,
+          "total_bytes": 4678463,
+          "transaction_count": 1025
+        },
+        "committed_root": 4678383,
+        "committed_roots_enumerated": 1026,
+        "drive_mode": "N epochs driven through the mounted OrFS volume (one 4 KiB append + fsync(2) per epoch)",
+        "epoch_commit_latency_ns": {
+          "max_ns": 6627486,
+          "mean_ns": 4097025,
+          "min_ns": 3906630,
+          "p50_ns": 3990065,
+          "p95_ns": 5274281,
+          "p99_9_ns": 6057102,
+          "p99_ns": 5731975,
+          "samples": 1024,
+          "truncated": false
+        },
+        "epoch_file_inode": 2,
+        "epoch_record_bytes": 4096,
+        "epochs": 1024,
+        "final_root_epoch_file_bytes": 4194304,
+        "historical_open_latency_ns": {
+          "max_ns": 8349850,
+          "mean_ns": 6545835,
+          "min_ns": 4760373,
+          "p50_ns": 6609332,
+          "p95_ns": 8150788,
+          "p99_9_ns": 8348997,
+          "p99_ns": 8293104,
+          "samples": 1026,
+          "truncated": false
+        },
+        "logical_epoch_bytes": 4194304,
+        "measured": true,
+        "non_withdrawal_prefix_intact": true,
+        "notes": [],
+        "roots_enumerated_via_readdir": 1026,
+        "roots_opened_as_historical_views": 1026,
+        "roots_read_back_byte_exact": 1024,
+        "roots_showing_the_epoch_file": 1025,
+        "roots_with_nonzero_epoch_file": 1024,
+        "system": "OrFS-Rust"
+      },
+      {
+        "capability": "none through the FUSE mount",
+        "measured": false,
+        "reason": "`weed mount` exposes no snapshot or historical-root interface, so there is nothing to drive or measure on this axis. SeaweedFS's versioning lives in the Filer as a TTL-based, metadata-level contract (a different promise from OrFS's non-withdrawal authoritative log): it is not the same axis, so the retention axis is `not_comparable` for SeaweedFS and is recorded, not faked.",
+        "system": "SeaweedFS"
+      }
+    ]
+  },
+  "rows": [
+    {
+      "block_size": 4096,
+      "bytes": 4791414784,
+      "bytes_per_second": 1197711286.6308804,
+      "elapsed_seconds": 4.000475605,
+      "error_rate": 0.0,
+      "errors": {},
+      "max_ns": 613043,
+      "mean_ns": 3388,
+      "min_ns": 2194,
+      "notes": [
+        "64 reads verified byte-exact"
+      ],
+      "observed_bytes": null,
+      "ops": 1169779,
+      "ops_per_second": 292409.9820876173,
+      "p50_ns": 3287,
+      "p95_ns": 4308,
+      "p99_9_ns": 12644,
+      "p99_ns": 5140,
+      "readers": 1,
+      "sample_buffer_truncated": true,
+      "sampled": 1000000,
+      "system": "OrFS-Rust",
+      "verify_ok": true,
+      "workload": "read",
+      "writers": 0
+    },
+    {
+      "block_size": 4096,
+      "bytes": 26310860800,
+      "bytes_per_second": 6575554438.289917,
+      "elapsed_seconds": 4.001314421,
+      "error_rate": 0.0,
+      "errors": {},
+      "max_ns": 27091989,
+      "mean_ns": 37806,
+      "min_ns": 4468,
+      "notes": [
+        "64 reads verified byte-exact"
+      ],
+      "observed_bytes": null,
+      "ops": 6423550,
+      "ops_per_second": 1605359.9702856243,
+      "p50_ns": 29124,
+      "p95_ns": 31258,
+      "p99_9_ns": 120916,
+      "p99_ns": 33593,
+      "readers": 64,
+      "sample_buffer_truncated": true,
+      "sampled": 1000000,
+      "system": "OrFS-Rust",
+      "verify_ok": true,
+      "workload": "read",
+      "writers": 0
+    },
+    {
+      "block_size": 65536,
+      "bytes": 29604184064,
+      "bytes_per_second": 7400652343.849058,
+      "elapsed_seconds": 4.000212777,
+      "error_rate": 0.0,
+      "errors": {},
+      "max_ns": 1107196,
+      "mean_ns": 8808,
+      "min_ns": 5700,
+      "notes": [
+        "64 reads verified byte-exact"
+      ],
+      "observed_bytes": null,
+      "ops": 451724,
+      "ops_per_second": 112924.993039689,
+      "p50_ns": 8626,
+      "p95_ns": 10740,
+      "p99_9_ns": 26790,
+      "p99_ns": 12494,
+      "readers": 1,
+      "sample_buffer_truncated": false,
+      "sampled": 451724,
+      "system": "OrFS-Rust",
+      "verify_ok": true,
+      "workload": "read",
+      "writers": 0
+    },
+    {
+      "block_size": 65536,
+      "bytes": 215306534912,
+      "bytes_per_second": 53806360796.0563,
+      "elapsed_seconds": 4.001507103,
+      "error_rate": 0.0,
+      "errors": {},
+      "max_ns": 26216797,
+      "mean_ns": 75532,
+      "min_ns": 24235,
+      "notes": [
+        "64 reads verified byte-exact"
+      ],
+      "observed_bytes": null,
+      "ops": 3285317,
+      "ops_per_second": 821019.9096077926,
+      "p50_ns": 56826,
+      "p95_ns": 65182,
+      "p99_9_ns": 187730,
+      "p99_ns": 79238,
+      "readers": 64,
+      "sample_buffer_truncated": true,
+      "sampled": 1000000,
+      "system": "OrFS-Rust",
+      "verify_ok": true,
+      "workload": "read",
+      "writers": 0
+    },
+    {
+      "block_size": 1048576,
+      "bytes": 39707475968,
+      "bytes_per_second": 9926653449.610321,
+      "elapsed_seconds": 4.000086854,
+      "error_rate": 0.0,
+      "errors": {},
+      "max_ns": 1195621,
+      "mean_ns": 105574,
+      "min_ns": 78867,
+      "notes": [
+        "64 reads verified byte-exact"
+      ],
+      "observed_bytes": null,
+      "ops": 37868,
+      "ops_per_second": 9466.794442758866,
+      "p50_ns": 104465,
+      "p95_ns": 124372,
+      "p99_9_ns": 229398,
+      "p99_ns": 144600,
+      "readers": 1,
+      "sample_buffer_truncated": false,
+      "sampled": 37868,
+      "system": "OrFS-Rust",
+      "verify_ok": true,
+      "workload": "read",
+      "writers": 0
+    },
+    {
+      "block_size": 1048576,
+      "bytes": 97262764032,
+      "bytes_per_second": 24300919147.525494,
+      "elapsed_seconds": 4.00243149,
+      "error_rate": 0.0,
+      "errors": {},
+      "max_ns": 15338910,
+      "mean_ns": 2760431,
+      "min_ns": 1604073,
+      "notes": [
+        "64 reads verified byte-exact"
+      ],
+      "observed_bytes": null,
+      "ops": 92757,
+      "ops_per_second": 23175.162456059927,
+      "p50_ns": 2502359,
+      "p95_ns": 3493528,
+      "p99_9_ns": 12883209,
+      "p99_ns": 11470162,
+      "readers": 64,
+      "sample_buffer_truncated": false,
+      "sampled": 92757,
+      "system": "OrFS-Rust",
+      "verify_ok": true,
+      "workload": "read",
+      "writers": 0
+    },
+    {
+      "block_size": 4096,
+      "bytes": 5013504,
+      "bytes_per_second": 1002518.6255234295,
+      "elapsed_seconds": 5.000908584,
+      "error_rate": 0.0,
+      "errors": {},
+      "max_ns": 5787669,
+      "mean_ns": 4085559,
+      "min_ns": 3893575,
+      "notes": [],
+      "observed_bytes": 5013504,
+      "ops": 1224,
+      "ops_per_second": 244.75552380943103,
+      "p50_ns": 3982431,
+      "p95_ns": 5156711,
+      "p99_9_ns": 5781858,
+      "p99_ns": 5713440,
+      "readers": 0,
+      "sample_buffer_truncated": false,
+      "sampled": 1224,
+      "system": "OrFS-Rust",
+      "verify_ok": true,
+      "workload": "append",
+      "writers": 1
+    },
+    {
+      "block_size": 4096,
+      "bytes": 5390336,
+      "bytes_per_second": 1046299.7749794628,
+      "elapsed_seconds": 5.151808429,
+      "error_rate": 0.0,
+      "errors": {},
+      "max_ns": 279915853,
+      "mean_ns": 247401706,
+      "min_ns": 149059063,
+      "notes": [],
+      "observed_bytes": 5390336,
+      "ops": 1316,
+      "ops_per_second": 255.44428100084542,
+      "p50_ns": 249747895,
+      "p95_ns": 256595471,
+      "p99_9_ns": 276353025,
+      "p99_ns": 268339384,
+      "readers": 0,
+      "sample_buffer_truncated": false,
+      "sampled": 1316,
+      "system": "OrFS-Rust",
+      "verify_ok": true,
+      "workload": "append",
+      "writers": 64
+    },
+    {
+      "block_size": 4096,
+      "bytes": 2664390656,
+      "bytes_per_second": 666036566.3011544,
+      "elapsed_seconds": 4.000366933,
+      "error_rate": 0.0,
+      "errors": {},
+      "max_ns": 19976764,
+      "mean_ns": 6105,
+      "min_ns": 120,
+      "notes": [
+        "64 reads verified byte-exact"
+      ],
+      "observed_bytes": null,
+      "ops": 650486,
+      "ops_per_second": 162606.58356961777,
+      "p50_ns": 340,
+      "p95_ns": 612,
+      "p99_9_ns": 718971,
+      "p99_ns": 155710,
+      "readers": 1,
+      "sample_buffer_truncated": false,
+      "sampled": 650486,
+      "system": "SeaweedFS",
+      "verify_ok": true,
+      "workload": "read",
+      "writers": 0
+    },
+    {
+      "block_size": 4096,
+      "bytes": 51885277184,
+      "bytes_per_second": 12965834825.663754,
+      "elapsed_seconds": 4.001691976,
+      "error_rate": 0.0,
+      "errors": {},
+      "max_ns": 89753580,
+      "mean_ns": 215466,
+      "min_ns": 130,
+      "notes": [
+        "64 reads verified byte-exact"
+      ],
+      "observed_bytes": null,
+      "ops": 12667304,
+      "ops_per_second": 3165487.017984315,
+      "p50_ns": 461,
+      "p95_ns": 1132,
+      "p99_9_ns": 35631885,
+      "p99_ns": 11799206,
+      "readers": 64,
+      "sample_buffer_truncated": true,
+      "sampled": 1000000,
+      "system": "SeaweedFS",
+      "verify_ok": true,
+      "workload": "read",
+      "writers": 0
+    },
+    {
+      "block_size": 65536,
+      "bytes": 84835041280,
+      "bytes_per_second": 21205972529.836296,
+      "elapsed_seconds": 4.00052585,
+      "error_rate": 0.0,
+      "errors": {},
+      "max_ns": 22120955,
+      "mean_ns": 3193,
+      "min_ns": 932,
+      "notes": [
+        "64 reads verified byte-exact"
+      ],
+      "observed_bytes": null,
+      "ops": 1294480,
+      "ops_per_second": 323577.46169794153,
+      "p50_ns": 2495,
+      "p95_ns": 4769,
+      "p99_9_ns": 36609,
+      "p99_ns": 6091,
+      "readers": 1,
+      "sample_buffer_truncated": true,
+      "sampled": 1000000,
+      "system": "SeaweedFS",
+      "verify_ok": true,
+      "workload": "read",
+      "writers": 0
+    },
+    {
+      "block_size": 65536,
+      "bytes": 494039138304,
+      "bytes_per_second": 120644358163.18448,
+      "elapsed_seconds": 4.095004075,
+      "error_rate": 0.0,
+      "errors": {},
+      "max_ns": 69224806,
+      "mean_ns": 49174,
+      "min_ns": 901,
+      "notes": [
+        "64 reads verified byte-exact"
+      ],
+      "observed_bytes": null,
+      "ops": 7538439,
+      "ops_per_second": 1840886.812792732,
+      "p50_ns": 3196,
+      "p95_ns": 8475,
+      "p99_9_ns": 14831874,
+      "p99_ns": 14627,
+      "readers": 64,
+      "sample_buffer_truncated": true,
+      "sampled": 1000000,
+      "system": "SeaweedFS",
+      "verify_ok": true,
+      "workload": "read",
+      "writers": 0
+    },
+    {
+      "block_size": 1048576,
+      "bytes": 97399078912,
+      "bytes_per_second": 24348687124.498726,
+      "elapsed_seconds": 4.00017785,
+      "error_rate": 0.0,
+      "errors": {},
+      "max_ns": 15003414,
+      "mean_ns": 43010,
+      "min_ns": 19616,
+      "notes": [
+        "64 reads verified byte-exact"
+      ],
+      "observed_bytes": null,
+      "ops": 92887,
+      "ops_per_second": 23220.717548845983,
+      "p50_ns": 38000,
+      "p95_ns": 73187,
+      "p99_9_ns": 184694,
+      "p99_ns": 97762,
+      "readers": 1,
+      "sample_buffer_truncated": false,
+      "sampled": 92887,
+      "system": "SeaweedFS",
+      "verify_ok": true,
+      "workload": "read",
+      "writers": 0
+    },
+    {
+      "block_size": 1048576,
+      "bytes": 250440843264,
+      "bytes_per_second": 62577079396.95756,
+      "elapsed_seconds": 4.002117799,
+      "error_rate": 0.0,
+      "errors": {},
+      "max_ns": 204545080,
+      "mean_ns": 1099536,
+      "min_ns": 19817,
+      "notes": [
+        "64 reads verified byte-exact"
+      ],
+      "observed_bytes": null,
+      "ops": 238839,
+      "ops_per_second": 59678.15341659313,
+      "p50_ns": 105937,
+      "p95_ns": 5011731,
+      "p99_9_ns": 61350774,
+      "p99_ns": 43504545,
+      "readers": 64,
+      "sample_buffer_truncated": true,
+      "sampled": 231508,
+      "system": "SeaweedFS",
+      "verify_ok": true,
+      "workload": "read",
+      "writers": 0
+    },
+    {
+      "block_size": 4096,
+      "bytes": 5566464,
+      "bytes_per_second": 1112518.173176337,
+      "elapsed_seconds": 5.003481412,
+      "error_rate": 0.0,
+      "errors": {},
+      "max_ns": 10578148,
+      "mean_ns": 3681540,
+      "min_ns": 710596,
+      "notes": [],
+      "observed_bytes": 5566464,
+      "ops": 1359,
+      "ops_per_second": 271.61088212312916,
+      "p50_ns": 3543532,
+      "p95_ns": 5611942,
+      "p99_9_ns": 10486587,
+      "p99_ns": 7509401,
+      "readers": 0,
+      "sample_buffer_truncated": false,
+      "sampled": 1359,
+      "system": "SeaweedFS",
+      "verify_ok": true,
+      "workload": "append",
+      "writers": 1
+    },
+    {
+      "block_size": 4096,
+      "bytes": 60104704,
+      "bytes_per_second": 11975429.340014834,
+      "elapsed_seconds": 5.019002016,
+      "error_rate": 0.0,
+      "errors": {},
+      "max_ns": 451752825,
+      "mean_ns": 21847544,
+      "min_ns": 616150,
+      "notes": [],
+      "observed_bytes": 60104704,
+      "ops": 14674,
+      "ops_per_second": 2923.688803714559,
+      "p50_ns": 15486276,
+      "p95_ns": 48384851,
+      "p99_9_ns": 420781436,
+      "p99_ns": 122672916,
+      "readers": 0,
+      "sample_buffer_truncated": false,
+      "sampled": 14674,
+      "system": "SeaweedFS",
+      "verify_ok": true,
+      "workload": "append",
+      "writers": 64
+    }
+  ],
+  "schema": "orfs.performance.oss-worm-compare.v1",
+  "systems": {
+    "OrFS-Rust": {
+      "backing_io": "synchronous (--backing-io sync)",
+      "binary_sha256": "e5a0bd53d8adbeaf112f7b44c93983afcfa2b17bc99470034a5778b6aa3c0447",
+      "daemon_stderr": "orfs: mounting /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/orfs-vol at /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/orfs-mnt (transport=fuse, durability=Sync, backing_io=Sync, direct_io=true, readahead_kb=128); run `orfs unmount /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/orfs-mnt`\norfs: synchronous backing I/O (io_uring not requested)\n [2m2026-10-15T11:42:33.957180Z [0m  [33m WARN [0m  [2mfuser::session [0m [2m: [0m Failed to umount filesystem: Invalid argument (os error 22)",
+      "direct_io": true,
+      "fsync_policy": "--durability sync: one fsync per transaction; group commit OFF (ORFS_GROUP_COMMIT pinned empty)",
+      "fuse_library": "fuser crate (classical /dev/fuse, one request per operation)",
+      "mount_command": "/mnt/1tb_kingston/OrFS/target/oss-worm-build/release/orfs mount /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/orfs-vol /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/orfs-mnt --direct-io --durability sync --backing-io sync",
+      "mounted": true,
+      "status": "mounted",
+      "transport": "f0 (classical /dev/fuse)",
+      "version": "orfs 0.2.0"
+    },
+    "SeaweedFS": {
+      "binary_sha256": "a975dcd2e57392438888e8ec69b4c23b6c587edf2461bd882cf46652d47578ce",
+      "image": "chrislusf/seaweedfs:3.99",
+      "image_digest": "chrislusf/seaweedfs@sha256:8d5b323911a996d5ea152115306bed468d9a849d72bcbb3800ea8d91b7728563",
+      "mount_stderr_tail": "7.571471 needle_map_leveldb.go:122 generateLevelDbFile /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/cache/f77c8fd5/c2_2_0.ldb, watermark 0, num of entries:0\nI1015 11:43:07.575430 needle_map_leveldb.go:66 Loading /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/cache/f77c8fd5/c2_2_0.ldb... , watermark: 0\nI1015 11:43:07.579075 needle_map_leveldb.go:122 generateLevelDbFile /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/cache/f77c8fd5/c2_2_1.ldb, watermark 0, num of entries:0\nI1015 11:43:07.582801 needle_map_leveldb.go:66 Loading /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/cache/f77c8fd5/c2_2_1.ldb... , watermark: 0\nI1015 11:43:07.582863 leveldb_store.go:48 filer store dir: /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/cache/f77c8fd5/meta\nI1015 11:43:07.582868 file_util.go:27 Folder /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/cache/f77c8fd5/meta Permission: -rwxr-xr-x\nI1015 11:43:07.588594 wfs_filer_client.go:31 WithFilerClient 0 127.0.0.1:18888: filer: no entry is found in filer store\nI1015 11:43:07.588604 filer_conf.go:41 fuse filer conf /etc/seaweedfs/filer.conf not found\nI1015 11:43:07.588613 mount_std.go:301 mounted 127.0.0.1:8888/ to /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw-mnt\nI1015 11:43:07.588616 mount_std.go:302 This is SeaweedFS version 30GB 3.99 a80b5eea5 linux amd64\nI1015 11:43:24.186560 needle_map_leveldb.go:122 generateLevelDbFile /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/cache/f77c8fd5/c1_3_0.ldb, watermark 0, num of entries:0\nI1015 11:43:24.190188 needle_map_leveldb.go:66 Loading /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/cache/f77c8fd5/c1_3_0.ldb... , watermark: 0\nI1015 11:43:24.214619 needle_map_leveldb.go:122 generateLevelDbFile /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/cache/f77c8fd5/c1_3_1.ldb, watermark 0, num of entries:0\nI1015 11:43:24.218336 needle_map_leveldb.go:66 Loading /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/cache/f77c8fd5/c1_3_1.ldb... , watermark: 0",
+      "mounted": true,
+      "server_stderr_tail": "ory index /mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/data/7.idx to memory\nI1015 11:43:07.708337 store.go:189 add volume 7 on disk ID 0\nI1015 11:43:07.708355 volume_grpc_client_to_master.go:225 volume server 127.0.0.1:8080 adds volume 7\nI1015 11:43:07.708393 volume_growth.go:375 Created Volume 7 on topo:DefaultDataCenter:DefaultRack:127.0.0.1:8080\nI1015 11:43:07.708399 volume_layout.go:417 Volume 7 becomes writable\nI1015 11:43:07.708404 volume_growth.go:388 Registered Volume 7 on topo:DefaultDataCenter:DefaultRack:127.0.0.1:8080\nI1015 11:43:11.896512 disk.go:12 disk status: dir:\"/mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/data\" all:1426376364032 used:1391260344320 free:35116019712 percent_free:2.4619043 percent_used:97.53809\nI1015 11:43:16.896414 disk.go:12 disk status: dir:\"/mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/data\" all:1426376364032 used:1391260356608 free:35116007424 percent_free:2.4619033 percent_used:97.53809\nI1015 11:43:21.929850 disk.go:12 disk status: dir:\"/mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/data\" all:1426376364032 used:1391260356608 free:35116007424 percent_free:2.4619033 percent_used:97.53809\nI1015 11:43:26.897412 disk.go:12 disk status: dir:\"/mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/data\" all:1426376364032 used:1391245692928 free:35130671104 percent_free:2.4629314 percent_used:97.53707\nI1015 11:43:31.934852 disk.go:12 disk status: dir:\"/mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/data\" all:1426376364032 used:1391245692928 free:35130671104 percent_free:2.4629314 percent_used:97.53707\nI1015 11:43:36.896565 disk.go:12 disk status: dir:\"/mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/data\" all:1426376364032 used:1391379869696 free:34996494336 percent_free:2.4535246 percent_used:97.54648\nI1015 11:43:41.896301 disk.go:12 disk status: dir:\"/mnt/1tb_kingston/OrFS/target/oss-worm/court-107/sw/data\" all:1426376364032 used:1391728914432 free:34647449600 percent_free:2.4290538 percent_used:97.570946",
+      "status": "mounted"
+    }
+  }
+}

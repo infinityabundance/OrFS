@@ -683,6 +683,92 @@
         {"group": 1, "label": "sealed segments", "evidence": "evidence/security/crypto-erasure.json", "path": "volume.segments"},
         {"group": 2, "label": "authoritative ciphertext bytes", "evidence": "evidence/security/crypto-erasure.json", "path": "digests.authoritative_ciphertext_bytes"}
       ]
+    },
+    {
+      "id": "oss-worm-s1-append-record",
+      "doc": "docs/OSS-COMPARISON.md",
+      "section": "§1",
+      "claim": "the shared workload's append record size (Phase-87 oss-worm-compare court)",
+      "regex": "a \\*\\*([0-9][0-9 ]*)\\*\\*-byte record written with",
+      "fields": [
+        {"group": 1, "label": "append record bytes", "evidence": "evidence/performance/oss-worm-compare.json", "path": "comparability.workload.append_record_bytes"}
+      ]
+    },
+    {
+      "id": "oss-worm-s1-read-file",
+      "doc": "docs/OSS-COMPARISON.md",
+      "section": "§1",
+      "claim": "the shared workload's read file size",
+      "regex": "over a fixed \\*\\*([0-9][0-9 ]*)\\*\\*-byte file of deterministic",
+      "fields": [
+        {"group": 1, "label": "read file bytes", "evidence": "evidence/performance/oss-worm-compare.json", "path": "comparability.workload.read_file_bytes"}
+      ]
+    },
+    {
+      "id": "oss-worm-s1-segment-size",
+      "doc": "docs/OSS-COMPARISON.md",
+      "section": "§1",
+      "claim": "the evidence volumes' segment-size policy",
+      "regex": "an \\*\\*([0-9][0-9 ]*)\\*\\*-byte segment-size policy",
+      "fields": [
+        {"group": 1, "label": "segment size bytes", "evidence": "evidence/performance/oss-worm-compare.json", "path": "comparability.segment_size_bytes"}
+      ]
+    },
+    {
+      "id": "oss-worm-s4-retention-shape",
+      "doc": "docs/OSS-COMPARISON.md",
+      "section": "§4",
+      "claim": "the retention court's deterministic shape: epochs driven, committed roots enumerated, roots opened/enumerated/read back, and the final epoch-file bytes",
+      "regex": "retains \\*\\*([0-9][0-9 ]*)\\*\\*\\s+epochs, giving \\*\\*([0-9][0-9 ]*)\\*\\* enumerated committed transaction boundaries;[\\s\\S]*?\\*\\*([0-9][0-9 ]*)\\*\\* opened;[\\s\\S]*?\\*\\*([0-9][0-9 ]*)\\*\\* enumerated;[\\s\\S]*?\\*\\*([0-9][0-9 ]*)\\*\\* roots;[\\s\\S]*?final \\*\\*([0-9][0-9 ]*)\\*\\* bytes",
+      "fields": [
+        {"group": 1, "label": "epochs", "evidence": "evidence/performance/oss-worm-compare.json", "path": "retention.systems[system=OrFS-Rust].epochs"},
+        {"group": 2, "label": "committed roots enumerated", "evidence": "evidence/performance/oss-worm-compare.json", "path": "retention.systems[system=OrFS-Rust].committed_roots_enumerated"},
+        {"group": 3, "label": "roots opened as historical views", "evidence": "evidence/performance/oss-worm-compare.json", "path": "retention.systems[system=OrFS-Rust].roots_opened_as_historical_views"},
+        {"group": 4, "label": "roots enumerated via readdir", "evidence": "evidence/performance/oss-worm-compare.json", "path": "retention.systems[system=OrFS-Rust].roots_enumerated_via_readdir"},
+        {"group": 5, "label": "roots read back byte-exact", "evidence": "evidence/performance/oss-worm-compare.json", "path": "retention.systems[system=OrFS-Rust].roots_read_back_byte_exact"},
+        {"group": 6, "label": "final epoch-file bytes", "evidence": "evidence/performance/oss-worm-compare.json", "path": "retention.systems[system=OrFS-Rust].final_root_epoch_file_bytes"}
+      ]
+    },
+    {
+      "id": "oss-worm-s4-retention-bytes",
+      "doc": "docs/OSS-COMPARISON.md",
+      "section": "§4",
+      "claim": "the retention volume's logical epoch bytes and observed physical bytes (four-category accounting)",
+      "regex": "logical epoch bytes\\s*([0-9][0-9 ]*) produce \\*\\*([0-9][0-9 ]*)\\*\\* observed physical bytes",
+      "fields": [
+        {"group": 1, "label": "logical epoch bytes", "evidence": "evidence/performance/oss-worm-compare.json", "path": "retention.systems[system=OrFS-Rust].amplification.logical_bytes_written"},
+        {"group": 2, "label": "observed physical bytes", "evidence": "evidence/performance/oss-worm-compare.json", "path": "retention.systems[system=OrFS-Rust].amplification.observed_volume_bytes"}
+      ]
+    },
+    {
+      "id": "oss-worm-s4-retention-amp",
+      "doc": "docs/OSS-COMPARISON.md",
+      "section": "§4",
+      "claim": "the retention volume's observed-over-logical amplification and its committed transaction count",
+      "regex": "an amplification of\\s+\\*\\*([0-9.]+)\\*\\*",
+      "fields": [
+        {"group": 1, "label": "observed over logical", "evidence": "evidence/performance/oss-worm-compare.json", "path": "retention.systems[system=OrFS-Rust].amplification.observed_over_logical"}
+      ]
+    },
+    {
+      "id": "oss-worm-s4-retention-tx",
+      "doc": "docs/OSS-COMPARISON.md",
+      "section": "§4",
+      "claim": "the retention volume's committed transaction count (the existing accounting)",
+      "regex": "\\| transaction count in the accounting \\| ([0-9][0-9 ]*) \\|",
+      "fields": [
+        {"group": 1, "label": "retention transaction count", "evidence": "evidence/performance/oss-worm-compare.json", "path": "retention.systems[system=OrFS-Rust].accounting.transaction_count"}
+      ]
+    },
+    {
+      "id": "oss-worm-s7-probes",
+      "doc": "docs/OSS-COMPARISON.md",
+      "section": "§7",
+      "claim": "the ZFS and Btrfs probes: neither arm ran (0 of 2 filesystem-native snapshot arms)",
+      "regex": "Neither ran here:[\\s\\S]*?\\*\\*([0-9])\\*\\* of the two probed filesystem-native snapshot arms ran",
+      "fields": [
+        {"group": 1, "label": "arms run", "evidence": "evidence/performance/oss-worm-compare.json", "path": "results_summary.fs_native_arms_ran"}
+      ]
     }
   ]
 }

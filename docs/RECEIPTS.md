@@ -147,6 +147,10 @@ so it is not expected to name HEAD.
 | `posix-compat-pjdfstest-unclassified`, `posix-compat-pjdfstest-unsupported`, `posix-compat-pjdfstest-totals`, `posix-compat-adversarial-zero` (10 value checks) | `docs/POSIX-COMPAT.md` §6 | the compatibility matrix's reconciliation: `pjdfstest` zero unclassified failures, the mechanically-unsupported assertion count, the court totals (OrFS vs reference ext4), and the adversarial-concurrency receipt's zero mismatches / orphans / duplicate inodes / torn reads → `correctness/pjdfstest.json` `gate.*` / `deviations.*` / `{orfs,reference}.summary.*` and `correctness/adversarial-concurrency.json` |
 | `applications-s2-git`, `applications-s2-sqlite`, `applications-s2-tar`, `applications-s2-make`, `applications-s2-metadata`, `applications-s2-metadata-samples` (10 value checks) | `docs/APPLICATIONS.md` §2 | the Phase-81 application court's **deterministic** bounded configuration and sample counts (1200 git files / 60 dirs; 20000+200 SQLite rows; 2000+4 tar members; 120 translation units; 50000 metadata files = 250×200; 50000 create/stat/rename/unlink and 250 readdir latency samples) → `performance/application-workloads.json` `scale.*` and `workloads[workload=metadata-tree].config.*` / `.arms.orfs.latency_ns.*.samples` |
 | `security-erasure-s5-shape` | `docs/ERASURE.md` §5 | the Phase-86 crypto-erasure court's **deterministic** encrypted-store shape (2 sealed segments; 1249 authoritative ciphertext bytes) → `security/crypto-erasure.json` `volume.segments` / `digests.authoritative_ciphertext_bytes` |
+| `oss-worm-s1-*` (3 citations) | `docs/OSS-COMPARISON.md` §1 | the Phase-87 comparison's **deterministic** workload geometry: the 4 KiB append record, the 64 MiB read file, and the 8 MiB segment-size policy → `performance/oss-worm-compare.json` `comparability.workload.{append_record_bytes,read_file_bytes}` / `comparability.segment_size_bytes` |
+| `oss-worm-s4-retention-shape` | `docs/OSS-COMPARISON.md` §4 | the Phase-87 retention court's **deterministic** shape: epochs driven (1 024), committed roots enumerated (1 026), roots opened / enumerated via readdir / read back byte-exact (1 024), and the final epoch-file bytes (4 194 304) → `performance/oss-worm-compare.json` `retention.systems[system=OrFS-Rust].*` |
+| `oss-worm-s4-retention-bytes`, `oss-worm-s4-retention-amp`, `oss-worm-s4-retention-tx` | `docs/OSS-COMPARISON.md` §4 | the retention volume's **deterministic** four-category accounting: logical epoch bytes, observed physical bytes, the observed/logical amplification and the committed transaction count → `performance/oss-worm-compare.json` `retention.systems[system=OrFS-Rust].amplification.*` / `.accounting.transaction_count` |
+| `oss-worm-s7-probes` | `docs/OSS-COMPARISON.md` §7 | the Phase-87 court's **deterministic** probe outcome: 0 of 2 filesystem-native snapshot arms ran → `performance/oss-worm-compare.json` `results_summary.fs_native_arms_ran` |
 
 ### `docs/ACCEPTANCE-AUDIT.md` is exempt from live comparison
 
@@ -260,6 +264,18 @@ numbers were not curated in this first pass:
   `verdict.per_workload` booleans, and the committed figure
   `application-workloads.svg` is gated by
   `python3 scripts/render_charts.py --check`.
+
+* `docs/OSS-COMPARISON.md` §2/§3/§5/§8/§9 (Phase 87) — the open-source WORM
+  comparison's **throughput, latency and device-baseline** figures are single-run
+  and host/load-sensitive (they move between runs, and the receipt even records
+  the device's own `write+fsync` cost as the frame), so they are deliberately
+  **not** curated. What *is* curated is the deterministic geometry (§1: record
+  size, read-file size, segment size), the retention court's deterministic shape
+  and accounting (§4), and the probe outcome (§7). The two committed figures
+  `oss-worm-append.svg` / `oss-worm-reads.svg` are gated by
+  `python3 scripts/render_charts.py --check`. The receipt's `not_comparable` and
+  `comparability.differences` blocks are the authority on what must not be ranked;
+  the document states no ranking.
 
 Adding coverage is a one-line mapping edit — see §5.
 

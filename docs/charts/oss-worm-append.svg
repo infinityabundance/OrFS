@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="monospace"><rect x="0" y="0" width="760" height="440" fill="#ffffff"/><text x="380.0" y="22.0" fill="#111111" font-size="14" text-anchor="middle" font-weight="bold">Phase 87: per-record durable append throughput (4 KiB + fsync)</text>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="344.0" fill="#111111" font-size="11" text-anchor="end">100</text>
+<line x1="84.0" y1="201.0" x2="736.0" y2="201.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="205.0" fill="#111111" font-size="11" text-anchor="end">1k</text>
+<line x1="84.0" y1="62.0" x2="736.0" y2="62.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="66.0" fill="#111111" font-size="11" text-anchor="end">10k</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<text x="26.0" y="201.0" fill="#111111" font-size="12" text-anchor="middle" transform="rotate(-90 26.0 201.0)">ops/s (log)</text>
+<rect x="125.3" y="286.0" width="69.5" height="54.0" fill="#1f77b4"/>
+<rect x="212.2" y="279.7" width="69.5" height="60.3" fill="#d62728"/>
+<rect x="299.2" y="210.8" width="69.5" height="129.2" fill="#2ca02c"/>
+<text x="247.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">4 KiB + fsync, 1 writer</text>
+<rect x="451.3" y="283.4" width="69.5" height="56.6" fill="#1f77b4"/>
+<rect x="538.2" y="136.2" width="69.5" height="203.8" fill="#d62728"/>
+<rect x="625.2" y="121.0" width="69.5" height="219.0" fill="#2ca02c"/>
+<text x="573.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">4 KiB + fsync, 64 writers</text>
+<rect x="84.0" y="35.0" width="10" height="10" fill="#1f77b4"/>
+<text x="99.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">OrFS-Rust (--durability sync)</text>
+<rect x="322.0" y="35.0" width="10" height="10" fill="#d62728"/>
+<text x="337.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">SeaweedFS 3.99 (weed mount; NOT a barrier)</text>
+<rect x="651.0" y="35.0" width="10" height="10" fill="#2ca02c"/>
+<text x="666.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">ext4 plain dir (anchor, same device)</text>
+<text x="84.0" y="370.0" fill="#555555" font-size="10" text-anchor="start">source: evidence/performance/oss-worm-compare.json (one shared driver; same machine/device/caps; one run)</text>
+<text x="84.0" y="386.0" fill="#555555" font-size="10" text-anchor="start">bar = ops/s of write(2)+fsync(2) per 4 KiB record (log axis); higher is better; NOT a ranking</text>
+<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">the same device's bare 4 KiB write+fsync is ~854 ops/s; SeaweedFS's Fsync is a flush, not a durability barrier</text>
+<text x="84.0" y="418.0" fill="#555555" font-size="10" text-anchor="start">regenerate: python3 scripts/render_charts.py --check</text>
+</svg>

@@ -631,3 +631,59 @@ Stated plainly:
 * **The default (unencrypted) path makes no confidentiality or erasure promise**
   and is byte-for-byte unchanged; all of the above applies only to a volume
   created with `--key-file`.
+
+## 23. The open-source comparison is one court on one host, not a verdict (Phase 87)
+
+Phase 87 adds a **same-machine, same-device, same-container-caps** head-to-head
+between OrFS-Rust and **SeaweedFS 3.99**, driven by one shared bounded driver,
+with a **plain-directory anchor** on the same device. It is the comparison the
+reviewer asked for, and it is deliberately *not* a leaderboard. Its limits are the
+substance of it:
+
+* **It is one run on one host.** Absolute values move between runs. The receipt
+  records the exact container caps, the kernel, the backing filesystem, the mount
+  commands and the workload; the document publishes the numbers as measured and
+  treats sub-10 % differences as noise. Reproduce with
+  `sh scripts/container-oss-worm-compare.sh`.
+* **A per-record durable append is bounded by the device, and the device here is
+  slow.** The court records the device's own 4 KiB `write+fsync` cost
+  (`device_baseline`, taken on a quiet device before the arms) — on the order of
+  **milliseconds** on this host's near-full ext4 drive, and load-sensitive. The
+  plain-directory anchor's single-writer rate (~850 ops/s) is therefore essentially
+  the barrier alone, and OrFS-Rust's single-writer rate (~245 ops/s) is ≈3.5× that
+  barrier. **The backing device, not OrFS, is what makes these numbers small**, and
+  a number from a different device (or a container `TMPDIR` on different storage)
+  is not comparable with them.
+* **OrFS-Rust loses two axes here, and they are published as losses.** (a) With
+  group commit **off** (the equal-durability setting this court measures), the
+  per-record `sync` commit does not scale: at 64 writers OrFS-Rust stays at the
+  1-writer rate with a p50 that balloons to ~250 ms. (b) OrFS-Rust loses the 1 MiB
+  read throughput against both the plain-ext4 anchor and SeaweedFS's FUSE client.
+  Neither loss is hidden.
+* **The comparators are not equal-durability, and are not ranked against OrFS.**
+  SeaweedFS 3.99's FUSE client implements `Fsync` as a flush of dirty pages to the
+  co-located volume server plus a filer metadata commit; it performs **no** `fsync`
+  of the volume `.dat` or the filer store, so it offers no documented per-record
+  durable barrier. Its append rows are published but `not_comparable` with the OrFS
+  rows. `weed mount` is also **not** SeaweedFS's fast path.
+* **The read paths are three different operations.** OrFS is mounted `--direct-io`
+  and serves every read through the daemon from the backing file's page cache; the
+  anchor serves reads from the client's own page cache; `weed mount` answers warm
+  reads from an **in-process chunk cache** (its sub-microsecond 4 KiB p50 is a
+  cache hit, not a backing read). The receipt records this as `not_comparable`.
+* **OpenZFS and Btrfs did not run.** Both are **probed** and neither can run in
+  this container (no ZFS kernel module, userspace or `CAP_SYS_MODULE`; no
+  `mkfs.btrfs`/`btrfs` userspace and no loop device node for btrfs). The receipt
+  records each concrete reason and `measured: false`; **no ZFS or Btrfs number is
+  implied anywhere**. This is an environment limitation of this image, not a claim
+  that the axes are unavailable: the sibling Go repository ran OpenZFS inside a KVM
+  micro-VM guest and Btrfs on a loop-mounted image.
+* **Group commit is never a durable append.** The internal commit path and the
+  group-commit coordinator amortise a barrier across a batch or omit the `fsync`
+  entirely; those are *mechanism* figures. The append rows in this court are real
+  per-record `fsync` through a real mount, with group commit off.
+* **There is no cross-receipt numeric comparison.** The sibling Go repository's
+  `evidence/oss-compare.json` is cited as external corroboration of the *method*
+  (and attributed with its path and generation time), **not** as a number to be
+  tabulated with this receipt's; it was produced on a different run, with
+  different container caps, and with its volumes on a different path.

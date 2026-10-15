@@ -77,6 +77,7 @@ reported `SKIPPED (reason)` and is **not** counted as a pass. See
 | `evidence/correctness/adversarial-concurrency.json` | `tests/adversarial_concurrency.rs` | `sh scripts/container-adversarial-concurrency.sh` |
 | `evidence/performance/application-workloads.json` | `tests/application_workloads.rs` | `sh scripts/container-application-workloads.sh` |
 | `evidence/performance/transport-ceiling.json` | `tests/transport_ceiling.rs` | `sh scripts/container-transport-ceiling.sh` |
+| `evidence/performance/oss-worm-compare.json` | `tests/oss_worm_compare.rs` | `sh scripts/container-oss-worm-compare.sh` |
 | `evidence/security/fault-injection.json` | `tests/fs_fault_injection.rs` | `sh scripts/container-fault-injection.sh` |
 | `evidence/recovery/fault-injection-verify-recover.json` | `tests/verify_recover_faults.rs` | `sh scripts/container-fault-verify.sh` |
 | `evidence/recovery/capacity-guard.json` | `tests/capacity_guard.rs` | `sh -c '. scripts/lib.sh && docker_run cargo test -p orfs --test capacity_guard'` |
@@ -167,6 +168,8 @@ image → receipt → command mapping:
 | `transport-ceiling-latency.svg` | `PERFORMANCE.md` §35 | `evidence/performance/transport-ceiling.json` | `sh scripts/container-transport-ceiling.sh` |
 | `transport-ceiling-decomposition.svg` | `PERFORMANCE.md` §35 | `evidence/performance/transport-ceiling.json` | `sh scripts/container-transport-ceiling.sh` |
 | `transport-ceiling-reduction.svg` | `PERFORMANCE.md` §35 | `evidence/performance/transport-ceiling.json` | `sh scripts/container-transport-ceiling.sh` |
+| `oss-worm-append.svg` | `PERFORMANCE.md` §36, `OSS-COMPARISON.md` §2 | `evidence/performance/oss-worm-compare.json` | `sh scripts/container-oss-worm-compare.sh` |
+| `oss-worm-reads.svg` | `PERFORMANCE.md` §36, `OSS-COMPARISON.md` §3 | `evidence/performance/oss-worm-compare.json` | `sh scripts/container-oss-worm-compare.sh` |
 
 The **chart command** is the same for every row: `python3 scripts/render_charts.py`
 (generate) or `python3 scripts/render_charts.py --check` (drift check). The

@@ -94,6 +94,17 @@ const STREAM_LABEL: &[u8] = b"orfs.aead.stream.v1";
 const TAG_LABEL: &[u8] = b"orfs.aead.tag.v1";
 /// Associated data binding a wrapped data key to its purpose and epoch.
 const WRAP_AAD_LABEL: &[u8] = b"orfs.keyring.wrap.v1";
+/// Domain-separation label for the **positional** (random-access) keystream used
+/// by the offset-preserving per-segment seal.
+const POS_STREAM_LABEL: &[u8] = b"orfs.seal.pos.v1";
+/// Domain-separation label for the per-segment authentication tag.
+const SEGMENT_TAG_LABEL: &[u8] = b"orfs.seal.segment-tag.v1";
+/// Domain-separation label for the sealed volume metadata table.
+const META_AAD_LABEL: &[u8] = b"orfs.seal.meta.v1";
+
+/// Number of keystream bytes produced per indexed BLAKE3-XOF invocation by
+/// [`apply_positional_stream`].
+pub const POSITIONAL_BLOCK: u64 = 512;
 
 /// A 32-byte symmetric key. Key material is intentionally not printable.
 #[derive(Clone)]
@@ -152,6 +163,79 @@ fn apply_keystream(key: &Key, nonce: &[u8; NONCE_LEN], buf: &mut [u8]) {
         off += n;
         counter += 1;
     }
+}
+
+/// XOR a **positionally indexed** BLAKE3-XOF keystream into `buf` in place.
+///
+/// The keystream byte at absolute position `p` is
+/// `BLAKE3_keyed(enc_subkey(key), POS_STREAM_LABEL ‖ domain ‖ le64(p /
+/// POSITIONAL_BLOCK))[p % POSITIONAL_BLOCK]`.
+///
+/// Unlike [`apply_keystream`] (a whole-blob counter mode), this transform is
+/// **random access and length preserving**: the keystream byte at a position
+/// depends only on `(key, domain, position)`, so a caller may transform an
+/// arbitrary `[start, start + buf.len())` window on its own and the result is
+/// byte-identical to transforming the whole stream at once. That is what lets
+/// the encrypted store keep ciphertext length == plaintext length, so every
+/// logical-offset computation above it (segment locator, scan, watermark) works
+/// unchanged.
+///
+/// `domain` must be unique for each `(key, position space)`: the encrypted store
+/// passes the segment id, so no two segments ever share a keystream.
+pub fn apply_positional_stream(key: &Key, domain: &[u8], start: u64, buf: &mut [u8]) {
+    let enc = subkey(key, ENC_LABEL);
+    let mut pos = start;
+    let mut off = 0usize;
+    while off < buf.len() {
+        let index = pos / POSITIONAL_BLOCK;
+        let within = (pos % POSITIONAL_BLOCK) as usize;
+        let mut xof = blake3::Hasher::new_keyed(&enc)
+            .update(POS_STREAM_LABEL)
+            .update(domain)
+            .update(&index.to_le_bytes())
+            .finalize_xof();
+        let mut block = [0u8; POSITIONAL_BLOCK as usize];
+        xof.fill(&mut block);
+        let n = (buf.len() - off).min(POSITIONAL_BLOCK as usize - within);
+        for i in 0..n {
+            buf[off + i] ^= block[within + i];
+        }
+        off += n;
+        pos += n as u64;
+    }
+}
+
+/// The **per-segment authentication tag**: a keyed BLAKE3 MAC over the domain
+/// separator, the segment id, the ciphertext, and the authenticated length.
+///
+/// This is the *only* integrity check of the offset-preserving seal, and it is
+/// length-agnostic: the tag lives in the sealed metadata table, never in the
+/// authoritative data area, so no ciphertext byte is spent on authentication.
+/// The length is folded in **last** so the MAC can be computed incrementally as
+/// the segment is appended (see [`segment_tag_hasher`]).
+pub fn segment_tag(key: &Key, segment_id: u64, len: u64, ciphertext: &[u8]) -> [u8; TAG_LEN] {
+    let mut h = segment_tag_hasher(key, segment_id);
+    h.update(ciphertext);
+    h.update(&len.to_le_bytes());
+    *h.finalize().as_bytes()
+}
+
+/// The incremental form of [`segment_tag`]: a keyed, domain-separated hasher
+/// already bound to `segment_id`. Callers `update` the segment's ciphertext as it
+/// is written, then `update(&len.to_le_bytes())` and finalize at the durability
+/// point.
+pub fn segment_tag_hasher(key: &Key, segment_id: u64) -> blake3::Hasher {
+    let mac = subkey(key, MAC_LABEL);
+    let mut h = blake3::Hasher::new_keyed(&mac);
+    h.update(SEGMENT_TAG_LABEL);
+    h.update(&segment_id.to_le_bytes());
+    h
+}
+
+/// Constant-time equality of two byte strings (a tag comparison must not leak a
+/// matching prefix).
+pub fn tags_equal(a: &[u8], b: &[u8]) -> bool {
+    ct_eq(a, b)
 }
 
 /// The authentication tag over the versioned header, the caller's associated
@@ -518,6 +602,34 @@ impl Keyring {
     pub fn open_with_epoch(&self, epoch: u64, aad: &[u8], blob: &[u8]) -> Result<Vec<u8>> {
         let key = self.epoch_key(epoch)?;
         open_sealed(&key, aad, blob)
+    }
+
+    /// Seal a **volume-level metadata** blob under the master key (the KEK),
+    /// with a fresh random nonce.
+    ///
+    /// This is how the encrypted store protects its non-data metadata (the
+    /// per-segment epoch/authentication table) that lives in the volume's
+    /// metadata tier: it is sealed under the master key, so it is unreadable
+    /// without the operator's key file, while no key material is ever written
+    /// into the authoritative data area.
+    pub fn seal_meta(&self, domain: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
+        let mut aad = META_AAD_LABEL.to_vec();
+        aad.extend_from_slice(domain);
+        seal(&self.master, &aad, plaintext)
+    }
+
+    /// Open a blob produced by [`Keyring::seal_meta`]. Fails closed on a wrong
+    /// key or a tampered blob; never a fabricated plaintext.
+    pub fn open_meta(&self, domain: &[u8], blob: &[u8]) -> Result<Vec<u8>> {
+        let mut aad = META_AAD_LABEL.to_vec();
+        aad.extend_from_slice(domain);
+        open_sealed(&self.master, &aad, blob).map_err(|e| match e {
+            OrfsError::CryptoAuthFailed(_) => OrfsError::CryptoAuthFailed(
+                "the volume's sealed metadata does not authenticate under this key file"
+                    .to_string(),
+            ),
+            other => other,
+        })
     }
 
     fn persist(&self) -> Result<()> {

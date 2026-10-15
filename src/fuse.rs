@@ -2467,6 +2467,7 @@ impl OrfsMount {
     }
 }
 
+/// Build a core by opening the backing volume at `backing`.
 fn build_core(
     backing: &Path,
     opts: &MountOptions,
@@ -2476,7 +2477,36 @@ fn build_core(
     } else {
         OpenMode::ReadWrite
     };
-    let mut core = Namespace::open(backing, mode, opts.durability)?;
+    let core = Namespace::open(backing, mode, opts.durability)?;
+    configure_core(core, opts)
+}
+
+/// Build a core from an **already-opened** [`crate::volume::Volume`].
+///
+/// This is the integration point for an opt-in **encrypted volume**: `orfs mount
+/// --key-file` opens the sealed store through [`crate::encvol`] and hands the
+/// resolved `Volume` here, so the *identical* namespace/index/FUSE path serves
+/// it. Because the seal is length preserving, nothing above the `Segment` seam
+/// differs from the default path.
+fn build_core_from_volume(
+    volume: crate::volume::Volume,
+    opts: &MountOptions,
+) -> Result<(Namespace, crate::uring::UringReport)> {
+    let mode = if opts.read_only {
+        OpenMode::ReadOnly
+    } else {
+        OpenMode::ReadWrite
+    };
+    let core = Namespace::open_volume(volume, mode, opts.durability)?;
+    configure_core(core, opts)
+}
+
+/// Apply the optional core configuration (capacity reserve, backing io_uring, and
+/// manifestation) to an opened namespace, returning it with the io_uring report.
+fn configure_core(
+    mut core: Namespace,
+    opts: &MountOptions,
+) -> Result<(Namespace, crate::uring::UringReport)> {
     // Phase 23: a configured authoritative reserve bounds growth so a full
     // backing returns ENOSPC before it fills the device (research §30, §31).
     if opts.capacity_reserve_bytes > 0 {
@@ -2633,6 +2663,77 @@ pub fn spawn(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<O
     })
 }
 
+/// Mount an **already-opened** [`crate::volume::Volume`] in the background.
+///
+/// This is the integration point for `orfs mount --key-file`: the caller opens
+/// the opt-in **encrypted** volume through its seal and hands the resolved
+/// `Volume` here, so it is served through the identical namespace/index/FUSE path
+/// as any other volume. Unlike [`spawn`] the volume cannot be re-resolved for a
+/// classical fallback, so a requested native F2 session that *starts* and then
+/// fails to launch returns an error rather than silently serving a different
+/// core.
+pub fn spawn_volume(
+    volume: crate::volume::Volume,
+    backing: &Path,
+    mountpoint: &Path,
+    opts: &MountOptions,
+) -> Result<OrfsMount> {
+    let (core, report) = build_core_from_volume(volume, opts)?;
+    let backing_io_used = if report.engaged {
+        BackingIo::Uring
+    } else {
+        BackingIo::Sync
+    };
+    if opts.transport.requests_uring_fuse() {
+        match crate::fuse_native::prepare(mountpoint, opts) {
+            Ok(prepared) => match prepared.launch(core, backing.to_path_buf()) {
+                Ok(native) => {
+                    let negotiation = native.negotiation_cell();
+                    let daemon_metrics = native.metrics_cell();
+                    let group_commit = native.group_commit_cell();
+                    return Ok(OrfsMount {
+                        session: MountSession::Native(native),
+                        notifier: Arc::new(Mutex::new(None)),
+                        transport_requested: opts.transport,
+                        backing_io_used,
+                        durability: opts.durability,
+                        negotiation,
+                        daemon_metrics,
+                        group_commit,
+                    });
+                }
+                Err(e) => {
+                    return Err(OrfsError::Unsupported(format!(
+                        "native F2 session failed to start ({e}); this volume cannot be \
+                         re-resolved for the classical fallback"
+                    )))
+                }
+            },
+            Err(reason) => eprintln!(
+                "orfs: F2 not engaged ({reason}); falling back to the classical \
+                 /dev/fuse transport"
+            ),
+        }
+    }
+    let fs = OrfsFuse::new(core, backing.to_path_buf(), *opts);
+    let negotiation = fs.negotiation_cell();
+    let daemon_metrics = fs.metrics_cell();
+    let group_commit = fs.group_commit_counters();
+    let config = build_config(opts);
+    let (session, notifier) = attach(fs, mountpoint, &config)?;
+    let session = session.spawn()?;
+    Ok(OrfsMount {
+        session: MountSession::Fuser(session),
+        notifier,
+        transport_requested: opts.transport,
+        backing_io_used,
+        durability: opts.durability,
+        negotiation,
+        daemon_metrics,
+        group_commit,
+    })
+}
+
 static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 static WATCH_STOP: AtomicBool = AtomicBool::new(false);
 
@@ -2676,6 +2777,47 @@ pub fn run(backing: &Path, mountpoint: &Path, opts: &MountOptions) -> Result<()>
         }
     }
     let (core, report) = build_core(backing, opts)?;
+    eprintln!("orfs: {}", report.describe());
+    let fs = OrfsFuse::new(core, backing.to_path_buf(), *opts);
+    let config = build_config(opts);
+    run_session(fs, mountpoint, &config)
+}
+
+/// Mount an **already-opened** [`crate::volume::Volume`] and run in the
+/// foreground until unmounted.
+///
+/// This is what `orfs mount --key-file` uses: the opt-in **encrypted** volume is
+/// opened through its seal by the caller and the resolved `Volume` is served here.
+/// A requested native F2 session that *starts* and then fails to launch returns
+/// an error (the resolved volume cannot be re-created for a classical fallback);
+/// the classical `/dev/fuse` transport never needs a re-resolution.
+pub fn run_volume(
+    volume: crate::volume::Volume,
+    backing: &Path,
+    mountpoint: &Path,
+    opts: &MountOptions,
+) -> Result<()> {
+    let (core, report) = build_core_from_volume(volume, opts)?;
+    if opts.transport.requests_uring_fuse() {
+        match crate::fuse_native::prepare(mountpoint, opts) {
+            Ok(prepared) => {
+                eprintln!("orfs: {}", report.describe());
+                match prepared.launch(core, backing.to_path_buf()) {
+                    Ok(native) => return run_native_foreground(native, mountpoint),
+                    Err(e) => {
+                        return Err(OrfsError::Unsupported(format!(
+                            "native F2 session failed to start ({e}); this volume cannot be \
+                             re-resolved for the classical fallback"
+                        )))
+                    }
+                }
+            }
+            Err(reason) => eprintln!(
+                "orfs: F2 not engaged ({reason}); falling back to the classical \
+                 /dev/fuse transport"
+            ),
+        }
+    }
     eprintln!("orfs: {}", report.describe());
     let fs = OrfsFuse::new(core, backing.to_path_buf(), *opts);
     let config = build_config(opts);

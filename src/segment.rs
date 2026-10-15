@@ -21,6 +21,7 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::encvol::SegmentCipher;
 use crate::error::{OrfsError, Result};
 
 /// Suffix shared by every segment file.
@@ -160,11 +161,25 @@ pub struct Segment {
     path: PathBuf,
     file: File,
     len: u64,
+    /// The opt-in seal ([`crate::encvol::SegmentCipher`]); `None` on the default
+    /// (unencrypted) path, where every byte is written and read verbatim.
+    cipher: Option<Arc<SegmentCipher>>,
 }
 
 impl Segment {
     /// Create a new, empty segment. Fails if the file already exists.
     pub fn create(dir: &Path, id: u64) -> Result<Segment> {
+        Self::create_with_cipher(dir, id, None)
+    }
+
+    /// Create a new, empty segment sealed under `cipher` (the opt-in encrypted
+    /// store). Registering the segment in the sealed authentication table is made
+    /// durable **before** the segment accepts a byte.
+    pub fn create_with_cipher(
+        dir: &Path,
+        id: u64,
+        cipher: Option<Arc<SegmentCipher>>,
+    ) -> Result<Segment> {
         let name = segment_file_name(id)?;
         if let Some(err) = crate::powerloss::device_create(dir, &name) {
             return Err(err);
@@ -178,6 +193,14 @@ impl Segment {
         // The simulated power-loss layer records creation so a directory-entry
         // loss can be modelled; a no-op when no device is attached.
         crate::powerloss::record_create(dir, &name);
+        if let Some(c) = &cipher {
+            if let Err(e) = c.register(id) {
+                // Never leave an unsealed segment behind.
+                drop(file);
+                let _ = std::fs::remove_file(&path);
+                return Err(e);
+            }
+        }
         Ok(Segment {
             id,
             dir: dir.to_path_buf(),
@@ -185,11 +208,21 @@ impl Segment {
             path,
             file,
             len: 0,
+            cipher,
         })
     }
 
     /// Open an existing segment for reading and appending.
     pub fn open(dir: &Path, id: u64) -> Result<Segment> {
+        Self::open_with_cipher(dir, id, None)
+    }
+
+    /// Open an existing segment for reading and appending, through `cipher`.
+    pub fn open_with_cipher(
+        dir: &Path,
+        id: u64,
+        cipher: Option<Arc<SegmentCipher>>,
+    ) -> Result<Segment> {
         let name = segment_file_name(id)?;
         let path = dir.join(&name);
         let file = OpenOptions::new().read(true).write(true).open(&path)?;
@@ -201,6 +234,7 @@ impl Segment {
             path,
             file,
             len,
+            cipher,
         })
     }
 
@@ -234,7 +268,21 @@ impl Segment {
 
     /// Write `buf` at `offset`. The caller must ensure the range is within the
     /// append frontier; committed bytes are never rewritten by this layer.
+    ///
+    /// When the segment is sealed (an encrypted volume), `buf` is transformed by
+    /// the length-preserving positional keystream first, so exactly as many bytes
+    /// land on the backing store as the caller supplied and every logical-offset
+    /// computation above this seam is unchanged.
     pub fn write_at(&self, offset: u64, buf: &[u8]) -> Result<()> {
+        let sealed = match &self.cipher {
+            Some(c) => {
+                let mut ct = buf.to_vec();
+                c.seal(self.id, offset, &mut ct)?;
+                Some(ct)
+            }
+            None => None,
+        };
+        let buf: &[u8] = sealed.as_deref().unwrap_or(buf);
         // A simulated device may reject (ENOSPC/EIO) or shorten the write. When it
         // does, only the accepted prefix is persisted, and the error is returned so
         // the authoritative path refuses the mutation rather than acknowledging it.
@@ -247,6 +295,9 @@ impl Segment {
                     .write_all_at(&buf[..n], offset)
                     .map_err(map_store_err)?;
                 crate::powerloss::record_write(&self.dir, &self.name, offset, &buf[..n]);
+                if let Some(c) = &self.cipher {
+                    c.note_write(self.id, offset, &buf[..n]);
+                }
             }
             return Err(fault.error);
         }
@@ -255,6 +306,9 @@ impl Segment {
         // to `self.file` keeps ordinary in-session reads correct). No-op without a
         // device.
         crate::powerloss::record_write(&self.dir, &self.name, offset, buf);
+        if let Some(c) = &self.cipher {
+            c.note_write(self.id, offset, buf);
+        }
         Ok(())
     }
 
@@ -272,6 +326,9 @@ impl Segment {
             }
             done += n;
         }
+        if let Some(c) = &self.cipher {
+            c.unseal(self.id, offset, buf)?;
+        }
         Ok(())
     }
 
@@ -283,6 +340,18 @@ impl Segment {
         self.file.sync_all().map_err(map_store_err)?;
         // The device's durability point: promote cached writes per its model.
         crate::powerloss::flush_file(&self.dir, &self.name);
+        // The sealed store's authentication point: only once the bytes are
+        // durable does the store claim them authenticated. This is the single
+        // place a sealed segment's authenticated prefix advances (Phase 86).
+        //
+        // The prefix is the segment's durable *physical* length: the log layer
+        // writes at explicit offsets through `write_at` and does not maintain
+        // `self.len`, so the file length after the fsync is the authoritative
+        // figure. (`create` starts it at 0; `open` reads it back from the file.)
+        if let Some(c) = &self.cipher {
+            let durable_len = self.file.metadata().map_err(map_store_err)?.len();
+            c.seal_point(self.id, durable_len)?;
+        }
         Ok(())
     }
 
@@ -296,15 +365,26 @@ impl Segment {
 pub(crate) struct ReadAt {
     file: File,
     id: u64,
+    cipher: Option<Arc<SegmentCipher>>,
 }
 
 impl ReadAt {
     /// Open a segment by an explicit path (used by a [`SegmentSource`] that may
     /// resolve the segment to a relocated tier copy).
     pub(crate) fn open_path(path: &Path, id: u64) -> Result<ReadAt> {
+        Self::open_path_with_cipher(path, id, None)
+    }
+
+    /// Open a segment by path through the opt-in seal (an encrypted volume).
+    pub(crate) fn open_path_with_cipher(
+        path: &Path,
+        id: u64,
+        cipher: Option<Arc<SegmentCipher>>,
+    ) -> Result<ReadAt> {
         Ok(ReadAt {
             file: File::open(path)?,
             id,
+            cipher,
         })
     }
 
@@ -325,6 +405,9 @@ impl ReadAt {
                 )));
             }
             done += n;
+        }
+        if let Some(c) = &self.cipher {
+            c.unseal(self.id, offset, buf)?;
         }
         Ok(())
     }

@@ -71,10 +71,11 @@ which says the same at the wire level).
   **simulated** device model (`docs/TRANSACTIONS.md`, `docs/POWERLOSS.md`).
 * **Confidentiality.** OrFS does **not** encrypt an ordinary volume; anyone who
   can read the backing directory can read the content. An **opt-in encrypted
-  volume** (`orfs init --key-file`, Phase 85) seals the authoritative store under
-  an operator-held keyring, so its ciphertext is unreadable without the key and
-  authenticates; it still leaks shape (frame count, epochs, `crypto.meta`) and
-  **does not** encrypt the unencrypted path. See `docs/ERASURE.md`.
+  volume** (`orfs init --key-file`, Phase 85; `orfs mount --key-file`, Phase 86)
+  seals the authoritative store under an operator-held keyring with a
+  length-preserving per-segment seal, so its ciphertext is unreadable without the
+  key and authenticates; it still leaks shape (segment count, epochs, `crypto.meta`)
+  and **does not** encrypt the unencrypted path. See `docs/ERASURE.md`.
   **Erasure:** logical deletion is not secure erasure; the only erasure primitive
   is epoch-key destruction on an encrypted volume (`docs/RETENTION.md` §3).
 * **Denial of service by the host.** A container/host that starves CPU, memory, or
@@ -91,11 +92,11 @@ backing store can violate it. The law constrains OrFS's own behaviour and is ver
 by the model courts (gate A, `tests/log_model.rs`); it is not a defence against a
 privileged attacker.
 
-The Phase-85 encrypted volume and its **crypto-erasure** primitive **add** a
+The Phase-85/86 encrypted volume and its **crypto-erasure** primitive **add** a
 key-lifecycle layer; they never weaken this law. Destroying an epoch key removes a
-*key*, not a byte: the ciphertext is retained, unwithdrawn, and the court asserts
+*key*, not a byte: the ciphertext is retained, unwithdrawn, and both courts assert
 the store's bytes and digest are byte-identical before and after destruction
-(`docs/ERASURE.md` §7, `docs/RETENTION.md` §3).
+(`docs/ERASURE.md` §8, `docs/RETENTION.md` §3).
 
 ## 6. Evidence
 
@@ -105,7 +106,8 @@ the store's bytes and digest are byte-identical before and after destruction
   **not** kernel isolation.
 * `evidence/security/` — `unsafe-audit.json`, `fuzz-decode.json`,
   `native-fuse-fuzz.json`, `valgrind.json`, `hostile*`, and
-  `crypto-erasure.json` (the Phase-85 retention/erasure court).
+  `crypto-erasure.json` / `crypto-erasure-mounted.json` (the Phase-85/86
+  retention/erasure courts).
 * `docs/RETENTION.md` (the retention and access-control contract) and
   `docs/ERASURE.md` (the crypto-erasure design and what is wired vs. specified).
 * `docs/GATES.md` — the acceptance gate definitions (gate A is non-withdrawal; gate J

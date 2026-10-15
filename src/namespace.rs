@@ -363,6 +363,25 @@ impl Namespace {
         Namespace::from_volume(volume, durability, mode == OpenMode::ReadWrite)
     }
 
+    /// Open an **already-opened** [`Volume`] as a namespace, rebuilding the index
+    /// from its log.
+    ///
+    /// This is the integration point for a volume that was resolved through a
+    /// non-default path — in particular the opt-in **encrypted volume**
+    /// ([`crate::encvol::EncryptedVolume::open_volume`]), whose authoritative
+    /// store is a length-preserving ciphertext resolved through its seal. The
+    /// index/namespace layer is agnostic to that: it only ever sees the plaintext
+    /// record stream the `Log` now yields, so no offset/scan logic differs from
+    /// [`Namespace::open`]. The behaviour is identical to `open`; the caller has
+    /// simply supplied the `Volume` it wants served.
+    pub fn open_volume(
+        volume: Volume,
+        mode: OpenMode,
+        durability: DurabilityMode,
+    ) -> Result<Namespace> {
+        Namespace::from_volume(volume, durability, mode == OpenMode::ReadWrite)
+    }
+
     fn from_volume(volume: Volume, durability: DurabilityMode, publish: bool) -> Result<Namespace> {
         // Checkpoint-aware mount: discover the newest valid index checkpoint,
         // load and validate it, then replay only the records committed after it;

@@ -401,7 +401,7 @@ impl Volume {
     /// Read and validate the authoritative-log format version from the first
     /// committed record (the genesis). Returns `0` (legacy) when the genesis
     /// carries no version field, and refuses an unknown higher version.
-    fn read_log_format_version(log: &Log) -> Result<u16> {
+    pub(crate) fn read_log_format_version(log: &Log) -> Result<u16> {
         if log.committed_end_offset() == 0 {
             // No committed genesis (an orphan log, not yet a volume): there is no
             // version to read. Report the current version; the missing-genesis

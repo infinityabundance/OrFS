@@ -30,6 +30,7 @@ use crate::capacity::{
     CapacityGovernor, CapacityPolicy, CapacityReport, CapacityStatus, CapacityVerdict,
     ForecastInputs, StorageEconomics,
 };
+use crate::encvol::SegmentCipher;
 use crate::error::{OrfsError, Result};
 use crate::failpoints::{self, Failpoint};
 use crate::record::{Record, RecordHeader, RecordType, TypeClass, HEADER_LEN, MAX_PAYLOAD_LEN};
@@ -393,6 +394,25 @@ pub fn scan_log(dir: &Path) -> Result<LogScan> {
 /// a corrupt catalogue) surfaces as a typed error, never as a silently shorter
 /// history.
 pub fn scan_log_with(source: &dyn SegmentSource) -> Result<LogScan> {
+    scan_log_with_cipher(source, None)
+}
+
+/// [`scan_log_with`] through the opt-in seal of an encrypted volume.
+///
+/// When `cipher` is present the data area is a length-preserving ciphertext of
+/// the real log, so the scan is **structurally identical** — with two additions
+/// that make the encrypted store fail closed:
+///
+/// 1. every discovered segment must have an authentication record and its
+///    ciphertext MAC must verify (a destroyed epoch key or a tampered segment is
+///    a typed error here, at open/scan time);
+/// 2. the scan stops at a segment's **authenticated** length, so bytes on disk
+///    beyond it are treated exactly like an abandoned tail (retained, never
+///    decrypted, never trusted).
+pub fn scan_log_with_cipher(
+    source: &dyn SegmentSource,
+    cipher: Option<&Arc<SegmentCipher>>,
+) -> Result<LogScan> {
     let ids = source.discover()?;
     if ids.is_empty() {
         return Err(OrfsError::Corrupt("log contains no segments".to_string()));
@@ -406,14 +426,31 @@ pub fn scan_log_with(source: &dyn SegmentSource) -> Result<LogScan> {
 
     for (i, &id) in ids.iter().enumerate() {
         let is_last = i + 1 == ids.len();
-        let reader = ReadAt::open_path(&source.resolve_path(id)?, id)?;
+        let path = source.resolve_path(id)?;
+        let reader = ReadAt::open_path_with_cipher(&path, id, cipher.cloned())?;
         let physical_len = reader.len()?;
         physical_end = id.checked_add(physical_len).ok_or(OrfsError::Overflow {
             what: "segment physical end",
         })?;
+        // The authenticated prefix is the only part of a sealed segment that may
+        // be decrypted; any bytes beyond it are an unauthenticated tail.
+        let scan_len = match cipher {
+            Some(c) => {
+                c.verify_segment(&path, id)?;
+                let auth = c.authenticated_len(id);
+                if auth > physical_len {
+                    return Err(OrfsError::Corrupt(format!(
+                        "segment {id} records {auth} authenticated bytes but only \
+                         {physical_len} are present"
+                    )));
+                }
+                auth
+            }
+            None => physical_len,
+        };
         let mut off: u64 = 0;
         let mut stopped = false;
-        while off < physical_len {
+        while off < scan_len {
             match read_frame(&reader, off, physical_len)? {
                 FrameOutcome::Complete(record) => {
                     let total = record.header.total_len().map_err(OrfsError::from)?;
@@ -675,6 +712,8 @@ pub struct RecordReader {
     extents: Vec<SegmentExtent>,
     end: u64,
     offset: u64,
+    /// The opt-in seal of an encrypted volume (Phase 86); `None` by default.
+    cipher: Option<Arc<SegmentCipher>>,
 }
 
 impl RecordReader {
@@ -695,6 +734,7 @@ impl RecordReader {
             extents: extents.to_vec(),
             end,
             offset: 0,
+            cipher: None,
         }
     }
 
@@ -719,12 +759,25 @@ impl RecordReader {
         start: u64,
         end: u64,
     ) -> RecordReader {
+        Self::starting_at_with_source_cipher(source, extents, start, end, None)
+    }
+
+    /// As [`RecordReader::starting_at_with_source`] but resolving every segment
+    /// through the opt-in seal of an encrypted volume (Phase 86).
+    pub fn starting_at_with_source_cipher(
+        source: SharedSegmentSource,
+        extents: &[SegmentExtent],
+        start: u64,
+        end: u64,
+        cipher: Option<Arc<SegmentCipher>>,
+    ) -> RecordReader {
         RecordReader {
             reader: None,
             source,
             extents: extents.to_vec(),
             end,
             offset: start,
+            cipher,
         }
     }
 
@@ -746,9 +799,10 @@ impl RecordReader {
             OrfsError::Corrupt(format!("no segment covers offset {}", self.offset))
         })?;
         if self.reader.as_ref().map(|(id, _)| *id) != Some(sid) {
+            let path = self.source.resolve_path(sid)?;
             self.reader = Some((
                 sid,
-                ReadAt::open_path(&self.source.resolve_path(sid)?, sid)?,
+                ReadAt::open_path_with_cipher(&path, sid, self.cipher.clone())?,
             ));
         }
         let reader = &self.reader.as_ref().expect("reader opened").1;
@@ -937,13 +991,16 @@ impl Drop for RootPin {
 struct SegmentCache {
     source: SharedSegmentSource,
     handles: BTreeMap<u64, Arc<ReadAt>>,
+    /// The opt-in seal of an encrypted volume (Phase 86); `None` by default.
+    cipher: Option<Arc<SegmentCipher>>,
 }
 
 impl SegmentCache {
-    fn new(source: SharedSegmentSource) -> SegmentCache {
+    fn new(source: SharedSegmentSource, cipher: Option<Arc<SegmentCipher>>) -> SegmentCache {
         SegmentCache {
             source,
             handles: BTreeMap::new(),
+            cipher,
         }
     }
 
@@ -952,7 +1009,11 @@ impl SegmentCache {
             return Ok(h.clone());
         }
         let path = self.source.resolve_path(id)?;
-        let h = Arc::new(ReadAt::open_path(&path, id)?);
+        let h = Arc::new(ReadAt::open_path_with_cipher(
+            &path,
+            id,
+            self.cipher.clone(),
+        )?);
         self.handles.insert(id, h.clone());
         Ok(h)
     }
@@ -1079,6 +1140,12 @@ pub struct Log {
     /// relocated sealed segments, so the read path is agnostic to *where* a
     /// segment physically lives.
     source: SharedSegmentSource,
+    /// The opt-in seal of an **encrypted volume** (Phase 86). `None` on the
+    /// default path, where every authoritative byte is written and read verbatim.
+    /// When present, the whole authoritative store is a length-preserving
+    /// ciphertext and every read/write resolves through the seal at the
+    /// [`Segment`]/[`ReadAt`] boundary, so no offset arithmetic changes.
+    cipher: Option<Arc<SegmentCipher>>,
     /// Authoritative-space admission control and the degraded/read-only latch
     /// (Phase 23; research I8, §30, §31).
     capacity: CapacityGovernor,
@@ -1090,6 +1157,16 @@ impl Log {
     /// The caller is expected to append [`RecordType::VolumeGenesis`]
     /// immediately; the log is not a valid volume until it does.
     pub fn create(dir: &Path, segment_size: u64) -> Result<Log> {
+        Self::create_with_cipher(dir, segment_size, None)
+    }
+
+    /// Create a brand-new empty log whose segments are sealed under `cipher` (an
+    /// encrypted volume, Phase 86). [`Log::create`] is the default path.
+    pub fn create_with_cipher(
+        dir: &Path,
+        segment_size: u64,
+        cipher: Option<Arc<SegmentCipher>>,
+    ) -> Result<Log> {
         if segment_size == 0 {
             return Err(OrfsError::InvalidArgument(
                 "segment size must be non-zero".to_string(),
@@ -1099,7 +1176,7 @@ impl Log {
         if !discover_segment_ids(dir)?.is_empty() {
             return Err(OrfsError::AlreadyExists);
         }
-        let seg = Segment::create(dir, 0)?;
+        let seg = Segment::create_with_cipher(dir, 0, cipher.clone())?;
         fsync_dir(dir)?;
         let mut locator = SegmentLocator::default();
         locator.push(SegmentExtent {
@@ -1131,8 +1208,12 @@ impl Log {
             recovery: RecoveryDisposition::Clean,
             watermark: None,
             durable_watermark: None,
-            readers: Arc::new(Mutex::new(SegmentCache::new(source.clone()))),
+            readers: Arc::new(Mutex::new(SegmentCache::new(
+                source.clone(),
+                cipher.clone(),
+            ))),
             source,
+            cipher,
             capacity: {
                 let mut g = CapacityGovernor::new(CapacityPolicy::default());
                 g.resolve_from_backing(dir, 0);
@@ -1199,7 +1280,25 @@ impl Log {
         pins: Arc<RootPins>,
         source: SharedSegmentSource,
     ) -> Result<Log> {
-        let scan = scan_log_with(source.as_ref())?;
+        Self::open_resolved_with_cipher(dir, segment_size, mode, pins, source, None)
+    }
+
+    /// As [`Log::open_resolved`] but resolving the authoritative store through
+    /// the opt-in seal of an encrypted volume (Phase 86).
+    ///
+    /// The returned handle reads, writes and rolls over **sealed** segments; the
+    /// seal's `verify_segment` runs during the scan, so a destroyed epoch key, an
+    /// absent key, or a tampered segment fails closed here — long before any byte
+    /// is trusted — rather than surfacing as plausible-looking plaintext.
+    pub fn open_resolved_with_cipher(
+        dir: &Path,
+        segment_size: u64,
+        mode: OpenMode,
+        pins: Arc<RootPins>,
+        source: SharedSegmentSource,
+        cipher: Option<Arc<SegmentCipher>>,
+    ) -> Result<Log> {
+        let scan = scan_log_with_cipher(source.as_ref(), cipher.as_ref())?;
         let committed = scan.committed_end_offset;
         let mut locator = SegmentLocator::from_extents(scan.extents.clone())?;
         let mut writer = None;
@@ -1225,7 +1324,7 @@ impl Log {
                 // committed), and a later recovery can still complete.
                 let seg = match (|| -> Result<Segment> {
                     quarantine_after(dir, &scan.extents, committed)?;
-                    Segment::create(dir, committed)
+                    Segment::create_with_cipher(dir, committed, cipher.clone())
                 })() {
                     Ok(seg) => seg,
                     Err(e) if recovery_needs_space(&e) => {
@@ -1255,7 +1354,7 @@ impl Log {
                     .last()
                     .copied()
                     .ok_or_else(|| OrfsError::Corrupt("empty log".to_string()))?;
-                let seg = Segment::open(dir, last.id)?;
+                let seg = Segment::open_with_cipher(dir, last.id, cipher.clone())?;
                 if seg.len() != last.valid_len {
                     return Err(OrfsError::Corrupt(format!(
                         "segment {} length {} disagrees with canonical valid length {}",
@@ -1315,8 +1414,12 @@ impl Log {
             recovery,
             watermark: recovered_wm,
             durable_watermark: disk_watermark,
-            readers: Arc::new(Mutex::new(SegmentCache::new(source.clone()))),
+            readers: Arc::new(Mutex::new(SegmentCache::new(
+                source.clone(),
+                cipher.clone(),
+            ))),
             source,
+            cipher,
             capacity: {
                 let mut g = CapacityGovernor::new(CapacityPolicy::default());
                 g.resolve_from_backing(dir, committed);
@@ -2035,7 +2138,7 @@ impl Log {
     /// backing store (not merely from the in-memory buffer) before publishing.
     pub(crate) fn read_back(&self, res: &AppendReservation) -> Result<Vec<u8>> {
         let path = self.source.resolve_path(res.segment_id)?;
-        let reader = ReadAt::open_path(&path, res.segment_id)?;
+        let reader = ReadAt::open_path_with_cipher(&path, res.segment_id, self.cipher.clone())?;
         let mut buf = vec![0u8; res.len as usize];
         match &self.io {
             BackingEngine::Sync => reader.read_exact_at(res.physical_offset, &mut buf)?,
@@ -2148,7 +2251,7 @@ impl Log {
             }
             quarantine_segment(&self.dir, next_id)?;
         }
-        let seg = Segment::create(&self.dir, next_id)?;
+        let seg = Segment::create_with_cipher(&self.dir, next_id, self.cipher.clone())?;
         self.locator.push(SegmentExtent {
             id: next_id,
             valid_len: 0,
@@ -2161,6 +2264,15 @@ impl Log {
         });
         fsync_dir(&self.dir)?;
         Ok(())
+    }
+
+    /// Force a segment rollover now, sealing the current head and opening a fresh
+    /// one (Phase 86: an epoch rotation rolls over so subsequent writes seal
+    /// under the new key, while earlier segments keep theirs).
+    ///
+    /// Fails closed on a read-only handle or an outstanding reservation.
+    pub fn rollover_now(&mut self) -> Result<()> {
+        self.rollover()
     }
 
     /// Flush and fsync the current segment (durability hook).
@@ -2253,7 +2365,13 @@ impl Log {
 
     /// A validated record iterator over `[0, end)`.
     pub fn records_upto(&self, end: u64) -> RecordReader {
-        RecordReader::new_with_source(self.source.clone(), self.locator.extents(), end)
+        RecordReader::starting_at_with_source_cipher(
+            self.source.clone(),
+            self.locator.extents(),
+            0,
+            end,
+            self.cipher.clone(),
+        )
     }
 
     /// A validated record iterator over `[start, end)`.
@@ -2262,11 +2380,12 @@ impl Log {
     /// begins exactly there and reads no bytes before it (the checkpoint-replay
     /// fast path).
     pub fn records_from(&self, start: u64, end: u64) -> RecordReader {
-        RecordReader::starting_at_with_source(
+        RecordReader::starting_at_with_source_cipher(
             self.source.clone(),
             self.locator.extents(),
             start,
             end,
+            self.cipher.clone(),
         )
     }
 

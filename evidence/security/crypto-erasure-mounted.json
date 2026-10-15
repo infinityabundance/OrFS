@@ -1,0 +1,75 @@
+{
+  "default_path_anchor": {
+    "pinned": "896be1e365543853892085625ee3db1745f4427a8f509838e99a3a14d21c7a23",
+    "unencrypted_genesis_committed_digest": "896be1e365543853892085625ee3db1745f4427a8f509838e99a3a14d21c7a23"
+  },
+  "digests": {
+    "authoritative_ciphertext_bytes": 10337,
+    "ciphertext_blake3_after_destruction": "b841bed0693a77d606a1b216abbc0fcd2a655b2e24ea9093e138ccbd49e4bffb",
+    "ciphertext_blake3_before_destruction": "b841bed0693a77d606a1b216abbc0fcd2a655b2e24ea9093e138ccbd49e4bffb",
+    "tier_ciphertext_bytes": 9200
+  },
+  "environment": {
+    "bench": {
+      "cgroup_memory_max": "8589934592",
+      "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "container_image": "sha256:a41df86df391732ab467b5bedc8b4a17c0df437fa180b5230417a6a8339d97ac",
+      "cores_visible": 8,
+      "cpu_max": "800000 100000",
+      "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+      "fuse_enable_uring": true,
+      "kernel_release": "7.2.9-2-cachyos",
+      "likely_container": true,
+      "machine": "x86_64",
+      "perf_counters_available": true,
+      "perf_event_open_error": null,
+      "perf_event_paranoid": "2",
+      "ram_total_bytes": 134723346432
+    },
+    "profile": "debug",
+    "toolchain": "1.99.0-x86_64-unknown-linux-gnu"
+  },
+  "git_commit": "026fa47891b5c9eb058c8b2e6570147b2aa00b8d",
+  "limitations": [
+    "The authoritative store is a *linear* log: a segment bound to a destroyed epoch makes the whole store fail closed on open. Erasing one epoch while continuing to serve the rest is not supported (docs/ERASURE.md §5, docs/LIMITATIONS.md §18)."
+  ],
+  "phase": 86,
+  "properties": {
+    "ciphertext_retained_unchanged_across_destruction": true,
+    "default_unencrypted_path_unchanged": true,
+    "mount_after_destruction_fails_closed": true,
+    "mount_with_wrong_key_fails_closed": true,
+    "mount_without_key_fails_closed": true,
+    "mounted_byte_identity_plain_vs_encrypted": true,
+    "no_key_material_in_authoritative_area": true,
+    "on_disk_segments_are_ciphertext": true,
+    "rollover_multi_segment_mounts_and_reads": true,
+    "tier_relocation_preserves_crypto_erasure": true
+  },
+  "schema": "orfs.security.crypto-erasure-mounted.v1",
+  "title": "Serving an encrypted OrFS volume through a real FUSE mount",
+  "transcript": {
+    "blake3_encrypted": "0abf509ea99c1979f1481b71856e3c28745b4ce20c711b1d351a52dc47851f0a",
+    "blake3_plain": "0abf509ea99c1979f1481b71856e3c28745b4ce20c711b1d351a52dc47851f0a",
+    "identical": true,
+    "workload": "mkdir / write / append / rename / unlink / list / stat"
+  },
+  "volume": {
+    "epochs": {
+      "0": "destroyed",
+      "1": "live"
+    },
+    "key_file": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmpPP76Oj/orfs.keys",
+    "kind": "encrypted",
+    "segments": 2,
+    "tier_root": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmpPP76Oj/cold-tier",
+    "uuid": "796f2f9b-da74-4704-b088-19e5a48aaa87"
+  },
+  "wired": [
+    "`orfs mount <dir> <mnt> --key-file <path>` serves an encrypted volume through the ordinary namespace/index/FUSE path",
+    "POSIX create/write/append/rename/unlink/list are byte-identical to the unencrypted volume",
+    "`orfs key rotate` forces a rollover (the store spans >1 segment)",
+    "fail-closed: no key / wrong key / destroyed epoch key",
+    "tier relocation of the ciphertext preserves crypto-erasure"
+  ]
+}

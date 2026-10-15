@@ -1,15 +1,15 @@
 {
   "default_path_anchor": {
-    "note": "tests/format_compat.rs independently pins the same unencrypted on-disk format against the pre-existing frozen fixtures; the only pre-existing source files changed in Phase 85 are src/lib.rs (two module declarations), src/error.rs (three new opt-in error variants) and src/main.rs (new opt-in CLI surface).",
+    "note": "tests/format_compat.rs independently pins the same unencrypted on-disk format against the pre-existing frozen fixtures; the only pre-existing source files changed in Phase 86 are src/segment.rs, src/log.rs, src/volume.rs (one visibility change) and src/main.rs (the opt-in CLI surface), all gated behind the opt-in key.",
     "pinned": "896be1e365543853892085625ee3db1745f4427a8f509838e99a3a14d21c7a23",
     "unencrypted_genesis_committed_digest": "896be1e365543853892085625ee3db1745f4427a8f509838e99a3a14d21c7a23"
   },
   "digests": {
-    "authoritative_ciphertext_bytes": 335,
-    "ciphertext_blake3_after_destruction": "ef4f60407f71c4fca4991139b3847c8a3f8c0202085926d5d374c59837ee62a7",
-    "ciphertext_blake3_before_destruction": "ef4f60407f71c4fca4991139b3847c8a3f8c0202085926d5d374c59837ee62a7",
-    "relocated_ciphertext_blake3_before_destruction": "ef4f60407f71c4fca4991139b3847c8a3f8c0202085926d5d374c59837ee62a7",
-    "relocated_ciphertext_bytes_before": 335
+    "authoritative_ciphertext_bytes": 1249,
+    "ciphertext_blake3_after_destruction": "ade5839432b2cdd84f08d4ef243242a4d3abcbce64096e030ac02c6cb73479dd",
+    "ciphertext_blake3_before_destruction": "ade5839432b2cdd84f08d4ef243242a4d3abcbce64096e030ac02c6cb73479dd",
+    "relocated_ciphertext_blake3_before_destruction": "ce6ffeea3e46858ee947c3d536980155cde3ef96584732375f933c4d79def018",
+    "relocated_ciphertext_bytes_before": 1249
   },
   "environment": {
     "bench": {
@@ -31,43 +31,44 @@
     "profile": "release",
     "toolchain": "1.99.0-x86_64-unknown-linux-gnu"
   },
-  "git_commit": "8e19e246088384db36d0916575d27c8d31610098",
-  "not_wired": [
-    "mounting an encrypted volume through FUSE (`orfs mount` refuses with a typed Unsupported error; the sealed store is not yet resolved by the namespace/read path)"
-  ],
-  "phase": 85,
+  "git_commit": "026fa47891b5c9eb058c8b2e6570147b2aa00b8d",
+  "mounted_proof": "evidence/security/crypto-erasure-mounted.json",
+  "not_wired": [],
+  "phase": 86,
   "properties": {
     "ciphertext_bytes_retained_unchanged": true,
+    "ciphertext_round_trip_through_namespace": true,
     "crypto_erasure_covers_relocated_tier_copy": true,
     "default_path_unchanged": true,
-    "epoch_destruction_makes_content_inaccessible": true,
-    "key_correct_read_identical": true,
-    "mount_of_encrypted_volume_refused_honestly": true,
+    "destroyed_epoch_fails_closed_on_open": true,
+    "mount_without_key_refused": true,
     "no_key_material_in_authoritative_area": true,
+    "on_disk_segments_are_ciphertext": true,
     "recover_without_key_refused": true,
     "relocated_ciphertext_unchanged": true,
-    "round_trip_with_correct_key": true,
-    "tamper_rejected_aead": true,
+    "rotate_forces_rollover_multi_segment": true,
+    "verify_reports_destroyed_segment": true,
     "verify_without_key_refused": true,
     "wrong_key_refused": true
   },
   "schema": "orfs.security.crypto-erasure.v1",
-  "title": "Retention contract, access control, and a real crypto-erasure mechanism",
+  "title": "Length-preserving per-segment seal, and mounting an encrypted volume",
   "volume": {
     "epochs": {
       "0": "destroyed",
       "1": "live"
     },
-    "frames": 3,
-    "key_file": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmpgI48LF/orfs.keys",
+    "key_file": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmpDk3963/orfs.keys",
     "kind": "encrypted",
-    "tier_root": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmpgI48LF/cold-tier",
-    "uuid": "9c2d035e-eb25-4f3e-989b-f5c1a82983df"
+    "segments": 2,
+    "tier_root": "/mnt/1tb_kingston/OrFS/target/.tmp/.tmpDk3963/cold-tier",
+    "uuid": "32b8dbed-93ee-4d3a-a0e4-6613364c25f4"
   },
   "wired": [
-    "encrypted volume create/open/append/read (library + `orfs crypt`)",
-    "epoch rotation and epoch-key destruction (`orfs key rotate|destroy`)",
+    "encrypted volume create/verify/relocate (`orfs init --key-file`, `orfs crypt`)",
+    "epoch rotation with a forced rollover (`orfs key rotate`)",
+    "epoch-key destruction (`orfs key destroy`)",
     "sealed-store verification (`orfs crypt verify`, `orfs verify --key-file`)",
-    "ciphertext relocation to a cold tier (`orfs crypt relocate`)"
+    "length-preserving per-segment seal resolved by the namespace/read path"
   ]
 }

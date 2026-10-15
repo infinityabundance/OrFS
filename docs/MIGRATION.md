@@ -139,20 +139,23 @@ one deterministic builder (`build_mini_volume` in `tests/format_compat.rs`).
 A fixture is never edited by hand and never regenerated silently: if a change
 stops reading a frozen fixture, `tests/format_compat.rs` is expected to fail.
 
-## 6. The encrypted volume is a new, opt-in format (Phase 85)
+## 6. The encrypted volume is a new, opt-in format (Phase 85; length-preserving seal in Phase 86)
 
-The encrypted volume (`orfs init --key-file`, `docs/ERASURE.md`) is a **distinct
-volume kind**, not a change to `or.log`:
+The encrypted volume (`orfs init --key-file`, `orfs mount --key-file`,
+`docs/ERASURE.md`) is a **distinct volume kind**, not a change to `or.log`:
 
 * It carries `crypto.meta` and no `volume.meta`; the ordinary volume carries
   `volume.meta` and no `crypto.meta`. The two layouts never overlap.
 * The **unencrypted** `or.log` format is **unchanged**: `LOG_FORMAT_VERSION` stays
   `1`, the frozen `legacy_v0`/`current_v1` fixtures still read byte-identically
   (`tests/format_compat.rs`), and the whole pre-existing suite and receipts are
-  unaffected.
-* The encrypted store has its **own** version fields
-  (`crypto_format_version`, `FRAME_VERSION`, the sealed version byte; see
-  `docs/ON_DISK.md` §11), so a future change to the sealed layout is detectable
+  unaffected. Since Phase 86 the encrypted store uses the same segment file layout
+  as the unencrypted log (its bytes are simply keystream ciphertext), so the
+  unencrypted format definition is untouched.
+* The encrypted store has its **own** version fields (`crypto_format_version` —
+  now `2`; `crypto_format_version = 1` was the retired Phase-85 framed seal and is
+  refused with a typed `Compatibility` error — plus the sealed-blob version byte;
+  see `docs/ON_DISK.md` §11), so a change to the sealed layout is detectable
   without reinterpreting old bytes.
 * There is no in-place conversion between the two kinds: an unencrypted volume is
   **not** encrypted in place (the historical plaintext bytes cannot be made

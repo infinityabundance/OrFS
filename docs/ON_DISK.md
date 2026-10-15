@@ -825,27 +825,31 @@ them:
 
 ---
 
-## 11. The encrypted volume (Phase 85, opt-in)
+## 11. The encrypted volume (Phase 85; length-preserving seal in Phase 86, opt-in)
 
 An **encrypted volume** is a **distinct volume kind** created by
-`orfs init --key-file <path>`. It **does not change the unencrypted `or.log`
-format**: an ordinary volume carries `volume.meta` and no `crypto.meta`, while an
-encrypted volume carries `crypto.meta` and no `volume.meta`, so the two layouts
-never overlap and a reader can tell them apart without a key. See
+`orfs init --key-file <path>` and served by `orfs mount --key-file <path>`. It
+**does not change the unencrypted `or.log` format**: an ordinary volume carries
+`volume.meta` and no `crypto.meta`, while an encrypted volume carries
+`crypto.meta` and no `volume.meta`, so the two layouts never overlap and a reader
+can tell them apart without a key. Since Phase 86 the authoritative segment bytes
+are an **offset-preserving** keystream ciphertext (ciphertext length == plaintext
+length), so the encrypted store *is* a normal OrFS log underneath. See
 `docs/ERASURE.md` for the design and `docs/MIGRATION.md` §6 for the compatibility
 statement.
 
 | Artifact | Field | Width | Current value | Source |
 |---|---|---|---|---|
-| `crypto.meta` | `crypto_format_version` | `u16` | `1` (`CRYPTO_FORMAT_VERSION`) | `src/encvol.rs` |
-| Sealed frame | `FRAME_VERSION` | `u16` | `1` | `src/encvol.rs` |
+| `crypto.meta` | `crypto_format_version` | `u16` | `2` (`CRYPTO_FORMAT_VERSION`; `1` was the retired Phase-85 framed seal) | `src/encvol.rs` |
+| `crypto.segments` | table schema | — | `"orfs.crypto-segments.v1"` | `src/encvol.rs` |
 | Sealed blob | version byte | `u8` | `1` (`SEALED_VERSION`) | `src/keyring.rs` |
 
 ### 11.1 Directory layout
 
 ```text
    <volume>/crypto.meta          plaintext identity (schema + CRC32C); NO key bytes
-   <volume>/or.log/NNNN…seg      the sealed authoritative store (all ciphertext)
+   <volume>/crypto.segments      master-key-sealed per-segment authentication table
+   <volume>/or.log/NNNN…seg      the real OrFS log, keystream-sealed per segment
    <operator>/<key-file>         master key + wrapped epoch keys (0600); never in the volume
 ```
 
@@ -854,33 +858,39 @@ statement.
 re-serialization of `meta` (`{volume_uuid, segment_size, created_at_unix_secs,
 crypto_format_version}`). It is a **plaintext** identity: a reader that does not
 have the key can still discover that a volume is encrypted and check a key file's
-UUID binding.
+UUID binding. A volume whose `crypto_format_version` is below `2` is the retired
+Phase-85 framed seal and is refused with a typed `Compatibility` error, never
+misread.
 
-### 11.2 Frame wire format (byte-exact)
+### 11.2 The seal (byte-exact)
 
-Frames are appended contiguously through the same `Segment` I/O seam the
-unencrypted log uses (`Segment::append` / `write_at` / `read_exact_at`). All
-integers are little-endian.
+The authoritative segment bytes are transformed **in place** at the existing
+`Segment`/`ReadAt` I/O seam, so the file layout is exactly the unencrypted log's
+(`docs/ON_DISK.md` §2–§3): segment file name `NNNNNNNNNNNNNNNN.seg` with the
+segment id as its first logical offset. The transform is a **positional keystream**:
 
 ```text
-   FRAME  := MAGIC(4) ‖ FRAME_VERSION(2) ‖ epoch(8) ‖ SEALED
-   SEALED := version(1) ‖ nonce(24) ‖ le64(ct_len) ‖ ct(ct_len) ‖ tag(32)
+   ciphertext[i] = plaintext[i] XOR stream(key(epoch), segment_id, i)
+
+   stream(key, id, p) = BLAKE3_keyed(enc_subkey(key),
+                          "orfs.seal.pos.v1" ‖ le64(id) ‖ le64(p / 512))[p % 512]
 ```
 
-* `MAGIC = 0x4546524F` (little-endian bytes spelling `ORFE`).
-* The frame's associated data (authenticated, not encrypted) is the fixed header
-  `MAGIC ‖ FRAME_VERSION ‖ epoch`, so a frame's **epoch binding is
-  authenticated** and an epoch swap is rejected.
-* The nonce is derived deterministically from the frame's ordinal within its
-  epoch (frames are append-only and never rewritten, so an ordinal is never
-  reused under one epoch key).
-* The sealed encoding is **fully authenticated** (the header, including the
-  length, is covered by the tag) and its framing is validated with **checked
-  arithmetic**; a trailing partial frame is refused rather than guessed.
-* A frame's total encoded length is `14 + 65 + ct_len` bytes.
+* It is **length preserving** (ciphertext length == plaintext length) and
+  **random access** (a window is byte-identical to the whole stream), so every
+  offset computation above the seam is unchanged.
+* Integrity is a **per-segment keyed-BLAKE3 MAC** over the segment's ciphertext
+  (with its authenticated length folded in last), recorded in the master-key-sealed
+  table `crypto.segments` (schema `"orfs.crypto-segments.v1"`, JSON payload
+  `{schema, table:{segments:{<id>:{epoch, authenticated_len, mac}}}}`), where
+  `mac` is lowercase hex. The table is sealed under the master key and carries no
+  key material; it is verified at open/scan and advanced by `seal_point` (the
+  durability point) at each `fsync`.
 
-A reader MUST refuse a frame whose `MAGIC`/`FRAME_VERSION`/sealed version it does
-not implement (`Compatibility`), and MUST return a typed fail-closed error
-(`KeyUnavailable`/`KeyDestroyed`, `ENOKEY`) rather than any plaintext when the
-covering epoch key is unavailable or was destroyed; a tampered frame is
-`CryptoAuthFailed` (`EBADMSG`). It MUST never fabricate a plaintext prefix.
+A reader MUST refuse a volume whose `crypto_format_version` it does not implement
+(`Compatibility`), and MUST return a typed fail-closed error
+(`KeyUnavailable`/`KeyDestroyed`, `ENOKEY`) rather than any plaintext when a
+segment's covering epoch key is unavailable or was destroyed. A segment whose
+ciphertext does not match its recorded MAC is `CryptoAuthFailed` (`EBADMSG`);
+bytes beyond the authenticated prefix are treated as an abandoned tail (retained,
+never decrypted, never trusted). It MUST never fabricate a plaintext prefix.

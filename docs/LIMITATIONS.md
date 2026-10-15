@@ -117,9 +117,13 @@ OrFS is append-only and non-withdrawal. `unlink`, `rmdir`, truncation, and
 rename-over change only the *visible* namespace; they never physically remove or
 overwrite the underlying committed bytes, which remain in the authoritative log.
 **OrFS is therefore inappropriate for workflows that require reliable physical
-deletion** unless a separately specified data-retention and cryptographic policy
-is applied on top of it. Revoking a namespace path does not make the historical
-bytes unrecoverable, and a party able to read the backing store (or to mount an
+deletion** on its own. The **only** defensible erasure mechanism on top of
+non-withdrawal is cryptographic — seal content under a key and destroy the key,
+leaving the ciphertext bytes in place but unreadable — and Phase 85/86 supply it
+as an **opt-in encrypted volume** (`orfs init --key-file`, `orfs mount
+--key-file`, `docs/ERASURE.md`). That mechanism has its own real limits (§22).
+Revoking a namespace path still does not make the historical bytes
+unrecoverable, and a party able to read the backing store (or to mount an
 earlier committed root) can still read them. The **backing directory should be
 protected more strictly than the logical mount**. See `docs/SECURITY.md` §2.
 
@@ -573,27 +577,46 @@ kernel vs **8.0 µs/op** daemon user-space work).
   (the metadata ops are). The immutable read-only arm negotiated FUSE passthrough but
   registered no backing, so it is daemon-served and labelled, not a zero-copy claim.
 
-## 22. Crypto-erasure is a key-lifecycle layer with real limits (Phase 85)
+## 22. Crypto-erasure is a key-lifecycle layer with real limits (Phase 85; mounted in Phase 86)
 
-Phase 85 adds an **opt-in encrypted volume** whose authoritative store is sealed
+Phase 85 added an **opt-in encrypted volume** whose authoritative store is sealed
 under an operator-held keyring, so that **destroying an epoch key** renders that
 epoch's content cryptographically inaccessible while the ciphertext bytes remain
-unwithdrawn (`docs/ERASURE.md`). The mechanism is real and tested end to end
-(`tests/crypto_erasure.rs`, `evidence/security/crypto-erasure.json`), but it is
-**not** a total erasure or confidentiality story. Stated plainly:
+unwithdrawn (`docs/ERASURE.md`). Phase 86 makes the seal **length preserving** (a
+per-segment positional keystream applied at the `Segment`/`ReadAt` seam), so the
+encrypted store *is* a real OrFS log and `orfs mount --key-file` now serves it
+through the ordinary namespace/index/FUSE path
+(`tests/crypto_erasure_mounted.rs`,
+`evidence/security/crypto-erasure-mounted.json`). The mechanism is real and
+tested end to end, but it is **not** a total erasure or confidentiality story.
+Stated plainly:
 
-* **Mount is not wired.** `orfs mount` on a directory carrying `crypto.meta`
-  refuses with a typed `Unsupported` error; the encrypted store is operated with
-  `orfs crypt` / `orfs key`. Sealing inserts per-frame overhead, so a record's
-  logical and physical offsets diverge and the namespace/read path cannot yet
-  resolve an encrypted volume. A single-segment sealed store is used in this
-  phase; the encrypted store has no capacity guard/reserve.
+* **Erasure makes the whole store fail closed (a linear-log bound).** The
+  authoritative store is a *linear* record stream: a segment bound to a destroyed
+  epoch cannot be scanned past, so destroying an epoch key makes the **whole
+  volume** fail closed on open (`KeyDestroyed`) rather than erasing one epoch and
+  continuing to serve the rest. `orfs crypt verify` still reports the store's
+  intended state (which segment is inaccessible, and why). Erasing part of a live
+  volume while keeping the rest mounted is **not** supported.
+* **Tamper is detected at a durability point, not per byte read.** Integrity is a
+  **per-segment keyed-BLAKE3 MAC** over the segment's ciphertext, held in a
+  master-key-sealed table (`crypto.segments`) in the volume's metadata tier — no
+  ciphertext byte is spent on it. It is verified **at open/scan** (every segment)
+  and advanced at each `fsync` (`seal_point`). Bytes written but not yet fsynced
+  lie beyond the authenticated prefix and are treated exactly like an abandoned
+  tail (retained, never decrypted, never trusted); they are not covered by the MAC
+  until the next durability point. A flipped ciphertext byte inside the
+  authenticated prefix is therefore rejected **at open**, not detected mid-`read`
+  of an already-open, already-verified segment. This is the deliberate trade-off
+  of a length-preserving seal; the alternatives and their costs are in
+  `docs/ERASURE.md` §5.
 * **Key management is out of scope.** Custody, backup, escrow, rotation policy,
   and the legal adequacy of key destruction are the operator's. OrFS supplies a
   mechanism and a typed error, not a key-management service.
-* **Metadata leaks.** `crypto.meta` (uuid, segment size, versions), the frame
-  count and per-frame epoch/offsets, and the commit watermark are plaintext. The
-  mechanism hides content, not shape or timing.
+* **Metadata leaks.** `crypto.meta` (uuid, segment size, versions), the existence
+  of the sealed `crypto.segments` table, and the **derived** `index/`
+  accelerators (rebuilt on demand) are metadata, not sealed authoritative
+  content. The mechanism hides authoritative *content*, not all shape or timing.
 * **The AEAD is a construction, not a standardised primitive.** It is a
   real, textbook encrypt-then-MAC over BLAKE3's keyed mode (the crate's only
   crypto dependency, kept because the build is network-isolated against a frozen

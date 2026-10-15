@@ -83,6 +83,7 @@ reported `SKIPPED (reason)` and is **not** counted as a pass. See
 | `evidence/recovery/fault-enospc.json` | `tests/fault_enospc.rs` | `sh scripts/container-fault-enospc.sh` |
 | `evidence/recovery/durability-qualification.json` | `tests/durability_qualification.rs` | `sh scripts/container-durability-qualification.sh` |
 | `evidence/security/crypto-erasure.json` | `tests/crypto_erasure.rs` | `sh scripts/container-crypto-erasure.sh` |
+| `evidence/security/crypto-erasure-mounted.json` | `tests/crypto_erasure_mounted.rs` | `sh scripts/container-crypto-erasure-mounted.sh` |
 | `evidence/performance/pmu.json`, `flamegraph-microarch.{folded,svg,json}` | `tests/microarch_pmu.rs` | `sh scripts/container-pmu.sh` |
 | `evidence/receipts/acceptance-audit-v4.json` | the acceptance-audit re-run (a manual aggregation, not one test) | the gate set: `sh scripts/container-test.sh` and `sh scripts/container-test.sh --features failpoints`, `sh scripts/container-check.sh`, `sh scripts/container-posix-test.sh`, `sh scripts/container-uring-test.sh`, `sh scripts/container-fuse-test.sh` (see `docs/ACCEPTANCE-AUDIT-HEAD.md` §1) |
 | `tests/fixtures/{legacy_v0,current_v1}/` (frozen bytes; **not** a receipt) | `tests/format_compat.rs` (`generate_fixtures`) | `sh -c '. scripts/lib.sh && docker_run cargo test -p orfs --test format_compat -- --ignored generate_fixtures'` |

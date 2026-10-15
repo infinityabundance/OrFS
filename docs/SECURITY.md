@@ -49,8 +49,10 @@ overwrite, or reclaim the underlying historical bytes**. Consequently:
   retained by construction. A defensible "delete" story requires a
   **separately specified** data-retention and cryptographic policy applied on top
   of it; **Phase 85 provides exactly that** as an **opt-in** encrypted volume
-  whose erasure primitive is **epoch-key destruction** (`docs/ERASURE.md`), with
-  the precise contract in `docs/RETENTION.md`. Cryptographic key destruction
+  whose erasure primitive is **epoch-key destruction** (`docs/ERASURE.md`). Phase 86
+  makes its seal **length preserving** so the encrypted volume is served by a real
+  `orfs mount --key-file` (fail-closed on any key problem), with the precise
+  contract in `docs/RETENTION.md`. Cryptographic key destruction
   changes the *effective* recoverability of the retained bytes — the ciphertext
   is never overwritten, truncated, or withdrawn, but becomes cryptographically
   inaccessible — and the strongest non-withdrawal interpretation is preserved

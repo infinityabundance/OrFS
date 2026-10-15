@@ -5351,3 +5351,107 @@ property/boolean table, not a measurement curve, so there is nothing to plot;
 * The mounted courts were not touched by this phase (no `src/` I/O path on the
   unencrypted side changed); the ~11 pre-existing wedged `orfs-kmount:1.99.0`
   containers were left untouched and Docker was not restarted.
+
+## Phase 86 — The length-preserving seal, and mounting an encrypted volume
+
+Phase 85's sealed store was **frame**-oriented (seal-then-length-prefix), which
+inserted per-frame overhead: a record's **logical** offset no longer equalled its
+**physical** offset inside a segment, so the namespace/scan/watermark path could
+not resolve an encrypted volume and `orfs mount` refused. Phase 86 replaces that
+with an **offset-preserving** seal and wires the mount.
+
+### Delivered
+
+* **The seal is length preserving (a per-segment positional keystream).**
+  `ciphertext[i] = plaintext[i] XOR stream(key(epoch), segment_id, i)`, where
+  `stream` is a random-access, length-preserving BLAKE3-XOF keystream
+  (`keyring::apply_positional_stream`). Ciphertext length == plaintext length, so
+  **every** offset computation above the `Segment` seam — the `SegmentLocator`,
+  `scan_log`, the commit watermark, tiering, the namespace/index and FUSE — is
+  unchanged and works on an encrypted volume exactly as on an unencrypted one.
+  Applied in `Segment::write_at` (seal) and `read_exact_at` (unseal).
+* **Integrity without spending a ciphertext byte.** A **per-segment keyed-BLAKE3
+  MAC** over the segment's ciphertext lives in a **master-key-sealed
+thentication table** (`crypto.segments`, the metadata tier); it binds each
+  segment to its epoch. It is verified at **open/scan** (every segment) and
+  advanced at each `fsync` (`Segment::sync` → `seal_point`, the single
+  authentication point, using the segment's durable physical length and refusing
+  to shrink). Bytes beyond the authenticated prefix are an abandoned tail
+  (retained, never trusted).
+* **`orfs mount --key-file` serves an encrypted volume.**
+  `EncryptedVolume::open_volume(mode) -> Volume` is the integration point;
+  `Namespace::open_volume(volume, mode, durability)` opens an already-opened
+  `Volume`, and `fuse::run_volume` / `fuse::spawn_volume` mount it through the
+  ordinary namespace/index/FUSE path. Mounting **without** the key, with the
+  **wrong** key, or **after** epoch-key destruction **fails closed** with a typed
+  error before any serving path is built.
+* **`orfs key rotate` forces a rollover**, so subsequent writes seal under the new
+  epoch while existing segments keep theirs (the store spans >1 segment).
+* **The frame-oriented CLI is gone** (`crypt append|read` were an artefact of the
+  frame store that no longer exists); `orfs crypt` is now `status|list|verify|
+  digest|relocate` over the real `or.log`. `orfs init --key-file` **honours
+  `--reserve`** (`EncryptedVolume::init_with_reserve`).
+
+### Compatibility and the default path
+
+The default (unencrypted) path is **byte-for-byte unchanged**: `LOG_FORMAT_VERSION`
+stays `1`, the frozen fixtures read identically (`tests/format_compat.rs`), the
+pinned unencrypted genesis committed digest is identical in both courts, and no
+existing receipt or digest changed. The `cipher` is `None` on the default path, so
+nothing in the seal runs unless an operator opts in with `--key-file`.
+
+### Courts and receipts
+
+* `tests/crypto_erasure.rs` (offline / operator CLI; rewritten to the segment API)
+  → `evidence/security/crypto-erasure.json` (schema `orfs.security.crypto-erasure.v1`).
+* `tests/crypto_erasure_mounted.rs` (a **real `orfs mount --key-file`** arm) →
+  `evidence/security/crypto-erasure-mounted.json` (schema
+  `orfs.security.crypto-erasure-mounted.v1`). It proves mounted **byte-identity**
+  (an identical POSIX workload against an encrypted and an unencrypted
+  volume, digest-compared), ciphertext on disk, a forced rollover (>1 segment)
+  that still mounts and reads, ciphertext retained unchanged across epoch-key
+  destruction, the fail-closed mounts (no key / wrong key / after destruction),
+  tier relocation preserving crypto-erasure, and the unchanged default path.
+* `src/encvol.rs` gains construction unit tests (random-access/length-preserving
+  seal; `seal_point` advances and never shrinks; a destroyed epoch fails closed).
+
+### Runner and docs
+
+New `scripts/container-crypto-erasure-mounted.sh` (bounded smoke + a real mount,
+`docker_run_kmount`, one container at a time); reconciled `docs/ERASURE.md` (the
+length-preserving construction, the per-segment MAC, what tamper is detected and
+**when**, and the trade-offs vs per-frame sealing), `docs/LIMITATIONS.md` §5/§22,
+`docs/ON_DISK.md` §11, `docs/MIGRATION.md` §6, `docs/RETENTION.md` §4,
+`docs/SECURITY.md` §2, `docs/THREAT-MODEL.md` §4/§5/§6, `README.md`,
+`docs/REPRODUCE.md`, `docs/RECEIPTS.md`, `scripts/docs-receipts.json` (citation
+`security-erasure-s5-shape` re-pointed at `volume.segments`). **No chart is
+added**: the receipts are property/boolean tables, not measurement curves, so
+`python3 scripts/render_charts.py --check` is unaffected.
+
+### Test counts
+
+**561 (default; +1 ignored) / 572 (`--features failpoints`)** — net **0**: `+1`
+for the mounted court, `+3` new `src/encvol.rs` construction unit tests, and `−4`
+obsolete Phase-85 frame-mode `src/encvol.rs` unit tests removed by the rewrite.
+`cargo fmt -p orfs --check`, `cargo clippy -p orfs --all-targets -- -D warnings`,
+`check-all.sh --fast`, `check-docs-receipts.sh` and `render_charts.py --check` are
+all clean.
+
+### Notes, stated honestly
+
+* **Erasure is global on a linear log.** Because the authoritative store is a
+  linear record stream, a segment bound to a destroyed epoch cannot be scanned
+  past: destroying an epoch key makes the **whole volume** fail closed on open
+  (`KeyDestroyed`). `orfs crypt verify` reports the intended state. Erasing one
+  epoch while continuing to serve the rest is **not** supported
+  (`docs/ERASURE.md` §8, `docs/LIMITATIONS.md` §22).
+* **Tamper is a boundary property.** Integrity is verified at open/scan and
+  advanced at each `fsync`; a flipped byte inside an already-open, already-verified
+  segment is not re-detected on each `read`. This is the deliberate trade-off of a
+  zero-overhead, offset-preserving seal (`docs/ERASURE.md` §5).
+* **The mounted court is one bounded workload per arm.** Running pjdfstest against
+  an *encrypted* mount is deferred (it needs the root-inode ownership/uid test
+  scaffolding the encrypted arm does not yet wire); the POSIX suite still covers
+  the unencrypted mount.
+* The ~11 pre-existing wedged `orfs-kmount:1.99.0` containers were left untouched
+  and Docker was not restarted; every mount attempt is bounded.

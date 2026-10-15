@@ -151,6 +151,7 @@ so it is not expected to name HEAD.
 | `oss-worm-s4-retention-shape` | `docs/OSS-COMPARISON.md` §4 | the Phase-87 retention court's **deterministic** shape: epochs driven (1 024), committed roots enumerated (1 026), roots opened / enumerated via readdir / read back byte-exact (1 024), and the final epoch-file bytes (4 194 304) → `performance/oss-worm-compare.json` `retention.systems[system=OrFS-Rust].*` |
 | `oss-worm-s4-retention-bytes`, `oss-worm-s4-retention-amp`, `oss-worm-s4-retention-tx` | `docs/OSS-COMPARISON.md` §4 | the retention volume's **deterministic** four-category accounting: logical epoch bytes, observed physical bytes, the observed/logical amplification and the committed transaction count → `performance/oss-worm-compare.json` `retention.systems[system=OrFS-Rust].amplification.*` / `.accounting.transaction_count` |
 | `oss-worm-s7-probes` | `docs/OSS-COMPARISON.md` §7 | the Phase-87 court's **deterministic** probe outcome: 0 of 2 filesystem-native snapshot arms ran → `performance/oss-worm-compare.json` `results_summary.fs_native_arms_ran` |
+| `gc-scaling-s11-2-w16`, `gc-scaling-s11-2-w64` (10 value checks) | `docs/PERFORMANCE.md` §11.2 | the Phase-88 group-commit scaling court's 16- and 64-writer off/fixed/adaptive `ops/s` and the ratios over the off baseline → `performance/group-commit-scaling.json` `summary[writers=16|64].ops_per_s.*` / `.fixed_over_off` / `.adaptive_over_off` |
 
 ### `docs/ACCEPTANCE-AUDIT.md` is exempt from live comparison
 
@@ -276,6 +277,13 @@ numbers were not curated in this first pass:
   `python3 scripts/render_charts.py --check`. The receipt's `not_comparable` and
   `comparability.differences` blocks are the authority on what must not be ranked;
   the document states no ranking.
+* `docs/PERFORMANCE.md` §11.2 (Phase 88) — the group-commit scaling court's
+  `ops/s` figures are single-run **medians of three** and host/load-sensitive, so
+  only the **16- and 64-writer** off/fixed/adaptive points and their ratios are
+  curated; the 4- and 8-writer rows are published but not cited (and in this run
+  the 1–2-writer points hit a pathologically slow device and are not quoted). The
+  committed figure `group-commit-scaling.svg` is gated by
+  `python3 scripts/render_charts.py --check`.
 
 Adding coverage is a one-line mapping edit — see §5.
 

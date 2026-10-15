@@ -78,6 +78,7 @@ reported `SKIPPED (reason)` and is **not** counted as a pass. See
 | `evidence/performance/application-workloads.json` | `tests/application_workloads.rs` | `sh scripts/container-application-workloads.sh` |
 | `evidence/performance/transport-ceiling.json` | `tests/transport_ceiling.rs` | `sh scripts/container-transport-ceiling.sh` |
 | `evidence/performance/oss-worm-compare.json` | `tests/oss_worm_compare.rs` | `sh scripts/container-oss-worm-compare.sh` |
+| `evidence/performance/group-commit-scaling.json` | `tests/group_commit_scaling.rs` | `sh scripts/container-group-commit-scaling.sh` |
 | `evidence/security/fault-injection.json` | `tests/fs_fault_injection.rs` | `sh scripts/container-fault-injection.sh` |
 | `evidence/recovery/fault-injection-verify-recover.json` | `tests/verify_recover_faults.rs` | `sh scripts/container-fault-verify.sh` |
 | `evidence/recovery/capacity-guard.json` | `tests/capacity_guard.rs` | `sh -c '. scripts/lib.sh && docker_run cargo test -p orfs --test capacity_guard'` |
@@ -170,6 +171,7 @@ image → receipt → command mapping:
 | `transport-ceiling-reduction.svg` | `PERFORMANCE.md` §35 | `evidence/performance/transport-ceiling.json` | `sh scripts/container-transport-ceiling.sh` |
 | `oss-worm-append.svg` | `PERFORMANCE.md` §36, `OSS-COMPARISON.md` §2 | `evidence/performance/oss-worm-compare.json` | `sh scripts/container-oss-worm-compare.sh` |
 | `oss-worm-reads.svg` | `PERFORMANCE.md` §36, `OSS-COMPARISON.md` §3 | `evidence/performance/oss-worm-compare.json` | `sh scripts/container-oss-worm-compare.sh` |
+| `group-commit-scaling.svg` | `PERFORMANCE.md` §11.2, `CONCURRENCY.md` §11 | `evidence/performance/group-commit-scaling.json` | `sh scripts/container-group-commit-scaling.sh` |
 
 The **chart command** is the same for every row: `python3 scripts/render_charts.py`
 (generate) or `python3 scripts/render_charts.py --check` (drift check). The

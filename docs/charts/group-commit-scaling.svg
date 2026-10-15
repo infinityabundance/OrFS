@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="monospace"><rect x="0" y="0" width="760" height="440" fill="#ffffff"/><text x="380.0" y="22.0" fill="#111111" font-size="14" text-anchor="middle" font-weight="bold">Phase 88: mounted durable-append throughput vs. writers</text>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="344.0" fill="#111111" font-size="11" text-anchor="end">1</text>
+<line x1="84.0" y1="270.5" x2="736.0" y2="270.5" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="274.5" fill="#111111" font-size="11" text-anchor="end">10</text>
+<line x1="84.0" y1="201.0" x2="736.0" y2="201.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="205.0" fill="#111111" font-size="11" text-anchor="end">100</text>
+<line x1="84.0" y1="131.5" x2="736.0" y2="131.5" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="135.5" fill="#111111" font-size="11" text-anchor="end">1k</text>
+<line x1="84.0" y1="62.0" x2="736.0" y2="62.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="66.0" fill="#111111" font-size="11" text-anchor="end">10k</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="84.0" y="358.0" fill="#111111" font-size="11" text-anchor="middle">1</text>
+<line x1="182.1" y1="62.0" x2="182.1" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="182.1" y="358.0" fill="#111111" font-size="11" text-anchor="middle">2</text>
+<line x1="280.3" y1="62.0" x2="280.3" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="280.3" y="358.0" fill="#111111" font-size="11" text-anchor="middle">4</text>
+<line x1="378.4" y1="62.0" x2="378.4" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="378.4" y="358.0" fill="#111111" font-size="11" text-anchor="middle">8</text>
+<line x1="476.5" y1="62.0" x2="476.5" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="476.5" y="358.0" fill="#111111" font-size="11" text-anchor="middle">16</text>
+<line x1="574.7" y1="62.0" x2="574.7" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="574.7" y="358.0" fill="#111111" font-size="11" text-anchor="middle">32</text>
+<line x1="672.8" y1="62.0" x2="672.8" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="672.8" y="358.0" fill="#111111" font-size="11" text-anchor="middle">64</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<text x="410.0" y="382.0" fill="#111111" font-size="12" text-anchor="middle">writers</text>
+<text x="26.0" y="201.0" fill="#111111" font-size="12" text-anchor="middle" transform="rotate(-90 26.0 201.0)">ops/s (log)</text>
+<polyline points="84.0,281.6 182.1,237.5 280.3,187.7 378.4,186.5 476.5,186.9 574.7,187.7 672.8,186.6" fill="none" stroke="#1f77b4" stroke-width="2"/>
+<circle cx="84.0" cy="281.6" r="3" fill="#1f77b4"/>
+<circle cx="182.1" cy="237.5" r="3" fill="#1f77b4"/>
+<circle cx="280.3" cy="187.7" r="3" fill="#1f77b4"/>
+<circle cx="378.4" cy="186.5" r="3" fill="#1f77b4"/>
+<circle cx="476.5" cy="186.9" r="3" fill="#1f77b4"/>
+<circle cx="574.7" cy="187.7" r="3" fill="#1f77b4"/>
+<circle cx="672.8" cy="186.6" r="3" fill="#1f77b4"/>
+<polyline points="84.0,280.9 182.1,171.0 280.3,148.3 378.4,129.8 476.5,128.3 574.7,144.0 672.8,135.8" fill="none" stroke="#d62728" stroke-width="2"/>
+<circle cx="84.0" cy="280.9" r="3" fill="#d62728"/>
+<circle cx="182.1" cy="171.0" r="3" fill="#d62728"/>
+<circle cx="280.3" cy="148.3" r="3" fill="#d62728"/>
+<circle cx="378.4" cy="129.8" r="3" fill="#d62728"/>
+<circle cx="476.5" cy="128.3" r="3" fill="#d62728"/>
+<circle cx="574.7" cy="144.0" r="3" fill="#d62728"/>
+<circle cx="672.8" cy="135.8" r="3" fill="#d62728"/>
+<polyline points="84.0,282.3 182.1,185.2 280.3,163.9 378.4,143.5 476.5,144.0 574.7,144.8 672.8,143.5" fill="none" stroke="#2ca02c" stroke-width="2"/>
+<circle cx="84.0" cy="282.3" r="3" fill="#2ca02c"/>
+<circle cx="182.1" cy="185.2" r="3" fill="#2ca02c"/>
+<circle cx="280.3" cy="163.9" r="3" fill="#2ca02c"/>
+<circle cx="378.4" cy="143.5" r="3" fill="#2ca02c"/>
+<circle cx="476.5" cy="144.0" r="3" fill="#2ca02c"/>
+<circle cx="574.7" cy="144.8" r="3" fill="#2ca02c"/>
+<circle cx="672.8" cy="143.5" r="3" fill="#2ca02c"/>
+<rect x="84.0" y="35.0" width="10" height="10" fill="#1f77b4"/>
+<text x="99.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">group commit off (baseline)</text>
+<rect x="308.0" y="35.0" width="10" height="10" fill="#d62728"/>
+<text x="323.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">group commit on, fixed linger</text>
+<rect x="546.0" y="35.0" width="10" height="10" fill="#2ca02c"/>
+<text x="561.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">group commit on, adaptive linger</text>
+<text x="84.0" y="370.0" fill="#555555" font-size="10" text-anchor="start">source: evidence/performance/group-commit-scaling.json (4 KiB write(2)+fsync(2) per record, --durability sync, real orfs mount)</text>
+<text x="84.0" y="386.0" fill="#555555" font-size="10" text-anchor="start">median of 3 runs per point (log/log axes); higher is better; NOT a ranking</text>
+<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">off is flat; grouping scales (fixed ~6x over off at 16 writers). adaptive adds bounded latency, not a throughput win over fixed</text>
+<text x="84.0" y="418.0" fill="#555555" font-size="10" text-anchor="start">regenerate: python3 scripts/render_charts.py --check</text>
+</svg>

@@ -531,3 +531,73 @@ with a finite timeout (`ORFS_LOOM_TIMEOUT`, default 1800 s).
   mounted courts (§6, §9).
 * Loom explores a **bounded** state space (≤2 preemptions by default); it is
   evidence, not a proof over unbounded histories.
+
+## 11. Group-commit scaling for ordinary durable appends (Phase 88)
+
+Phase 46 made the coordinator a ~5× win for *mutations*. Phase 87 then measured the
+workload a WORM/append user actually issues — a 4 KiB `write(2)+fsync(2)` per
+record through a real mount — and found OrFS-Rust **flat** across writers with the
+coordinator off (244.8 ops/s at 1 writer, 255.4 at 64), because every `sync`
+transaction took its own barrier. Phase 88 closes that: the coordinator now also
+coalesces the explicit `fsync(2)` barrier, and a mounted court measures the scaling.
+
+### 11.1 The `fsync` barrier joins the batch
+
+`Inner::barrier` submits a **barrier member** into the current batch. The batch
+executes it as a no-op (it does no work of its own) and its **one shared `sync`**,
+issued after every member, acknowledges it. Because the channel is FIFO and batches
+execute in submission order, that barrier covers every mutation submitted before
+the call, so an `fsync(2)` is served by the same barrier as the writes it covers.
+Groups off, `ordered`/`batched` mounts (no shared barrier to amortise) and
+**refused admission** all fall back to the direct `core.sync()` under the core
+lock — never a false success, never a silent drop. Both transports route through it
+(`src/fuse.rs`, `src/fuse_native.rs`); `flush`/`fsyncdir` are not durability
+barriers and keep their direct paths.
+
+### 11.2 The measured curve (median of three runs, this host under heavy load)
+
+4 KiB `write(2)+fsync(2)` per record, `--durability sync`, real `orfs mount`:
+
+| writers | off ops/s | fixed ops/s | adaptive ops/s | fixed / off |
+|---:|---:|---:|---:|---:|
+| 4 | 155.5 | 572.3 | 342.4 | 3.68× |
+| 8 | 161.6 | 1 056.5 | 671.7 | 6.54× |
+| 16 | 159.4 | 1 112.1 | 660.5 | 6.98× |
+| 64 | 161.1 | 867.8 | 672.5 | 5.39× |
+
+`off` is flat; grouping **scales** (fixed ~7× at 16 writers) and reaches
+~1 054 ops/s at 64 writers in the same-machine OSS comparison. The grouped arms
+still issue **~1 barrier per 3.4 ops** at 8–64 writers — the batch is bounded by
+how many writers can submit between two barriers, which is the **remaining loss**,
+reported explicitly in the receipt's `barrier_frequency` block. Full analysis:
+`docs/PERFORMANCE.md` §11.2; evidence:
+`evidence/performance/group-commit-scaling.json`.
+
+### 11.3 The contract under grouping — proved, not asserted
+
+Coalescing changes only barrier *frequency*, never durability or order:
+
+* **Acknowledged-after-barrier.** `tests/group_commit.rs::\
+  group_commit_sync_acks_every_member_durable_in_order` and the mounted read-back
+  (`tests/group_commit_scaling.rs`, every acknowledged append byte-exact after a
+  daemon restart).
+* **Order preserved.** The coordinator runs each batch's members sequentially in
+  submission order; the committed sequence is a total order of strictly advancing
+  valid boundaries (`grouped_durable_acks_survive_a_power_loss`,
+  `ordering_result`).
+* **Power loss.** `grouped_durable_acks_survive_a_power_loss` drives grouped `sync`
+  commits on a **simulated power-loss device** and reopens: every acknowledged
+  member survives, in order.
+* **A failed barrier is refused.** `group_commit_barrier_failure_is_refused_not_acknowledged`
+  (`--features failpoints`) fails the shared barrier and proves every affected
+  append is refused with `EIO` (0 false successes) and the volume still reopens to
+  a valid boundary. See `docs/DURABILITY.md` §8.
+
+### 11.4 Bounded admission under overload
+
+The channel is a bounded `sync_channel` of capacity `batch × 2`. A submission that
+finds it full is refused **typed** and served on the direct path under the same
+core lock with its normal durability. The mounted overload court (24 threads against
+a capacity of 4) serves every mutation, never exceeds the bound, and reports
+`direct_fallbacks > 0`; the counters are exposed in `GroupCommitStats`
+(`capacity`, `admissions`, `direct_fallbacks`, `queue_depth`, `max_queue_depth`).

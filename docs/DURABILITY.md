@@ -199,3 +199,47 @@ device semantics — sector-granularity caching and `fsync` behaviour are
 simplifications, and real devices, filesystems, and caches differ. No real
 block-device fault was injected. `DurabilityMode::claims_power_loss_durability()`
 remains `false` for every profile. See `docs/LIMITATIONS.md` §6/§19.
+
+---
+
+## 9. Group commit preserves every contract (Phase 88)
+
+The opt-in group-commit coordinator amortises **one durability barrier across a
+batch** of concurrently-arrived mutations (and, since Phase 88, the explicit
+`fsync(2)` barrier too). It changes only barrier *frequency* — never the contract.
+The Phase-88 courts prove the three obligations return the same verdict under
+grouping as without it:
+
+* **Acknowledged only after the covering barrier succeeds.** A grouped append is
+  acknowledged only once the batch's shared `sync` (which covers its committed
+  bytes) completes; a mutation whose bytes were published but whose covering
+  barrier failed is refused with `EIO`, never acknowledged. The barrier itself is
+  injectable: a new `DurabilityBarrier` failpoint sits on the log-level durability
+  hook (`Log::sync`), so
+  `tests/group_commit_scaling.rs::group_commit_barrier_failure_is_refused_not_acknowledged`
+  (`--features failpoints`) can fail the shared barrier and prove **every affected
+  append is refused** (0 false successes) while the volume still reopens to a valid
+  boundary. The engine-level unit court
+  (`src/group_commit.rs::tests::barrier_failure_yields_eio_for_every_successful_member`)
+  proves the same rule at the coordinator.
+* **Survives power loss.**
+  `tests/group_commit.rs::grouped_durable_acks_survive_a_power_loss` drives grouped
+  `sync` commits on the **simulated power-loss device** (`src/powerloss.rs`, honest
+  `FlushMode::Barrier`) and, after the simulated failure, reopens the volume: every
+  acknowledged-durable member's transaction survives and its root is a valid
+  boundary. The mounted court additionally reads every acknowledged append back
+  byte-exact after a **daemon restart**.
+* **Order preserved.** The coordinator runs each batch's members sequentially, in
+  submission order, against the single authoritative core, so the visible commit
+  sequence is exactly the caller's order — a total order of strictly advancing valid
+  boundaries. The FIFO channel plus submission-order batches are what make an
+  `fsync(2)`'s shared barrier provably cover every mutation submitted before it.
+
+**Bounded admission, not unbounded growth.** The submission channel is a bounded
+`sync_channel`; an over-capacity submission is handed back and served on the direct
+path under the same core lock with its normal durability — so an overloaded caller
+still gets a per-request `fsync` under `sync` (I7), never a drop and never a false
+success (`tests/group_commit_e2e.rs::group_commit_overload_falls_back_without_loss`).
+
+The same status applies as §8: these are **simulated** storage devices, not real
+hardware. They prove the contract relative to the model's assumed device semantics.

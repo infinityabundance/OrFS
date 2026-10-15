@@ -27,6 +27,7 @@ and a distributed object store are **different interfaces**. Read the receipt's
 | arm | ran? | notes |
 |---|---|---|
 | **OrFS-Rust** | **yes** | mounted through the real FUSE path (the `orfs mount` code path, `fuse::spawn`) as a separate daemon process, `--direct-io --durability sync --backing-io sync`, group commit **off** |
+| **OrFS-Rust, group commit on** | **yes** | the same mount plus `--group-commit` (batch 64, adaptive linger): the append arm measured again with the opt-in coordinator installed, so the comparison reports OrFS's best honest configuration alongside the equal-durability baseline (§2, §6) |
 | **SeaweedFS 3.99** | **yes** | staged from the pinned image `chrislusf/seaweedfs:3.99` (digest recorded), run as `weed server` (master + volume + filer on loopback) + `weed mount`, Go heap bounded (`GOGC=50 GOMEMLIMIT=700MiB`, recorded) |
 | **ext4 plain-directory anchor** | **yes** (anchor, not a system) | the identical driver workload in a plain directory on the **same device**, with no FUSE and no WORM contract — it exists only so the device's own cost is visible |
 | **OpenZFS retained snapshots** | **NO — SKIPPED** | see §7 |
@@ -49,17 +50,37 @@ plus an out-of-window byte-exact read-back check and an append byte cross-check.
 
 ## 2. Per-record durable appends (4 KiB + `fsync`)
 
-One run, this host (see the honesty caveats in §8). `ops/s` is the arm's own
-measured rate; `p50`/`p99` are per-operation `write+fsync` latencies.
+One run, this host (see the honesty caveats in §9). `ops/s` is the arm's own
+measured rate; `p50`/`p99` are per-operation `write+fsync` latencies. The two
+OrFS-Rust arms share **one durability contract** — an acknowledged record is
+durable (its covering barrier completed); they differ only in whether the opt-in
+group-commit coordinator amortises that barrier over a batch.
 
-| system | writers | ops | ops/s | p50 | p99 | is a real durability barrier? |
-|---|---:|---:|---:|---:|---:|---|
-| OrFS-Rust | 1 | 1 224 | 244.8 | 3.98 ms | 5.71 ms | **yes** (one `fsync` per record) |
-| OrFS-Rust | 64 | 1 316 | 255.4 | 249.75 ms | 268.34 ms | **yes** |
-| SeaweedFS 3.99 (`weed mount`) | 1 | 1 359 | 271.6 | 3.54 ms | 7.51 ms | **no** (see §5) |
-| SeaweedFS 3.99 (`weed mount`) | 64 | 14 674 | 2 923.7 | 15.49 ms | 122.67 ms | **no** |
-| ext4 plain directory (anchor) | 1 | 4 249 | 849.5 | 1.13 ms | 1.80 ms | yes |
-| ext4 plain directory (anchor) | 64 | 18 977 | 3 764.0 | 3.56 ms | 63.11 ms | yes |
+| system | config | writers | ops | ops/s | p50 | p99 | is a real durability barrier? |
+|---|---|---:|---:|---:|---:|---:|---|
+| OrFS-Rust | `--durability sync`, group commit **off** | 1 | 803 | 160.4 | 6.42 ms | 9.50 ms | **yes** (one `fsync` per record) |
+| OrFS-Rust | `--durability sync`, group commit **off** | 64 | 832 | 163.7 | 390.34 ms | 400.14 ms | **yes** |
+| OrFS-Rust | `--durability sync`, group commit **on** (adaptive) | 1 | 810 | 162.0 | 6.36 ms | 9.55 ms | **yes** (one shared barrier per batch) |
+| OrFS-Rust | `--durability sync`, group commit **on** (adaptive) | 64 | 5 309 | **1 054.3** | 56.82 ms | 87.97 ms | **yes** |
+| SeaweedFS 3.99 (`weed mount`) | — | 1 | 1 167 | 233.2 | 4.08 ms | 8.46 ms | **no** (see §5) |
+| SeaweedFS 3.99 (`weed mount`) | — | 64 | 14 637 | 2 910.0 | 15.91 ms | 170.08 ms | **no** |
+| ext4 plain directory (anchor) | — | 1 | 60 | 22.7 | 44.74 ms | — | yes |
+| ext4 plain directory (anchor) | — | 64 | 1 424 | 1 424.0 | 45.70 ms | — | yes |
+
+**Group commit is the fix for the loss this comparison first published.** With the
+coordinator **off**, OrFS-Rust is flat — 160.4 ops/s at 1 writer and 163.7 at 64 —
+because every `sync` transaction takes its own barrier under the commit lock.
+With it **on**, the arm **scales**: **1 054.3 ops/s at 64 writers, a 6.4× win over
+the off arm at the same coordinate**, with `p50` falling from **390.34 ms to
+56.82 ms**. At one writer the two arms are the same (162.0 vs 160.4 ops/s):
+grouping manufactures no concurrency where there is none and adds no latency to a
+sequential writer.
+
+That is still an **equal-durability** comparison. The coordinator coalesces the
+*barrier*, not the *contract*: each record is acknowledged only after the shared
+barrier covering its committed bytes has completed, so an acknowledged record is
+durable exactly as in the off arm. `group commit on` is the same promise delivered
+at a lower barrier frequency — see §6 and the durability proof it is tied to.
 
 The device itself is the frame. The receipt records the device baseline
 (`device_baseline.evidence_volume_device`): a bare 4 KiB `write(2)+fsync(2)` on
@@ -67,39 +88,30 @@ The device itself is the frame. The receipt records the device baseline
 workload runs. It is a single-run figure on a shared host and **moves materially
 between runs** (a raw `fsync` stalls when the drive's write queue is saturated), so
 read it as an order of magnitude — the receipt records it verbatim, and does not
-curate it. The reasoning that uses it is scale-free:
+curate it.
 
-The plain-directory anchor's 1-writer append (**849.5 ops/s**) is essentially
-  *the barrier and nothing else* — a per-record durable append cannot be faster
-  than its own barrier, and the anchor pays no FUSE and no commit bookkeeping;
-* **OrFS-Rust at 1 writer is 244.8 ops/s (p50 3.98 ms) ≈ 3.5× the anchor's
-  1-writer latency** — a real, measured cost of OrFS's FUSE request plus its
-  commit path on top of the barrier (on this host's near-full ext4 drive).
+### The remaining loss, published as a loss
 
-### The loss, published as a loss
-
-**OrFS-Rust's per-record durable append neither leads nor scales here.**
-
-* At **1 writer**, OrFS-Rust (244.8 ops/s) is *slower* than SeaweedFS's FUSE
-  client (271.6 ops/s) — a close race whose ordering flips between runs — but
-  SeaweedFS's `Fsync` is **not** a stable-storage barrier (§5), so that row is
-  **not** an equal-durability comparison and the receipt lists it under
-  `not_comparable`.
-* At **64 writers**, OrFS-Rust stays at **255.4 ops/s** — essentially the
-  single-writer rate — while its `p50` explodes to **249.75 ms**. With group
-  commit **off** (this court's equal-durability setting) every `sync` transaction
-  takes its own barrier under the commit lock, so 64 writers queue behind one
-  serialized commit path rather than overlapping. The **same device** in a plain
-  directory reaches a few **thousand** ops/s with the same 64 native writers
-  (3 764.0 in this run; 17 263.5 and 17 059.7 in the other runs of this phase —
-  this arm moves a lot under host load), and SeaweedFS's barrier-free flush reaches
-  2 923.7 ops/s. The ceiling at 64 writers is OrFS's commit serialization, **not**
-  the device.
-
-That is the honest result. The mechanism that removes this serialization — the
-opt-in group-commit coordinator — is **deliberately OFF** in this court, because
-amortising one barrier across many transactions is a *different durability
-contract* and must never be presented as a per-record durable append (see §6).
+* **OrFS-Rust off does not scale per-record durable appends.** At 64 writers it
+  stays at **163.7 ops/s** — essentially the single-writer rate — with `p50`
+  **390.34 ms**. The **same device** in a plain directory reaches **1 424.0 ops/s**
+  with the same 64 native writers.
+* **Group commit on closes most of that gap but not all of it.** At 64 writers the
+  on arm (**1 054.3 ops/s**) is now within ~1.35× of the anchor and **6.4×** its own
+  off baseline, but it is still below the anchor and well below SeaweedFS's
+  barrier-free flush (**2 910.0 ops/s**). The residual is real and named: the
+  explicit per-record `fsync(2)` is coalesced *into a batch* but a batch still
+  issues **one barrier**, and the batch size is bounded by how many writers can
+  submit between two barriers (measured at ~3 ops per barrier in
+  `group-commit-scaling.json`). See §9.
+* **At 1 writer OrFS-Rust's durable append (160.4 ops/s, p50 6.42 ms) is far
+  below** SeaweedFS's **233.2** — but SeaweedFS's `Fsync` is **not** a stable-storage
+  barrier (§5), so that row is **not** an equal-durability comparison and the
+  receipt lists it under `not_comparable`.
+* The ext4 1-writer anchor row (**22.7 ops/s, p50 44.74 ms**) is **anomalously
+  slow in this run** — the shared drive was heavily loaded (phase 87 saw the same
+  arm at 849.5 ops/s); it is recorded as measured and must not be read as the
+  device's steady-state cost.
 
 ## 3. Uniform random reads
 
@@ -205,32 +217,49 @@ authority; in summary:
 * **The read caching shape differs** — see §3.
 * **The mount knobs differ.** OrFS is mounted `--direct-io`; `weed mount` exposes
   no such knob. Recorded, not removed.
-* **Group commit is off.** Every OrFS append row is a real per-record `fsync`
-  through a real mount. The opt-in group-commit coordinator would amortise one
-  barrier across a batch; **internal group-commit throughput is never a durable
-  file append** and no row in this receipt is one (see §6).
+* **Group commit is not a different durability contract here.** Every OrFS
+  append row — off *and* on — is a real per-record `write(2)+fsync(2)` through a
+  real mount, acknowledged only after a completed barrier. The opt-in coordinator
+  amortises **one barrier across a batch**; it does not weaken the
+  acknowledged-record contract (see §6). The court deliberately keeps the
+  group-commit-off arm as the baseline and adds the on arm so OrFS's best honest
+  configuration is reported, not hidden.
 * **The plain-ext4 anchor is not a WORM system.** It is the same driver workload
   on the same device with no FUSE and no WORM contract; it is a device/stack
   anchor only and is not ranked against the systems.
 
-## 6. Group commit is not a durable append
+## 6. Group commit: a barrier *mechanism*, and one end-to-end arm
 
-Anywhere this project reports the **internal commit path** or the **group-commit
-coordinator**, read it as a *mechanism* measurement, not as durable file appends:
+Read this before quoting any group-commit number, because two very different
+kinds of figure live under that name:
 
-* the in-crate commit-path microbenchmark (`docs/PERFORMANCE.md` §6, from
-  `benches/mechanisms.rs`) measures the ordered commit path with **no `fsync` in
-  the timed loop** — it is a throughput of the internal path, not a durability
-  claim;
-* the group-commit courts (`docs/PERFORMANCE.md` §10/§11, `docs/CONCURRENCY.md`
-  §10) measure a coordinator amortising one barrier across a batch of *prepared
-  transactions*; that is a different contract from one barrier per record;
-* **this** court instead measures the equal-durability setting
-  (`--durability sync`, group commit off) end to end through a real mount.
+* **Mechanism / internal figures — NOT durable file appends.**
+  * the in-crate commit-path microbenchmark (`docs/PERFORMANCE.md` §6, from
+    `benches/mechanisms.rs`) measures the ordered commit path with **no `fsync` in
+    the timed loop** — it is a throughput of the internal path, not a durability
+    claim;
+  * the engine-level group-commit courts (`tests/group_commit.rs`, `docs/PERFORMANCE.md`
+    §10/§11, `docs/CONCURRENCY.md` §10) measure a coordinator amortising one barrier
+    across a batch of *prepared transactions*; that is a mechanism measurement.
+  * the mounted scaling court (`tests/group_commit_scaling.rs`) measures off/fixed/
+    adaptive **through a real mount**, but its `ops/s` counts *write* throughput over
+    the same device; read its barrier-frequency and durability blocks for the
+    contract, and `evidence/performance/oss-worm-compare.json` for the equal-durability
+    end-to-end append figures.
+* **End-to-end durable appends — a real barrier.** The **two OrFS-Rust append rows
+  in §2** are durable file appends: a 4 KiB `write(2)+fsync(2)` per record through a
+  real mount, where a record is acknowledged only after the barrier covering its
+  committed bytes completes. The group-commit-on row is one of these — it is the
+  *same* contract at a lower barrier frequency, and its durability is proved, under
+  power loss and under a failed barrier, by
+  `tests/group_commit_scaling.rs` and `tests/group_commit.rs::grouped_durable_acks_survive_a_power_loss`.
 
 No document in this repository presents internal group-commit throughput as
 durable file appends; where the numbers are quoted they are labelled as mechanism
 or prepared-transaction figures, and this section makes the distinction explicit.
+The distinction the coordinator preserves is **barrier frequency**, not durability:
+coalescing turns many barriers into one per batch, and every batch member is
+acknowledged only after that one barrier succeeds.
 
 ## 7. Probes: OpenZFS and Btrfs retained snapshots
 
@@ -286,10 +315,22 @@ devices.
 2. **No ranking.** A row is comparable only at the same coordinate and under the
    listed differences. `SeaweedFS`'s append rows are **not** equal-durability;
    `weed mount` is not SeaweedFS's fast path.
-3. The **losses are published as losses**: OrFS-Rust loses the 64-writer append
-   scaling and the 1 MiB read throughput. The mechanisms behind both are named,
-   not hidden.
-4. **ZFS and Btrfs did not run.** No ZFS or Btrfs number appears anywhere in this
+3. The **losses are published as losses**: OrFS-Rust's group-commit-off arm still
+   does not scale per-record durable appends (flat ~160 ops/s to 64 writers), and
+   OrFS-Rust loses the 1 MiB read throughput. The mechanisms behind both are named,
+   not hidden. The group-commit-on arm **scales** (1 054.3 ops/s at 64 writers,
+   6.4× the off arm) but still trails the plain-ext4 anchor and SeaweedFS's
+   barrier-free flush; that residual is named in §2 (the explicit per-record
+   `fsync(2)` still costs one barrier per batch, and the batch size is bounded by the
+   submit-between-barriers rate).
+4. **The group-commit arm is the same durability contract**, not a weaker one: it
+   is mounted `--group-commit` (batch 64, adaptive linger) over the same device and
+   driver, and every acknowledged record is covered by a completed barrier. Its
+   durability is proved under a power-loss model
+   (`tests/group_commit.rs::grouped_durable_acks_survive_a_power_loss`) and under a
+   failed shared barrier (`tests/group_commit_scaling.rs::group_commit_barrier_failure_is_refused_not_acknowledged`,
+   run with `--features failpoints`).
+   **ZFS and Btrfs did not run.** No ZFS or Btrfs number appears anywhere in this
    document or the receipt.
 5. The evidence volumes live on the **bind-mounted host drive**; the receipt
    records both that device's and the container's `TMPDIR`'s 4 KiB `write+fsync`

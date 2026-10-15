@@ -769,6 +769,34 @@
       "fields": [
         {"group": 1, "label": "arms run", "evidence": "evidence/performance/oss-worm-compare.json", "path": "results_summary.fs_native_arms_ran"}
       ]
+    },
+    {
+      "id": "gc-scaling-s11-2-w16",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§11.2",
+      "claim": "group-commit scaling court: 16-writer off/fixed/adaptive ops/s and the ratios over off",
+      "regex": "11\\.2 Phase 88[\\s\\S]*?\\|\\s*16\\s*\\|\\s*([0-9][0-9. ]*[0-9])\\s*\\|\\s*([0-9][0-9. ]*[0-9])\\s*\\|\\s*([0-9][0-9. ]*[0-9])\\s*\\|\\s*([0-9.]+)×\\s*\\|\\s*([0-9.]+)×\\s*\\|",
+      "fields": [
+        {"group": 1, "label": "off ops/s @16", "evidence": "evidence/performance/group-commit-scaling.json", "path": "summary[writers=16].ops_per_s.off"},
+        {"group": 2, "label": "fixed ops/s @16", "evidence": "evidence/performance/group-commit-scaling.json", "path": "summary[writers=16].ops_per_s.fixed_linger"},
+        {"group": 3, "label": "adaptive ops/s @16", "evidence": "evidence/performance/group-commit-scaling.json", "path": "summary[writers=16].ops_per_s.adaptive_linger"},
+        {"group": 4, "label": "fixed/off @16", "evidence": "evidence/performance/group-commit-scaling.json", "path": "summary[writers=16].fixed_over_off"},
+        {"group": 5, "label": "adaptive/off @16", "evidence": "evidence/performance/group-commit-scaling.json", "path": "summary[writers=16].adaptive_over_off"}
+      ]
+    },
+    {
+      "id": "gc-scaling-s11-2-w64",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§11.2",
+      "claim": "group-commit scaling court: 64-writer off/fixed/adaptive ops/s and the ratios over off",
+      "regex": "11\\.2 Phase 88[\\s\\S]*?\\|\\s*64\\s*\\|\\s*([0-9][0-9. ]*[0-9])\\s*\\|\\s*([0-9][0-9. ]*[0-9])\\s*\\|\\s*([0-9][0-9. ]*[0-9])\\s*\\|\\s*([0-9.]+)×\\s*\\|\\s*([0-9.]+)×\\s*\\|",
+      "fields": [
+        {"group": 1, "label": "off ops/s @64", "evidence": "evidence/performance/group-commit-scaling.json", "path": "summary[writers=64].ops_per_s.off"},
+        {"group": 2, "label": "fixed ops/s @64", "evidence": "evidence/performance/group-commit-scaling.json", "path": "summary[writers=64].ops_per_s.fixed_linger"},
+        {"group": 3, "label": "adaptive ops/s @64", "evidence": "evidence/performance/group-commit-scaling.json", "path": "summary[writers=64].ops_per_s.adaptive_linger"},
+        {"group": 4, "label": "fixed/off @64", "evidence": "evidence/performance/group-commit-scaling.json", "path": "summary[writers=64].fixed_over_off"},
+        {"group": 5, "label": "adaptive/off @64", "evidence": "evidence/performance/group-commit-scaling.json", "path": "summary[writers=64].adaptive_over_off"}
+      ]
     }
   ]
 }

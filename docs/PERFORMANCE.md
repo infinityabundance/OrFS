@@ -789,9 +789,11 @@ coordinator: `write`, `setattr` (including the truncate path and the `O_TRUNC`
 open), `create`/`mkdir`/`mknod`/`symlink`, `unlink`/`rmdir`, `rename`/`link`,
 `setxattr`/`removexattr`, `fallocate` and `copy_file_range` (classical
 `src/fuse.rs`), and the same set on the native F2 dispatcher
-(`src/fuse_native.rs`). Read-only handlers, and the `fsync`/`flush`/`fsyncdir`
-barriers themselves, deliberately keep the direct lock (routing them through the
-coordinator would either defeat or deadlock the barrier). A `write`'s `O_APPEND`
+(`src/fuse_native.rs`). The explicit `fsync` barrier is routed through
+`Inner::barrier`, which **joins the current batch** as a barrier member on a
+`sync` mount (Phase 88, §11.2) so concurrently-arrived `fsync(2)` requests share
+one barrier; `flush` and `fsyncdir` keep the direct path (neither is a
+durability barrier). A `write`'s `O_APPEND`
 effective offset, its killpriv decision and the permission check are all resolved
 **inside the job**, under the core lock, so concurrent appends stay correctly
 ordered and never observe a stale end-of-file.
@@ -879,6 +881,82 @@ Representative points (single run, this host under heavy external load):
   and 4-thread rows of the committed evidence were hit by host stalls and moved
   materially between runs, and absolute tail latencies are load-sensitive.
   Reproduce with the container script; treat sub-20 % differences as noise.
+
+### 11.2 Phase 88 — mounted scaling for ordinary durable appends, and `fsync` coalescing
+
+**The measurement that motivated it.** Phase 87's open-source comparison
+(`docs/OSS-COMPARISON.md`) measured 4 KiB `write(2)+fsync(2)` appends through a
+real mount: OrFS-Rust was **flat** across writers (160.4 ops/s at 1 writer,
+163.7 at 64) because the coordinator was off and every `sync` transaction took
+its own barrier. The mechanism to fix it existed but was opt-in and, crucially,
+did not coalesce the *explicit* per-record `fsync(2)` at all.
+
+**What this phase adds.** Two things:
+
+1. **`fsync(2)` now coalesces.** `Inner::barrier` submits a barrier member into
+the current batch; the batch executes it as a no-op and its **one shared `sync`**
+(issued after every member) is what acknowledges it. Because the channel is FIFO
+and batches run in submission order, that barrier provably covers every mutation
+submitted before the call. A mount with grouping off, an `ordered`/`batched`
+mount, or a refused admission all fall back to the direct `core.sync()`,
+unchanged. The contract is untouched: a record is acknowledged only after a
+completed barrier.
+2. **A mounted off/fixed/adaptive scaling court.**
+`tests/group_commit_scaling.rs` (opt-in via
+`scripts/container-group-commit-scaling.sh`) sweeps writers **1, 2, 4, 8, 16, 32,
+64** across three arms at `sync`, records `ops/s`, latency percentiles, barrier
+frequency and queue depth, and carries the bounded-admission overload and the
+durability/order proofs. Evidence:
+`evidence/performance/group-commit-scaling.json`.
+
+Representative points (median of three runs per point, this host under heavy
+external load):
+
+| writers | off ops/s | fixed ops/s | adaptive ops/s | fixed / off | adaptive / off |
+|---:|---:|---:|---:|---:|---:|
+| 4 | 155.5 | 572.3 | 342.4 | 3.68× | 2.20× |
+| 8 | 161.6 | 1 056.5 | 671.7 | 6.54× | 4.16× |
+| 16 | 159.4 | 1 112.1 | 660.5 | 6.98× | 4.14× |
+| 64 | 161.1 | 867.8 | 672.5 | 5.39× | 4.18× |
+
+(The committed receipt also holds the 1- and 2-writer points; in this run the
+host's backing device was **pathologically slow at low concurrency** — a single
+`fsync` took ~140 ms — so those points fell to ~7 ops/s and are omitted from the
+table, not hidden. The **sequential-writer parity** is instead shown by the
+same-machine OSS comparison, measured on a quieter device: `docs/OSS-COMPARISON.md`
+§2 has the off arm at **160.4** and the on arm at **162.0** ops/s at 1 writer.)
+
+**Reading, stated plainly.**
+
+* **Grouping makes the durable append scale where it was flat.** The off arm is
+  ~155–161 ops/s at every writer count here; the fixed arm reaches **~1 112 ops/s
+  at 16 writers (6.98×)**, the adaptive arm **~670 ops/s (~4.2×)**. On a quieter
+  device (the OSS run) the grouped arm reached ~1 054 ops/s at 64 writers with the
+  two arms equal at 1 writer.
+* **Why the grouped arms still issue ~1 barrier per 3.4 ops.** Barrier frequency is
+  reported explicitly: at 8–64 writers the fixed arm averages **3.43 ops per
+  coordinator barrier** — a batch of ~3.4, not 64. The batch size is bounded by
+  how many writers can *submit* between two barriers (each writer blocks on its
+  own `fsync` reply), not by the batch limit. Buying a larger batch means a longer
+  linger, hence more latency; the fixed arm pays 300 µs for it, adaptive pays less.
+* **Adaptive under-coalesces relative to fixed under saturation** (~0.6× of
+  fixed). This is the honest continuation of §11.1's finding: adaptive's value is
+  delivering the grouping win at a *bounded* added latency and never taxing a
+  sequential writer, **not** beating the blind linger on saturated throughput. No
+  claim is made that adaptive beats fixed here.
+* **The remaining loss (named).** The residual vs the plain-ext4 anchor and
+  SeaweedFS's barrier-free flush is the per-batch barrier described above; it is
+  reported, not hidden, in `docs/OSS-COMPARISON.md` §2 and §6.
+
+**Durability and order, proved not asserted.** The same court proves (a) every
+acknowledged append is read back byte-exact after a **daemon restart**, (b) the
+commit sequence stays a total order of strictly advancing boundaries, and (c) the
+bounded-admission overload bound; and two dedicated tests prove the contract
+under fault: `tests/group_commit.rs::grouped_durable_acks_survive_a_power_loss`
+(simulated device, every acked-durable member survives) and
+`tests/group_commit_scaling.rs::group_commit_barrier_failure_is_refused_not_acknowledged`
+(`--features failpoints`: a failed shared barrier yields `EIO` for every affected
+append, never a false success). See `docs/DURABILITY.md` §8.
 
 ## 13. Reviewer item 4 — history-scaling court (foreground work vs growing history and manifestations)
 

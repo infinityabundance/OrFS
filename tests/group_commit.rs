@@ -910,3 +910,101 @@ mod crash {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// 6. Durable acknowledgements under grouping survive a power-loss model
+// ---------------------------------------------------------------------------
+
+/// The grouped analogue of
+/// `tests/power_loss.rs::sync_durable_acknowledgements_survive_power_loss`.
+///
+/// Every member of a grouped `sync` commit is acknowledged [`TxState::Durable`]
+/// only after the group's **single shared barrier** completes. On a **simulated
+/// power loss** (`orfs::powerloss`, honest `FlushMode::Barrier` device) every
+/// acknowledged-durable member's transaction must survive, and the visible commit
+/// order must be exactly the caller's order (strictly advancing boundaries).
+///
+/// This proves the coalescing *does not weaken durability or ordering*: the batch
+/// barrier that covers a member's committed bytes is the same barrier that
+/// acknowledges it.
+#[cfg(feature = "powerloss")]
+#[test]
+fn grouped_durable_acks_survive_a_power_loss() {
+    use orfs::log::OpenMode;
+    use orfs::powerloss::{self, SimConfig};
+
+    for (seed, groups, members) in [(1u64, 4usize, 3usize), (7, 6, 2), (99, 3, 5)] {
+        let td = TempDir::new().unwrap();
+        let dir = td.path().to_path_buf();
+        drop(init_volume(&dir, 1 << 16));
+
+        let handle = powerloss::attach(&Volume::log_dir(&dir), SimConfig::honest(seed))
+            .expect("attach simulated device");
+
+        // Commit `groups` groups of `members`, all `sync`: each member is acked
+        // `Durable` after its group's one shared barrier.
+        let mut acked: Vec<(u64, u8)> = Vec::new();
+        {
+            let mut vol = Volume::open(&dir, OpenMode::ReadWrite).expect("open volume");
+            let mut seq = CommitSequencer::new(&mut vol, DurabilityMode::Sync);
+            let mut next_marker: u16 = 0;
+            for _ in 0..groups {
+                let builders = seq.begin_many(members).expect("begin_many");
+                let markers: Vec<u8> = (0..members)
+                    .map(|_| {
+                        let m = next_marker as u8;
+                        next_marker += 1;
+                        m
+                    })
+                    .collect();
+                let txs: Vec<Transaction> = builders
+                    .into_iter()
+                    .zip(markers.iter())
+                    .map(|(mut b, &m)| {
+                        b.add(RecordType::InodeCreate, m as u64 + 1000, 0, vec![m])
+                            .expect("add record");
+                        b.build().expect("build")
+                    })
+                    .collect();
+                let outcomes = seq.commit_group(txs).expect("commit_group");
+                assert_eq!(outcomes.len(), members);
+                for (o, &m) in outcomes.iter().zip(markers.iter()) {
+                    assert_eq!(o.state, TxState::Durable, "sync group member is Durable");
+                    assert!(o.durable, "the shared barrier covered this member's bytes");
+                    acked.push((o.root, m));
+                }
+            }
+            assert!(
+                acked.windows(2).all(|w| w[0].0 < w[1].0),
+                "roots strictly advance in submission order (no reordering)"
+            );
+        }
+
+        let _ = handle.power_fail().expect("power fail");
+
+        // Independent reopen: every acknowledged-durable member must be present,
+        // in submission order.
+        let vol = Volume::open(&dir, OpenMode::ReadOnly).expect("reopen volume");
+        let recovered = vol.log.committed_end_offset();
+        let last_root = acked.last().unwrap().0;
+        assert!(
+            recovered >= last_root,
+            "seed {seed}: every acked-durable member survived \
+             (recovered {recovered} < last acked {last_root})"
+        );
+        for (root, _m) in &acked {
+            assert!(
+                *root <= recovered && vol.log.is_boundary(*root),
+                "seed {seed}: acked root {root} is a valid boundary after power loss"
+            );
+        }
+        let markers = committed_markers(&vol);
+        let acked_markers: Vec<u8> = acked.iter().map(|(_, m)| *m).collect();
+        assert!(markers.len() >= acked_markers.len());
+        assert_eq!(
+            &markers[..acked_markers.len()],
+            &acked_markers[..],
+            "seed {seed}: acknowledged members survived in submission order"
+        );
+    }
+}

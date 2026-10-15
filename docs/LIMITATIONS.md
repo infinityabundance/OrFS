@@ -678,12 +678,47 @@ substance of it:
   implied anywhere**. This is an environment limitation of this image, not a claim
   that the axes are unavailable: the sibling Go repository ran OpenZFS inside a KVM
   micro-VM guest and Btrfs on a loop-mounted image.
-* **Group commit is never a durable append.** The internal commit path and the
-  group-commit coordinator amortise a barrier across a batch or omit the `fsync`
-  entirely; those are *mechanism* figures. The append rows in this court are real
-  per-record `fsync` through a real mount, with group commit off.
+* **Group commit is a mechanism, and one end-to-end arm.** The internal commit path
+  and the engine-level group-commit courts amortise a barrier across a batch of
+  prepared transactions (or omit the `fsync` entirely); those are *mechanism*
+  figures, never durable file appends. Since Phase 88 the court also reports an
+  end-to-end **group-commit-on** append arm — a real 4 KiB `write(2)+fsync(2)` per
+  record through a real mount, acknowledged only after a completed barrier — so the
+  same durability contract is shown at two barrier frequencies. The group-commit-off
+  arm remains the baseline.
 * **There is no cross-receipt numeric comparison.** The sibling Go repository's
   `evidence/oss-compare.json` is cited as external corroboration of the *method*
   (and attributed with its path and generation time), **not** as a number to be
   tabulated with this receipt's; it was produced on a different run, with
   different container caps, and with its volumes on a different path.
+
+## 24. Group-commit scaling on this host is real but bounded, and load-sensitive (Phase 88)
+
+Phase 88 measures the coordinator against the workload Phase 87 found flat — a 4 KiB
+`write(2)+fsync(2)` per record through a real mount — and coalesces the explicit
+`fsync(2)` barrier into the batch. The result is a large, real win, and it is stated
+with its bounds:
+
+* **It is one host under heavy external load, and still noisy.** The committed
+  receipt reports the **median of three runs** per point with the raw rates
+  alongside; the first sweep's w=32 off-arm row collapsed to 15.7 ops/s (a 6.2 s
+  p99 host stall) and was re-run. Sub-20 % differences are noise.
+* **Grouping scales, but not without bound.** The grouped arms still issue roughly
+  **one barrier per 3.4 operations** at 8–64 writers: the batch size is bounded by
+  how many writers can *submit* between two barriers, not by the batch limit, so
+  the ceiling is the device's barrier cost divided by the amortised batch size — not
+  the device alone and not concurrency alone. Buying a larger batch means a longer
+  linger, hence more latency.
+* **Adaptive does not beat the blind linger on saturated throughput.** Adaptive lands
+  at ~0.6× the fixed linger under saturation; its value is a **bounded** added
+  latency and no penalty to a sequential writer, not a throughput win over fixed. No
+  such claim is made.
+* **The coordinator stays opt-in.** No default is changed. `--group-commit` (with
+  `--group-commit-linger {adaptive|fixed}`) is required; the default mount remains
+  group-commit off.
+* **The `fsync` change is not free of risk and is bounded accordingly.** Routing
+  `fsync(2)` through the batch is only taken on a `sync` mount with a coordinator
+  active; every other case (grouping off, `ordered`/`batched`, refused admission)
+  keeps the direct `core.sync()`. Its correctness rests on the channel being FIFO
+  and batches executing in submission order, which the Phase-88 courts prove
+  (`docs/DURABILITY.md` §9), not assert.

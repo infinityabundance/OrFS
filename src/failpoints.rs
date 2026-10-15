@@ -78,6 +78,16 @@ pub enum Failpoint {
     DuringSegmentRollover,
     /// 11. During a directory `fsync` (segment-directory durability).
     DuringDirectorySync,
+    /// 18. The **shared durability barrier** itself: the log-level `flush`/`fsync`
+    ///     hook (`Log::sync`) that the mount-level group-commit coordinator issues
+    ///     once per batch (Phase 88). Distinct from
+    ///     [`Failpoint::AfterPublicationBeforeSync`] (which fires on the
+    ///     commit-sequencer path *before* it calls that hook) so a test can fail
+    ///     the barrier **after** every member has been published and observe that
+    ///     the members are refused, not acknowledged. Kept **out** of
+    ///     [`Failpoint::ALL`] so the §34 crash matrix (which arms every
+    ///     [`Failpoint::ALL`] item) is unaffected.
+    DurabilityBarrier,
     /// 12. Tier relocation (Phase 76): after the durable `Copying` intent record,
     ///     before the cold-tier copy is written.
     TierAfterIntent,
@@ -128,6 +138,12 @@ impl Failpoint {
         Failpoint::TierAfterRecall,
     ];
 
+    /// The mount-level **durability-barrier** failpoints (Phase 88). Kept separate
+    /// from [`Failpoint::ALL`] for the same reason as [`Failpoint::TIER_ALL`]: they
+    /// are armed only by the group-commit durability court, never by the §34
+    /// commit-path crash matrix.
+    pub const BARRIER_ALL: [Failpoint; 1] = [Failpoint::DurabilityBarrier];
+
     /// The stable snake-case name used in `ORFS_FAILPOINT` and evidence.
     pub const fn name(self) -> &'static str {
         match self {
@@ -142,6 +158,7 @@ impl Failpoint {
             Failpoint::AfterPublicationBeforeSync => "after_publication_before_sync",
             Failpoint::DuringSegmentRollover => "during_segment_rollover",
             Failpoint::DuringDirectorySync => "during_directory_sync",
+            Failpoint::DurabilityBarrier => "durability_barrier",
             Failpoint::TierAfterIntent => "tier_after_intent",
             Failpoint::TierAfterRemoteCopy => "tier_after_remote_copy",
             Failpoint::TierAfterVerified => "tier_after_verified",
@@ -151,12 +168,13 @@ impl Failpoint {
         }
     }
 
-    /// Parse a failpoint from its stable name (either the §34 set or the tier
-    /// relocation transitions).
+    /// Parse a failpoint from its stable name (the §34 set, the tier relocation
+    /// transitions, or the mount-level durability barrier).
     pub fn from_name(name: &str) -> Option<Failpoint> {
         Failpoint::ALL
             .into_iter()
             .chain(Failpoint::TIER_ALL)
+            .chain(Failpoint::BARRIER_ALL)
             .find(|f| f.name() == name)
     }
 }

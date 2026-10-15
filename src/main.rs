@@ -147,6 +147,11 @@ enum Command {
         /// Maximum mutations coalesced into one group-commit batch.
         #[arg(long, default_value_t = 64)]
         group_commit_batch: usize,
+        /// Group-commit linger policy: `adaptive` (deadline-aware, the default) or
+        /// `fixed` (the historical blind 300 us wait). Only meaningful with
+        /// `--group-commit`.
+        #[arg(long, default_value = "adaptive")]
+        group_commit_linger: String,
         /// Key file for an **encrypted** volume (`orfs init --key-file`). Required
         /// to mount an encrypted volume, and refused (with a typed error) when
         /// given for a plaintext one. Mounting without the key, with the wrong
@@ -627,6 +632,7 @@ fn run(cli: &Cli) -> Result<()> {
             f2_affinity,
             group_commit,
             group_commit_batch,
+            group_commit_linger,
             key_file,
         } => mount_cmd(MountArgs {
             backing,
@@ -653,6 +659,7 @@ fn run(cli: &Cli) -> Result<()> {
             f2_affinity: *f2_affinity,
             group_commit: *group_commit,
             group_commit_batch: *group_commit_batch,
+            group_commit_linger,
             key_file: key_file.as_ref(),
         }),
         Command::Unmount { mountpoint } => unmount_cmd(mountpoint, cli.json),
@@ -1229,6 +1236,7 @@ struct MountArgs<'a> {
     f2_affinity: bool,
     group_commit: bool,
     group_commit_batch: usize,
+    group_commit_linger: &'a str,
     key_file: Option<&'a PathBuf>,
 }
 
@@ -1350,7 +1358,10 @@ fn mount_cmd(args: MountArgs<'_>) -> Result<()> {
         f2_affinity: args.f2_affinity,
         group_commit: args.group_commit,
         group_commit_batch: args.group_commit_batch,
-        group_commit_linger: orfs::group_commit::GroupCommitLinger::Adaptive,
+        group_commit_linger: match args.group_commit_linger {
+            "fixed" => orfs::group_commit::GroupCommitLinger::Fixed,
+            _ => orfs::group_commit::GroupCommitLinger::Adaptive,
+        },
     };
 
     eprintln!(

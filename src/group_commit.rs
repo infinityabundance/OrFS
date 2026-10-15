@@ -389,6 +389,10 @@ impl GcCounters {
 pub(crate) struct BatchCoordinator<C: OrfsCore + Send + 'static> {
     tx: SyncSender<Envelope<C>>,
     counters: Arc<GcCounters>,
+    /// Whether this mount issues a shared durability barrier at all (`sync`).
+    /// `ordered`/`batched` mounts have no barrier to amortise, so a barrier
+    /// submission is refused and the caller syncs directly.
+    coalesces: bool,
 }
 
 impl<C: OrfsCore + Send + 'static> BatchCoordinator<C> {
@@ -415,7 +419,11 @@ impl<C: OrfsCore + Send + 'static> BatchCoordinator<C> {
         let _ = std::thread::Builder::new()
             .name("orfs-group-commit".to_string())
             .spawn(move || run_loop(rx, weak, limit, worker_counters, linger, coalesces));
-        Arc::new(BatchCoordinator { tx, counters })
+        Arc::new(BatchCoordinator {
+            tx,
+            counters,
+            coalesces,
+        })
     }
 
     /// Attempt a bounded admission. On success the caller waits on the returned
@@ -447,6 +455,43 @@ impl<C: OrfsCore + Send + 'static> BatchCoordinator<C> {
         }
     }
 
+    /// Submit a **durability barrier** into the current batch (Phase 88).
+    ///
+    /// This is the coalescing path for an explicit `fsync(2)`: the barrier is a
+    /// batch member that performs no work of its own, so the batch executes it as
+    /// a no-op and the batch's one shared `sync` (issued after every member,
+    /// including this one) is what acknowledges it. Because the channel is FIFO
+    /// and batches run in submission order, that barrier covers every mutation
+    /// submitted before this call — so concurrently-arrived `fsync(2)` requests
+    /// (and the writes they cover) share one barrier instead of each paying its
+    /// own. Semantically identical to the direct `sync` on the refusal path.
+    ///
+    /// Returns `Err(())` when this mount has no shared barrier to amortise
+    /// (`ordered`/`batched`) or the queue is full/closed, so the caller syncs
+    /// directly under the core lock — never a false success, never a silent drop.
+    pub(crate) fn try_admit_barrier(&self) -> std::result::Result<Receiver<Result<i64>>, ()> {
+        if !self.coalesces {
+            return Err(());
+        }
+        let (reply_tx, reply_rx) = channel::<Result<i64>>();
+        let envelope = Envelope {
+            job: Box::new(|_core: &mut C| Ok(0)),
+            reply: reply_tx,
+            enqueued: Instant::now(),
+        };
+        self.counters.on_submit_attempt();
+        match self.tx.try_send(envelope) {
+            Ok(()) => {
+                self.counters.record_admission();
+                Ok(reply_rx)
+            }
+            Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => {
+                self.counters.record_fallback();
+                Err(())
+            }
+        }
+    }
+
     /// The shared instrumentation cell (so the mount can expose it).
     pub(crate) fn counters(&self) -> Arc<GcCounters> {
         Arc::clone(&self.counters)
@@ -467,6 +512,7 @@ impl<C: OrfsCore + Send + 'static> BatchCoordinator<C> {
         BatchCoordinator {
             tx,
             counters: Arc::new(GcCounters::new(limit, capacity)),
+            coalesces: true,
         }
     }
 }

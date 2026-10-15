@@ -477,6 +477,37 @@ impl<C: OrfsCore + Send + 'static> Inner<C> {
         }
     }
 
+    /// Issue a durability barrier covering every mutation submitted before this
+    /// call (the `fsync(2)` hook).
+    ///
+    /// With a group-commit coordinator active on a `sync` mount the barrier
+    /// **joins the current batch**: it is acknowledged only after the batch's
+    /// single shared `sync`, which covers every earlier member, so
+    /// concurrently-arrived `fsync(2)` requests share one barrier instead of each
+    /// paying its own (Phase 88). Because the channel is FIFO and batches run in
+    /// submission order, that barrier provably covers every mutation submitted
+    /// before this call. Without a coordinator — or when the durability mode has
+    /// no shared barrier to amortise, or the admission is refused under overload
+    /// — it syncs directly under the core lock, exactly as before, so an
+    /// over-capacity or `ordered` caller is never a false success.
+    pub(crate) fn barrier(&self) -> Result<()> {
+        if let Some(coord) = self.coordinator.get() {
+            if let Ok(reply) = coord.try_admit_barrier() {
+                return reply
+                    .recv()
+                    .map_err(|_| {
+                        OrfsError::Io(std::io::Error::new(
+                            std::io::ErrorKind::BrokenPipe,
+                            "group-commit reply dropped",
+                        ))
+                    })?
+                    .map(|_| ());
+            }
+        }
+        let mut core = self.core.lock();
+        core.sync()
+    }
+
     /// The group-commit instrumentation cell, when the coordinator is active.
     pub(crate) fn group_commit_counters(&self) -> Option<Arc<crate::group_commit::GcCounters>> {
         self.coordinator.get().map(|c| c.counters())
@@ -1626,10 +1657,11 @@ impl<C: OrfsCore + Send + 'static> Filesystem for OrfsFuse<C> {
             // fsync on a read-only mount needs no durability work.
             let _ = e;
         }
-        let mut core = self.inner.core.lock();
-        match core.sync() {
+        // Route through `Inner::barrier` so an explicit `fsync(2)` can share a
+        // group-commit batch's single durability barrier (Phase 88); a mount with
+        // grouping off (or an `ordered`/`batched` mount) syncs directly, unchanged.
+        match self.inner.barrier() {
             Ok(()) => {
-                drop(core);
                 self.inner.metrics.lock().fsyncs += 1;
                 reply.ok();
             }

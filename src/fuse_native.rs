@@ -1166,10 +1166,10 @@ impl<C: OrfsCore + Send + 'static> Dispatcher<C> {
     }
 
     fn fsync(&self) -> Reply {
-        let mut core = self.fs.inner.core.lock();
-        match core.sync() {
+        // Share a group-commit batch's barrier when grouping is active on a
+        // `sync` mount (Phase 88); otherwise sync directly, unchanged.
+        match self.fs.inner.barrier() {
             Ok(()) => {
-                drop(core);
                 self.fs.inner.metrics.lock().fsyncs += 1;
                 Reply::Empty
             }

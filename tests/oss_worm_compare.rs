@@ -328,6 +328,16 @@ fn prepare(dir: &Path, writers: usize, read_bytes: u64) -> Result<u64, String> {
     Ok(read_bytes)
 }
 
+/// Create only the `writers` empty append files (the group-commit arm measures
+/// appends alone, so it does not pay to write the large read file).
+fn prepare_appends(dir: &Path, writers: usize) -> Result<(), String> {
+    for i in 0..writers {
+        let p = dir.join(format!("{APPEND_PREFIX}-{i}.bin"));
+        File::create(&p).map_err(|e| format!("create {}: {e}", p.display()))?;
+    }
+    Ok(())
+}
+
 struct AppendOutcome {
     ops: u64,
     bytes: u64,
@@ -881,17 +891,34 @@ fn start_orfs(
     mnt: &Path,
     err_path: &Path,
 ) -> Result<OrfsMount, String> {
+    start_orfs_with(bin, backing, mnt, err_path, &[])
+}
+
+/// Start an OrFS mount with additional flags appended to [`ORFS_MOUNT_FLAGS`].
+/// Used by the Phase-88 group-commit arm, which adds `--group-commit` (adaptive
+/// linger) so the comparison reports OrFS's best honest configuration alongside
+/// the equal-durability baseline.
+fn start_orfs_with(
+    bin: &Path,
+    backing: &Path,
+    mnt: &Path,
+    err_path: &Path,
+    extra_flags: &[&str],
+) -> Result<OrfsMount, String> {
     let err = File::create(err_path).map_err(|e| format!("create {}: {e}", err_path.display()))?;
     let err2 = err.try_clone().map_err(|e| format!("clone err fd: {e}"))?;
     let mut cmd = Command::new(bin);
     cmd.arg("mount").arg(backing).arg(mnt);
     cmd.args(ORFS_MOUNT_FLAGS);
+    cmd.args(extra_flags);
+    let mut flags: Vec<String> = ORFS_MOUNT_FLAGS.iter().map(|s| s.to_string()).collect();
+    flags.extend(extra_flags.iter().map(|s| s.to_string()));
     let command = format!(
         "{} mount {} {} {}",
         bin.display(),
         backing.display(),
         mnt.display(),
-        ORFS_MOUNT_FLAGS.join(" ")
+        flags.join(" ")
     );
     let child = cmd
         .env("ORFS_GROUP_COMMIT", "")
@@ -1703,6 +1730,88 @@ fn run_court(cfg: &Config) -> SystemsReport {
             .map(|r| r.bytes)
             .sum::<u64>();
 
+    // ------------- OrFS-Rust: the append arm with group commit ON ------------
+    // The Phase-88 addition: the SAME per-record durable append, measured on a
+    // separate volume with the opt-in group-commit coordinator installed
+    // (`--group-commit`, adaptive linger). Reported alongside the group-commit-off
+    // baseline so the comparison reflects OrFS's best honest configuration while
+    // keeping the equal-durability arm as the baseline. Only the append arms run
+    // here (the read/retention axes are unchanged and measured on the off arm).
+    let mut orfs_gc_system = json!({
+        "mounted": false,
+        "status": "not_attempted",
+        "version": orfs_ver,
+        "binary_sha256": orfs_sha,
+        "mount_command": Value::Null,
+        "fuse_library": "fuser crate (classical /dev/fuse, one request per operation)",
+        "transport": "f0 (classical /dev/fuse)",
+        "direct_io": true,
+        "fsync_policy": "--durability sync with --group-commit: concurrently-arrived mutations and fsync(2) share one durability barrier per batch (batch=64, adaptive linger); every acknowledged record is covered by a completed barrier",
+        "backing_io": "synchronous (--backing-io sync)",
+    });
+    {
+        let gc_vol = scratch.join("orfs-gc-vol");
+        let gc_mnt = scratch.join("orfs-gc-mnt");
+        fs::create_dir_all(&gc_mnt).expect("mkdir gc mnt");
+        if let Err(e) = init_volume(&orfs, &gc_vol) {
+            failed.push(format!("OrFS-Rust-gc/init: {e}"));
+            orfs_gc_system["status"] = json!("init_failed");
+            orfs_gc_system["reason"] = json!(e);
+        } else {
+            let started = start_orfs_with(
+                &orfs,
+                &gc_vol,
+                &gc_mnt,
+                &scratch.join("orfs-gc-mount.log"),
+                &["--group-commit"],
+            );
+            match started {
+                Ok(gc_mount) => {
+                    orfs_gc_system["mounted"] = json!(true);
+                    orfs_gc_system["status"] = json!("mounted");
+                    orfs_gc_system["mount_command"] = json!(gc_mount.command.clone());
+                    let gc_daemon_stderr = {
+                        let prep =
+                            prepare_appends(&gc_mnt, *cfg.writers.iter().max().unwrap_or(&1));
+                        prep.expect("prepare append files on OrFS (gc)");
+                        for &w in &cfg.writers {
+                            eprintln!(
+                                "oss-worm-compare: OrFS-Rust (group commit on) append writers={w} ({:.0}s)",
+                                cfg.append_seconds
+                            );
+                            match run_append_arm(
+                                "OrFS-Rust (group commit on)",
+                                &gc_mnt,
+                                w,
+                                cfg.record_bytes,
+                                cfg.append_seconds,
+                                cfg.max_append_mib * 1024 * 1024,
+                                cfg.seed,
+                            ) {
+                                Ok(row) => rows.push(row),
+                                Err(e) => {
+                                    eprintln!(
+                                        "oss-worm-compare: WARN: arm OrFS-Rust-gc/append/{w} failed: {e}"
+                                    );
+                                    failed.push(format!("OrFS-Rust-gc/append/writers={w}: {e}"));
+                                }
+                            }
+                        }
+                        stop_orfs(gc_mount, &gc_mnt)
+                    };
+                    orfs_gc_system["daemon_stderr"] = json!(gc_daemon_stderr);
+                }
+                Err(e) => {
+                    orfs_gc_system["status"] = json!("mount_failed");
+                    orfs_gc_system["reason"] = json!(e.clone());
+                    eprintln!("oss-worm-compare: WARN: group-commit arm did not mount: {e}");
+                    failed.push(format!("OrFS-Rust-gc/mount: {e}"));
+                }
+            }
+        }
+        let _ = fs::remove_dir_all(&gc_vol);
+    }
+
     // ---------------- OrFS-Rust: the retention axis ----------------
     let ret_vol = scratch.join("ret-vol");
     let ret_mnt = scratch.join("ret-mnt");
@@ -1934,6 +2043,15 @@ fn run_court(cfg: &Config) -> SystemsReport {
             .into(),
     );
     differences.push(
+        "The two OrFS-Rust append rows share ONE durability contract — an acknowledged \
+         record is durable (its covering barrier completed). They differ only in whether \
+         the opt-in group-commit coordinator amortises that barrier over a batch: `group \
+         commit on` (--group-commit, adaptive linger) lets concurrently-arrived mutations \
+         and fsync(2) share one barrier per batch, so it is the same contract delivered at \
+         a lower barrier frequency, not a weaker one."
+            .into(),
+    );
+    differences.push(
         "Host-level variance (page cache state, scheduler, backing-device write cache) \
          is not controlled beyond the shared container; run-to-run variance is expected \
          and unquantified here."
@@ -2009,12 +2127,18 @@ fn run_court(cfg: &Config) -> SystemsReport {
             "backing_io": "synchronous (--backing-io sync)",
             "daemon_stderr": orfs_daemon_stderr,
         },
+        "OrFS-Rust (group commit on)": orfs_gc_system.clone(),
         "SeaweedFS": sw_system,
     });
 
+    let orfs_gc_arms = rows
+        .iter()
+        .filter(|r| r.system == "OrFS-Rust (group commit on)")
+        .count();
     let arms = json!({
         "expected_per_system": expected,
-        "OrFS-Rust": { "mounted": true, "ran": orfs_arms, "failed": failed.iter().filter(|f| f.starts_with("OrFS-Rust")).count() },
+        "OrFS-Rust": { "mounted": true, "ran": orfs_arms, "failed": failed.iter().filter(|f| f.starts_with("OrFS-Rust/")).count() },
+        "OrFS-Rust (group commit on)": { "mounted": orfs_gc_system["mounted"] == json!(true), "ran": orfs_gc_arms, "failed": failed.iter().filter(|f| f.starts_with("OrFS-Rust-gc")).count() },
         "SeaweedFS": { "mounted": rows.iter().any(|r| r.system == "SeaweedFS"), "ran": sw_arms, "failed": failed.iter().filter(|f| f.starts_with("SeaweedFS")).count() },
         "anchors": { "ext4-plain": { "ran": anchors.len(), "failed": failed.iter().filter(|f| f.starts_with("ext4-plain")).count() } },
         "failed": failed,
@@ -2101,8 +2225,21 @@ fn compose_receipt(cfg: &Config, rep: SystemsReport) -> Value {
                 "seed": cfg.seed,
                 "bounded": true,
             },
+            "orfs_append_configurations": {
+                "group_commit_off": {
+                    "mount_flags": ORFS_MOUNT_FLAGS,
+                    "role": "the equal-durability baseline; every sync transaction pays its own fsync",
+                },
+                "group_commit_on": {
+                    "mount_flags_extra": ["--group-commit"],
+                    "batch": 64,
+                    "linger": "adaptive",
+                    "role": "OrFS's best honest configuration for per-record durable appends; concurrently-arrived mutations and fsync(2) share one barrier per batch, but every acknowledged record is still covered by a completed barrier",
+                    "note": "same driver, same device, same durability contract (an acknowledged record is durable); only the barrier is amortised",
+                },
+            },
             "segment_size_bytes": SEGMENT_SIZE,
-            "systems": ["OrFS-Rust", "SeaweedFS"],
+            "systems": ["OrFS-Rust", "OrFS-Rust (group commit on)", "SeaweedFS"],
             "differences": rep.differences,
             "not_comparable": rep.not_comparable,
             "not_ranked": true,

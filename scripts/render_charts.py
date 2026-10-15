@@ -1179,6 +1179,31 @@ def chart_transport_ceiling_reduction():
         cap, "allocs per op", ops, series)
 
 
+def chart_group_commit_scaling():
+    d = load("group-commit-scaling.json")
+    s = d["summary"]
+    writers = [r["writers"] for r in s]
+
+    def col(arm):
+        return [(r["writers"], r["ops_per_s"][arm]) for r in s]
+
+    series = [
+        {"name": "group commit off (baseline)", "points": col("off")},
+        {"name": "group commit on, fixed linger", "points": col("fixed_linger")},
+        {"name": "group commit on, adaptive linger", "points": col("adaptive_linger")},
+    ]
+    cap = [
+        "source: evidence/performance/group-commit-scaling.json (4 KiB write(2)+fsync(2) per record, --durability sync, real orfs mount)",
+        "median of 3 runs per point (log/log axes); higher is better; NOT a ranking",
+        "off is flat; grouping scales (fixed ~6x over off at 16 writers). adaptive adds bounded latency, not a throughput win over fixed",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return line_chart(
+        "Phase 88: mounted durable-append throughput vs. writers",
+        cap, "writers", "ops/s (log)", series,
+        xlog=True, ylog=True, xticks=writers)
+
+
 def chart_oss_worm_append():
     d = load("oss-worm-compare.json")
 
@@ -1319,6 +1344,8 @@ CHARTS = (
      "evidence/performance/oss-worm-compare.json", "sh scripts/container-oss-worm-compare.sh"),
     ("oss-worm-reads.svg", chart_oss_worm_reads,
      "evidence/performance/oss-worm-compare.json", "sh scripts/container-oss-worm-compare.sh"),
+    ("group-commit-scaling.svg", chart_group_commit_scaling,
+     "evidence/performance/group-commit-scaling.json", "sh scripts/container-group-commit-scaling.sh"),
 )
 
 

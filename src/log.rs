@@ -2276,7 +2276,15 @@ impl Log {
     }
 
     /// Flush and fsync the current segment (durability hook).
+    ///
+    /// `DurabilityBarrier` is the mount-level **shared barrier** injection point:
+    /// the group-commit coordinator publishes every member of a batch and then
+    /// calls this one hook (Phase 88). Arming it (with the `failpoints` feature)
+    /// makes the covering barrier fail, so the coordinator must refuse
+    /// acknowledgment rather than paper the failure over — see
+    /// `tests/group_commit_scaling.rs::group_commit_barrier_failure_is_refused_not_acknowledged`.
     pub fn sync(&mut self) -> Result<()> {
+        failpoints::check(Failpoint::DurabilityBarrier)?;
         if let Some(w) = &self.writer {
             match &self.io {
                 BackingEngine::Sync => w.seg.sync()?,

@@ -76,6 +76,7 @@ reported `SKIPPED (reason)` and is **not** counted as a pass. See
 | `evidence/correctness/posix-extras.json` | `tests/posix_extras.rs` | `sh -c '. scripts/lib.sh && docker_run cargo test -p orfs --test posix_extras'` |
 | `evidence/correctness/adversarial-concurrency.json` | `tests/adversarial_concurrency.rs` | `sh scripts/container-adversarial-concurrency.sh` |
 | `evidence/performance/application-workloads.json` | `tests/application_workloads.rs` | `sh scripts/container-application-workloads.sh` |
+| `evidence/performance/transport-ceiling.json` | `tests/transport_ceiling.rs` | `sh scripts/container-transport-ceiling.sh` |
 | `evidence/security/fault-injection.json` | `tests/fs_fault_injection.rs` | `sh scripts/container-fault-injection.sh` |
 | `evidence/recovery/fault-injection-verify-recover.json` | `tests/verify_recover_faults.rs` | `sh scripts/container-fault-verify.sh` |
 | `evidence/recovery/capacity-guard.json` | `tests/capacity_guard.rs` | `sh -c '. scripts/lib.sh && docker_run cargo test -p orfs --test capacity_guard'` |
@@ -161,6 +162,9 @@ image → receipt → command mapping:
 | `planner-mounted-paired.svg` | `PERFORMANCE.md` §29 | `evidence/performance/planner-mounted-paired.json` | `sh scripts/container-planner-mounted.sh` |
 | `adversarial-concurrency.svg` | `PERFORMANCE.md` §32 | `evidence/correctness/adversarial-concurrency.json` | `sh scripts/container-adversarial-concurrency.sh` |
 | `application-workloads.svg` | `PERFORMANCE.md` §33 | `evidence/performance/application-workloads.json` | `sh scripts/container-application-workloads.sh` |
+| `transport-ceiling-latency.svg` | `PERFORMANCE.md` §35 | `evidence/performance/transport-ceiling.json` | `sh scripts/container-transport-ceiling.sh` |
+| `transport-ceiling-decomposition.svg` | `PERFORMANCE.md` §35 | `evidence/performance/transport-ceiling.json` | `sh scripts/container-transport-ceiling.sh` |
+| `transport-ceiling-reduction.svg` | `PERFORMANCE.md` §35 | `evidence/performance/transport-ceiling.json` | `sh scripts/container-transport-ceiling.sh` |
 
 The **chart command** is the same for every row: `python3 scripts/render_charts.py`
 (generate) or `python3 scripts/render_charts.py --check` (drift check). The

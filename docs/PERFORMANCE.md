@@ -3023,3 +3023,161 @@ It is therefore **rejected, not applied** (`no measured win`).
 **Provenance.** `evidence/performance/hotpath-counters.json`; charts
 `hotpath-counters-latency.svg`, `hotpath-counters-counters.svg`;
 `docs/PMU.md`.
+
+**Phase 84 update.** The mounted hot path changed (see §35): the commit path no
+longer re-encodes the whole transaction for its space check, no longer encodes each
+record twice, and no longer collects/clones the manifestation bookkeeping when that
+plane is off; the extent payload encoder no longer copies the payload twice. Re-run
+of **this** court (same workload, same profile) after the change: `allocs/op`
+**101.8874 → 87.9454** and daemon `instructions/op` **64 741 → 58 044** (deterministic
+and near-deterministic respectively); the `cycles/op` and `cache-misses/op` columns
+are load-sensitive and moved the other way in this run (`43 751 → 50 432` cycles,
+`401 → 1209` misses), so they are not used to justify the change. The Phase-83
+numbers above remain the Phase-83 measurement.
+
+---
+
+## 35. Phase 84 — the metadata/transport ceiling, measured, and measured hot-path reductions
+
+**The question.** Phase 81 (§33; `docs/APPLICATIONS.md`) measured every application
+workload as a loss and Phase 83 (§34) attributed the mounted metadata hot path to
+the **daemon** — but only for one transport (F0) and **without a same-device
+reference**. So it could say *the daemon is expensive* but not **how much of the gap
+to a plain filesystem is irreducible FUSE dispatch on this host and how much is
+OrFS's own work**, nor whether a different OrFS transport changes the answer. This
+section answers both with measurements.
+
+**Court.** `tests/transport_ceiling.rs` (bounded always-on smoke + an opt-in
+`ORFS_TRANSPORT_CEILING=1` receipt), run by
+`scripts/container-transport-ceiling.sh` under `docker_run_kmount_pmu`. It drives
+the **identical** bounded `create`/`stat`/`rename`/`unlink` + small `read`/`write`
+workload (the §34 workload) through:
+
+* a real mount on **F0** (`fuser`, sync backing), **F2-single**
+  (`F2Servicing::Single`) and **F2-pool** (`F2Servicing::pool_default()`,
+  `fast=2,bulk=6`) — F2 is used only when it genuinely negotiates; a fallback is
+  recorded as `fallback:true` with the honest `transport_used()` and reason (none did
+  here);
+* a **read-only immutable** F2 snapshot arm (reads only; `direct_io`), labelled as
+  **not comparable** to the read-write metadata arms;
+* a plain directory on the **same device with no FUSE** (the same-device baseline);
+* and **directly through the in-process engine** (no mount), for allocation
+  attribution.
+
+Per arm it records p50/p95/p99/p99.9 per op, real per-thread user-space counters
+(`exclude_kernel=1`) on the calling thread and **every live daemon thread**, the
+counting-allocator `allocs/op`, the daemon request counts, and the **truth of which
+transport served the request** (`transport_used()`). Receipt:
+`evidence/performance/transport-ceiling.json`
+(schema `orfs.performance.transport-ceiling.v1`). `cycles_per_ns` is **measured**
+(5.211 in this run) with a hardware cycle counter over a CPU-bound loop — no
+fabricated frequency.
+
+**The decomposition.** For each mounted transport the overhead over the same-device
+baseline, `overhead = mounted_wall − raw_wall` (ns/op), is split into three measured
+parts: `client_cpu = client cycles/op ÷ cycles_per_ns`, `daemon_cpu = Σ daemon-thread
+cycles/op ÷ cycles_per_ns`, and `kernel = overhead − client_cpu − daemon_cpu` (the
+irreducible FUSE dispatch/syscall/scheduling residual).
+
+**Measured (one run, release; 2 000 iters = 12 000 measured syscalls per mount arm).**
+
+Per-op client latency (ns), the metadata ops (which always round-trip):
+
+| transport | `create` p50 | `create` p99 | `stat` p50 | `rename` p50 | `unlink` p50 |
+|---|---:|---:|---:|---:|---:|
+| **F0** | 65 302 | 119 442 | 17 493 | 34 744 | 35 746 |
+| **F2-single** | 89 877 | 170 497 | 5 761 | 48 891 | 44 814 |
+| **F2-pool** | 117 289 | 274 601 | 31 469 | 68 096 | 54 241 |
+
+Real user-space counters per op (daemon threads, summed) and `allocs/op`:
+
+| arm | wall ns/op | daemon cyc/op | daemon insn/op | daemon cm/op | allocs/op |
+|---|---:|---:|---:|---:|---:|
+| same-device (no FUSE) | 1 421 | — | — | — | 1.00 |
+| engine (no mount) | 8 785 | — | — | — | 73.04 |
+| **F0** | 32 811 | 41 498 | 58 194 | 571 | 87.89 |
+| **F2-single** | 42 637 | 37 083 | 63 460 | 294 | 101.78 |
+| **F2-pool** | 60 985 | 54 909 | 70 053 | 703 | 102.64 |
+| F2-immutable-read (direct 96 B) | 6 850 | 2 881 | 3 136 | 20 | 4.01 |
+
+**The ceiling (F0, the latency default).** Overhead over the same-device baseline
+**31 390 ns/op**, split **client 277 (0.9 %)** + **daemon 7 963 (25.4 %)** +
+**kernel 23 150 (73.8 %)**. The same split for the F2 arms is **80.7–81.9 % kernel / 17.3–17.7 % daemon**.
+
+**Reading it.**
+
+1. **On this host ~74 % of the F0 FUSE tax is irreducible.** The kernel FUSE
+   round-trip + VFS + scheduling residual is 23.2 µs/op against 8.0 µs/op of daemon
+   *user-space* work, so even a *hypothetically free* daemon would leave F0 at
+   the same-device baseline (1.4 µs/op) plus that kernel residual ≈ **24.6 µs/op**.
+   That is the honest ceiling: it bounds what any OrFS hot-path optimisation can
+   achieve.
+2. **OrFS's own work is real and separable.** The in-process engine costs
+   **73.0 allocs/op** for the identical logical sequence; the mounted F0 costs
+   **87.9 allocs/op**, so **14.8 allocs/op** are the FUSE dispatch/framing on top of
+   the engine's own allocations. The daemon cycles/op (**41 498**) reproduce Phase 83's
+   **43 751** within host load — independent confirmation of §34.
+3. **F2 is a throughput transport, confirmed for the metadata path.** F2-single adds
+   ~30 % to `create` p50 and ~2× to its p99 versus F0; F2-pool is worst for latency
+   (pool handoff). Neither reduces the irreducible share — F2 makes the *kernel*
+   residual **larger** (33.8–48.8 µs/op vs F0's 23.2 µs/op) on this ABI. This is
+   consistent with Phase 74's decision (§31.1): **use F0 for latency**.
+4. **Honest limitation — the `read` sub-op is page-cached, and the transports differ
+   in whether the preceding `write` invalidates the cache.** F0 invalidates the inode
+   on every write, so its `read` (p50 6 312 ns) round-trips; the native F2 path leaves
+   the 96-byte file page-cached, so its `read` (p50 181–201 ns) is a **cache hit**, not
+   a transport round-trip (`reads: 1` of 2 000 in the daemon counters). The **metadata**
+   ops are the clean cross-transport comparison; the `read` column is not.
+5. **The immutable/passthrough read arm is genuinely labelled.** `FUSE_PASSTHROUGH`
+   **negotiated** at INIT (`passthrough_negotiated:true`) but **no backing image was
+   registered** (`passthrough_opens:0`), so the direct 96-byte read is **daemon-served**
+   (6 850 ns/op) — the arm is a read-only, reads-only measurement, **not** comparable
+   to the read-write metadata arms, and no zero-copy claim is made.
+
+**Measured hot-path reductions (kept only because the measured allocations fell).**
+The engine's per-op allocation counter names the sources: for the 6-op workload the
+engine allocates **206.06/create** (≈108 create + 98 embedded write), **110.64/unlink**,
+**101.29/rename**, **98.14/write**, **3.0/read**, **0/stat**. Four safe changes target
+the commit/append path (`src/commit.rs`, `src/namespace.rs`, `src/extent.rs`):
+
+* `projected_transaction_bytes` is now **arithmetic** (`tx.bracket_byte_length() +
+  HEADER_LEN + FOOTER_LEN + TX_COMMIT_PAYLOAD_LEN`), which
+  `TransactionBuilder::build` had already computed exactly, instead of rebuilding and
+  re-encoding the whole transaction just to sum lengths;
+* `publish_one` encodes each `TX_BEGIN`/data record **once** and writes the same bytes
+  (`write_record_bytes`), and pre-sizes the bracket;
+* `commit_plan` collects/clones the touched-inode and changed-range bookkeeping only
+  when a manifestation/trigram engine is actually present;
+* `write_at_inner` calls `DataExtentPayload::encode_slice(offset, data)` instead of
+  `DataExtentPayload { data: data.to_vec() }.encode()`, removing a second payload copy.
+
+Paired before/after (deterministic allocations; the identical workload measured
+before and after the change):
+
+| metric | before | after | change |
+|---|---:|---:|---:|
+| `engine` allocs/op | 86.88 | **73.04** | −15.9 % |
+| `engine` `create` allocs | 206.06 | **172.06** | −16.5 % |
+| `engine` `unlink` allocs | 110.64 | **92.63** | −16.3 % |
+| `engine` `rename` allocs | 101.29 | **87.29** | −13.8 % |
+| `engine` `write` allocs | 98.14 | **81.14** | −17.3 % |
+| mounted **F0** allocs/op | 101.728 | **87.887** | −13.6 % |
+| mounted **F2-single** allocs/op | 115.615 | **101.777** | −12.0 % |
+| `hotpath-counters.json` allocs/op (§34 court) | 101.8874 | **87.9454** | −13.7 % |
+
+An **in-run paired** measurement (both encoders remain expressible) confirms the
+payload-copy change exactly: **2.0 → 1.0 allocs/op** for encoding one 96-byte
+`DATA_EXTENT`. The receipt's `reductions` block carries all of the above, with the
+`before`/`after` provenance.
+
+**Rejected (with its measurement).** The Phase-83 §4 candidate — dropping the
+per-write `core.getattr(ino, root)` — remains **rejected**: the adapter needs
+`st.size` (O_APPEND) and `st.uid`/`st.mode` (non-owner killpriv) in the common case,
+and the daemon already reads the inode from the in-memory index, so the conditional
+form cannot remove common-case work. No request/instruction reduction is measurable.
+The cache-miss counter is too load-sensitive here to justify any change on its own
+(§34 update note).
+
+**Provenance.** `evidence/performance/transport-ceiling.json`;
+`scripts/container-transport-ceiling.sh`; charts `transport-ceiling-latency.svg`,
+`transport-ceiling-decomposition.svg`, `transport-ceiling-reduction.svg`.

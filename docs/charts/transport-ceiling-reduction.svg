@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="monospace"><rect x="0" y="0" width="760" height="440" fill="#ffffff"/><text x="380.0" y="22.0" fill="#111111" font-size="14" text-anchor="middle" font-weight="bold">Phase 84 reductions: engine allocations per op (before / after)</text>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="344.0" fill="#111111" font-size="11" text-anchor="end">0</text>
+<line x1="84.0" y1="272.5" x2="736.0" y2="272.5" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="276.5" fill="#111111" font-size="11" text-anchor="end">50</text>
+<line x1="84.0" y1="205.1" x2="736.0" y2="205.1" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="209.1" fill="#111111" font-size="11" text-anchor="end">100</text>
+<line x1="84.0" y1="137.6" x2="736.0" y2="137.6" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="141.6" fill="#111111" font-size="11" text-anchor="end">150</text>
+<line x1="84.0" y1="70.2" x2="736.0" y2="70.2" stroke="#e8e8e8" stroke-width="1"/>
+<text x="76.0" y="74.2" fill="#111111" font-size="11" text-anchor="end">200</text>
+<line x1="84.0" y1="62.0" x2="84.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<line x1="84.0" y1="340.0" x2="736.0" y2="340.0" stroke="#333333" stroke-width="1.5"/>
+<text x="26.0" y="201.0" fill="#111111" font-size="12" text-anchor="middle" transform="rotate(-90 26.0 201.0)">allocs per op</text>
+<rect x="106.8" y="62.0" width="52.2" height="278.0" fill="#1f77b4"/>
+<rect x="172.0" y="107.9" width="52.2" height="232.1" fill="#d62728"/>
+<text x="165.5" y="358.0" fill="#111111" font-size="11" text-anchor="middle">create</text>
+<rect x="269.8" y="203.3" width="52.2" height="136.7" fill="#1f77b4"/>
+<rect x="335.0" y="222.2" width="52.2" height="117.8" fill="#d62728"/>
+<text x="328.5" y="358.0" fill="#111111" font-size="11" text-anchor="middle">rename</text>
+<rect x="432.8" y="190.7" width="52.2" height="149.3" fill="#1f77b4"/>
+<rect x="498.0" y="215.0" width="52.2" height="125.0" fill="#d62728"/>
+<text x="491.5" y="358.0" fill="#111111" font-size="11" text-anchor="middle">unlink</text>
+<rect x="595.8" y="207.6" width="52.2" height="132.4" fill="#1f77b4"/>
+<rect x="661.0" y="230.5" width="52.2" height="109.5" fill="#d62728"/>
+<text x="654.5" y="358.0" fill="#111111" font-size="11" text-anchor="middle">write</text>
+<rect x="84.0" y="35.0" width="10" height="10" fill="#1f77b4"/>
+<text x="99.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">before (pre-change)</text>
+<rect x="252.0" y="35.0" width="10" height="10" fill="#d62728"/>
+<text x="267.0" y="44.0" fill="#111111" font-size="11" text-anchor="start">after (Phase 84)</text>
+<text x="84.0" y="370.0" fill="#555555" font-size="10" text-anchor="start">source: evidence/performance/transport-ceiling.json (in-process engine, no mount; deterministic allocations)</text>
+<text x="84.0" y="386.0" fill="#555555" font-size="10" text-anchor="start">allocations per engine operation before and after the Phase-84 hot-path reductions</text>
+<text x="84.0" y="402.0" fill="#555555" font-size="10" text-anchor="start">allocs/op is deterministic (a counting global allocator over a fixed workload), not a timing artefact</text>
+<text x="84.0" y="418.0" fill="#555555" font-size="10" text-anchor="start">regenerate: python3 scripts/render_charts.py --check</text>
+</svg>

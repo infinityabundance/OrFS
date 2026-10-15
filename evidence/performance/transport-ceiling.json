@@ -1,0 +1,1021 @@
+{
+  "arms": [
+    {
+      "allocations": {
+        "allocs_per_op": 1.0006666666666666,
+        "bytes": 1176252,
+        "bytes_per_op": 98.021,
+        "calls": 12008
+      },
+      "backing_io_used": "direct",
+      "daemon_requests": null,
+      "decomposition": {
+        "allocs_per_op": 1.0006666666666666,
+        "client_cpu_ns_per_op": 102.91856456967894,
+        "cycles_per_ns": 5.21112333402423,
+        "mounted_wall_ns_per_op": 1421.4234166666668
+      },
+      "engine_allocation_attribution": null,
+      "f2_stats": null,
+      "fallback": false,
+      "fallback_reason": null,
+      "kind": "same-device-baseline",
+      "label": "same-device (no FUSE)",
+      "latency_ns": {
+        "create": {
+          "mean_ns": 3107.899,
+          "n": 2000,
+          "p50_ns": 2705,
+          "p95_ns": 4168,
+          "p99_9_ns": 19025,
+          "p99_ns": 8536
+        },
+        "read": {
+          "mean_ns": 281.208,
+          "n": 2000,
+          "p50_ns": 280,
+          "p95_ns": 300,
+          "p99_9_ns": 531,
+          "p99_ns": 381
+        },
+        "rename": {
+          "mean_ns": 1862.975,
+          "n": 2000,
+          "p50_ns": 1813,
+          "p95_ns": 2124,
+          "p99_9_ns": 3747,
+          "p99_ns": 2474
+        },
+        "stat": {
+          "mean_ns": 408.8705,
+          "n": 2000,
+          "p50_ns": 401,
+          "p95_ns": 431,
+          "p99_9_ns": 691,
+          "p99_ns": 511
+        },
+        "unlink": {
+          "mean_ns": 2058.129,
+          "n": 2000,
+          "p50_ns": 1893,
+          "p95_ns": 1934,
+          "p99_9_ns": 4117,
+          "p99_ns": 2515
+        },
+        "write": {
+          "mean_ns": 340.972,
+          "n": 2000,
+          "p50_ns": 331,
+          "p95_ns": 371,
+          "p99_9_ns": 2395,
+          "p99_ns": 461
+        }
+      },
+      "pmu": {
+        "available": true,
+        "client_thread": {
+          "branch_misses_per_op": 1.4551666666666667,
+          "cache_misses_per_op": 0.18475,
+          "cache_references_per_op": 90.33008333333333,
+          "cycles_per_op": 536.3213333333333,
+          "instructions_per_op": 1073.76175,
+          "ipc": 2.002086591123232
+        },
+        "counters": [
+          "cycles",
+          "instructions",
+          "cache_references",
+          "cache_misses",
+          "branch_instructions",
+          "branch_misses"
+        ],
+        "daemon_threads": {
+          "attached_tids": [],
+          "failed_tids": [],
+          "per_op": {
+            "branch_misses_per_op": 0.0,
+            "cache_misses_per_op": 0.0,
+            "cache_references_per_op": 0.0,
+            "cycles_per_op": 0.0,
+            "instructions_per_op": 0.0,
+            "ipc": 0.0
+          },
+          "reason": null
+        },
+        "error": null
+      },
+      "requested_transport": "none",
+      "servicing": null,
+      "transport_description": "plain directory, no FUSE",
+      "transport_used": "direct",
+      "workload": {
+        "iters": 2000,
+        "measured_syscalls": 12000,
+        "wall_ns": 17057081,
+        "wall_ns_per_op": 1421.4234166666668
+      }
+    },
+    {
+      "allocations": {
+        "allocs_per_op": 73.04216666666666,
+        "bytes": 69570777,
+        "bytes_per_op": 5797.56475,
+        "calls": 876506
+      },
+      "backing_io_used": "Sync",
+      "daemon_requests": null,
+      "decomposition": {
+        "allocs_per_op": 73.04216666666666,
+        "client_cpu_ns_per_op": 4020.8622799604946,
+        "cycles_per_ns": 5.21112333402423,
+        "mounted_wall_ns_per_op": 8785.015333333333
+      },
+      "engine_allocation_attribution": {
+        "create_allocs_per_op": 172.061,
+        "create_calls": 344122,
+        "read_allocs_per_op": 3.0,
+        "read_calls": 6000,
+        "rename_allocs_per_op": 87.291,
+        "rename_calls": 174582,
+        "stat_allocs_per_op": 0.0,
+        "stat_calls": 0,
+        "unlink_allocs_per_op": 92.6345,
+        "unlink_calls": 185269,
+        "write_allocs_per_op": 81.1445,
+        "write_calls": 162289
+      },
+      "f2_stats": null,
+      "fallback": false,
+      "fallback_reason": null,
+      "kind": "engine-direct",
+      "label": "engine (no mount)",
+      "latency_ns": {
+        "create": {
+          "mean_ns": 21477.7755,
+          "n": 2000,
+          "p50_ns": 19746,
+          "p95_ns": 22171,
+          "p99_9_ns": 440160,
+          "p99_ns": 38151
+        },
+        "read": {
+          "mean_ns": 263.022,
+          "n": 2000,
+          "p50_ns": 251,
+          "p95_ns": 291,
+          "p99_9_ns": 1422,
+          "p99_ns": 450
+        },
+        "rename": {
+          "mean_ns": 9902.3305,
+          "n": 2000,
+          "p50_ns": 9097,
+          "p95_ns": 10640,
+          "p99_9_ns": 112629,
+          "p99_ns": 13154
+        },
+        "stat": {
+          "mean_ns": 32.6815,
+          "n": 2000,
+          "p50_ns": 30,
+          "p95_ns": 50,
+          "p99_9_ns": 130,
+          "p99_ns": 60
+        },
+        "unlink": {
+          "mean_ns": 10943.9205,
+          "n": 2000,
+          "p50_ns": 10429,
+          "p95_ns": 12053,
+          "p99_9_ns": 57477,
+          "p99_ns": 16511
+        },
+        "write": {
+          "mean_ns": 9845.596,
+          "n": 2000,
+          "p50_ns": 9087,
+          "p95_ns": 10249,
+          "p99_9_ns": 48591,
+          "p99_ns": 14156
+        }
+      },
+      "pmu": {
+        "available": true,
+        "client_thread": {
+          "branch_misses_per_op": 63.28175,
+          "cache_misses_per_op": 9.60175,
+          "cache_references_per_op": 1936.7965833333333,
+          "cycles_per_op": 20953.20925,
+          "instructions_per_op": 44552.36991666667,
+          "ipc": 2.1262790527740596
+        },
+        "counters": [
+          "cycles",
+          "instructions",
+          "cache_references",
+          "cache_misses",
+          "branch_instructions",
+          "branch_misses"
+        ],
+        "daemon_threads": {
+          "attached_tids": [],
+          "failed_tids": [],
+          "per_op": {
+            "branch_misses_per_op": 0.0,
+            "cache_misses_per_op": 0.0,
+            "cache_references_per_op": 0.0,
+            "cycles_per_op": 0.0,
+            "instructions_per_op": 0.0,
+            "ipc": 0.0
+          },
+          "reason": null
+        },
+        "error": null
+      },
+      "requested_transport": "engine",
+      "servicing": null,
+      "transport_description": "in-process engine, no mount",
+      "transport_used": "engine",
+      "workload": {
+        "iters": 2000,
+        "measured_syscalls": 12000,
+        "wall_ns": 105420184,
+        "wall_ns_per_op": 8785.015333333333
+      }
+    },
+    {
+      "allocations": {
+        "allocs_per_op": 87.88675,
+        "bytes": 134685524,
+        "bytes_per_op": 11223.793666666666,
+        "calls": 1054641
+      },
+      "backing_io_used": "Sync",
+      "daemon_requests": {
+        "byte_reads": 191808,
+        "byte_writes": 384096,
+        "create": 2001,
+        "forgets": 5498,
+        "fsyncs": 0,
+        "link": 0,
+        "lookups": 3499,
+        "mkdir": 0,
+        "opendirs": 0,
+        "opens": 1,
+        "reads": 1998,
+        "releasedirs": 0,
+        "releases": 2002,
+        "rename": 2000,
+        "rmdir": 0,
+        "setattr": 0,
+        "symlink": 0,
+        "unlink": 2001,
+        "writes": 4001
+      },
+      "decomposition": {
+        "client_cpu_ns_per_op": 276.63635540044265,
+        "client_cycles_per_op": 1441.5861666666667,
+        "cycles_per_ns": 5.21112333402423,
+        "daemon_cpu_ns_per_op": 7963.378320444945,
+        "daemon_cycles_per_op": 41498.146583333335,
+        "daemon_fraction_of_overhead": 0.2536917916295374,
+        "dispatch_allocs_per_op": 14.844583333333347,
+        "engine_allocs_per_op": 73.04216666666666,
+        "irreducible_dispatch_ns_per_op": 23149.957657487947,
+        "irreducible_fraction_of_mounted": 0.70554626306892,
+        "irreducible_fraction_of_overhead": 0.7374953189399523,
+        "kernel_ns_per_op": 23149.957657487947,
+        "mounted_allocs_per_op": 87.88675,
+        "mounted_wall_ns_per_op": 32811.39575,
+        "overhead_ns_per_op": 31389.972333333335,
+        "same_device_wall_ns_per_op": 1421.4234166666668
+      },
+      "engine_allocation_attribution": null,
+      "f2_stats": null,
+      "fallback": false,
+      "fallback_reason": null,
+      "kind": "mount",
+      "label": "F0",
+      "latency_ns": {
+        "create": {
+          "mean_ns": 69775.7115,
+          "n": 2000,
+          "p50_ns": 65302,
+          "p95_ns": 92703,
+          "p99_9_ns": 257610,
+          "p99_ns": 119442
+        },
+        "read": {
+          "mean_ns": 7010.7875,
+          "n": 2000,
+          "p50_ns": 6312,
+          "p95_ns": 10579,
+          "p99_9_ns": 27201,
+          "p99_ns": 16932
+        },
+        "rename": {
+          "mean_ns": 36985.659,
+          "n": 2000,
+          "p50_ns": 34744,
+          "p95_ns": 50624,
+          "p99_9_ns": 102721,
+          "p99_ns": 65432
+        },
+        "stat": {
+          "mean_ns": 18843.951,
+          "n": 2000,
+          "p50_ns": 17493,
+          "p95_ns": 25468,
+          "p99_9_ns": 123330,
+          "p99_ns": 35236
+        },
+        "unlink": {
+          "mean_ns": 35912.82,
+          "n": 2000,
+          "p50_ns": 35746,
+          "p95_ns": 49553,
+          "p99_9_ns": 98202,
+          "p99_ns": 65182
+        },
+        "write": {
+          "mean_ns": 20534.151,
+          "n": 2000,
+          "p50_ns": 18805,
+          "p95_ns": 29304,
+          "p99_9_ns": 56726,
+          "p99_ns": 41116
+        }
+      },
+      "pmu": {
+        "available": true,
+        "client_thread": {
+          "branch_misses_per_op": 8.571,
+          "cache_misses_per_op": 22.417916666666667,
+          "cache_references_per_op": 173.3015,
+          "cycles_per_op": 1441.5861666666667,
+          "instructions_per_op": 1110.3603333333333,
+          "ipc": 0.7702351472342328
+        },
+        "counters": [
+          "cycles",
+          "instructions",
+          "cache_references",
+          "cache_misses",
+          "branch_instructions",
+          "branch_misses"
+        ],
+        "daemon_threads": {
+          "attached_tids": [
+            114,
+            115,
+            116,
+            117,
+            118,
+            119,
+            120,
+            121,
+            122
+          ],
+          "failed_tids": [],
+          "per_op": {
+            "branch_misses_per_op": 202.922,
+            "cache_misses_per_op": 570.97425,
+            "cache_references_per_op": 4605.380666666667,
+            "cycles_per_op": 41498.146583333335,
+            "instructions_per_op": 58194.162333333334,
+            "ipc": 1.4023316009179438
+          },
+          "reason": null
+        },
+        "error": null
+      },
+      "requested_transport": "fuse",
+      "servicing": null,
+      "transport_description": "classical /dev/fuse, synchronous backing I/O",
+      "transport_used": "F0",
+      "workload": {
+        "iters": 2000,
+        "measured_syscalls": 12000,
+        "wall_ns": 393736749,
+        "wall_ns_per_op": 32811.39575
+      }
+    },
+    {
+      "allocations": {
+        "allocs_per_op": 101.77725,
+        "bytes": 123157404,
+        "bytes_per_op": 10263.117,
+        "calls": 1221327
+      },
+      "backing_io_used": "Uring",
+      "daemon_requests": {
+        "byte_reads": 96,
+        "byte_writes": 384096,
+        "create": 2001,
+        "forgets": 2002,
+        "fsyncs": 0,
+        "link": 0,
+        "lookups": 0,
+        "mkdir": 0,
+        "opendirs": 0,
+        "opens": 1,
+        "reads": 1,
+        "releasedirs": 0,
+        "releases": 2002,
+        "rename": 2000,
+        "rmdir": 0,
+        "setattr": 0,
+        "symlink": 0,
+        "unlink": 2001,
+        "writes": 4001
+      },
+      "decomposition": {
+        "client_cpu_ns_per_op": 279.27118397512226,
+        "client_cycles_per_op": 1455.3165833333333,
+        "cycles_per_ns": 5.21112333402423,
+        "daemon_cpu_ns_per_op": 7116.207109231746,
+        "daemon_cycles_per_op": 37083.432916666665,
+        "daemon_fraction_of_overhead": 0.17266049121054525,
+        "dispatch_allocs_per_op": 28.735083333333336,
+        "engine_allocs_per_op": 73.04216666666666,
+        "irreducible_dispatch_ns_per_op": 33819.550456793135,
+        "irreducible_fraction_of_mounted": 0.7932074255285569,
+        "irreducible_fraction_of_overhead": 0.8205635536962504,
+        "kernel_ns_per_op": 33819.550456793135,
+        "mounted_allocs_per_op": 101.77725,
+        "mounted_wall_ns_per_op": 42636.45216666667,
+        "overhead_ns_per_op": 41215.028750000005,
+        "same_device_wall_ns_per_op": 1421.4234166666668
+      },
+      "engine_allocation_attribution": null,
+      "f2_stats": {
+        "bulk_routed": 0,
+        "cq_max_len": 2,
+        "fast_routed": 0,
+        "handoffs": 0,
+        "passthrough_bytes": 0,
+        "passthrough_fallbacks": 0,
+        "passthrough_last_error": null,
+        "passthrough_negotiated": false,
+        "passthrough_opens": 0,
+        "passthrough_registered": 0,
+        "passthrough_releases": 0,
+        "passthrough_requested": false,
+        "passthrough_reused": 0,
+        "requests_served": 20010,
+        "ring_completions": 20010,
+        "ring_submits": 20010,
+        "sq_full_events": 0
+      },
+      "fallback": false,
+      "fallback_reason": null,
+      "kind": "mount",
+      "label": "F2-single",
+      "latency_ns": {
+        "create": {
+          "mean_ns": 98470.5285,
+          "n": 2000,
+          "p50_ns": 89877,
+          "p95_ns": 126726,
+          "p99_9_ns": 937034,
+          "p99_ns": 170497
+        },
+        "read": {
+          "mean_ns": 261.1355,
+          "n": 2000,
+          "p50_ns": 181,
+          "p95_ns": 641,
+          "p99_9_ns": 1142,
+          "p99_ns": 812
+        },
+        "rename": {
+          "mean_ns": 52552.7,
+          "n": 2000,
+          "p50_ns": 48891,
+          "p95_ns": 71673,
+          "p99_9_ns": 219168,
+          "p99_ns": 96910
+        },
+        "stat": {
+          "mean_ns": 7946.3225,
+          "n": 2000,
+          "p50_ns": 5761,
+          "p95_ns": 8947,
+          "p99_9_ns": 186617,
+          "p99_ns": 15749
+        },
+        "unlink": {
+          "mean_ns": 49543.595,
+          "n": 2000,
+          "p50_ns": 44814,
+          "p95_ns": 62136,
+          "p99_9_ns": 626877,
+          "p99_ns": 98243
+        },
+        "write": {
+          "mean_ns": 39481.0085,
+          "n": 2000,
+          "p50_ns": 34184,
+          "p95_ns": 56916,
+          "p99_9_ns": 488769,
+          "p99_ns": 82023
+        }
+      },
+      "pmu": {
+        "available": true,
+        "client_thread": {
+          "branch_misses_per_op": 8.683333333333334,
+          "cache_misses_per_op": 24.919833333333333,
+          "cache_references_per_op": 165.53758333333334,
+          "cycles_per_op": 1455.3165833333333,
+          "instructions_per_op": 1075.9219166666667,
+          "ipc": 0.7393043747239647
+        },
+        "counters": [
+          "cycles",
+          "instructions",
+          "cache_references",
+          "cache_misses",
+          "branch_instructions",
+          "branch_misses"
+        ],
+        "daemon_threads": {
+          "attached_tids": [
+            127,
+            128
+          ],
+          "failed_tids": [],
+          "per_op": {
+            "branch_misses_per_op": 168.58383333333333,
+            "cache_misses_per_op": 293.8135,
+            "cache_references_per_op": 4699.251,
+            "cycles_per_op": 37083.432916666665,
+            "instructions_per_op": 63459.76616666667,
+            "ipc": 1.7112699978255115
+          },
+          "reason": null
+        },
+        "error": null
+      },
+      "requested_transport": "fuse-uring",
+      "servicing": "single-loop",
+      "transport_description": "native FUSE-over-io_uring",
+      "transport_used": "F2",
+      "workload": {
+        "iters": 2000,
+        "measured_syscalls": 12000,
+        "wall_ns": 511637426,
+        "wall_ns_per_op": 42636.45216666667
+      }
+    },
+    {
+      "allocations": {
+        "allocs_per_op": 102.63908333333333,
+        "bytes": 125421576,
+        "bytes_per_op": 10451.798,
+        "calls": 1231669
+      },
+      "backing_io_used": "Uring",
+      "daemon_requests": {
+        "byte_reads": 96,
+        "byte_writes": 384096,
+        "create": 2001,
+        "forgets": 2002,
+        "fsyncs": 0,
+        "link": 0,
+        "lookups": 0,
+        "mkdir": 0,
+        "opendirs": 0,
+        "opens": 1,
+        "reads": 1,
+        "releasedirs": 0,
+        "releases": 2002,
+        "rename": 2000,
+        "rmdir": 0,
+        "setattr": 0,
+        "symlink": 0,
+        "unlink": 2001,
+        "writes": 4001
+      },
+      "decomposition": {
+        "client_cpu_ns_per_op": 260.4206738189033,
+        "client_cycles_per_op": 1357.08425,
+        "cycles_per_ns": 5.21112333402423,
+        "daemon_cpu_ns_per_op": 10536.873366277412,
+        "daemon_cycles_per_op": 54908.94666666666,
+        "daemon_fraction_of_overhead": 0.1769001276606948,
+        "dispatch_allocs_per_op": 29.596916666666672,
+        "engine_allocs_per_op": 73.04216666666666,
+        "irreducible_dispatch_ns_per_op": 48766.67295990369,
+        "irreducible_fraction_of_mounted": 0.7996451711913001,
+        "irreducible_fraction_of_overhead": 0.8187277546491101,
+        "kernel_ns_per_op": 48766.67295990369,
+        "mounted_allocs_per_op": 102.63908333333333,
+        "mounted_wall_ns_per_op": 60985.39041666667,
+        "overhead_ns_per_op": 59563.967000000004,
+        "same_device_wall_ns_per_op": 1421.4234166666668
+      },
+      "engine_allocation_attribution": null,
+      "f2_stats": {
+        "bulk_routed": 0,
+        "cq_max_len": 1,
+        "fast_routed": 20010,
+        "handoffs": 20010,
+        "passthrough_bytes": 0,
+        "passthrough_fallbacks": 0,
+        "passthrough_last_error": null,
+        "passthrough_negotiated": false,
+        "passthrough_opens": 0,
+        "passthrough_registered": 0,
+        "passthrough_releases": 0,
+        "passthrough_requested": false,
+        "passthrough_reused": 0,
+        "requests_served": 20010,
+        "ring_completions": 20010,
+        "ring_submits": 20010,
+        "sq_full_events": 0
+      },
+      "fallback": false,
+      "fallback_reason": null,
+      "kind": "mount",
+      "label": "F2-pool",
+      "latency_ns": {
+        "create": {
+          "mean_ns": 127757.4525,
+          "n": 2000,
+          "p50_ns": 117289,
+          "p95_ns": 168523,
+          "p99_9_ns": 889395,
+          "p99_ns": 274601
+        },
+        "read": {
+          "mean_ns": 284.9875,
+          "n": 2000,
+          "p50_ns": 201,
+          "p95_ns": 581,
+          "p99_9_ns": 1733,
+          "p99_ns": 802
+        },
+        "rename": {
+          "mean_ns": 75759.973,
+          "n": 2000,
+          "p50_ns": 68096,
+          "p95_ns": 101630,
+          "p99_9_ns": 676179,
+          "p99_ns": 161981
+        },
+        "stat": {
+          "mean_ns": 33418.798,
+          "n": 2000,
+          "p50_ns": 31469,
+          "p95_ns": 36799,
+          "p99_9_ns": 235829,
+          "p99_ns": 45715
+        },
+        "unlink": {
+          "mean_ns": 59454.813,
+          "n": 2000,
+          "p50_ns": 54241,
+          "p95_ns": 82323,
+          "p99_9_ns": 377923,
+          "p99_ns": 119011
+        },
+        "write": {
+          "mean_ns": 47872.537,
+          "n": 2000,
+          "p50_ns": 42750,
+          "p95_ns": 63839,
+          "p99_9_ns": 619003,
+          "p99_ns": 91500
+        }
+      },
+      "pmu": {
+        "available": true,
+        "client_thread": {
+          "branch_misses_per_op": 9.751916666666666,
+          "cache_misses_per_op": 25.25175,
+          "cache_references_per_op": 188.973,
+          "cycles_per_op": 1357.08425,
+          "instructions_per_op": 1062.3478333333333,
+          "ipc": 0.7828164193441441
+        },
+        "counters": [
+          "cycles",
+          "instructions",
+          "cache_references",
+          "cache_misses",
+          "branch_instructions",
+          "branch_misses"
+        ],
+        "daemon_threads": {
+          "attached_tids": [
+            133,
+            134,
+            135,
+            136,
+            137,
+            138,
+            139,
+            140,
+            141,
+            142
+          ],
+          "failed_tids": [],
+          "per_op": {
+            "branch_misses_per_op": 300.96891666666664,
+            "cache_misses_per_op": 703.2780833333334,
+            "cache_references_per_op": 6255.9563333333335,
+            "cycles_per_op": 54908.94666666666,
+            "instructions_per_op": 70052.68508333333,
+            "ipc": 1.275797285069027
+          },
+          "reason": null
+        },
+        "error": null
+      },
+      "requested_transport": "fuse-uring",
+      "servicing": "pool(fast=2,bulk=6)",
+      "transport_description": "native FUSE-over-io_uring",
+      "transport_used": "F2",
+      "workload": {
+        "iters": 2000,
+        "measured_syscalls": 12000,
+        "wall_ns": 731824685,
+        "wall_ns_per_op": 60985.39041666667
+      }
+    },
+    {
+      "allocations": {
+        "allocs_per_op": 4.01,
+        "bytes": 656528,
+        "bytes_per_op": 328.264,
+        "calls": 8020
+      },
+      "backing_io_used": "Sync",
+      "daemon_requests": {
+        "byte_reads": 192000,
+        "byte_writes": 0,
+        "create": 0,
+        "forgets": 0,
+        "fsyncs": 0,
+        "link": 0,
+        "lookups": 0,
+        "mkdir": 0,
+        "opendirs": 0,
+        "opens": 1,
+        "reads": 2000,
+        "releasedirs": 0,
+        "releases": 1,
+        "rename": 0,
+        "rmdir": 0,
+        "setattr": 0,
+        "symlink": 0,
+        "unlink": 0,
+        "writes": 0
+      },
+      "decomposition": {
+        "allocs_per_op": 4.01,
+        "client_cpu_ns_per_op": 89.43992880707222,
+        "cycles_per_ns": 5.21112333402423,
+        "mounted_wall_ns_per_op": 6850.116
+      },
+      "engine_allocation_attribution": null,
+      "f2_stats": {
+        "bulk_routed": 0,
+        "cq_max_len": 1,
+        "fast_routed": 0,
+        "handoffs": 0,
+        "passthrough_bytes": 0,
+        "passthrough_fallbacks": 0,
+        "passthrough_last_error": null,
+        "passthrough_negotiated": true,
+        "passthrough_opens": 0,
+        "passthrough_registered": 0,
+        "passthrough_releases": 0,
+        "passthrough_requested": true,
+        "passthrough_reused": 0,
+        "requests_served": 2003,
+        "ring_completions": 2003,
+        "ring_submits": 2003,
+        "sq_full_events": 0
+      },
+      "fallback": false,
+      "fallback_reason": null,
+      "kind": "read-only-snapshot",
+      "label": "F2-immutable-read",
+      "latency_ns": {
+        "create": {
+          "mean_ns": 0.0,
+          "n": 0,
+          "p50_ns": 0,
+          "p95_ns": 0,
+          "p99_9_ns": 0,
+          "p99_ns": 0
+        },
+        "read": {
+          "mean_ns": 6804.42,
+          "n": 2000,
+          "p50_ns": 5971,
+          "p95_ns": 8085,
+          "p99_9_ns": 122307,
+          "p99_ns": 15539
+        },
+        "rename": {
+          "mean_ns": 0.0,
+          "n": 0,
+          "p50_ns": 0,
+          "p95_ns": 0,
+          "p99_9_ns": 0,
+          "p99_ns": 0
+        },
+        "stat": {
+          "mean_ns": 0.0,
+          "n": 0,
+          "p50_ns": 0,
+          "p95_ns": 0,
+          "p99_9_ns": 0,
+          "p99_ns": 0
+        },
+        "unlink": {
+          "mean_ns": 0.0,
+          "n": 0,
+          "p50_ns": 0,
+          "p95_ns": 0,
+          "p99_9_ns": 0,
+          "p99_ns": 0
+        },
+        "write": {
+          "mean_ns": 0.0,
+          "n": 0,
+          "p50_ns": 0,
+          "p95_ns": 0,
+          "p99_9_ns": 0,
+          "p99_ns": 0
+        }
+      },
+      "pmu": {
+        "available": true,
+        "client_thread": {
+          "branch_misses_per_op": 1.812,
+          "cache_misses_per_op": 2.0545,
+          "cache_references_per_op": 56.4965,
+          "cycles_per_op": 466.0825,
+          "instructions_per_op": 378.6805,
+          "ipc": 0.8124752592084019
+        },
+        "counters": [
+          "cycles",
+          "instructions",
+          "cache_references",
+          "cache_misses",
+          "branch_instructions",
+          "branch_misses"
+        ],
+        "daemon_threads": {
+          "attached_tids": [
+            148,
+            149
+          ],
+          "failed_tids": [],
+          "per_op": {
+            "branch_misses_per_op": 6.082,
+            "cache_misses_per_op": 20.326,
+            "cache_references_per_op": 411.9635,
+            "cycles_per_op": 2881.114,
+            "instructions_per_op": 3136.081,
+            "ipc": 1.0884959775975542
+          },
+          "reason": null
+        },
+        "error": null
+      },
+      "requested_transport": "fuse-uring",
+      "servicing": "single-loop",
+      "transport_description": "native FUSE-over-io_uring",
+      "transport_used": "F2",
+      "workload": {
+        "iters": 2000,
+        "measured_syscalls": 2000,
+        "wall_ns": 13700232,
+        "wall_ns_per_op": 6850.116
+      }
+    }
+  ],
+  "build": "release",
+  "calibration": {
+    "cycles": 208551579,
+    "cycles_per_ns": 5.21112333402423,
+    "method": "hardware PERF_COUNT_HW_CPU_CYCLES on the calling thread over a 40 ms CPU-bound rolling-hash loop, timed with Instant",
+    "nanos": 40020465
+  },
+  "comparability": {
+    "F0_F2": "identical MountOptions (default TTLs, Ordered durability) differing only in transport/backing-I/O; directly comparable.",
+    "engine_direct": "the identical logical sequence through the engine with no mount; the mounted-minus-engine delta is dispatch + framing.",
+    "read_only_snapshot": "a read-only immutable F2 snapshot, reads only; mutation ops do not apply and the arm is labelled, not compared.",
+    "same_device_baseline": "the identical workload on a plain directory on the same device with no FUSE; the delta is the FUSE overhead."
+  },
+  "environment": {
+    "cgroup_memory_max": "8589934592",
+    "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "container_image": null,
+    "cores_visible": 8,
+    "cpu_max": "800000 100000",
+    "cpu_model": "AMD Ryzen 7 9800X3D 8-Core Processor",
+    "fuse_enable_uring": true,
+    "kernel_release": "7.2.9-2-cachyos",
+    "likely_container": true,
+    "machine": "x86_64",
+    "perf_counters_available": true,
+    "perf_event_open_error": null,
+    "perf_event_paranoid": "2",
+    "ram_total_bytes": 134723346432
+  },
+  "generated_by": "tests/transport_ceiling.rs",
+  "image_digest": "sha256:a41df86df391732ab467b5bedc8b4a17c0df437fa180b5230417a6a8339d97ac",
+  "note": "Phase 84 — the metadata/transport ceiling, measured. The SAME bounded create/stat/rename/unlink + small read/write workload is driven through a real mount on every transport the host permits (F0, F2 single-loop, F2 pool, and a read-only immutable F2 snapshot read arm), through a plain directory on the same device with no FUSE (the baseline), and directly through the in-process engine (no mount). Per-arm latencies p50/p95/p99/p99.9, real per-thread user-space counters (exclude_kernel=1) on the calling thread and every live daemon thread, a counting allocator's allocs/op, the truth of which transport actually served (transport_used()), and the daemon request counts are all recorded. The overhead over the same-device baseline is split (measured) into client_cpu + daemon_cpu + kernel, where kernel is the irreducible FUSE dispatch/syscall/scheduling residual. No number is fabricated.",
+  "ran": true,
+  "reductions": {
+    "applied": [
+      {
+        "files": [
+          "src/commit.rs"
+        ],
+        "id": "commit-projection-arithmetic",
+        "what": "`CommitSequencer::projected_transaction_bytes` rebuilt and re-encoded the whole transaction (a clone + an encode per record, two payload to_vecs) only to sum framed lengths. It is now arithmetic: `tx.bracket_byte_length() + HEADER_LEN + FOOTER_LEN + TX_COMMIT_PAYLOAD_LEN`, which `TransactionBuilder::build` had already computed exactly."
+      },
+      {
+        "files": [
+          "src/commit.rs"
+        ],
+        "id": "single-record-encode",
+        "what": "`publish_one` encoded each TX_BEGIN/data record once for the bracket and again inside `write_record`. It now encodes once and writes the same bytes (`write_record_bytes`), and pre-sizes the bracket from the already-known bracket length (no growth reallocs)."
+      },
+      {
+        "files": [
+          "src/namespace.rs"
+        ],
+        "id": "lazy-commit-bookkeeping",
+        "what": "`commit_plan` collected the touched-inode `Vec` and deep-cloned the changed-range `HashMap` on every commit even though only the (default-off) manifestation/trigram engines consume them. Both are now built only when such an engine is present (empty `Vec`/`HashMap` allocate nothing)."
+      },
+      {
+        "files": [
+          "src/extent.rs",
+          "src/namespace.rs"
+        ],
+        "id": "extent-encode-slice",
+        "what": "`write_at_inner` built `DataExtentPayload { data: data.to_vec() }` and then encoded it, copying the payload twice; it now calls `DataExtentPayload::encode_slice(offset, data)`, which copies once. The in-run paired measurement below is this change."
+      }
+    ],
+    "end_to_end": {
+      "after": {
+        "engine_allocs_per_op": 73.04216666666666,
+        "engine_create_allocs_per_op": 172.061,
+        "engine_rename_allocs_per_op": 87.291,
+        "engine_unlink_allocs_per_op": 92.6345,
+        "engine_write_allocs_per_op": 81.1445,
+        "f0_allocs_per_op": 87.88675,
+        "source": "this run"
+      },
+      "before": {
+        "engine_allocs_per_op": 86.88,
+        "engine_create_allocs_per_op": 206.061,
+        "engine_rename_allocs_per_op": 101.291,
+        "engine_unlink_allocs_per_op": 110.635,
+        "engine_write_allocs_per_op": 98.144,
+        "f0_allocs_per_op": 101.728,
+        "f2_pool_allocs_per_op": 116.483,
+        "f2_single_allocs_per_op": 115.615,
+        "source": "tests/hotpath_counters.rs at commit 6c46229 (evidence/performance/hotpath-counters.json, allocs_per_op 101.8874) and the pre-change run of this court"
+      },
+      "method": "the identical court workload (2 000 iters; create/stat/rename/unlink/read/write) measured before and after the change; allocs/op is deterministic"
+    },
+    "in_run_paired": {
+      "current": {
+        "allocs": 100000,
+        "allocs_per_op": 1.0
+      },
+      "iterations": 100000,
+      "legacy": {
+        "allocs": 200000,
+        "allocs_per_op": 2.0
+      },
+      "note": "the legacy form allocates the throwaway owned Vec and then the encoded Vec; the current form allocates only the encoded Vec. Same bytes are produced (checked by the round-trip tests).",
+      "op": "encode one 96-byte DATA_EXTENT payload",
+      "saved_allocs_per_op": 1.0,
+      "what": "DATA_EXTENT payload encoding: struct-with-copy (`DataExtentPayload { data: data.to_vec() }.encode()`) vs direct slice (`DataExtentPayload::encode_slice(offset, data)`)"
+    },
+    "rejected": [
+      {
+        "id": "conditional-write-getattr",
+        "measured": "no material request/instruction reduction: the mounted daemon keeps one in-memory `Index::inode` lookup per write, below the resolution of the counter ratios here.",
+        "what": "dropping the per-write `core.getattr(ino, root)` (Phase-83 §4 candidate): still rejected — the adapter needs `st.size` (O_APPEND) and `st.uid`/`st.mode` (non-owner killpriv) in the common case, so the condition cannot be expressed without the lookup."
+      }
+    ]
+  },
+  "schema": "orfs.performance.transport-ceiling.v1",
+  "workload": {
+    "iters": 2000,
+    "ops": "create (+96 B payload) | stat | rename | unlink | read 96 B | write 96 B",
+    "read_only_arm_ops": "read 96 B only (immutable snapshot; not comparable to the read-write metadata arms)"
+  }
+}

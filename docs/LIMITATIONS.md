@@ -543,3 +543,32 @@ against external baselines, and publishes the results honestly
   headline baseline is on the **same device** as the OrFS backing, so the
   comparison isolates the filesystem stack. Wall-clock is host/load-sensitive;
   the verdict booleans are the machine-readable, non-drifting result.
+
+## 21. The mounted overhead is dominated by irreducible FUSE dispatch (Phase 84)
+
+Phase 84 (`tests/transport_ceiling.rs`, `docs/PERFORMANCE.md` §35) measures the
+**same bounded metadata/read/write workload** through a real mount on every OrFS
+transport, through a plain directory on the **same device with no FUSE**, and
+directly through the in-process engine. Decomposing each mounted transport's
+overhead over the same-device baseline into client CPU + daemon CPU + a kernel
+residual, the residual is **~74 %** of F0's overhead on this host (**23.2 µs/op**
+kernel vs **8.0 µs/op** daemon user-space work).
+
+* **What this means.** Even a hypothetical zero-cost daemon would leave OrFS F0 at
+  roughly the same-device baseline plus that kernel residual (~24.6 µs/op for the
+  mixed workload here). The FUSE round-trip, VFS work, and scheduling are **not
+  OrFS's to optimise**; they bound every hot-path change. OrFS's own separable work
+  is real but smaller: the engine costs **73.0 allocs/op** and **~8 µs/op** of
+  daemon CPU against **14.8 allocs/op** of dispatch/framing on top.
+* **No transport escapes it.** F2 (single-loop and pool) makes the kernel residual
+  **larger** (33.8–48.8 µs/op) on this ABI; this is why F0 stays the latency default
+  (`docs/PERFORMANCE.md` §31.1).
+* **What the decomposition is not.** The daemon counter is *user-space* only
+  (`exclude_kernel=1`) and summed across every daemon thread, divided by the client's
+  measured syscall count; converting cycles to ns uses a **measured** `cycles_per_ns`
+  on the calling thread (same CPU class, not the same instant), so the kernel
+  residual is an estimate of the dispatch share, not a per-syscall budget. The
+  `read` sub-op is page-cached and the F0/F2 transports differ in whether a write
+  invalidates it, so the `read` column is not a clean cross-transport comparison
+  (the metadata ops are). The immutable read-only arm negotiated FUSE passthrough but
+  registered no backing, so it is daemon-served and labelled, not a zero-copy claim.

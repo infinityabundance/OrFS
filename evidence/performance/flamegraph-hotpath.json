@@ -1,7 +1,7 @@
 {
   "produced": true,
-  "samples": 837,
-  "frames": 97,
+  "samples": 871,
+  "frames": 118,
   "folded": "/mnt/1tb_kingston/OrFS/evidence/performance/flamegraph-hotpath.folded",
   "svg": "/mnt/1tb_kingston/OrFS/evidence/performance/flamegraph-hotpath.svg",
   "sidecar": null,

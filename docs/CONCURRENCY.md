@@ -434,6 +434,20 @@ ring's SQ/CQ counters and states the decision explicitly — **F2 queue-affine i
 throughput transport, not a latency one; use F0 for latency**
 (`docs/PERFORMANCE.md` §31.1).
 
+### 9.6 Where the dispatch cost is (Phase 84)
+
+§9.1–§9.5 concern *reader concurrency* on the two transports. Phase 84 measures the
+**serialized single-client metadata/read-write path** across transports with a
+**same-device no-FUSE reference** and a **per-op decomposition**
+(`tests/transport_ceiling.rs`, `docs/PERFORMANCE.md` §35,
+`evidence/performance/transport-ceiling.json`). The relevant conclusion for the
+transport choice: of F0's 31.4 µs/op overhead over the same-device baseline,
+**~74 %** is the **irreducible kernel FUSE dispatch/VFS/scheduling residual** and
+only ~25 % is daemon user-space work; F2 (single-loop and pool) makes that kernel
+residual **larger** (33.8–48.8 µs/op), which is the same ordering §9.5 reports for
+the tail. So dispatch, not the OrFS engine, is the transport-independent floor, and
+it is why neither F1 nor F2 replaces F0 for latency. See `docs/LIMITATIONS.md` §21.
+
 ---
 
 ## 10. Bounded Loom models (Phase 70)

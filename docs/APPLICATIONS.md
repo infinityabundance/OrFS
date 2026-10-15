@@ -211,3 +211,24 @@ write step is part of the F0/F1/F2 equivalence transcript). See
   `docs/FUSE-SEMANTICS.md` §5/§6 (operation and permission semantics),
   `docs/POSIX-COMPAT.md` §2 (access decided at `open`), `docs/SECURITY.md`,
   `docs/THREAT-MODEL.md`, `docs/LIMITATIONS.md` §7/§20, `docs/REPRODUCE.md`.
+
+## 9. Where the loss comes from — the transport ceiling (Phase 84)
+
+These application losses are the application-layer face of the same cost Phase 84
+isolates on the metadata path (`docs/PERFORMANCE.md` §35,
+`evidence/performance/transport-ceiling.json`):
+
+* The **same-device no-FUSE baseline** runs the identical bounded
+  `create`/`stat`/`rename`/`unlink`/read/write workload in **1.4 µs/op**; a real
+  **F0** mount costs **32.8 µs/op**. Of that **31.4 µs/op** FUSE overhead,
+  **~74 %** (23.2 µs/op) is the **irreducible** kernel FUSE round-trip/VFS/scheduling
+  residual on this host, and only **~25 %** (8.0 µs/op) is the daemon's own
+  user-space work.
+* So the metadata-tree and `tar`/`git` losses (§4) are **mostly the fixed FUSE
+  dispatch tax**, not a defect that a hot-path tweak removes — which is why
+  `docs/LIMITATIONS.md` §21 states the ceiling plainly. The **measured** reductions
+  OrFS *can* make are real but bounded: the Phase-84 commit/append changes cut the
+  engine's allocations per op by **~16 %** and the mounted F0 `allocs/op` from
+  **101.7 to 87.9**, without touching the irreducible share.
+* Cross-reference: `docs/PERFORMANCE.md` §33 (these workloads) → §34 (Phase-83
+  attribution) → **§35 (this ceiling and decomposition)**.

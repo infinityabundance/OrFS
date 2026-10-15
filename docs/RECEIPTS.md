@@ -206,6 +206,14 @@ numbers were not curated in this first pass:
   number (per-op latency percentiles, client/daemon cycles/instructions/misses per
   op, allocs/op) is host- and load-sensitive and is deliberately uncovered; the
   `hotpath-counters.json` receipt and the daemon flamegraph are its provenance.
+* `docs/PERFORMANCE.md` §35 (Phase 84) — the metadata/transport-ceiling court. Its
+  per-op latency percentiles, per-transport counters/op, the measured
+  `cycles_per_ns`, and the client/daemon/kernel decomposition are host- and
+  load-sensitive and are deliberately uncovered; `transport-ceiling.json` is the
+  provenance and the three `transport-ceiling-*.svg` charts are gated by
+  `python3 scripts/render_charts.py --check`. Its **deterministic** allocation
+  counts (`allocs/op` and the per-op engine attribution) are quoted in §35 with
+  their before/after provenance in the receipt's `reductions` block.
 * `docs/PERFORMANCE.md` §27 (Phase 64) — the direct-page-atlas court. Its honest
   content is a **selection** (which path the planner measured cheapest per size)
   plus host-sensitive latency; the deterministic facts in the receipt are the

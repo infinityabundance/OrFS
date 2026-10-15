@@ -1,9 +1,9 @@
 {
   "allocations": {
-    "allocs_per_op": 101.8874,
-    "bytes": 194876118,
-    "bytes_per_op": 12991.7412,
-    "calls": 1528311,
+    "allocs_per_op": 87.9454,
+    "bytes": 169012984,
+    "bytes_per_op": 11267.532266666667,
+    "calls": 1319181,
     "note": "counting #[global_allocator]; the client and the daemon run in the same process, so this counts both."
   },
   "build": "release",
@@ -25,56 +25,56 @@
   },
   "flamegraph": {
     "folded": "/mnt/1tb_kingston/OrFS/evidence/performance/flamegraph-hotpath.folded",
-    "frames": 97,
+    "frames": 118,
     "produced": true,
     "reason": null,
-    "samples": 837,
+    "samples": 871,
     "sidecar": "/mnt/1tb_kingston/OrFS/evidence/performance/flamegraph-hotpath.json",
     "svg": "/mnt/1tb_kingston/OrFS/evidence/performance/flamegraph-hotpath.svg"
   },
   "generated_by": "tests/hotpath_counters.rs",
   "latency_ns": {
     "create": {
-      "mean_ns": 66963.7204,
+      "mean_ns": 79738.7228,
       "n": 2500,
-      "p50_ns": 64961,
-      "p95_ns": 79668,
-      "p99_ns": 100958
+      "p50_ns": 74529,
+      "p95_ns": 105407,
+      "p99_ns": 135011
     },
     "read": {
-      "mean_ns": 6373.0276,
+      "mean_ns": 8581.7372,
       "n": 2500,
-      "p50_ns": 6031,
-      "p95_ns": 8476,
-      "p99_ns": 11972
+      "p50_ns": 7494,
+      "p95_ns": 12253,
+      "p99_ns": 17723
     },
     "rename": {
-      "mean_ns": 35290.4268,
+      "mean_ns": 41964.26,
       "n": 2500,
-      "p50_ns": 34064,
-      "p95_ns": 42469,
-      "p99_ns": 58299
+      "p50_ns": 39484,
+      "p95_ns": 58078,
+      "p99_ns": 75450
     },
     "stat": {
-      "mean_ns": 17438.458,
+      "mean_ns": 20722.9068,
       "n": 2500,
-      "p50_ns": 16871,
-      "p95_ns": 21029,
-      "p99_ns": 28763
+      "p50_ns": 19286,
+      "p95_ns": 28463,
+      "p99_ns": 39032
     },
     "unlink": {
-      "mean_ns": 36111.1176,
+      "mean_ns": 41189.6424,
       "n": 2500,
-      "p50_ns": 35917,
-      "p95_ns": 45325,
-      "p99_ns": 63488
+      "p50_ns": 39493,
+      "p95_ns": 58740,
+      "p99_ns": 74750
     },
     "write": {
-      "mean_ns": 19890.1268,
+      "mean_ns": 23319.5744,
       "n": 2500,
-      "p50_ns": 19095,
-      "p95_ns": 23995,
-      "p99_ns": 36939
+      "p50_ns": 21009,
+      "p95_ns": 33903,
+      "p99_ns": 45495
     }
   },
   "mount": {
@@ -88,13 +88,13 @@
   "pmu": {
     "available": true,
     "client_thread": {
-      "branch_misses_per_op": 5.0384,
-      "cache_misses_per_op": 6.996866666666667,
-      "cache_references_per_op": 144.07546666666667,
-      "cycles_per_op": 1081.554,
+      "branch_misses_per_op": 14.6268,
+      "cache_misses_per_op": 61.18793333333333,
+      "cache_references_per_op": 242.82666666666665,
+      "cycles_per_op": 2230.3741333333332,
       "dtlb_read_misses_per_op": 0.0,
-      "instructions_per_op": 1038.7252,
-      "ipc": 0.9604006827213436
+      "instructions_per_op": 1028.0224,
+      "ipc": 0.46091926221526003
     },
     "counters": [
       "cycles",
@@ -106,26 +106,26 @@
     ],
     "daemon_threads": {
       "attached_tids": [
-        113,
-        114,
-        115,
-        116,
-        117,
-        118,
-        119,
-        120,
-        121
+        225,
+        226,
+        227,
+        228,
+        229,
+        230,
+        231,
+        232,
+        233
       ],
       "failed_tids": [],
       "method_note": "sums every live fuser* thread of the test process, divided by the client's measured syscall count; the classical /dev/fuse daemon runs on fuser-bg + fuser-0..N. Client-side counters are user-space only (exclude_kernel=1), so the kernel FUSE syscall time is not counted on either side.",
       "per_op": {
-        "branch_misses_per_op": 165.62166666666667,
-        "cache_misses_per_op": 400.654,
-        "cache_references_per_op": 4455.9078,
-        "cycles_per_op": 43751.1504,
+        "branch_misses_per_op": 332.2472,
+        "cache_misses_per_op": 1209.4827333333333,
+        "cache_references_per_op": 5535.9298,
+        "cycles_per_op": 50431.74733333333,
         "dtlb_read_misses_per_op": 0.0,
-        "instructions_per_op": 64741.34846666667,
-        "ipc": 1.4797633405010229
+        "instructions_per_op": 58043.45166666667,
+        "ipc": 1.1509308071961708
       },
       "per_thread": [
         {
@@ -133,63 +133,63 @@
           "cache_misses": 0,
           "cycles": 0,
           "instructions": 0,
-          "tid": 113
+          "tid": 225
         },
         {
-          "branch_misses": 305560,
-          "cache_misses": 745480,
-          "cycles": 80530778,
-          "instructions": 118810959,
-          "tid": 114
+          "branch_misses": 646491,
+          "cache_misses": 2365365,
+          "cycles": 98432903,
+          "instructions": 113301375,
+          "tid": 226
         },
         {
-          "branch_misses": 307172,
-          "cache_misses": 753450,
-          "cycles": 82669356,
-          "instructions": 122793370,
-          "tid": 115
+          "branch_misses": 597418,
+          "cache_misses": 2190940,
+          "cycles": 91940325,
+          "instructions": 106595132,
+          "tid": 227
         },
         {
-          "branch_misses": 313743,
-          "cache_misses": 763470,
-          "cycles": 82880120,
-          "instructions": 123081854,
-          "tid": 116
+          "branch_misses": 637256,
+          "cache_misses": 2320426,
+          "cycles": 95400959,
+          "instructions": 108394163,
+          "tid": 228
         },
         {
-          "branch_misses": 285587,
-          "cache_misses": 706087,
-          "cycles": 78293417,
-          "instructions": 117304104,
-          "tid": 117
+          "branch_misses": 638485,
+          "cache_misses": 2309936,
+          "cycles": 95937309,
+          "instructions": 110194794,
+          "tid": 229
         },
         {
-          "branch_misses": 296301,
-          "cache_misses": 722249,
-          "cycles": 81436382,
-          "instructions": 121620339,
-          "tid": 118
+          "branch_misses": 606231,
+          "cache_misses": 2205697,
+          "cycles": 92719099,
+          "instructions": 107090560,
+          "tid": 230
         },
         {
-          "branch_misses": 316636,
-          "cache_misses": 761762,
-          "cycles": 80792731,
-          "instructions": 117939784,
-          "tid": 119
+          "branch_misses": 648632,
+          "cache_misses": 2326510,
+          "cycles": 97836625,
+          "instructions": 112532316,
+          "tid": 231
         },
         {
-          "branch_misses": 329102,
-          "cache_misses": 773414,
-          "cycles": 84445507,
-          "instructions": 124683287,
-          "tid": 120
+          "branch_misses": 591888,
+          "cache_misses": 2161263,
+          "cycles": 90045548,
+          "instructions": 103485361,
+          "tid": 232
         },
         {
-          "branch_misses": 330224,
-          "cache_misses": 783898,
-          "cycles": 85218965,
-          "instructions": 124886530,
-          "tid": 121
+          "branch_misses": 617307,
+          "cache_misses": 2262104,
+          "cycles": 94163442,
+          "instructions": 109058074,
+          "tid": 233
         }
       ],
       "reason": null
@@ -207,7 +207,7 @@
     "iters": 2500,
     "measured_syscalls": 15000,
     "ops": "create (+96 B payload) | stat | rename | unlink | read 96 B | write 96 B",
-    "wall_ns": 472033327,
-    "wall_ns_per_op": 31468.888466666667
+    "wall_ns": 563886708,
+    "wall_ns_per_op": 37592.4472
   }
 }

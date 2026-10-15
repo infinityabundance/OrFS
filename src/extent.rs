@@ -383,15 +383,24 @@ pub struct DataExtentPayload {
 pub const DATA_EXTENT_DATA_OFFSET: usize = 20;
 
 impl DataExtentPayload {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(DATA_EXTENT_DATA_OFFSET + self.data.len() + 4);
+    /// Encode an extent directly from a borrowed slice, without the intermediate
+    /// owned `Vec` the struct would otherwise require. On the hot append path the
+    /// caller already holds the bytes; the previous
+    /// `DataExtentPayload { data: data.to_vec() }.encode()` copied them into a
+    /// throwaway `Vec` and then copied them again into the encoded payload.
+    pub fn encode_slice(offset: u64, data: &[u8]) -> Vec<u8> {
+        let mut b = Vec::with_capacity(DATA_EXTENT_DATA_OFFSET + data.len() + 4);
         b.extend_from_slice(&DATA_EXTENT_MAGIC.to_le_bytes());
-        b.extend_from_slice(&self.offset.to_le_bytes());
-        b.extend_from_slice(&(self.data.len() as u64).to_le_bytes());
-        b.extend_from_slice(&self.data);
+        b.extend_from_slice(&offset.to_le_bytes());
+        b.extend_from_slice(&(data.len() as u64).to_le_bytes());
+        b.extend_from_slice(data);
         let check = crc32c::crc32c(&b);
         b.extend_from_slice(&check.to_le_bytes());
         b
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        Self::encode_slice(self.offset, &self.data)
     }
 
     pub fn decode(buf: &[u8]) -> Result<DataExtentPayload> {

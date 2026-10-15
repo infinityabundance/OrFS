@@ -985,8 +985,22 @@ impl Namespace {
     /// exactly the records just committed.
     fn commit_plan(&mut self, plan: Plan) -> Result<CommitOutcome> {
         let planned_begin = plan.begin;
-        let touched: Vec<u64> = plan.touched.keys().copied().collect();
-        let changed = plan.changed.clone();
+        // The touched-inode list and the changed-range map are consumed only by the
+        // optional manifestation / trigram engines. Building them unconditionally
+        // allocated (a `Vec` collect and a deep `HashMap` clone) on every commit even
+        // when both planes are off — the default. `Vec::new`/`HashMap::new` allocate
+        // nothing, so a plain mount now pays zero for them.
+        let needs_touched = self.manifestation_engine.is_some() || self.trigram_engine.is_some();
+        let touched: Vec<u64> = if needs_touched {
+            plan.touched.keys().copied().collect()
+        } else {
+            Vec::new()
+        };
+        let changed = if self.manifestation_engine.is_some() {
+            plan.changed.clone()
+        } else {
+            HashMap::new()
+        };
         let tx = plan.build()?;
         let outcome = {
             let mut seq = CommitSequencer::new(&mut self.volume, self.durability);
@@ -1385,11 +1399,7 @@ impl Namespace {
         if data.is_empty() {
             return Ok(0);
         }
-        let payload = DataExtentPayload {
-            offset,
-            data: data.to_vec(),
-        }
-        .encode();
+        let payload = DataExtentPayload::encode_slice(offset, data);
         let mut plan = self.plan()?;
         let prev = plan.prev_for(inode, &self.index);
         plan.add(RecordType::DataExtent, inode, prev, payload)?;

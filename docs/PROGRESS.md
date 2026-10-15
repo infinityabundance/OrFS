@@ -5149,3 +5149,81 @@ new charts `hotpath-counters-latency.svg`, `hotpath-counters-counters.svg`
 * **Mounted courts were run as bounded per-court drivers** (one container at a
   time) on this host; the ~11 pre-existing wedged `orfs-kmount` containers were
   left untouched.
+
+## Phase 84 — The metadata/transport ceiling, measured, and measured hot-path reductions
+
+**Complete.** Phase 83 attributed the mounted metadata hot path to the daemon but
+for one transport (F0) and with no same-device reference. This phase answers the
+open question with measurements: **how much of the gap to a plain filesystem is
+irreducible FUSE dispatch on this host, and how much is OrFS's own work** — and
+whether OrFS's own transports change the answer.
+
+### Delivered
+
+* **A transport-ceiling court.** `tests/transport_ceiling.rs` +
+  `scripts/container-transport-ceiling.sh` (the `docker_run_kmount_pmu` profile)
+  drives the **identical** bounded `create`/`stat`/`rename`/`unlink` + small
+  `read`/`write` workload through a real mount on **F0**, **F2-single**
+  (`F2Servicing::Single`), **F2-pool** (`pool_default()`), and a **read-only
+  immutable F2 snapshot** read arm, through a plain directory on the **same device
+  with no FUSE** (the baseline), and **directly through the in-process engine**
+  (no mount). Real F2 negotiated in every arm here (no fallback). Per arm: p50/p95/
+p99/p99.9 per op, real per-thread user-space counters on the calling thread **and
+  every live daemon thread**, the counting-allocator `allocs/op`, per-op engine
+  allocation attribution, the daemon request counts, and `transport_used()`.
+  Receipt `evidence/performance/transport-ceiling.json` (schema
+  `orfs.performance.transport-ceiling.v1`); three charts.
+* **The honest ceiling.** Over F0's **31 390 ns/op** overhead over the same-device
+  baseline: **client 277 (0.9 %)** + **daemon 7 963 (25.4 %)** + **kernel residual
+  23 150 (73.8 %)**. So ~74 % of the F0 FUSE tax is the irreducible kernel FUSE
+  round-trip/VFS/scheduling residual on this host; even a zero-cost daemon would
+  leave F0 ≈ the baseline + that residual. F2 makes the kernel residual **larger**
+  (33.8–48.8 µs/op), confirming Phase 74's decision (F0 for latency).
+  `docs/PERFORMANCE.md` §35, `docs/LIMITATIONS.md` §21, `docs/CONCURRENCY.md` §9.6,
+  `docs/APPLICATIONS.md` §9.
+* **Measured hot-path reductions.** The engine allocation counter names the sources
+  (per create/unlink/rename/write/read/stat: 206.06 / 110.64 / 101.29 / 98.14 / 3.0
+  / 0 allocs). Four safe changes to the commit/append path (`src/commit.rs`:
+  arithmetic space projection instead of re-encoding the whole transaction; one
+  record encode instead of two plus a pre-sized bracket; `src/namespace.rs`: lazy
+  manifestation bookkeeping; `src/extent.rs`/`src/namespace.rs`: single-copy extent
+  encode) cut the engine's **allocs/op 86.88 → 73.04 (−15.9 %)** and the mounted F0
+  **allocs/op 101.728 → 87.887 (−13.6 %)**; the §34 court's receipt drops
+  **101.8874 → 87.9454**. An in-run paired measurement of the two encoder forms shows
+  **2.0 → 1.0 allocs/op** exactly. Kept because the (deterministic) allocation count
+  fell; `docs/PERFORMANCE.md` §35.
+* **Rejected, with its measurement.** The Phase-83 per-write `core.getattr` candidate
+  is still rejected (the condition cannot be expressed without the lookup in the
+  common case; no measurable request/instruction reduction). The `cache-misses/op`
+  counter is too load-sensitive here to justify a change on its own.
+* **Honest limitations stated.** The `read` sub-op is page-cached and F0/F2 differ in
+  whether the preceding `write` invalidates it, so the `read` column is not a clean
+  cross-transport comparison (the metadata ops are). The immutable arm negotiated
+  `FUSE_PASSTHROUGH` but registered no backing (`passthrough_opens:0`), so it is
+  daemon-served and labelled, not a zero-copy claim. The daemon counter is user-space
+  and summed across threads, divided by client syscalls; cycles→ns uses a measured
+  `cycles_per_ns` on the calling thread.
+
+### Runner and docs
+
+`scripts/container-transport-ceiling.sh`; `docs/PERFORMANCE.md` §34 (Phase-84 update
+note) and §35; `docs/LIMITATIONS.md` §21; `docs/APPLICATIONS.md` §9;
+`docs/CONCURRENCY.md` §9.6; `README.md`; `docs/REPRODUCE.md`; `docs/RECEIPTS.md`; new
+charts `transport-ceiling-latency.svg`, `transport-ceiling-decomposition.svg`,
+`transport-ceiling-reduction.svg` (`scripts/render_charts.py`).
+
+### Test counts
+
+**548 (default; +1 ignored) / 559 (`--features failpoints`)** — +2 in both (the new
+mounted transport-ceiling smoke and receipt). `cargo fmt -p orfs --check`, `cargo
+clippy -p orfs --all-targets -- -D warnings`, `check-all.sh --fast`,
+`check-docs-receipts.sh` and `render_charts.py --check` all clean. The POSIX court
+(`container-posix-test.sh`) is green (`result=pass`, `unclassified=0`).
+
+### Notes, stated honestly
+
+* The overhead decomposition is an *estimate of the dispatch share*, not a
+  per-syscall kernel budget: the daemon counter excludes kernel time and the
+  cycles→ns conversion is a same-CPU-class measurement, not simultaneous.
+* The mounted courts were run one container at a time; the ~11 pre-existing wedged
+  `orfs-kmount:1.99.0` containers were left untouched and Docker was not restarted.

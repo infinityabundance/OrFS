@@ -1075,6 +1075,88 @@ def chart_application_workloads():
         ymin=0.0, ymax=1.0)
 
 
+def chart_transport_ceiling_latency():
+    d = load("transport-ceiling.json")
+    arms = {a["label"]: a for a in d["arms"]}
+    ops = ["create", "stat", "rename", "unlink", "read", "write"]
+    transports = [t for t in ("F0", "F2-single", "F2-pool") if t in arms]
+
+    def col(t, key):
+        lat = arms[t]["latency_ns"]
+        return [lat[o][key] / 1000.0 for o in ops]  # ns -> us
+
+    series = [{"name": "%s p50" % t, "values": col(t, "p50_ns")} for t in transports] \
+        + [{"name": "%s p99" % t, "values": col(t, "p99_ns")} for t in transports]
+    cap = [
+        "source: evidence/performance/transport-ceiling.json (identical workload per transport; one host)",
+        "client-side syscall latency per op (us); F0/F2-single/F2-pool, p50 and p99",
+        "the same workload is also run with no FUSE (same device) and in-process; see the decomposition chart",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return bar_chart(
+        "transport ceiling: per-op latency by transport (p50 / p99)",
+        cap, "latency (us)", ops, series)
+
+
+def chart_transport_ceiling_decomposition():
+    d = load("transport-ceiling.json")
+    arms = {a["label"]: a for a in d["arms"]}
+    transports = [t for t in ("F0", "F2-single", "F2-pool") if t in arms]
+
+    def dec(t, key):
+        v = arms[t]["decomposition"].get(key)
+        return v if isinstance(v, (int, float)) else None
+
+    series = [
+        {"name": "client CPU", "values": [dec(t, "client_cpu_ns_per_op") for t in transports]},
+        {"name": "daemon CPU (OrFS work)",
+         "values": [dec(t, "daemon_cpu_ns_per_op") for t in transports]},
+        {"name": "kernel (irreducible FUSE dispatch)",
+         "values": [dec(t, "kernel_ns_per_op") for t in transports]},
+    ]
+    cap = [
+        "source: evidence/performance/transport-ceiling.json (decomposition vs the same-device no-FUSE baseline)",
+        "per-op overhead over the same-device baseline, split into client CPU, daemon CPU and the kernel residual",
+        "the kernel bar is the irreducible FUSE dispatch/syscall/scheduling share (measured, not assumed)",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return bar_chart(
+        "transport ceiling: overhead decomposition (vs same-device baseline)",
+        cap, "ns per op", transports, series)
+
+
+def chart_transport_ceiling_reduction():
+    d = load("transport-ceiling.json")
+    e2e = d["reductions"]["end_to_end"]
+    before = e2e["before"]
+    after = e2e["after"]
+    ops = ["create", "rename", "unlink", "write"]
+    keys = {
+        "create": "engine_create_allocs_per_op",
+        "rename": "engine_rename_allocs_per_op",
+        "unlink": "engine_unlink_allocs_per_op",
+        "write": "engine_write_allocs_per_op",
+    }
+
+    def val(src, o):
+        v = src.get(keys[o])
+        return v if isinstance(v, (int, float)) else None
+
+    series = [
+        {"name": "before (pre-change)", "values": [val(before, o) for o in ops]},
+        {"name": "after (Phase 84)", "values": [val(after, o) for o in ops]},
+    ]
+    cap = [
+        "source: evidence/performance/transport-ceiling.json (in-process engine, no mount; deterministic allocations)",
+        "allocations per engine operation before and after the Phase-84 hot-path reductions",
+        "allocs/op is deterministic (a counting global allocator over a fixed workload), not a timing artefact",
+        "regenerate: python3 scripts/render_charts.py --check",
+    ]
+    return bar_chart(
+        "Phase 84 reductions: engine allocations per op (before / after)",
+        cap, "allocs per op", ops, series)
+
+
 # --------------------------------------------------------------------------
 # registry: file name -> (builder, source receipt, generating command)
 # --------------------------------------------------------------------------
@@ -1142,6 +1224,12 @@ CHARTS = (
      "evidence/correctness/adversarial-concurrency.json", "sh scripts/container-adversarial-concurrency.sh"),
     ("application-workloads.svg", chart_application_workloads,
      "evidence/performance/application-workloads.json", "sh scripts/container-application-workloads.sh"),
+    ("transport-ceiling-latency.svg", chart_transport_ceiling_latency,
+     "evidence/performance/transport-ceiling.json", "sh scripts/container-transport-ceiling.sh"),
+    ("transport-ceiling-decomposition.svg", chart_transport_ceiling_decomposition,
+     "evidence/performance/transport-ceiling.json", "sh scripts/container-transport-ceiling.sh"),
+    ("transport-ceiling-reduction.svg", chart_transport_ceiling_reduction,
+     "evidence/performance/transport-ceiling.json", "sh scripts/container-transport-ceiling.sh"),
 )
 
 

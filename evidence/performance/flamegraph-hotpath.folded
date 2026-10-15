@@ -1,97 +1,118 @@
-libc.so.6 303
-blake3_hash_many_avx512 123
+libc.so.6 304
+blake3_hash_many_avx512 105
+orfs::persistent::insert_node::<alloc::vec::Vec<u8>, u64> 37
 <orfs::index::Index>::decode_snapshot 29
-orfs::persistent::insert_node::<alloc::vec::Vec<u8>, u64> 27
-<orfs::fuse_native::PassthroughControl>::release 25
-<serde_json::ser::PrettyFormatter as serde_json::ser::Formatter>::end_array::<&mut alloc::vec::Vec<u8>> 16
-<usize as core::fmt::Debug>::fmt 16
-core::ptr::drop_glue::<orfs::manifestation::BuiltPayload> 15
-<orfs::log::Log>::open_resolved 13
-core::ptr::drop_glue::<alloc::sync::ArcInner<std::thread::lifecycle::Packet<()>>> 13
-?? 11
-<addr2line::line::Lines>::find_location 10
-<orfs::commit::CommitSequencer>::commit 10
-<alloc::collections::btree::map::BTreeMap<std::ffi::os_str::OsString, core::option::Option<std::ffi::os_str::OsString>>>::insert 9
-<alloc::collections::btree::node::BalancingContext<std::ffi::os_str::OsString, std::ffi::os_str::OsString>>::bulk_steal_right 9
-<orfs::historical::HistoricalIndexCache>::resolve_traced 9
-<orfs::historical::RootCatalogue>::append 9
-<orfs::manifestation::GenerationManifest>::decode 9
+<orfs::log::Log>::open_resolved 24
+<orfs::fuse_native::PassthroughControl>::release 19
+<orfs::historical::HistoricalIndexCache>::resolve_traced 19
+core::ptr::drop_glue::<alloc::sync::ArcInner<std::thread::lifecycle::Packet<()>>> 19
+<orfs::manifestation::GenerationManifest>::decode 15
+<serde_json::ser::PrettyFormatter as serde_json::ser::Formatter>::end_array::<&mut alloc::vec::Vec<u8>> 12
+core::ptr::drop_glue::<orfs::manifestation::BuiltPayload> 12
+<orfs::trigram::TrigramState>::record_published 9
 <usize as core::fmt::Display>::fmt 9
 <alloc::collections::btree::map::entry::VacantEntry<alloc::string::String, orfs::powerloss::FileModel>>::insert_entry 8
-core::ptr::drop_glue::<alloc::vec::Vec<(u64, alloc::sync::Arc<orfs::manifestation::GenerationManifest>)>> 8
-orfs::namespace::planned_read_from 8
-<i64 as core::fmt::Display>::fmt 6
-<orfs::namespace::ReadState as orfs::namespace::CoreRead>::readdir 5
-<std::sync::mpmc::Sender<core::result::Result<i64, orfs::error::OrfsError>>>::send 5
-blake3::compress_subtree_wide::<blake3::join::SerialJoin> 5
-<orfs::error::OrfsError as core::fmt::Display>::fmt 4
-<orfs::namespace::Namespace>::create_object 4
-<orfs::record::RecordFooter>::validate 4
-<u8 as core::fmt::LowerHex>::fmt 4
-std::thread::functions::available_parallelism 4
-<orfs::index::Snapshot as serde_core::ser::Serialize>::serialize::<&mut serde_json::ser::Serializer<&mut alloc::vec::Vec<u8>>> 3
-<orfs::segment::Segment>::create 3
-<orfs::trigram::TrigramManifest>::decode 3
-<orfs::trigram::TrigramState>::record_published 3
-<serde_json::de::Deserializer<serde_json::read::SliceRead>>::parse_integer 3
+<fuser::session::SessionEventLoop<orfs::fuse::OrfsFuse<orfs::namespace::Namespace>>>::event_loop 8
+<i64 as core::fmt::Display>::fmt 8
+<usize as core::fmt::Debug>::fmt 8
+<orfs::fuse::OrfsFuse<orfs::namespace::Namespace> as fuser::Filesystem>::copy_file_range 7
+?? 7
+<addr2line::line::Lines>::find_location 6
+<orfs::error::OrfsError as core::fmt::Display>::fmt 6
+<orfs::historical::RootCatalogue>::append 6
+<orfs::segment::Segment>::open 6
+<orfs::trigram::TrigramManifest>::decode 6
+<std::sync::poison::PoisonError<std::sync::poison::mutex::MutexGuard<orfs::powerloss::SimDevice>> as core::fmt::Debug>::fmt 6
+core::ptr::drop_glue::<alloc::vec::Vec<(u64, alloc::sync::Arc<orfs::manifestation::GenerationManifest>)>> 6
+core::ptr::drop_glue::<alloc::sync::ArcInner<orfs::fuse_native::PassthroughControl>> 5
+orfs::namespace::planned_read_from 5
+<orfs::namespace::Namespace>::rename 4
+<orfs::segment::Segment>::create 4
+<serde_json::de::Deserializer<serde_json::read::SliceRead>>::parse_integer 4
+blake3::compress_subtree_wide::<blake3::join::SerialJoin> 4
+<adler2::Adler32>::write_slice 3
+<alloc::collections::btree::node::BalancingContext<std::ffi::os_str::OsString, std::ffi::os_str::OsString>>::bulk_steal_right 3
+<orfs::bench::Environment>::capture 3
+<orfs::commit::CommitSequencer>::commit 3
+<orfs::historical::HistoricalIndexCache>::insert 3
+<orfs::historical::RootCatalogue>::publish 3
+<orfs::historical::RootCatalogue>::watermark 3
+<orfs::index::Index>::add_dentry 3
+<orfs::index::Index>::apply_record 3
+<orfs::log::Log>::create 3
+<orfs::log::RootPins>::segment_required 3
+<orfs::namespace::Namespace>::lookup 3
+<orfs::namespace::Namespace>::plan_clear_setid 3
+<u8 as core::fmt::LowerHex>::fmt 3
+core::fmt::float::float_to_decimal_common_exact::<f64> 3
 core::ptr::drop_glue::<alloc::sync::ArcInner<std::thread::lifecycle::Packet<core::result::Result<(), core::io::error::Error>>>> 3
-orfs::index::packed::decode_snapshots 3
-orfs::inode::take_len_bytes 3
-<alloc::sync::Arc<orfs::fuse::Inner<orfs::namespace::Namespace>>>::drop_slow 2
-<alloc::vec::Vec<core::option::Option<ekbloom::bloom_region::RegionTable>> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<core::option::Option<ekbloom::bloom_region::RegionTable>, core::iter::adapters::map::Map<core::slice::iter::Iter<ekbloom::bloom::BloomShell>, <orfs::readpath::ReadPlanner>::build_loaded_body::{closure#2}>>>::from_iter 2
-<core::fmt::Formatter>::write_formatted_parts 2
+orfs::inode::perm_class_groups 3
+std::thread::functions::available_parallelism 3
+<alloc::collections::btree::map::BTreeMap<std::ffi::os_str::OsString, core::option::Option<std::ffi::os_str::OsString>>>::insert 2
+<char>::is_assigned 2
+<core::bstr::ByteStr as core::fmt::Display>::fmt 2
 <core::num::niche_types::Nanoseconds as core::fmt::Debug>::fmt 2
 <core::ops::range::Range<usize> as core::fmt::Debug>::fmt 2
-<core::str::pattern::StrSearcher>::new 2
-<orfs::bench::Environment>::capture 2
-<orfs::fuse::HandleTable>::insert 2
-<orfs::fuse::OrfsFuse<orfs::namespace::Namespace> as fuser::Filesystem>::copy_file_range 2
-<orfs::index::Index>::apply_range_traced 2
+<orfs::index::Index>::link_count_from_dentries 2
+<orfs::index::Snapshot as serde_core::ser::Serialize>::serialize::<&mut serde_json::ser::Serializer<&mut alloc::vec::Vec<u8>>> 2
 <orfs::log::Log>::append 2
-<orfs::segment::Segment>::open 2
-<serde_json::de::SeqAccess<serde_json::read::SliceRead> as serde_core::de::SeqAccess>::next_element::<alloc::vec::Vec<orfs::index::SnapshotVersion>> 2
-<std::sync::mpmc::zero::Channel<orfs::fuse::NotifyMsg>>::send::{closure#0} 2
-<std::sync::mpmc::zero::Channel<orfs::fuse_native::Done>>::recv 2
+<orfs::manifestation::EkbloomBuilder as orfs::manifestation::ManifestationBuilder>::build 2
+<orfs::record::RecordFooter>::validate 2
+<orfs::transaction::TxCommitPayload>::encode 2
+<orfs::trigram::TrigramEngine>::publish_now 2
+<orfs::trigram::TrigramIndex>::build 2
+<std::backtrace_rs::symbolize::gimli::Mapping>::load_dwarf_package 2
 addr2line::line::path_push 2
-core::ptr::drop_glue::<alloc::sync::ArcInner<orfs::fuse_native::PassthroughControl>> 2
-core::ptr::drop_glue::<orfs::manifestation::JobSpec> 2
-core::ptr::drop_glue::<orfs::manifestation::ManifestationEngineReport> 2
-core::ptr::drop_glue::<orfs::segment::Segment> 2
-orfs::fuse::spawn 2
+core::ptr::drop_glue::<(alloc::vec::Vec<u8>, alloc::vec::Vec<u8>)> 2
+core::ptr::drop_glue::<alloc::sync::ArcInner<orfs::persistent::Node<u64, orfs::extent::Extent>>> 2
+core::ptr::drop_glue::<orfs::manifestation::ManifestationState> 2
 orfs::index::packed::decode_dentries 2
-orfs::inode::perm_class_groups 2
+orfs::index::packed::decode_snapshots 2
+orfs::readpath::build_inventory 2
 orfs::readpath::direct_bytes 2
-std::panicking::panic_with_hook 2
 <addr2line::function::Function<gimli::read::endian_slice::EndianSlice<gimli::endianity::LittleEndian>>>::parse_children 1
-<adler2::Adler32>::write_slice 1
-<alloc::collections::btree::map::BTreeMap<u64, orfs::manifestation::GenerationManifest>>::insert 1
-<alloc::sync::Arc<orfs::fuse_native::Dispatcher<orfs::namespace::Namespace>>>::drop_slow 1
-<char>::is_assigned 1
-<core::bstr::ByteStr as core::fmt::Display>::fmt 1
-<core::fmt::Formatter>::pad_integral 1
-<fuser::mnt::Mount>::new 1
+<alloc::vec::Vec<core::option::Option<ekbloom::bloom_region::RegionTable>> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<core::option::Option<ekbloom::bloom_region::RegionTable>, core::iter::adapters::map::Map<core::slice::iter::Iter<ekbloom::bloom::BloomShell>, <orfs::readpath::ReadPlanner>::build_loaded_body::{closure#2}>>>::from_iter 1
+<core::num::imp::bignum::Big32x40>::mul_pow2 1
+<core::str::pattern::StrSearcher>::new 1
+<ekbloom::bloom::Reader>::take 1
+<ekbloom::machine::Nl2 as ekbloom::machine::OrMachine>::state_log 1
+<ekbloom::machine_store::Store as ekbloom::machine::OrMachine>::decode 1
+<fuser::channel::Channel>::clone_fd 1
+<fuser::ll::reply::EntListBuf>::push 1
+<fuser::mnt::Mount>::umount 1
+<hashbrown::raw::RawTable<(fuser::mnt::mount_options::MountOption, ())>>::reserve_rehash::<hashbrown::map::make_hasher<fuser::mnt::mount_options::MountOption, (), std::hash::random::RandomState>::{closure#0}> 1
+<hashbrown::raw::RawTable<(u64, orfs::readpath::Slot<orfs::readpath::CoverageEntry>)>>::reserve_rehash::<hashbrown::map::make_hasher<u64, orfs::readpath::Slot<orfs::readpath::CoverageEntry>, std::hash::random::RandomState>::{closure#0}> 1
+<orfs::directory::DentryAddPayload>::decode 1
 <orfs::directory::DentryRenamePayload>::decode 1
 <orfs::fuse::OrfsFuse<orfs::namespace::Namespace>>::new 1
 <orfs::fuse_native::PassthroughControl>::close_all 1
 <orfs::group_commit::BatchCoordinator<orfs::namespace::Namespace>>::try_admit 1
-<orfs::historical::RootCatalogue>::publish 1
-<orfs::historical::RootCatalogue>::watermark 1
-<orfs::index::Index>::apply_record 1
-<orfs::index::Index>::link_count_from_dentries 1
-<orfs::manifestation::ManifestationState>::record_published 1
-<orfs::namespace::Namespace>::commit_plan 1
-<orfs::namespace::Namespace>::rename 1
-<orfs::namespace::Namespace>::rmdir 1
-<orfs::readpath::RegionCache>::insert 1
-<orfs::transaction::TxCommitPayload>::decode 1
-<orfs::trigram::TrigramIndex>::build 1
-<orfs::trigram::TrigramIndex>::encode 1
-<orfs::trigram::TrigramStore>::read_head 1
+<orfs::index::Index>::apply_range_traced 1
+<orfs::index::Index>::seal_inodes 1
+<orfs::inode::Inode>::new 1
+<orfs::log::RecordReader as core::iter::traits::iterator::Iterator>::next 1
+<orfs::log::RootPins>::new 1
+<orfs::manifestation::Dec>::u8 1
+<orfs::namespace::Namespace>::create_object 1
+<orfs::namespace::Namespace>::getattr 1
+<orfs::namespace::Namespace>::planned_read 1
+<orfs::namespace::Namespace>::removexattr 1
+<orfs::namespace::Namespace>::require_live_dir 1
+<orfs::namespace::ReadState as orfs::namespace::CoreRead>::getattr 1
+<orfs::trigram::TrigramManifest>::canonical_bytes 1
+<orfs::trigram::TrigramStore>::publish 1
+<serde_json::de::Deserializer<serde_json::read::SliceRead>>::parse_exponent 1
+<serde_json::ser::Compound<&mut alloc::vec::Vec<u8>, serde_json::ser::CompactFormatter> as serde_core::ser::SerializeStruct>::serialize_field::<i64> 1
+<std::sync::mpmc::Sender<core::result::Result<i64, orfs::error::OrfsError>>>::send 1
+<std::sync::mpmc::Sender<orfs::fuse::NotifyMsg>>::send 1
+<std::sync::mpmc::zero::Channel<orfs::fuse_native::Done>>::recv 1
 [vdso] 1
-__do_global_dtors_aux 1
-core::ptr::drop_glue::<alloc::boxed::Box<std::sync::mpmc::counter::Counter<std::sync::mpmc::list::Channel<orfs::group_commit::Envelope<orfs::namespace::Namespace>>>>> 1
-core::ptr::drop_glue::<orfs::manifestation::ManifestComponent> 1
-core::ptr::drop_glue::<orfs::namespace::Plan> 1
-core::ptr::drop_glue::<std::process::Command> 1
-orfs::capabilities::uname::{closure#0} 1
-orfs::index::packed::decode_parents 1
+core::ptr::drop_glue::<alloc::sync::ArcInner<fuser::session::FilesystemHolder<orfs::fuse::OrfsFuse<orfs::namespace::Namespace>>>> 1
+core::ptr::drop_glue::<alloc::sync::ArcInner<orfs::tiering::TieredSegments>> 1
+core::ptr::drop_glue::<core::option::Option<orfs::fuse::Handle>> 1
+core::ptr::drop_glue::<orfs::manifestation::ManifestationEngineReport> 1
+orfs::log::quarantine_segment 1
+orfs::log::read_range_into_with 1
+orfs::persistent::insert_node::<u64, alloc::sync::Arc<orfs::inode::Inode>> 1
+register_tm_clones 1
+std::panicking::panic_with_hook 1

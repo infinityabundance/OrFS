@@ -42,10 +42,10 @@
 use crate::error::{OrfsError, Result};
 use crate::failpoints::{self, Failpoint};
 use crate::log::{AppendReservation, Log};
-use crate::record::{Record, RecordType};
+use crate::record::{Record, RecordType, FOOTER_LEN, HEADER_LEN};
 use crate::transaction::{
     bracket_checksum, AbortReason, Transaction, TxAbortPayload, TxBeginPayload, TxCommitPayload,
-    TxState,
+    TxState, TX_COMMIT_PAYLOAD_LEN,
 };
 
 /// The durability profile governing when a commit is acknowledged.
@@ -362,19 +362,22 @@ impl<'a> CommitSequencer<'a> {
             begin_payload.to_vec(),
         )?;
         seal(&mut begin_rec, self.log.next_sequence_number(), tx_id);
-        let begin_offset = self.write_record(&mut begin_rec)?;
+        let begin_bytes = begin_rec.encode()?;
+        let bracket_len = tx.bracket_byte_length() as usize;
+        let mut bracket: Vec<u8> = Vec::with_capacity(bracket_len);
+        bracket.extend_from_slice(&begin_bytes);
+        let begin_offset = self.write_record_bytes(&mut begin_rec, &begin_bytes)?;
         tx.transition(TxState::Reserved)?;
         tx.transition(TxState::Submitted)?;
 
         // --- 2. reserve + write data records -------------------------------
-        let mut bracket: Vec<u8> = Vec::new();
-        bracket.extend_from_slice(&begin_rec.encode()?);
         let data_count = tx.records().len();
         for i in 0..data_count {
             let mut rec = tx.records()[i].clone();
             seal(&mut rec, self.log.next_sequence_number(), tx_id);
-            bracket.extend_from_slice(&rec.encode()?);
-            self.write_record(&mut rec)?;
+            let bytes = rec.encode()?;
+            bracket.extend_from_slice(&bytes);
+            self.write_record_bytes(&mut rec, &bytes)?;
             failpoints::check(Failpoint::AfterPartialRecordWrite)?;
         }
         tx.transition(TxState::DataCompleted)?;
@@ -720,52 +723,41 @@ impl<'a> CommitSequencer<'a> {
     /// The exact framed byte length a transaction will occupy: `TX_BEGIN`, every
     /// data record, and `TX_COMMIT`, each with its 60-byte header and 16-byte
     /// footer. Used for early authoritative-space admission.
-    fn projected_transaction_bytes(&self, tx: &Transaction, tx_id: u64) -> Result<u64> {
-        let seq = self.log.next_sequence_number();
-        let mut total = 0u64;
-        let begin_payload = tx.begin().encode();
-        let begin_rec = Record::new(
-            RecordType::TxBegin,
-            seq,
-            tx_id,
-            0,
-            0,
-            crate::record::FLAG_NONE,
-            begin_payload.to_vec(),
-        )?;
-        total = total.saturating_add(begin_rec.encode()?.len() as u64);
-        for rec in tx.records() {
-            let mut rec = rec.clone();
-            seal(&mut rec, seq, tx_id);
-            total = total.saturating_add(rec.encode()?.len() as u64);
-        }
-        let commit_payload = TxCommitPayload {
-            transaction_id: tx_id,
-            record_count: 1 + tx.records().len() as u64,
-            bracketed_byte_length: 0,
-            commit_sequence_number: seq,
-            bracket_checksum: [0u8; crate::transaction::BRACKET_CHECKSUM_LEN],
-        };
-        let commit_rec = Record::new(
-            RecordType::TxCommit,
-            seq,
-            tx_id,
-            0,
-            0,
-            crate::record::FLAG_NONE,
-            commit_payload.encode().to_vec(),
-        )?;
-        total = total.saturating_add(commit_rec.encode()?.len() as u64);
-        Ok(total)
+    ///
+    /// Phase 84: computed **arithmetically**. `TransactionBuilder::build` has
+    /// already validated and recorded the exact framed length of `TX_BEGIN` + the
+    /// data records (`Transaction::bracket_byte_length`), and every record's framed
+    /// length is `HEADER_LEN + payload_length + FOOTER_LEN`, so the total is exact
+    /// without building or encoding a single record. The previous implementation
+    /// rebuilt and re-encoded the whole transaction (a clone + an `encode()` per
+    /// record, plus two payload `to_vec`s) purely to sum lengths — pure waste on the
+    /// authoritative hot path. Any record that `Record::new` would reject has
+    /// already been rejected at plan time (`TransactionBuilder::add`), and
+    /// `publish_one` constructs the real records immediately after, so this
+    /// admission check cannot accept something the write path would reject.
+    fn projected_transaction_bytes(&self, tx: &Transaction, _tx_id: u64) -> Result<u64> {
+        let commit_record = (HEADER_LEN + FOOTER_LEN) as u64 + TX_COMMIT_PAYLOAD_LEN as u64;
+        tx.bracket_byte_length()
+            .checked_add(commit_record)
+            .ok_or(OrfsError::Overflow {
+                what: "projected transaction bytes",
+            })
     }
 
     /// Reserve `len` bytes and write a record, injecting the torn-write
     /// failpoints. Returns the record's logical offset.
     fn write_record(&mut self, record: &mut Record) -> Result<u64> {
         let bytes = record.encode()?;
+        self.write_record_bytes(record, &bytes)
+    }
+
+    /// As [`Self::write_record`] but with the record's already-encoded bytes, so a
+    /// caller that has encoded the record (for the bracket) does not encode it a
+    /// second time.
+    fn write_record_bytes(&mut self, record: &mut Record, bytes: &[u8]) -> Result<u64> {
         let res = self.reserve(bytes.len() as u64)?;
         failpoints::check(Failpoint::AfterReservation)?;
-        self.torn_write(&res, &bytes, Failpoint::DuringRecordWrite)?;
+        self.torn_write(&res, bytes, Failpoint::DuringRecordWrite)?;
         let end = res
             .logical_offset
             .checked_add(res.len)

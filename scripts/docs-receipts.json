@@ -650,6 +650,28 @@
         {"group": 1, "label": "metadata-tree orfs create samples", "evidence": "evidence/performance/application-workloads.json", "path": "workloads[workload=metadata-tree].arms.orfs.latency_ns.create.samples"},
         {"group": 2, "label": "metadata-tree orfs readdir samples", "evidence": "evidence/performance/application-workloads.json", "path": "workloads[workload=metadata-tree].arms.orfs.latency_ns.readdir.samples"}
       ]
+    },
+    {
+      "id": "transport-ceiling-s35-engine-allocs",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§35",
+      "claim": "Phase-84 engine allocations per op, before and after the commit/append reductions (deterministic; a counting #[global_allocator] over a fixed workload)",
+      "regex": "\\| `engine` allocs/op \\| ([0-9.]+) \\| \\*\\*([0-9.]+)\\*\\* \\|",
+      "fields": [
+        {"group": 1, "label": "engine allocs/op before", "evidence": "evidence/performance/transport-ceiling.json", "path": "reductions.end_to_end.before.engine_allocs_per_op"},
+        {"group": 2, "label": "engine allocs/op after", "evidence": "evidence/performance/transport-ceiling.json", "path": "reductions.end_to_end.after.engine_allocs_per_op"}
+      ]
+    },
+    {
+      "id": "transport-ceiling-s35-f0-allocs",
+      "doc": "docs/PERFORMANCE.md",
+      "section": "§35",
+      "claim": "Phase-84 mounted F0 allocations per op, before and after (deterministic counting allocator)",
+      "regex": "\\| mounted \\*\\*F0\\*\\* allocs/op \\| ([0-9.]+) \\| \\*\\*([0-9.]+)\\*\\* \\|",
+      "fields": [
+        {"group": 1, "label": "F0 allocs/op before", "evidence": "evidence/performance/transport-ceiling.json", "path": "reductions.end_to_end.before.f0_allocs_per_op"},
+        {"group": 2, "label": "F0 allocs/op after", "evidence": "evidence/performance/transport-ceiling.json", "path": "reductions.end_to_end.after.f0_allocs_per_op"}
+      ]
     }
   ]
 }
